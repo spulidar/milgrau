@@ -743,13 +743,33 @@ new Calendar('#calendar', {
         }
     },
     
-    clickDay: function(e) {
+clickDay: function(e) {
         if(e.events.length > 0) {
-            var evento = e.events[0];
-            if (evento.url) {
-                // Aqui juntamos o endereço fixo do seu GitHub com o caminho da pasta
-                var githubBaseUrl = 'https://spulidar.github.io/ql-measurements/';
-                window.open(githubBaseUrl + evento.url, "_blank");
+            var githubBaseUrl = 'https://spulidar.github.io/ql-measurements/';
+            
+            // Se tiver só uma medida no dia, abre direto
+            if (e.events.length === 1) {
+                window.open(githubBaseUrl + e.events[0].url, "_blank");
+            } 
+            // Se tiver mais de uma, pede para o usuário escolher
+            else {
+                var mensagem = "Multiple measurements, please choose period:\n\n";
+                for (var i = 0; i < e.events.length; i++) {
+                    // Extrai se é saam, sapm ou sant direto da URL
+                    var periodo = "Desconhecido";
+                    if (e.events[i].url.includes("saam")) periodo = "AM";
+                    if (e.events[i].url.includes("sapm")) periodo = "PM";
+                    if (e.events[i].url.includes("sant")) periodo = "NT";
+                    
+                    mensagem += (i + 1) + " - " + periodo + "\n";
+                }
+                
+                var escolha = prompt(mensagem, "1");
+                var indice = parseInt(escolha) - 1;
+                
+                if (!isNaN(indice) && indice >= 0 && indice < e.events.length) {
+                    window.open(githubBaseUrl + e.events[indice].url, "_blank");
+                }
             }
         }
     }
