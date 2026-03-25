@@ -13,10 +13,10 @@ from datetime import datetime
 # ==========================================
 # CONFIGURAÇÕES GERAIS
 # ==========================================
-INCREMENTAL_PROCESSING = True  
+INCREMENTAL_PROCESSING = False  
 
 rootdir_name = os.getcwd() 
-files_dir_level1 = "03-data_level1"  
+files_dir_level1 = "05-data_level1"  
 site_dir = "ql-measurements"          
 calendar_file = "ql-measurement-calendar.html" 
 
