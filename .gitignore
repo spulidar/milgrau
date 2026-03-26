@@ -2,8 +2,4 @@
 /03-netcdf_data
 /05-data_level1
 /venv
-
-!/ql-measurements/
-!/ql-measurements/**
-
-!.gitignore
+/credentials.py
