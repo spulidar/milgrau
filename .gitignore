@@ -1,6 +1,29 @@
-/01-data
-/03-netcdf_data
-/05-data_level1
-/venv
+# ==========================================
+# Python & Environment
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# ==========================================
+# MILGRAU Data Directories (Do NOT commit heavy data)
+# ==========================================
+01-data/
+03-netcdf_data/
+05-data_level1/
+
+# ==========================================
+# Logs & Temp Files
+# ==========================================
+logs/
+*.log
+*.tmp
+
+# ==========================================
+# Security & Credentials (CRITICAL)
+# ==========================================
 credentials.py
-*.webp
+.env

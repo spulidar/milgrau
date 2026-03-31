@@ -1,0 +1,133 @@
+# ==========================================
+# MILGRAU Suite Configuration File
+# ==========================================
+
+processing:
+  incremental: False
+  max_workers_io: 1
+  max_workers_cpu: 1
+  apply_cloud_mask: true
+  cloud_mask_multiplier: 10.0
+
+directories:
+  raw_data: "01-data"
+  netcdf_data: "03-netcdf_data"
+  level1_data: "05-data_level1"
+  site_output: "ql-measurements"
+  log_dir: "logs"
+
+physics:
+  # Base properties
+  vertical_resolution_m: 7.5
+  speed_of_light: 299792458.0
+  
+  # SCC Channel constants: [deadtime_us, bin_shift, bg_offset_mV]
+  channels:
+    "00355.o_ph": [0.0020, -2, 0.0005]
+    "00355.o_an": [0.0000,  8, 0.0000]
+    "00387.o_ph": [0.0000, -2, 0.0000]
+    "00387.o_an": [0.0000,  8, 0.0000]
+    "00408.o_ph": [0.0000, -2, 0.0000]
+    "00408.o_an": [0.0000,  8, 0.0000]
+    "00530.o_ph": [0.0000, -2, 0.0015]
+    "00530.o_an": [0.0000,  7, 0.0000]
+    "00532.o_ph": [0.0035, -3, 0.0015]
+    "00532.o_an": [0.0000,  6, 0.0000]
+    "01064.o_ph": [0.0000,  0, 0.0000]
+    "01064.o_an": [0.0000,  1, 0.0000]
+
+visualization:
+  altitude_ranges_km: [5, 15, 30]
+  channels_to_plot:
+    - "01064.o_an"
+    - "00532.o_an"
+    - "00532.o_ph"
+    - "00355.o_an"
+    - "00355.o_ph"
+
+hardware:
+  id_to_name:
+    934: "01064.o_an"
+    935: "01064.o_ph"
+    722: "00532.o_an"
+    1593: "00532.o_an"
+    716: "00532.o_ph"
+    1558: "00530.o_an"
+    1595: "00530.o_an"
+    1557: "00530.o_ph"
+    737: "00355.o_an"
+    1594: "00355.o_an"
+    736: "00355.o_ph"
+    749: "00387.o_an"
+    1596: "00387.o_an"
+    748: "00387.o_ph"
+    1446: "00408.o_an"
+    1447: "00408.o_ph"
+
+# ==========================================
+# PHASE 2: INVERSION & RADIOSONDE (LEBEAR)
+# ==========================================
+
+radiosonde:
+  station_id: "83779"                 # Wyoming ID for São Paulo (Campo de Marte)
+  fallback_to_standard: true          # Use US Standard Atmosphere if download fails
+  
+inversion:
+  interactive_qa: true                # Set to true to show pop-up plots (Gluing/Molecular fit)
+  monte_carlo_iterations: 100         # Number of perturbations for error propagation
+  
+  molecular_fit:
+    ref_alt_min_m: 5000.0             # Initial altitude range for molecular calibration
+    ref_alt_max_m: 25000.0            # Final altitude range for molecular calibration
+    lidar_ratio_molecular: 8.37758    # Standard Rayleigh LR (8 * pi / 3)
+
+  gluing:
+    window_length_bins: 150
+    correlation_threshold: 0.95
+    intercept_threshold: 0.5
+    gaussian_threshold: 0.1
+    minmax_threshold: 0.5
+    search_min_idx: 200               # 200 * 7.5m = 1.5 km
+    search_max_idx: 2000              # 2000 * 7.5m = 15 km
+
+  # Mean Aerosol Lidar Ratios (LR) per wavelength and month (01 to 12)
+  lidar_ratios:
+    "355":
+      "01": 75.95
+      "02": 116.08
+      "03": 93.00
+      "04": 96.05
+      "05": 81.16
+      "06": 78.26
+      "07": 78.21
+      "08": 81.14
+      "09": 84.69
+      "10": 84.87
+      "11": 91.06
+      "12": 99.35
+    "532":
+      "01": 58.11
+      "02": 66.06
+      "03": 61.93
+      "04": 69.50
+      "05": 62.07
+      "06": 61.73
+      "07": 58.88
+      "08": 55.05
+      "09": 55.78
+      "10": 57.83
+      "11": 57.11
+      "12": 75.17
+    "1064":
+      "01": 35.94
+      "02": 25.52
+      "03": 35.37
+      "04": 40.76
+      "05": 39.81
+      "06": 43.76
+      "07": 36.92
+      "08": 30.85
+      "09": 29.74
+      "10": 33.44
+      "11": 30.83
+      "12": 41.43
