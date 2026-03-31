@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import matplotlib.dates as mdates
 import matplotlib.gridspec as gridspec
+from matplotlib.colors import ListedColormap
 from datetime import datetime, timedelta
 from concurrent.futures import ProcessPoolExecutor
 import warnings
@@ -62,7 +63,8 @@ logger.propagate = False
 # SETTINGS
 # ==========================================
 INCREMENTAL_PROCESSING = False
-MAX_WORKERS = 4
+MAX_WORKERS = 1
+APPLY_CLOUD_MASK = True       # Set to False to disable the white cloud override
 
 rootdir_name = os.getcwd()
 files_dir_level1 = "05-data_level1"
@@ -160,10 +162,33 @@ def add_footer_and_logos(fig, date_footer):
 
         # UPDATING THE IMAGE POSITION
         x_right = x_left - spacing
-        
+
 # ==========================================
 # QUICKLOOK (COLORMAP + MEAN RCS WITH ERROR BANDS)
 # ==========================================
+
+def calculate_dynamic_cloud_threshold(data_array, multiplier=10.0):
+    """
+    Calculates a dynamic cloud threshold using the Interquartile Range (IQR) method.
+    Clouds are treated as extreme positive outliers in the RCS distribution.
+    
+    Parameters:
+    - data_array: xarray.DataArray containing the RCS data.
+    - multiplier: The sensitivity factor. Higher means less sensitive (only 
+                  very dense clouds are masked). 10.0 is a solid starting point for Lidar.
+    """
+    # Calculate the 25th and 75th percentiles (using numpy to handle NaNs safely)
+    p25 = np.nanpercentile(data_array, 25)
+    p75 = np.nanpercentile(data_array, 75)
+    
+    # Calculate the Interquartile Range (the spread of the 'normal' data)
+    iqr = p75 - p25
+    
+    # Define the threshold for extreme outliers (clouds)
+    threshold = p75 + (multiplier * iqr)
+    
+    return threshold
+
 def plot_quicklook(data_slice, error_slice, max_altitude, channel_name, ds, output_folder, file_name_prefix):
     """Generates a 2D colormap quicklook and a 1D mean profile with error bands."""
     date_title, date_footer = extract_datetime_strings(ds)
@@ -172,13 +197,37 @@ def plot_quicklook(data_slice, error_slice, max_altitude, channel_name, ds, outp
 
     fig = plt.figure(figsize=[15, 7.5])
     gs = gridspec.GridSpec(1, 2, width_ratios=[4, 1], wspace=0.03)
-
+    
+    
     # --- Colormap Axis (2D) ---
     ax0 = plt.subplot(gs[0])
-    plot = data_slice.plot(
-        x='time', y='altitude',
-        cmap='jet', robust=True, vmin=0, add_colorbar=False, ax=ax0, add_labels=False
-    )
+    
+    if APPLY_CLOUD_MASK:
+        # 1. Calculate the dynamic threshold for THIS specific channel and day
+        dynamic_threshold = calculate_dynamic_cloud_threshold(data_slice, multiplier=10.0)
+        
+        # 2. Separate data based on the calculated threshold
+        rcs_aerosol = data_slice.where(data_slice < dynamic_threshold)
+        rcs_clouds = data_slice.where(data_slice >= dynamic_threshold)
+        
+        # 3. Plot aerosols using robust=True (now perfectly scaled)
+        plot = rcs_aerosol.plot(
+            x='time', y='altitude',
+            cmap='jet', robust=True, vmin=0, add_colorbar=False, ax=ax0, add_labels=False
+        )
+        
+        # 4. Overlay clouds
+        cloud_cmap = ListedColormap(['white'])
+        rcs_clouds.plot(
+            x='time', y='altitude',
+            cmap=cloud_cmap, add_colorbar=False, ax=ax0, add_labels=False
+        )
+    else:
+
+        plot = data_slice.plot(
+            x='time', y='altitude',
+            cmap='jet', robust=True, vmin=0, add_colorbar=False, ax=ax0, add_labels=False
+        )
     
     if "AN" in pretty_channel:
         min_altitude = 0.16
