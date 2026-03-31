@@ -80,8 +80,8 @@ channels_to_plot = [
 ]
 
 LOGO_LEAL = os.path.join(rootdir_name, "img", "logo_leal.jpeg")
-LOGO_LALINET = os.path.join(rootdir_name, "img", "lalinet_logo2.jpeg")
-LOGO_LICENSE = os.path.join(rootdir_name, "img", "by-nc-nd.png")
+LOGO_LALINET = os.path.join(rootdir_name, "img", "lalinet_logo2.png")
+LOGO_LICENSE = os.path.join(rootdir_name, "img", "CC_BY-NC-ND.png")
 
 # ==========================================
 # FORMATTING
