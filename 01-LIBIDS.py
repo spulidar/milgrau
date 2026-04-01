@@ -43,7 +43,7 @@ def process_single_netcdf(args):
     save_id = f"{date_str}sa{period}"
     year_str, month_str = save_id[:4], save_id[4:6]
     
-    out_dir = os.path.join(os.getcwd(), config_dirs['netcdf_data'], year_str, month_str)
+    out_dir = os.path.join(os.getcwd(), config_dirs['02-processed_data'], year_str, month_str)
     netcdf_path = os.path.join(out_dir, f"{save_id}.nc")
 
     files_meas = group_df[group_df["meas_type"] == "measurements"]["filepath"].tolist()
@@ -92,7 +92,7 @@ if __name__ == "__main__":
     
     root_dir = os.getcwd()
     raw_dir = os.path.join(root_dir, config['directories']['raw_data'])
-    netcdf_dir = os.path.join(root_dir, config['directories']['netcdf_data'])
+    netcdf_dir = os.path.join(root_dir, config['directories']['processed_data'])
     
     # 2. Scan and Sanitize Input Directory
     file_paths, file_types = scan_raw_files(raw_dir, logger)

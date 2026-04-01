@@ -8,11 +8,11 @@ processing:
   max_workers_cpu: 1
   apply_cloud_mask: true
   cloud_mask_multiplier: 10.0
+  interactive_qa: true
 
 directories:
   raw_data: "01-data"
-  netcdf_data: "03-netcdf_data"
-  level1_data: "05-data_level1"
+  processed_data: "02-processed_data"
   site_output: "ql-measurements"
   log_dir: "logs"
 
@@ -78,9 +78,9 @@ inversion:
   
   molecular_fit:
     ref_alt_min_m: 5000.0             # Initial altitude range for molecular calibration
-    ref_alt_max_m: 25000.0            # Final altitude range for molecular calibration
+    ref_alt_max_m: 9000.0             # Final altitude range for molecular calibration
     lidar_ratio_molecular: 8.37758    # Standard Rayleigh LR (8 * pi / 3)
-
+  
   gluing:
     window_length_bins: 150
     correlation_threshold: 0.95
@@ -89,6 +89,7 @@ inversion:
     minmax_threshold: 0.5
     search_min_idx: 200               # 200 * 7.5m = 1.5 km
     search_max_idx: 2000              # 2000 * 7.5m = 15 km
+
 
   # Mean Aerosol Lidar Ratios (LR) per wavelength and month (01 to 12)
   lidar_ratios:

@@ -102,7 +102,7 @@ if __name__ == "__main__":
     logger.info("=== Starting LIRACOS rendering (Visualization) ===")
     
     root_dir = os.getcwd()
-    base_data_folder = os.path.join(root_dir, config['directories']['level1_data'])
+    base_data_folder = os.path.join(root_dir, config['directories']['02-processed_data'])
     
     file_pattern = os.path.join(base_data_folder, '**', '*rcs.nc')
     nc_files = glob.glob(file_pattern, recursive=True)

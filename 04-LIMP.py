@@ -236,7 +236,7 @@ if __name__ == "__main__":
 
     # Setup directories
     root_dir = os.getcwd() 
-    base_data_folder = os.path.join(root_dir, config['directories']['level1_data'])
+    base_data_folder = os.path.join(root_dir, config['directories']['02-processed_data'])
     base_site_folder = os.path.join(root_dir, config['directories']['site_output'])
     ensure_directories(base_site_folder)
     
@@ -248,7 +248,7 @@ if __name__ == "__main__":
     all_images = glob.glob(search_pattern, recursive=True)
     
     if not all_images:
-        logger.warning(f"No '.webp' images found in {config['directories']['level1_data']}. Exiting.")
+        logger.warning(f"No '.webp' images found in {config['directories']['02-processed_data']}. Exiting.")
         sys.exit(0)
 
     # 2. Aggregate Data by Measurement Date/Period
