@@ -9,7 +9,6 @@ periods (UTC to Local Time), and converts valid data into SCC NetCDF format.
 import os
 import pandas as pd
 from statistics import mode
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
 # Import MILGRAU core functions
 from functions.core_io import load_config, setup_logger, ensure_directories, scan_raw_files, read_licel_header
@@ -32,10 +31,10 @@ class LidarMeasurement_565(LicelLidarMeasurement):
     extra_netcdf_parameters = msp_netcdf_parameters_system565
 
 # ==========================================
-# WORKER FUNCTION (MULTIPROCESSING)
+# SEQUENTIAL PROCESSING FUNCTION
 # ==========================================
 def process_single_netcdf(args):
-    """Worker function to convert a grouped pandas dataframe into an SCC NetCDF."""
+    """Function to convert a grouped pandas dataframe into an SCC NetCDF."""
     meas_id, group_df, config_dirs = args
     
     date_str = meas_id[:8]
@@ -100,10 +99,11 @@ if __name__ == "__main__":
         logger.warning(f"No valid files found in {raw_dir}. Exiting.")
         exit()
 
-    # 3. Read Headers (Parallel I/O)
-    logger.info(f"Reading headers of {len(file_paths)} files...")
-    with ThreadPoolExecutor(max_workers=config['processing']['max_workers_io']) as executor:
-        results = list(executor.map(read_licel_header, file_paths))
+    # 3. Read Headers (Sequential and Lightweight)
+    logger.info(f"Reading headers of {len(file_paths)} files sequentially...")
+    
+    # Fast list comprehension replaces ThreadPoolExecutor to ensure zero memory locking
+    results = [read_licel_header(f) for f in file_paths]
 
     start_times_utc, stop_times, durations, nshots_list, laser_freqs = zip(*results)
 
@@ -171,20 +171,24 @@ if __name__ == "__main__":
         if loss_percent > 10:
             logger.warning("High data loss rate detected (>10%). Check hardware or atmospheric conditions.")
 
-    # 7. NetCDF SCC Conversion (Parallel CPU)
+    # 7. NetCDF SCC Conversion (Sequential & Clean)
     if not df_good.empty:
-        logger.info(f"Starting NetCDF SCC conversion with {config['processing']['max_workers_cpu']} CPU processes...")
+        logger.info("Starting NetCDF SCC conversion (Sequential Processing)...")
         
-        # Package arguments for multiprocessing
         process_args = [(meas_id, group, config['directories']) for meas_id, group in df_good.groupby("meas_id")]
         
-        with ProcessPoolExecutor(max_workers=config['processing']['max_workers_cpu']) as executor:
-            for result in executor.map(process_single_netcdf, process_args):
-                if "[OK]" in result:
-                    logger.info(result)
-                else:
-                    logger.error(result)
+        success_count = 0
+        for args in process_args:
+            result = process_single_netcdf(args)
+            if "[OK]" in result:
+                logger.info(result)
+                success_count += 1
+            else:
+                logger.error(result)
                 
-        logger.info("=== LIBIDS processing finished successfully! ===")
+        if success_count == len(process_args):
+            logger.info("=== LIBIDS processing finished successfully for all groups! ===")
+        else:
+            logger.warning(f"=== LIBIDS finished with some errors. Processed {success_count}/{len(process_args)} groups. ===")
     else:
         logger.warning("No data with sufficient quality survived for NetCDF conversion.")
