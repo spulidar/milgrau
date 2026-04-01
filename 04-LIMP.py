@@ -236,8 +236,11 @@ if __name__ == "__main__":
 
     # Setup directories
     root_dir = os.getcwd() 
-    base_data_folder = os.path.join(root_dir, config['directories']['02-processed_data'])
-    base_site_folder = os.path.join(root_dir, config['directories']['site_output'])
+    # FIX 1: Corrigido de '02-processed_data' para 'processed_data'
+    base_data_folder = os.path.join(root_dir, config['directories']['processed_data'])
+    
+    # Assumindo que a chave para a saída do site é 'site_output' no yaml
+    base_site_folder = os.path.join(root_dir, config.get('directories', {}).get('site_output', 'ql-measurements'))
     ensure_directories(base_site_folder)
     
     incremental = config['processing']['incremental']
@@ -248,35 +251,38 @@ if __name__ == "__main__":
     all_images = glob.glob(search_pattern, recursive=True)
     
     if not all_images:
-        logger.warning(f"No '.webp' images found in {config['directories']['02-processed_data']}. Exiting.")
+        logger.warning(f"No '.webp' images found in {base_data_folder}. Exiting.")
         sys.exit(0)
 
     # 2. Aggregate Data by Measurement Date/Period
     measurements = {}
     for img_path in all_images:
         img_name = os.path.basename(img_path)
-        prefix = None
         
+        # FIX 2 & 3: Lógica segura de parsing e unificação do "GlobalMeanRCS_"
         if img_name.startswith("Quicklook_"):
             parts = img_name.replace(".webp", "").split("_")
             if len(parts) >= 5:
                 prefix = parts[1]
                 ch = f"{parts[2]}_{parts[3]}" 
                 alt = parts[4].replace("km", "")
-        elif img_name.startswith("MeanRCS_"):
+                
+                if prefix not in measurements:
+                    measurements[prefix] = {'files': [], 'channels': set(), 'alts': set(), 'has_global_mean': False, 'mean_rcs_filename': ""}
+                
+                measurements[prefix]['files'].append(img_path)
+                measurements[prefix]['channels'].add(ch)
+                measurements[prefix]['alts'].add(alt)
+                
+        elif img_name.startswith("GlobalMeanRCS_"):
             parts = img_name.replace(".webp", "").split("_")
             if len(parts) >= 2:
                 prefix = parts[1]
-            
-        if prefix:
-            if prefix not in measurements:
-                measurements[prefix] = {'files': [], 'channels': set(), 'alts': set(), 'has_global_mean': False, 'mean_rcs_filename': ""}
-            
-            measurements[prefix]['files'].append(img_path)
-            if img_name.startswith("Quicklook_"):
-                measurements[prefix]['channels'].add(ch)
-                measurements[prefix]['alts'].add(alt)
-            elif img_name.startswith("MeanRCS_"):
+                
+                if prefix not in measurements:
+                    measurements[prefix] = {'files': [], 'channels': set(), 'alts': set(), 'has_global_mean': False, 'mean_rcs_filename': ""}
+                
+                measurements[prefix]['files'].append(img_path)
                 measurements[prefix]['has_global_mean'] = True
                 measurements[prefix]['mean_rcs_filename'] = img_name
 
