@@ -3,12 +3,12 @@
 # ==========================================
 
 processing:
-  incremental: false
+  incremental: False
   max_workers_io: 1
   max_workers_cpu: 1
-  apply_cloud_mask: true
+  apply_cloud_mask: True
   cloud_mask_multiplier: 10.0
-  interactive_qa: false
+  interactive_qa: False
 
 directories:
   raw_data: "01-data"

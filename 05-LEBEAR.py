@@ -217,18 +217,36 @@ def process_level2_file(args):
         # ---------------------------------------------------------
         # Calculate the ensemble mean of the PBL heights detected across all wavelengths
         mean_pbl_km = np.nanmean(results_pbl) if results_pbl else np.nan
-        out_ds.attrs["pbl_height_km"] = mean_pbl_km
+        out_ds.attrs["pbl_height_km"] = float(mean_pbl_km)
         
         if not np.isnan(mean_pbl_km):
             logger.info(f"  -> [{stem}] Final Ensemble PBL Height: {mean_pbl_km:.2f} km")
-        
-        # Calculate Tropopause heights based on the fetched radiosonde
-        cpt_km, lrt_km = calculate_tropopause_heights(df_radio)
-        if not np.isnan(cpt_km):
-            logger.info(f"  -> [{stem}] Tropopause Found | CPT: {cpt_km:.2f} km | LRT: {lrt_km:.2f} km")
             
-        out_ds.attrs["tropopause_cpt_km"] = cpt_km
-        out_ds.attrs["tropopause_lrt_km"] = lrt_km
+        # Calculate Tropopause heights based on the fetched radiosonde
+        try:
+            cpt_km, lrt_km = calculate_tropopause_heights(df_radio)
+            
+            # --- 1. CPT LOGGING & SAVING ---
+            if not np.isnan(cpt_km):
+                logger.info(f"  -> [{stem}] Cold Point Tropopause (CPT) found at {cpt_km:.2f} km")
+                out_ds.attrs["tropopause_cpt_km"] = float(cpt_km)
+            else:
+                logger.warning(f"  -> [{stem}] CPT not found (sounding data might be empty or too low).")
+                out_ds.attrs["tropopause_cpt_km"] = -999.0
+                
+            # --- 2. LRT LOGGING & SAVING ---
+            if not np.isnan(lrt_km):
+                logger.info(f"  -> [{stem}] WMO Lapse Rate Tropopause (LRT) found at {lrt_km:.2f} km")
+                out_ds.attrs["tropopause_lrt_km"] = float(lrt_km)
+            else:
+                # Silently fail LRT without an aggressive warning, as it's common for noisy data
+                logger.info(f"  -> [{stem}] LRT WMO conditions not met. Using -999.0")
+                out_ds.attrs["tropopause_lrt_km"] = -999.0
+                
+        except Exception as e:
+            logger.warning(f"  -> [{stem}] Tropopause metadata calculation failed: {e}")
+            out_ds.attrs["tropopause_cpt_km"] = -999.0
+            out_ds.attrs["tropopause_lrt_km"] = -999.0
         
         out_ds.attrs["history"] = f"{ds.attrs.get('history', '')}\nInverted with MILGRAU LEBEAR on {datetime.now(timezone.utc).isoformat()} UTC"
 

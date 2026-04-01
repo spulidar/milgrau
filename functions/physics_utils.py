@@ -309,24 +309,16 @@ def calculate_pbl_height_gradient(rcs_signal, alt_m, min_search_m=500.0, max_sea
 
 def calculate_tropopause_heights(df_radiosonde):
     """
-    Calculates the Tropopause height using two distinct atmospheric definitions:
-    1. CPT (Cold Point Tropopause): The altitude of the absolute temperature minimum.
-    2. LRT (Lapse Rate Tropopause): WMO definition where the lapse rate drops to <= 2 K/km.
-    
-    Args:
-        df_radiosonde (pd.DataFrame): DataFrame containing 'alt' (m) and 'temp' (K).
-        
-    Returns:
-        tuple: (cpt_height_km, lrt_height_km). Returns (np.nan, np.nan) if calculation fails.
+    Calculates the Tropopause height (CPT and LRT WMO definitions).
+    Uses interpolation to a uniform grid to prevent high-frequency telemetry noise 
+    from breaking the WMO lapse rate conditions.
     """
     if df_radiosonde is None or df_radiosonde.empty:
         return np.nan, np.nan
         
     alt_m = df_radiosonde['height'].values
-    temp_k = df_radiosonde['temperature'].values+273,15
+    temp_k = df_radiosonde['temperature'].values+273.15
     
-    # We restrict the search to altitudes above 5000m (5 km) to strictly avoid 
-    # false positives caused by planetary boundary layer (PBL) inversions.
     valid_idx = np.where(alt_m > 5000.0)[0]
     if len(valid_idx) == 0:
         return np.nan, np.nan
@@ -334,50 +326,49 @@ def calculate_tropopause_heights(df_radiosonde):
     search_alt = alt_m[valid_idx]
     search_temp = temp_k[valid_idx]
     
-    # ==========================================
-    # 1. Cold Point Tropopause (CPT)
-    # ==========================================
-    cpt_idx = np.argmin(search_temp)
-    cpt_km = search_alt[cpt_idx] / 1000.0
+    # 1. Cold Point Tropopause (CPT) - Exact absolute minimum
+    cpt_idx = int(np.argmin(search_temp))
+    cpt_km = float(search_alt[cpt_idx] / 1000.0)
     
-    # ==========================================
+    # Ensure we have enough atmospheric profile to apply the 2km WMO rule
+    if len(search_alt) < 2 or (search_alt[-1] - search_alt[0]) < 2000.0:
+        return cpt_km, np.nan
+        
     # 2. Lapse Rate Tropopause (LRT) - WMO Definition
-    # ==========================================
+    # Radiosonde telemetry is not uniformly spaced. A 0.1K noise artifact over 5m 
+    # creates a fake 20 K/km lapse rate, falsely triggering WMO rejection. 
+    # We interpolate to a uniform 100m grid to calculate macroscopic gradients.
+    z_grid = np.arange(search_alt[0], search_alt[-1], 100.0)
+    t_grid = np.interp(z_grid, search_alt, search_temp)
+    
     lrt_km = np.nan
     
-    for i in range(len(search_alt) - 1):
-        # Calculate forward lapse rate (Gamma = -dT/dz) in K/km
-        dz_km = (search_alt[i+1] - search_alt[i]) / 1000.0
-        dt_k = search_temp[i+1] - search_temp[i]
-        
-        if dz_km == 0:
-            continue
-            
+    for i in range(len(z_grid) - 1):
+        dz_km = 0.1 # 100 meters fixed grid step
+        dt_k = t_grid[i+1] - t_grid[i]
         gamma = -dt_k / dz_km
         
-        # WMO Condition 1: Lapse rate drops to 2.0 K/km or less
         if gamma <= 2.0:
-            z_i = search_alt[i]
-            t_i = search_temp[i]
+            z_i = z_grid[i]
+            t_i = t_grid[i]
             
-            # WMO Condition 2: The average lapse rate between this level and all 
-            # higher levels within the next 2 km must not exceed 2.0 K/km.
-            window_indices = np.where((search_alt > z_i) & (search_alt <= z_i + 2000.0))[0]
+            # WMO Condition 2: Check all levels within 2 km above
+            window_indices = np.where((z_grid > z_i) & (z_grid <= z_i + 2000.0))[0]
             
             if len(window_indices) > 0:
                 valid_window = True
                 
                 for j in window_indices:
-                    dz_window_km = (search_alt[j] - z_i) / 1000.0
-                    dt_window_k = search_temp[j] - t_i
+                    dz_window_km = (z_grid[j] - z_i) / 1000.0
+                    dt_window_k = t_grid[j] - t_i
                     gamma_avg = -dt_window_k / dz_window_km
                     
                     if gamma_avg > 2.0:
                         valid_window = False
-                        break # Fails WMO condition 2, move to the next altitude
+                        break # Failed WMO Condition 2, move to next altitude
                         
                 if valid_window:
-                    lrt_km = z_i / 1000.0
+                    lrt_km = float(z_i / 1000.0)
                     break # First level to satisfy all conditions is the LRT
                     
     return cpt_km, lrt_km

@@ -170,11 +170,12 @@ def fetch_wyoming_radiosonde(measurement_dt_utc, station_id, logger, cache_dir="
     
     try:
         # Fetch data using Siphon (Zero HTML parsing required!)
-        df_raw = WyomingUpperAir.request_data(target_dt, station_id).dropna()
-        df_raw.to_csv(cache_file, index=False)
+        df_raw = WyomingUpperAir.request_data(target_dt, station_id)
+        df = df_raw.drop_duplicates(subset=['height'], keep='first').sort_values('height')
+        df.to_csv(cache_file, index=False)
         logger.info("  -> [OK] Radiosonde data successfully fetched and cached!")
         
-        return df_raw
+        return df
         
     except Exception as e:
         logger.warning(f"  -> [RADIOSONDE ERROR] Failed to fetch data from Wyoming via Siphon: {e}")
