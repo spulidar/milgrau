@@ -12,8 +12,7 @@ env/
 # MILGRAU Data Directories (Do NOT commit heavy data)
 # ==========================================
 01-data/
-03-netcdf_data/
-05-data_level1/
+02-processed_data/
 
 # ==========================================
 # Logs & Temp Files

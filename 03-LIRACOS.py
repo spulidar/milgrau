@@ -103,9 +103,7 @@ if __name__ == "__main__":
     
     root_dir = os.getcwd()
     base_data_folder = os.path.join(root_dir, config['directories']['02-processed_data'])
-    
-    file_pattern = os.path.join(base_data_folder, '**', '*rcs.nc')
-    nc_files = glob.glob(file_pattern, recursive=True)
+    nc_files = sorted(Path(base_data_folder).rglob("*_level1_rcs.nc"))
 
     if not nc_files:
         logger.warning(f"No Level 1 NetCDF data found in '{base_data_folder}'. Exiting.")

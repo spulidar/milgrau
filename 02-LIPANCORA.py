@@ -178,7 +178,8 @@ if __name__ == "__main__":
     logger.info("=== Starting LIPANCORA processing (Level 1) ===")
     
     input_dir = os.path.join(os.getcwd(), config['directories']['02-processed_data'])
-    files = sorted(Path(input_dir).rglob("*.nc"))
+    all_nc_files = sorted(Path(input_dir).rglob("*.nc"))
+    files = [f for f in all_nc_files if "raw" in f.name]
 
     if not files:
         logger.warning(f"No Level 0 NetCDF data found in '{input_dir}'. Exiting.")
