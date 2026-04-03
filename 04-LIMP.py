@@ -333,10 +333,8 @@ if __name__ == "__main__":
     logger = setup_logger("LIMP", config['directories']['log_dir'])
     logger.info("=== Starting LIMP (Cloudflare R2 Upload & HTML Generation) ===")
 
-    # ================
-    # REBUILD SWITCH
-    # ================
-    REBUILD_HTML_ONLY = False 
+    REBUILD_HTML_ONLY = False  # True: recria HTMLs e desliga uploads.
+    SYNC_MISSING_UPLOADS = True # True: vasculha a nuvem e faz upload APENAS do que faltou.
 
     # Setup directories
     root_dir = os.getcwd() 
@@ -389,8 +387,23 @@ if __name__ == "__main__":
     # 3. Process Uploads and HTML
     processed_days = 0
     
+    # --- SMART SYNC CLOUD CACHE ---
+    cloud_existing_keys = set()
+    
     if REBUILD_HTML_ONLY:
         logger.info("REBUILD MODE ACTIVE: Overwriting HTMLs. Cloudflare uploads are disabled.")
+    elif SYNC_MISSING_UPLOADS:
+        logger.info("SYNC MODE ACTIVE: Fetching cloud index (this takes a few seconds)...")
+        paginator = s3_client.get_paginator('list_objects_v2')
+        try:
+            for page in paginator.paginate(Bucket=bucket_name):
+                if 'Contents' in page:
+                    for obj in page['Contents']:
+                        cloud_existing_keys.add(obj['Key'])
+            logger.info(f"Cloud index built: {len(cloud_existing_keys)} files currently on Cloudflare.")
+        except Exception as e:
+            logger.error(f"Failed to fetch cloud index: {e}")
+            sys.exit(1)
         
     for prefix, data in measurements.items():
         try:
@@ -404,19 +417,28 @@ if __name__ == "__main__":
         ensure_directories(site_year_folder)
         html_path = os.path.join(site_year_folder, f"{prefix}_Dashboard.html")
 
-        if incremental and os.path.exists(html_path) and not REBUILD_HTML_ONLY:
+        if incremental and os.path.exists(html_path) and not REBUILD_HTML_ONLY and not SYNC_MISSING_UPLOADS:
             logger.debug(f"  -> [SKIPPED] Dashboard already exists for: {prefix}")
             continue
             
+        # Upload Control
         if not REBUILD_HTML_ONLY:
-            logger.info(f"  -> [UPLOADING] Sending {len(data['files'])} images to Cloudflare R2 for {prefix}...")
             for img_path in data['files']:
                 filename = os.path.basename(img_path)
                 cloud_path = f"{year}/{filename}"
-                upload_to_r2(s3_client, bucket_name, img_path, cloud_path, logger)
-        else:
-            logger.info(f"  -> [HTML REBUILD] Regenerating dashboard for {prefix}...")
+                
+                if SYNC_MISSING_UPLOADS:
+                    # ULTRA-FAST MEMORY CHECK
+                    if cloud_path not in cloud_existing_keys:
+                        logger.info(f"      [SYNC] Missing on Cloudflare -> Uploading {filename}")
+                        upload_to_r2(s3_client, bucket_name, img_path, cloud_path, logger)
+                        cloud_existing_keys.add(cloud_path) # Add to memory to avoid duplicate attempts
+                else:
+                    # Original behavior
+                    logger.info(f"  -> [UPLOADING] Sending {filename}...")
+                    upload_to_r2(s3_client, bucket_name, img_path, cloud_path, logger)
             
+        # HTML Generation
         valid_channels = sorted(list(data['channels']))
         valid_alts = sorted(list(data['alts']), key=lambda x: float(x) if x.replace('.','',1).isdigit() else 0)
         
@@ -426,9 +448,10 @@ if __name__ == "__main__":
                 data['has_global_mean'], data['mean_rcs_filename'], year, cloud_public_url
             )
             processed_days += 1
-
     if REBUILD_HTML_ONLY:
         logger.info(f"=== HTML REBUILD Finished! {processed_days} dashboards updated. ===")
+    elif SYNC_MISSING_UPLOADS:
+        logger.info(f"=== CLOUD SYNC Finished! Missing files uploaded and {processed_days} dashboards verified. ===")
     else:
         logger.info(f"=== LIMP Finished! {processed_days} new dashboards generated. ===")
     
