@@ -258,7 +258,7 @@ def generate_html_dashboard(html_path, prefix, date_title, valid_channels, valid
         document.querySelectorAll(".alt-btn").forEach(btn => btn.classList.remove("active"));
         btnElement.classList.add("active");
         updateImage();
-    }}
+    }} 
 
     var modal = document.getElementById("myModal");
     var modalImg = document.getElementById("img01");
