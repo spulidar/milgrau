@@ -19,6 +19,10 @@ physics:
   vertical_resolution_m: 7.5
   speed_of_light: 299792458.0
   
+  # Default surface weather for Level 0 NetCDF SCC format (Fallback)
+  default_surface_temp_c: 25.0
+  default_surface_pressure_hpa: 940.0
+  
   # SCC Channel constants: [deadtime_us, bin_shift, bg_offset_mV]
   channels:
     "00355.o_ph": [0.0020, -2, 0.0005]
