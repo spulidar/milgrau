@@ -15,6 +15,7 @@ import gc
 from datetime import datetime, timezone
 from pathlib import Path
 import warnings
+import traceback 
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
@@ -22,20 +23,16 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 from functions.core_io import load_config, setup_logger, ensure_directories, fetch_wyoming_radiosonde
 from functions.physics_utils import calculate_pbl_height_gradient, calculate_tropopause_heights
 
-# ==========================================
-# SEQUENTIAL WORKER FUNCTION
-# ==========================================
 def process_single_file(args):
     nc_path, config = args
     channels_config = config['physics']['channels']
     incremental = config['processing']['incremental']
+    save_corrected = config['processing'].get('save_intermediate_corrected', False)
     out_dir_base = config['directories']['processed_data']
     c_speed = config['physics']['speed_of_light']
     
-    # We use a station_id from config or fallback to Campo de Marte (83779)
     station_id = config.get('location', {}).get('station_id', '83779')
-    
-    logger = setup_logger("LIPANCORA", config['directories']['log_dir'])
+    logger = logging.getLogger("LIPANCORA")
 
     try:
         stem = Path(nc_path).stem
@@ -45,14 +42,12 @@ def process_single_file(args):
         corrected_path = base_dir / f"{stem}_level1_corrected.nc"
         rcs_path = base_dir / f"{stem}_level1_rcs.nc"
 
-        if incremental and corrected_path.exists() and rcs_path.exists():
-            return f"[SKIPPED] Level 1 already exists: {stem}"
+        if incremental and rcs_path.exists():
+            return f"[SKIPPED] Level 1 RCS already exists: {stem}"
 
         logger.info(f"[{stem}] Reading Level 0 data...")
         
-        # Use Context Manager to strictly protect RAM and avoid memory leaks
         with xr.open_dataset(nc_path) as ds:
-
             rename_dict = {}
             if 'channels' in ds.dims: rename_dict['channels'] = 'channel'
             if 'points' in ds.dims: rename_dict['points'] = 'range'
@@ -77,33 +72,19 @@ def process_single_file(args):
             bg_low_arr = ds["Background_Low"].values if "Background_Low" in ds else None
             bg_high_arr = ds["Background_High"].values if "Background_High" in ds else None
 
-            # --- FETCH RADIOSONDE ---
-            # Extract precise measurement date directly from the filename (stem)
-            # Expected format: YYYYMMDDsaXX (e.g., 20240606sant)
-            date_str = stem[:8]
-            period = stem[10:12]
+            date_str, period = stem[:8], stem[10:12]
             base_dt = datetime.strptime(date_str, "%Y%m%d")
             
-            # Assign a representative UTC hour based on the measurement period
-            if period == "am":
-                meas_dt = base_dt.replace(hour=12, tzinfo=timezone.utc) # ~09:00 Local
-            elif period == "pm":
-                meas_dt = base_dt.replace(hour=18, tzinfo=timezone.utc) # ~15:00 Local
-            elif period == "nt":
-                meas_dt = base_dt.replace(hour=23, tzinfo=timezone.utc) # ~20:00 Local (triggers 00Z next day)
-            else:
-                meas_dt = base_dt.replace(hour=12, tzinfo=timezone.utc)
+            time_map = {"am": 12, "pm": 18, "nt": 23}
+            meas_dt = base_dt.replace(hour=time_map.get(period, 12), tzinfo=timezone.utc)
             
             logger.info(f"[{stem}] Fetching Wyoming Radiosonde data...")
             df_radio = fetch_wyoming_radiosonde(meas_dt, station_id, logger)
 
             pbl_list = []
+            logger.info(f"[{stem}] Applying physics corrections and propagating errors...")
 
-            logger.info(f"[{stem}] Applying physics corrections and propagating errors for {len(channel_names_scc)} channels...")
-
-            n_time = raw.sizes["time"]
-            n_chan = len(channel_names_scc)
-            n_range = raw.sizes["range"]
+            n_time, n_chan, n_range = raw.sizes["time"], len(channel_names_scc), raw.sizes["range"]
             
             final_corrected = np.empty((n_time, n_chan, n_range), dtype=np.float32)
             final_err_corrected = np.empty((n_time, n_chan, n_range), dtype=np.float32)
@@ -121,21 +102,31 @@ def process_single_file(args):
 
                 is_elastic = any(wl in ch_name for wl in ["355", "532", "1064"])
                 
+                # --- ERROR PROPAGATION ---
+                err_bg = sig.where(bg_mask).std(dim="range") # Standard deviation of the background region
+                
                 if not is_photon:
+                    # ANALOG CHANNELS: Dominated by electronic noise. 
+                    # The error of the entire profile is strictly defined by the background noise standard deviation.
                     if np.nanmax(sig) > 1000: sig = sig / (shots * bin_time_us)
-                    N_photons = xr.where(sig * shots * bin_time_us > 0, sig * shots * bin_time_us, 0)
-                    err_raw = np.sqrt(N_photons) / (shots * bin_time_us)
-
+                    err_dt = xr.ones_like(sig) * err_bg
+                    sig_dt = sig
+                else:
+                    # PHOTON COUNTING CHANNELS: Governed by Poisson statistics based on discrete event counts.
+                    raw_counts = xr.where(sig * shots * bin_time_us > 0, sig * shots * bin_time_us, 0)
+                    err_poisson = np.sqrt(raw_counts) / (shots * bin_time_us)
+                    
+                    # Total PC error is the sum in quadrature of Poisson noise and background fluctuation
+                    err_dt = np.sqrt(err_poisson**2 + err_bg**2)
+                    
                     if deadtime > 0:
                         denom = xr.where(1.0 - (sig * deadtime) <= 1e-6, np.nan, 1.0 - (sig * deadtime))
                         sig_dt = sig / denom
-                        err_dt = err_raw / (denom**2) 
+                        err_dt = err_dt / (denom**2) 
                     else:
-                        sig_dt, err_dt = sig, err_raw
-                else:
-                    sig_dt = sig
-                    err_dt = xr.ones_like(sig) * sig.where(bg_mask).std(dim="range")
+                        sig_dt = sig
 
+                # Process dark current subtraction
                 if "Background_Profile" in ds:
                     dc_data = ds["Background_Profile"].isel(channel=ch_i)
                     if "time_bck" in dc_data.dims:
@@ -148,9 +139,11 @@ def process_single_file(args):
                     sig_dt = sig_dt - dc_prof
                     err_dt = np.sqrt(err_dt**2 + dc_err**2) 
 
+                # bin shift
                 sig_shift = sig_dt.shift(range=shift, fill_value=np.nan)
                 err_shift = err_dt.shift(range=shift, fill_value=np.nan)
 
+                # background subtraction
                 bg_mean = sig_shift.where(bg_mask).mean(dim="range") - bg_offset
                 err_bg_mean = sig_shift.where(bg_mask).std(dim="range") / np.sqrt(bg_mask.sum().values)
 
@@ -160,13 +153,15 @@ def process_single_file(args):
                 rcs = sig_c * (z_da**2)
                 err_rcs = err_c * (z_da**2)
                 
-                # --- DETECT PBL ON ANALOG CHANNELS ---
+                # Dynamic PBL configuration
                 if not is_photon and is_elastic:
-                    pbl_km = calculate_pbl_height_gradient(rcs.mean(dim="time").values, z, min_search_m=500.0, max_search_m=4000.0)
+                    pbl_min = config['physics'].get('pbl_min_search_m', 500.0)
+                    pbl_max = config['physics'].get('pbl_max_search_m', 4000.0)
+                    pbl_km = calculate_pbl_height_gradient(rcs.mean(dim="time").values, z, min_search_m=pbl_min, max_search_m=pbl_max)
+                    
                     if not np.isnan(pbl_km):
                         pbl_list.append(pbl_km)
                         logger.info(f"  -> [{stem}] PBL gradient detected at {pbl_km:.2f} km for analog channel {ch_name}.")
-
 
                 final_corrected[:, ch_i, :] = sig_c.values.astype(np.float32)
                 final_err_corrected[:, ch_i, :] = err_c.values.astype(np.float32)
@@ -177,38 +172,22 @@ def process_single_file(args):
                 gc.collect()
 
             logger.info(f"[{stem}] Merging tensors and saving Level 1 NetCDF...")
-            
             del raw
             gc.collect()
 
             attrs_common = dict(ds.attrs)
-            attrs_common["processing_level"] = "Level 1: PC->MHz, DT, DC, Shift, Background, Error Propagation, PBL, Tropopause"
+            attrs_common["processing_level"] = "Level 1: PC->MHz, DeadTime, Dark Current, Shift, Background, Error Propagation, PBL, Tropopause"
             attrs_common["history"] = f"{ds.attrs.get('history', '')}\nProcessed with MILGRAU LIPANCORA on {datetime.now(timezone.utc).isoformat()} UTC"
 
-            # --- INJECT PBL & TROPOPAUSE METADATA ---
-            # Calculate ensemble mean for PBL
             mean_pbl_km = np.nanmean(pbl_list) if pbl_list else np.nan
+            attrs_common["pbl_height_km"] = float(mean_pbl_km) if not np.isnan(mean_pbl_km) else -999.0
             if not np.isnan(mean_pbl_km):
                 logger.info(f"  -> [{stem}] Final Analog Ensemble PBL Height: {mean_pbl_km:.2f} km")
-                attrs_common["pbl_height_km"] = float(mean_pbl_km)
-            else:
-                attrs_common["pbl_height_km"] = -999.0
                 
-            # Calculate Tropopause (CPT and LRT)
             try:
                 cpt_km, lrt_km = calculate_tropopause_heights(df_radio)
-                
-                if not np.isnan(cpt_km):
-                    logger.info(f"  -> [{stem}] Cold Point Tropopause (CPT) found at {cpt_km:.2f} km")
-                    attrs_common["tropopause_cpt_km"] = float(cpt_km)
-                else:
-                    attrs_common["tropopause_cpt_km"] = -999.0
-                    
-                if not np.isnan(lrt_km):
-                    logger.info(f"  -> [{stem}] WMO Lapse Rate Tropopause (LRT) found at {lrt_km:.2f} km")
-                    attrs_common["tropopause_lrt_km"] = float(lrt_km)
-                else:
-                    attrs_common["tropopause_lrt_km"] = -999.0
+                attrs_common["tropopause_cpt_km"] = float(cpt_km) if not np.isnan(cpt_km) else -999.0
+                attrs_common["tropopause_lrt_km"] = float(lrt_km) if not np.isnan(lrt_km) else -999.0
             except Exception as e:
                 logger.warning(f"  -> [{stem}] Tropopause metadata calculation failed: {e}")
                 attrs_common["tropopause_cpt_km"] = -999.0
@@ -216,35 +195,38 @@ def process_single_file(args):
 
             coords = {"time": ds["time"], "channel": ("channel", np.array(channel_names_scc)), "range": ("range", np.float32(z))}
 
-            corrected_ds = xr.Dataset(
-                {"Corrected_Lidar_Data": (("time", "channel", "range"), final_corrected),
-                 "Corrected_Lidar_Data_Error": (("time", "channel", "range"), final_err_corrected)},
-                coords=coords, attrs=attrs_common
-            )
-
             rcs_ds = xr.Dataset(
                 {"Range_Corrected_Signal": (("time", "channel", "range"), final_rcs),
                  "Range_Corrected_Signal_Error": (("time", "channel", "range"), final_err_rcs)},
                 coords=coords, attrs=attrs_common
             )
             
-            # --- INJECT RADIOSONDE INTO RCS DATASET ---
             if df_radio is not None and not df_radio.empty:
                 rcs_ds = rcs_ds.assign_coords(radiosonde_alt=("radiosonde_alt", df_radio['height'].values))
                 rcs_ds["Radiosonde_Pressure_hPa"] = (("radiosonde_alt",), df_radio['pressure'].values)
                 rcs_ds["Radiosonde_Temperature_K"] = (("radiosonde_alt",), df_radio['temperature'].values+273.15)
 
-            for var in corrected_ds.data_vars: corrected_ds[var].encoding.update(dtype="float32", _FillValue=np.nan)
             for var in rcs_ds.data_vars: rcs_ds[var].encoding.update(dtype="float32", _FillValue=np.nan)
-
+            
             ensure_directories(base_dir)
-            corrected_ds.to_netcdf(corrected_path)
             rcs_ds.to_netcdf(rcs_path)
+            
+            # Save corrected pure signal only if the user flagged it in config.yaml
+            if save_corrected:
+                corrected_ds = xr.Dataset(
+                    {"Corrected_Lidar_Data": (("time", "channel", "range"), final_corrected),
+                     "Corrected_Lidar_Data_Error": (("time", "channel", "range"), final_err_corrected)},
+                    coords=coords, attrs=attrs_common
+                )
+                for var in corrected_ds.data_vars: corrected_ds[var].encoding.update(dtype="float32", _FillValue=np.nan)
+                corrected_ds.to_netcdf(corrected_path)
+                logger.info(f"  -> [{stem}] Saved supplementary _corrected.nc file.")
 
         return f"[OK] Processing complete for {stem}"
 
     except Exception as e:
-        return f"[FAILED] Error processing {Path(nc_path).name}: {e}"
+        error_details = traceback.format_exc()
+        return f"[FAILED] Error processing {Path(nc_path).name}:\n{error_details}"
 
 # ==========================================
 # MAIN ORCHESTRATOR
