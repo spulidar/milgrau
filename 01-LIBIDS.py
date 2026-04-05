@@ -7,11 +7,20 @@ periods (UTC to Local Time), and converts valid data into SCC NetCDF format.
 """
 
 import os
+import traceback
 import pandas as pd
 from statistics import mode
+from typing import Tuple, Dict, Any
 
 # Import MILGRAU core functions
-from functions.core_io import load_config, setup_logger, ensure_directories, scan_raw_files, read_licel_header
+from functions.core_io import (
+    load_config, 
+    setup_logger, 
+    ensure_directories, 
+    scan_raw_files, 
+    read_licel_header
+    fetch_surface_weather
+)
 from functions.physics_utils import classify_period, get_night_date
 
 # Import SCC specific libraries
@@ -24,61 +33,99 @@ from atmospheric_lidar_parameters import (
 # ==========================================
 # GLOBAL CLASS DEFINITIONS 
 # ==========================================
-class LidarMeasurement_484(LicelLidarMeasurement):
+class LidarMeasurement484(LicelLidarMeasurement):
     extra_netcdf_parameters = msp_netcdf_parameters_system484
 
-class LidarMeasurement_565(LicelLidarMeasurement):
+class LidarMeasurement565(LicelLidarMeasurement):
     extra_netcdf_parameters = msp_netcdf_parameters_system565
 
 # ==========================================
 # SEQUENTIAL PROCESSING FUNCTION
 # ==========================================
-def process_single_netcdf(args):
-    """Function to convert a grouped pandas dataframe into an SCC NetCDF."""
-    meas_id, group_df, config_dirs = args
+def process_single_netcdf(args: Tuple[str, pd.DataFrame, Dict[str, Any]]) -> str:
+    """
+    Converts a grouped pandas dataframe of raw binaries into an SCC compliant NetCDF.
+    """
+    meas_id, group_df, config = args
     
     date_str = meas_id[:8]
     period = meas_id[8:]
     save_id = f"{date_str}sa{period}"
     year_str, month_str = save_id[:4], save_id[4:6]
     
-    out_dir = os.path.join(os.getcwd(), config_dirs['processed_data'], year_str, month_str, save_id)
+    out_dir = os.path.join(os.getcwd(), config['directories']['processed_data'], year_str, month_str, save_id)
     netcdf_path = os.path.join(out_dir, f"{save_id}.nc")
 
     files_meas = group_df[group_df["meas_type"] == "measurements"]["filepath"].tolist()
     files_meas_dc = group_df[group_df["meas_type"] != "measurements"]["filepath"].tolist()
 
     if not files_meas:
-        return f"[FAILED] No measurement files for {save_id}"
+        return f"[FAILED] No measurement files found for {save_id}"
 
     try:
-        # Instantiate the correct SCC class based on time of day
-        MeasurementClass = LidarMeasurement_565 if period in ["am", "pm"] else LidarMeasurement_484
+        # Instantiate the correct SCC class based on the time of day
+        # 'am' and 'pm' periods use system 565, night ('nt') uses 484
+        MeasurementClass = LidarMeasurement565 if period in ["am", "pm"] else LidarMeasurement484
         my_measurement = MeasurementClass(files_meas)
         
-        # Inject Dark Current if it exists
+        # Inject Dark Current measurements if they exist
         if files_meas_dc:
             my_measurement.dark_measurement = MeasurementClass(files_meas_dc)
             
-        # Hardcoded parameters required by SCC but missing in binary headers
-        my_measurement.info["Measurement_ID"] = save_id
-        my_measurement.info["Temperature"] = "25"
-        my_measurement.info["Pressure"] = "940"
+        # ---------------------------------------------------------
+        # Metadata Injection for SCC Compliance
+        # ---------------------------------------------------------
         
-        # Determine expected baseline from the mode of the dataset
+        my_measurement.info["Measurement_ID"] = save_id
+        
+        lat = float(config['physics'].get('latitude', -23.561))
+        lon = float(config['physics'].get('longitude', -46.735))
+        
+        # Use the mean time of the dataset to query the weather
+        dt_utc_mean = group_df['start_time_utc'].iloc[len(group_df) // 2].to_pydatetime()
+        weather_data = fetch_surface_weather(dt_utc_mean, lat, lon)
+        
+        if weather_data:
+            # Required variables for SCC
+            my_measurement.info["Temperature"] = str(round(weather_data['temperature_c'], 1))
+            my_measurement.info["Pressure"] = str(round(weather_data['pressure_hpa'], 1))
+            
+            # Custom MILGRAU variables (Will be added as Global Attributes in NetCDF)
+            my_measurement.info["Relative_Humidity_Percent"] = str(round(weather_data['relative_humidity_percent'], 1))
+            my_measurement.info["Cloud_Cover_Percent"] = str(round(weather_data['cloud_cover_percent'], 1))
+            my_measurement.info["Wind_Speed_kmh"] = str(round(weather_data['wind_speed_kmh'], 1))
+            
+            logger.info(
+                f"  -> [{save_id}] Weather applied: "
+                f"{weather_data['temperature_c']}°C, {weather_data['pressure_hpa']} hPa, "
+                f"RH {weather_data['relative_humidity_percent']}%"
+            )
+        else:
+            default_temp = str(config['physics'].get('default_surface_temp_c', 25.0))
+            default_press = str(config['physics'].get('default_surface_pressure_hpa', 940.0))
+            my_measurement.info["Temperature"] = default_temp
+            my_measurement.info["Pressure"] = default_press
+            logger.info(f"  -> [{save_id}] Weather API failed. Applied fallback: {default_temp}°C, {default_press} hPa")
+        
+        # Determine expected baseline from the mode of the dataset to filter outliers
         duration = mode(group_df["duration"])
         freq = mode(group_df["laser_freq"])
-        my_measurement.info["Accumulated_Shots"] = str(int(duration * freq))
+        shots = mode(group_df["nshots"])
+        
+        my_measurement.info["Accumulated_Shots"] = str(shots)
         my_measurement.info["Laser_Frequency"] = str(freq)
         my_measurement.info["Measurement_Duration"] = str(duration)
 
+        # Save to disk
         ensure_directories(out_dir)
         my_measurement.save_as_SCC_netcdf(netcdf_path)
         
         return f"[OK] NetCDF successfully saved: {year_str}/{month_str}/{save_id}.nc"
         
     except Exception as e:
-        return f"[ERROR] Fatal error converting {save_id}. Error: {e}"
+        # traceback.format_exc() captures the full red error block for debugging
+        error_details = traceback.format_exc()
+        return f"[ERROR] Fatal error converting {save_id}.\n{error_details}"
 
 # ==========================================
 # MAIN ORCHESTRATOR
@@ -96,86 +143,101 @@ if __name__ == "__main__":
     # 2. Scan and Sanitize Input Directory
     file_paths, file_types = scan_raw_files(raw_dir, logger)
     if not file_paths:
-        logger.warning(f"No valid files found in {raw_dir}. Exiting.")
+        logger.warning(f"No valid files found in {raw_dir}. Exiting pipeline.")
         exit()
 
     # 3. Read Headers (Sequential and Lightweight)
     logger.info(f"Reading headers of {len(file_paths)} files sequentially...")
     
-    # Fast list comprehension replaces ThreadPoolExecutor to ensure zero memory locking
+    # Fast list comprehension to extract headers
     results = [read_licel_header(f) for f in file_paths]
-
     start_times_utc, stop_times, durations, nshots_list, laser_freqs = zip(*results)
 
-    df = pd.DataFrame({
-        "filepath": file_paths, "meas_type": file_types,
-        "start_time_utc": start_times_utc, "stop_time": stop_times,
-        "nshots": nshots_list, "duration": durations, "laser_freq": laser_freqs,
+    # Build DataFrame mapping the raw files
+    df_raw = pd.DataFrame({
+        "filepath": file_paths, 
+        "meas_type": file_types,
+        "start_time_utc": start_times_utc, 
+        "stop_time": stop_times,
+        "nshots": nshots_list, 
+        "duration": durations, 
+        "laser_freq": laser_freqs,
     }).dropna(subset=['start_time_utc'])
 
-    if df.empty:
-        logger.warning("All headers failed to read. Exiting.")
+    if df_raw.empty:
+        logger.warning("All headers failed to read. Exiting pipeline.")
         exit()
 
     # 4. Timezone & Atmospheric Period Intelligence
     logger.info("Applying timezone conversions (UTC -> Local) and classifying periods...")
-    df['start_time_utc'] = pd.to_datetime(df['start_time_utc']).dt.tz_localize('UTC')
-    df['start_time_local'] = df['start_time_utc'].dt.tz_convert('America/Sao_Paulo')
     
-    df['flag_period'] = df['start_time_local'].apply(classify_period)
-    df['meas_id'] = df['start_time_local'].apply(get_night_date).dt.strftime('%Y%m%d') + df['flag_period']
+    df_raw['start_time_utc'] = pd.to_datetime(df_raw['start_time_utc']).dt.tz_localize('UTC')
+    df_raw['start_time_local'] = df_raw['start_time_utc'].dt.tz_convert('America/Sao_Paulo')
+    
+    df_raw['flag_period'] = df_raw['start_time_local'].apply(classify_period)
+    df_raw['meas_id'] = df_raw['start_time_local'].apply(get_night_date).dt.strftime('%Y%m%d') + df_raw['flag_period']
 
-    # 5. Incremental Filter
+    # 5. Incremental Processing Filter
     if config['processing']['incremental']:
         logger.info("Applying early incremental filter...")
         
-        def needs_processing(meas_id):
+        def needs_processing(meas_id: str) -> bool:
             save_id = f"{meas_id[:8]}sa{meas_id[8:]}"
-            expected_path = os.path.join(netcdf_dir, save_id[:4], save_id[4:6], f"{save_id}.nc")
+            expected_path = os.path.join(netcdf_dir, save_id[:4], save_id[4:6], save_id, f"{save_id}.nc")
             return not os.path.exists(expected_path)
 
-        valid_meas_ids = [mid for mid in df["meas_id"].unique() if needs_processing(mid)]
-        skipped = len(df["meas_id"].unique()) - len(valid_meas_ids)
+        valid_meas_ids = [mid for mid in df_raw["meas_id"].unique() if needs_processing(mid)]
+        skipped_count = len(df_raw["meas_id"].unique()) - len(valid_meas_ids)
         
-        if skipped > 0:
-            logger.info(f"[SKIPPED] {skipped} measurement periods already exist as NetCDF.")
+        if skipped_count > 0:
+            logger.info(f"[SKIPPED] {skipped_count} measurement periods already exist as NetCDF.")
             
-        df = df[df["meas_id"].isin(valid_meas_ids)]
+        df_raw = df_raw[df_raw["meas_id"].isin(valid_meas_ids)]
 
-    if df.empty:
+    if df_raw.empty:
         logger.info("=== No new data to process. LIBIDS finished successfully! ===")
         exit()
 
-    # 6. Quality Control (Laser Shots consistency)
-    logger.info("Evaluating laser shots quality and consistency...")
-    df_good_list, df_bad_list = [], []
+    # 6. Quality Control (Laser Shots consistency per Measurement)
+    logger.info("Evaluating laser shots quality and consistency per measurement...")
+    good_groups = []
 
-    for meas_id, group in df.groupby("meas_id"):
+    for meas_id, group in df_raw.groupby("meas_id"):
         try:
             expected_shots = mode(group["nshots"])
-            bad_cond = (group["nshots"] == 0) | (abs(group["nshots"] - expected_shots) >= 2e-3 * expected_shots)
+            # Filter criteria: 0 shots or deviation greater than 0.2% of expected
+            bad_condition = (group["nshots"] == 0) | (abs(group["nshots"] - expected_shots) >= 2e-3 * expected_shots)
+            
+            bad_group = group.loc[bad_condition]
+            good_group = group.loc[~bad_condition]
+            
+            total_files = len(group)
+            bad_files = len(bad_group)
+            loss_percent = (bad_files / total_files) * 100 if total_files > 0 else 0
+            
+            if bad_files > 0:
+                log_msg = f"  -> [{meas_id}] QA Report: {bad_files}/{total_files} files rejected ({loss_percent:.1f}% loss)."
+                if loss_percent > 10.0:
+                    logger.warning(log_msg)
+                else:
+                    logger.info(log_msg)
+            else:
+                logger.info(f"  -> [{meas_id}] QA Report: 100% data retention. No files rejected.")
+
+            if not good_group.empty:
+                good_groups.append(good_group)
                 
-            df_bad_list.append(group.loc[bad_cond])
-            df_good_list.append(group.loc[~bad_cond])
         except Exception as e:
-            logger.warning(f"Error checking file condition in group {meas_id}: {e}")
-            df_bad_list.append(group)
+            logger.warning(f"  -> [{meas_id}] Error evaluating quality: {e}")
+            
+    df_good = pd.concat(good_groups).reset_index(drop=True) if good_groups else pd.DataFrame()
 
-    df_good = pd.concat(df_good_list).reset_index(drop=True) if df_good_list else pd.DataFrame()
-    bad_files = sum(len(g) for g in df_bad_list)
-    total_files = len(df)
-
-    if total_files > 0:
-        loss_percent = (bad_files / total_files) * 100
-        logger.info(f"Quality Report: {bad_files} bad files rejected ({loss_percent:.2f}% loss).")
-        if loss_percent > 10:
-            logger.warning("High data loss rate detected (>10%). Check hardware or atmospheric conditions.")
-
-    # 7. NetCDF SCC Conversion (Sequential & Clean)
+    # NetCDF SCC Conversion 
     if not df_good.empty:
-        logger.info("Starting NetCDF SCC conversion (Sequential Processing)...")
+        logger.info("Starting NetCDF SCC conversion...")
         
-        process_args = [(meas_id, group, config['directories']) for meas_id, group in df_good.groupby("meas_id")]
+        # Package arguments for the processing function
+        process_args = [(meas_id, group, config) for meas_id, group in df_good.groupby("meas_id")]
         
         success_count = 0
         for args in process_args:
@@ -184,11 +246,11 @@ if __name__ == "__main__":
                 logger.info(result)
                 success_count += 1
             else:
-                logger.error(result)
+                logger.error(result) # Now prints the full traceback if it fails
                 
         if success_count == len(process_args):
             logger.info("=== LIBIDS processing finished successfully for all groups! ===")
         else:
-            logger.warning(f"=== LIBIDS finished with some errors. Processed {success_count}/{len(process_args)} groups. ===")
+            logger.warning(f"=== LIBIDS finished with errors. Processed {success_count}/{len(process_args)} groups. ===")
     else:
         logger.warning("No data with sufficient quality survived for NetCDF conversion.")
