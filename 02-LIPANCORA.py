@@ -246,7 +246,7 @@ if __name__ == "__main__":
         exit()
 
     modo = "Incremental" if config['processing']['incremental'] else "Rewriting"
-    logger.info(f"Found {len(files)} Level 0 files. Mode: {modo}. Execution: Sequential")
+    logger.info(f"Found {len(files)} Level 0 files. Mode: {modo}.")
 
     process_args = [(str(f), config) for f in files]
     
