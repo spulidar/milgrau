@@ -301,99 +301,52 @@ def plot_kfs_results(alt_km, beta_mean, beta_std, ext_mean, ext_std, config, cha
     color_map = {"532": "forestgreen", "355": "rebeccapurple", "1064": "crimson"}
     plot_color = color_map.get(next((k for k in color_map.keys() if k in channel_name), "black"), "black")
 
-    max_plot_alt = 25.0
+    # Limit plot to the troposphere/lower stratosphere where aerosols reside
+    max_plot_alt = 15.0 
     valid_idx = alt_km <= max_plot_alt
     alt_cut = alt_km[valid_idx]
     scale_beta = 1e6
     
-    # Eixo 1: Beta
+    # AXIS 1: Backscatter (Beta)
     ax1 = plt.subplot(gs[0])
     b_mean = beta_mean[valid_idx] * scale_beta
     b_std = beta_std[valid_idx] * scale_beta
     
     ax1.plot(b_mean, alt_cut, color=plot_color, linewidth=2.5, label=r'Backscatter ($\beta_{aer}$)')
-    ax1.fill_betweenx(alt_cut, b_mean - b_std, b_mean + b_std, color=plot_color, alpha=0.25)
+    ax1.fill_betweenx(alt_cut, b_mean - b_std, b_mean + b_std, color=plot_color, alpha=0.25, edgecolor="none")
     ax1.set_xlabel(r'Aerosol Backscatter [$Mm^{-1} sr^{-1}$]', fontsize=13, fontweight='bold', labelpad=10)
     ax1.set_ylabel('Altitude [km a.g.l.]', fontsize=13, fontweight='bold')
     ax1.grid(True, linestyle='--', alpha=0.6, which='both')
     
-    # ax1.set_xscale('log')
-    # Escala dinâmica: pega no menor e no maior valor real da camada de aerossóis
-    ax1.set_xlim(left=max(1e-4, np.nanmin(b_mean[alt_cut < 5.0]) * 0.1), right=np.nanmax(b_mean) * 2.0)
-    # ax1.xaxis.set_major_formatter(ScalarFormatter()) # Tira o 10^-1 e mete 0.1
+    ax1.set_xscale('log')
+    # Dynamic scaling: prevents math domain errors on log scale for values <= 0
+    b_min_valid = np.nanmin(b_mean[b_mean > 0]) if np.any(b_mean > 0) else 1e-4
+    ax1.set_xlim(left=max(1e-4, b_min_valid * 0.1), right=np.nanmax(b_mean) * 2.0)
     ax1.legend(fontsize=12, loc='upper right')
 
-    # Eixo 2: Alpha
+    # AXIS 2: Extinction (Alpha)
     ax2 = plt.subplot(gs[1], sharey=ax1)
     e_mean = ext_mean[valid_idx] * scale_beta
     e_std = ext_std[valid_idx] * scale_beta
     
     ax2.plot(e_mean, alt_cut, color=plot_color, linewidth=2.5, label=r'Extinction ($\alpha_{aer}$)')
-    ax2.fill_betweenx(alt_cut, e_mean - e_std, e_mean + e_std, color=plot_color, alpha=0.25)
+    ax2.fill_betweenx(alt_cut, e_mean - e_std, e_mean + e_std, color=plot_color, alpha=0.25, edgecolor="none")
     ax2.set_xlabel(r'Aerosol Extinction [$Mm^{-1}$]', fontsize=13, fontweight='bold', labelpad=10)
     plt.setp(ax2.get_yticklabels(), visible=False)
     ax2.grid(True, linestyle='--', alpha=0.6, which='both')
     
-    # ax2.set_xscale('log')
-    ax2.set_xlim(left=max(1e-3, np.nanmin(e_mean[alt_cut < 5.0]) * 0.1), right=np.nanmax(e_mean) * 2.0)
-    # ax2.xaxis.set_major_formatter(ScalarFormatter())
+    ax2.set_xscale('log')
+    e_min_valid = np.nanmin(e_mean[e_mean > 0]) if np.any(e_mean > 0) else 1e-3
+    ax2.set_xlim(left=max(1e-3, e_min_valid * 0.1), right=np.nanmax(e_mean) * 2.0)
     ax2.legend(fontsize=12, loc='upper right')
 
+    # FORMATTING & EXPORT
     add_footer_and_logos(fig, root_dir)
     plt.subplots_adjust(bottom=0.18, top=0.88) 
     
     os.makedirs(save_dir, exist_ok=True)
     plt.savefig(os.path.join(save_dir, f'L2_OpticalProps_{prefix}_{channel_name.replace(" ", "_")}.webp'), dpi=120)
     
-    if config.get('inversion', {}).get('interactive_qa', True): plt.show(block=True)
-    plt.close(fig)
-    date_title, date_footer = extract_datetime_strings(ds)
-    fig = plt.figure(figsize=[15, 7.5])
-    gs = gridspec.GridSpec(1, 2, width_ratios=[1, 1], wspace=0.15)
-    
-    fig.suptitle(f"Aerosol Optical Properties (KFS Monte Carlo) - {channel_name}\n{date_title}", fontsize=15, fontweight='bold', y=0.95)
-    
-    color_map = {"532": "forestgreen", "355": "rebeccapurple", "1064": "crimson"}
-    plot_color = color_map.get(next((k for k in color_map.keys() if k in channel_name), "black"), "black")
-
-    max_plot_alt = 10.0
-    valid_idx = alt_km <= max_plot_alt
-    alt_cut = alt_km[valid_idx]
-    scale_beta = 1e6
-    
-    ax1 = plt.subplot(gs[0])
-    b_mean = beta_mean[valid_idx] * scale_beta
-    b_std = beta_std[valid_idx] * scale_beta
-    
-    ax1.plot(b_mean, alt_cut, color=plot_color, linewidth=2.5, label=r'Backscatter ($\beta_{aer}$)')
-    ax1.fill_betweenx(alt_cut, b_mean - b_std, b_mean + b_std, color=plot_color, alpha=0.3)
-    ax1.set_xlabel(r'Aerosol Backscatter [$Mm^{-1} sr^{-1}$]', fontsize=13, fontweight='bold', labelpad=10)
-    ax1.set_ylabel('Altitude [km a.g.l.]', fontsize=13, fontweight='bold')
-    ax1.grid(True, linestyle='--', alpha=0.6, which='both')
-    
-    ax1.set_xscale('log') 
-    ax1.set_xlim(left=1e-2, right=100) 
-    ax1.legend(fontsize=12, loc='upper right')
-
-    ax2 = plt.subplot(gs[1], sharey=ax1)
-    e_mean = ext_mean[valid_idx] * scale_beta
-    e_std = ext_std[valid_idx] * scale_beta
-    
-    ax2.plot(e_mean, alt_cut, color=plot_color, linewidth=2.5, label=r'Extinction ($\alpha_{aer}$)')
-    ax2.fill_betweenx(alt_cut, e_mean - e_std, e_mean + e_std, color=plot_color, alpha=0.3)
-    ax2.set_xlabel(r'Aerosol Extinction [$Mm^{-1}$]', fontsize=13, fontweight='bold', labelpad=10)
-    plt.setp(ax2.get_yticklabels(), visible=False)
-    ax2.grid(True, linestyle='--', alpha=0.6, which='both')
-    
-    ax2.set_xscale('log')
-    ax2.set_xlim(left=0.1, right=1000) 
-    ax2.legend(fontsize=12, loc='upper right')
-
-    add_footer_and_logos(fig, root_dir)
-    # plt.subplots_adjust(bottom=0.20, top=0.88) # Massive bottom margin
-    
-    os.makedirs(save_dir, exist_ok=True)
-    plt.savefig(os.path.join(save_dir, f'L2_OpticalProps_{prefix}_{channel_name.replace(" ", "_")}.webp'), dpi=120)
-    
-    if config.get('inversion', {}).get('interactive_qa', True): plt.show(block=True)
+    if config.get('inversion', {}).get('interactive_qa', True): 
+        plt.show(block=True)
     plt.close(fig)
