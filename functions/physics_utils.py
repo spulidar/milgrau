@@ -89,179 +89,199 @@ def calculate_molecular_profile(altitude_array_m, wavelength_nm, df_radiosonde=N
     
     return beta_mol, alpha_mol
 
-def find_optimal_reference_altitude(rcs_signal, beta_mol, min_idx, max_idx, window_size=60):
+def find_optimal_reference_altitude(rcs, beta_mol, altitude, min_alt=5.0, max_alt=15.0, window_size=50):
     """
-    Finds the most stable, aerosol-free region to be used as the calibration 
-    reference for the KFS inversion. It searches for the region where the 
-    RCS profile best matches the shape of the molecular profile (lowest variance).
+    Finds the optimal Rayleigh calibration altitude by locating the region 
+    where the measured RCS is most parallel to the simulated molecular profile.
     
-    Args:
-        rcs_signal (np.array): Range Corrected Signal array.
-        beta_mol (np.array): Calculated molecular backscatter array.
-        min_idx (int): Minimum altitude index allowed for the search.
-        max_idx (int): Maximum altitude index allowed for the search.
-        window_size (int): Number of bins to calculate the rolling variance.
-                           (e.g., 60 bins * 7.5m = 450 meters search block).
-        
-    Returns:
-        int: The global index of the optimal reference altitude.
+    Evaluates both the variance and the linear slope of the RCS/Beta_mol ratio 
+    to ensure true parallelism, avoiding falsely low-variance regions that are tilted.
     """
-    # Ensure we have a valid search space to avoid index crashes
-    if (max_idx - min_idx) <= window_size:
-        return max_idx 
+    # Restrict search to the defined upper-troposphere/lower-stratosphere region
+    search_mask = (altitude >= min_alt) & (altitude <= max_alt)
+    valid_indices = np.where(search_mask)[0]
+    
+    if len(valid_indices) < window_size:
+        # Fallback to the highest valid altitude if the search window is too small
+        return len(altitude) - 1 
+
+    best_idx = -1
+    min_cost = np.inf
+    
+    # Compute the ratio profile (must be constant in aerosol-free regions)
+    ratio = rcs / beta_mol
+    
+    search_end = len(valid_indices) - window_size
+    
+    for i in range(search_end):
+        start_idx = valid_indices[i]
+        end_idx = valid_indices[i + window_size]
         
-    # Extract the search region allowed by the YAML configuration
-    search_rcs = rcs_signal[min_idx:max_idx]
-    search_mol = beta_mol[min_idx:max_idx]
-    
-    # Calculate the ratio (Signal / Molecular)
-    # In an aerosol-free zone, this ratio is constant (pure Rayleigh scattering)
-    # Adding a small epsilon (1e-12) prevents division by zero warnings
-    ratio = search_rcs / (search_mol + 1e-12)
-    
-    best_idx = max_idx
-    min_variance = float('inf')
-    
-    # Slide the window to find the flattest ratio
-    for i in range(len(ratio) - window_size):
-        window_ratio = ratio[i : i + window_size]
+        window_ratio = ratio[start_idx:end_idx]
+        window_alt = altitude[start_idx:end_idx]
         
-        # Skip windows with NaNs or negative/zero physical values
-        if np.any(np.isnan(window_ratio)) or np.any(window_ratio <= 0):
+        # Skip invalid data windows (NaNs, infs, or zero/negative signals)
+        if np.any(np.isnan(window_ratio)) or np.any(np.isinf(window_ratio)) or np.any(window_ratio <= 0):
             continue
             
-        variance = np.var(window_ratio)
+        # 1. Variance of the ratio (Measures signal noise/stability)
+        mean_ratio = np.mean(window_ratio)
+        var_ratio = np.var(window_ratio)
         
-        if variance < min_variance:
-            min_variance = variance
-            # The optimal reference point is the center of the flattest window
-            # We add min_idx to map it back to the global array coordinates
-            best_idx = min_idx + i + (window_size // 2)
+        # Normalize variance to make it dimensionless and comparable
+        rel_var = var_ratio / (mean_ratio**2) if mean_ratio != 0 else np.inf
+        
+        # 2. Slope of the ratio (Measures parallelism to the molecular curve)
+        # A perfectly parallel signal has a slope of 0.
+        slope, _ = np.polyfit(window_alt, window_ratio, 1)
+        
+        # Normalize the slope relative to the mean ratio
+        rel_slope = abs(slope) / mean_ratio if mean_ratio != 0 else np.inf
+        
+        # Combined Cost Function: 
+        # Heavily penalize high slopes (non-parallelism) and moderately penalize variance (noise)
+        cost = rel_var + (rel_slope * 5.0) 
+        
+        if cost < min_cost:
+            min_cost = cost
+            # The calibration point is set to the center of the best window
+            best_idx = start_idx + (window_size // 2)
             
+    if best_idx == -1:
+        # Fallback if no valid window is found (e.g., extremely noisy data or thick clouds)
+        # Defaults to the top of the search region
+        best_idx = valid_indices[-1]
+        
     return best_idx
 
 # ==========================================
 # PHASE 2: SIGNAL GLUING (ANALOG + PHOTON)
 # ==========================================
 
-def slide_glue_signals(lower_sig, upper_sig, window_size, corr_thresh, search_min_idx=200, search_max_idx=2000):
+def slide_glue_signals(analog_sig, pc_sig, altitude, window_size=150, min_corr=0.90):
     """
-    Robust sliding window to find the best gluing region between Analog and PC.
-    Strictly limits the search space to a physical atmospheric window (e.g., 1.5km to 15km).
+    Performs a sliding window correlation to find the optimal gluing region 
+    between Analog and Photon Counting (PC) signals.
     """
     best_idx = -1
-    best_score = -1.0
-    best_multiplier = 1.0
+    best_corr = -1.0
+    best_slope = 1.0
+    best_intercept = 0.0
     
-    smooth_low = pd.Series(lower_sig).rolling(25, center=True, min_periods=1).mean().values
-    smooth_up = pd.Series(upper_sig).rolling(25, center=True, min_periods=1).mean().values
+    # Ensure standard 1D numpy arrays
+    an_vals = np.asarray(analog_sig)
+    pc_vals = np.asarray(pc_sig)
     
-    relaxed_corr = corr_thresh * 0.85 
-    search_max = min(search_max_idx, len(lower_sig) - window_size)
+    search_end = len(an_vals) - window_size
     
-    for i in range(search_min_idx, search_max):
-        low_win = smooth_low[i : i+window_size]
-        up_win = smooth_up[i : i+window_size]
+    for i in range(search_end):
+        an_window = an_vals[i : i + window_size]
+        pc_window = pc_vals[i : i + window_size]
         
-        # Valid data mask to protect correlation math from NaNs
-        valid_mask = ~np.isnan(low_win) & ~np.isnan(up_win)
-        if np.sum(valid_mask) < (window_size * 0.8): continue # Skip if >20% is NaN
-            
-        if np.nanmean(up_win[valid_mask]) <= 1e-6 or np.nanmean(low_win[valid_mask]) <= 1e-6: continue
-            
-        corr = np.corrcoef(low_win[valid_mask], up_win[valid_mask])[0, 1]
+        # Skip regions with flatlines, saturation limits, or NaNs
+        if np.any(np.isnan(an_window)) or np.any(np.isnan(pc_window)): 
+            continue
+        if np.std(an_window) == 0 or np.std(pc_window) == 0: 
+            continue
         
-        if not np.isnan(corr) and corr > relaxed_corr:
-            # Calculate scalar on RAW data
-            raw_low = lower_sig[i : i+window_size][valid_mask]
-            raw_up = upper_sig[i : i+window_size][valid_mask]
+        corr = np.corrcoef(an_window, pc_window)[0, 1]
+        
+        if corr > best_corr:
+            best_corr = corr
+            best_idx = i
             
-            multiplier = np.sum(raw_low * raw_up) / max(np.sum(raw_low**2), 1e-12)
+            # Linear regression mapping: PC = slope * Analog + intercept
+            slope, intercept = np.polyfit(an_window, pc_window, 1)
+            best_slope = slope
+            best_intercept = intercept
             
-            if corr > best_score:
-                best_score = corr
-                best_idx = i
-                best_multiplier = multiplier
+    if best_corr < min_corr:
+        # Fallback mechanism if the atmospheric condition prevents valid correlation
+        return pc_vals, -1, best_slope, best_intercept
+        
+    # Create the unified glued signal
+    # Below the ideal window, use scaled Analog. Above and within, use PC.
+    glued_sig = np.copy(pc_vals)
+    split_point = best_idx + (window_size // 2)
+    glued_sig[:split_point] = (an_vals[:split_point] * best_slope) + best_intercept
+    
+    return glued_sig, split_point, best_slope, best_intercept
+
+# ==========================================
+# PHASE 2: OPTICAL INVERSION (KFS MONTE CARLO)
+# ==========================================
+
+def kfs_inversion_monte_carlo(rcs, altitude, beta_mol, lr_base, lr_std=10.0, ref_idx=-1, n_iterations=100):
+    """
+    Discrete Fernald (1984) backward integration to retrieve aerosol optical properties.
+    Incorporates Monte Carlo perturbations for Lidar Ratio and calibration reference
+    to strictly propagate measurement uncertainties.
+    
+    Includes mathematical singularity protection to prevent integrators from blowing up.
+    """
+    n_bins = len(rcs)
+    dz = np.mean(np.diff(altitude)) * 1000.0  # Spatial resolution strictly in meters
+    lr_mol = 8.0 * np.pi / 3.0                # Theoretical Rayleigh Lidar Ratio
+    
+    beta_aer_sims = np.full((n_iterations, n_bins), np.nan)
+    alpha_aer_sims = np.full((n_iterations, n_bins), np.nan)
+    
+    # Fundamental boundary assumption: Aerosol-free atmosphere at calibration altitude
+    beta_total_ref = beta_mol[ref_idx] 
+    
+    for i in range(n_iterations):
+        # 1. Perturb the assumed aerosol Lidar Ratio
+        lr_sim = np.random.normal(lr_base, lr_std)
+        if lr_sim < 10.0: 
+            lr_sim = 10.0  # Physical lower boundary constraint for tropospheric aerosols
+            
+        # 2. Perturb the molecular calibration reference by 10%
+        beta_ref_sim = np.random.normal(beta_total_ref, beta_total_ref * 0.10)
+        
+        beta_aer = np.full(n_bins, np.nan)
+        beta_aer[ref_idx] = max(0.0, beta_ref_sim - beta_mol[ref_idx])
+        
+        # 3. Iterative Backward Integration 
+        for j in range(ref_idx - 1, -1, -1):
+            
+            # Fernald discrete attenuation term (A_j)
+            a_step = (lr_sim - lr_mol) * (beta_mol[j] + beta_mol[j+1]) * dz
+            
+            # Fernald discrete power term (P_j)
+            p_step = rcs[j] * np.exp(a_step)
+            
+            beta_total_prev = beta_aer[j+1] + beta_mol[j+1]
+            
+            # Math Domain Protection 1: Signal collapse checks
+            if beta_total_prev <= 0 or rcs[j+1] <= 0:
+                break 
                 
-    if best_idx == -1:
-        return lower_sig, -1, 1.0 
+            # Fernald Denominator formulation
+            denom = (rcs[j+1] / beta_total_prev) + (lr_sim * (p_step + rcs[j+1]) * dz)
+            
+            # Math Domain Protection 2: Singularity avoidance
+            if denom <= 1e-12:
+                break 
+                
+            beta_aer_step = (p_step / denom) - beta_mol[j]
+            
+            # Physical constraint: Backscatter cannot be severely negative.
+            # Small negative variations are permitted exclusively due to statistical noise.
+            if beta_aer_step < -beta_mol[j]: 
+                beta_aer_step = -beta_mol[j] * 0.99
+                
+            beta_aer[j] = beta_aer_step
+            
+        beta_aer_sims[i, :] = beta_aer
+        alpha_aer_sims[i, :] = beta_aer * lr_sim
         
-    glued = np.copy(upper_sig)
-    glued[:best_idx] = lower_sig[:best_idx] * best_multiplier
+    # Collapse the Monte Carlo matrix into robust statistical vectors
+    beta_mean = np.nanmean(beta_aer_sims, axis=0)
+    beta_std = np.nanstd(beta_aer_sims, axis=0)
+    alpha_mean = np.nanmean(alpha_aer_sims, axis=0)
+    alpha_std = np.nanstd(alpha_aer_sims, axis=0)
     
-    fade = np.linspace(1, 0, window_size)
-    glued[best_idx:best_idx+window_size] = (
-        (lower_sig[best_idx:best_idx+window_size] * best_multiplier * fade) + 
-        (upper_sig[best_idx:best_idx+window_size] * (1 - fade))
-    )
-    
-    return glued, best_idx, best_multiplier
-
-# ==========================================
-# PHASE 2: KFS MONTE CARLO INVERSION
-# ==========================================
-
-def kfs_inversion_monte_carlo(rcs_mean, rcs_error, beta_mol, lr_aerosol, lr_mol, ref_idx, bin_m, iterations=100):
-    """
-    Fully vectorized Klett-Fernald-Sasano (KFS) backward inversion with Monte Carlo
-    error propagation. Resolves N differential equations simultaneously.
-    """
-    bins = len(rcs_mean)
-    
-    # 1. Generate Perturbed Signals Matrix (N_iterations, Bins)
-    noise = np.random.normal(loc=0.0, scale=1.0, size=(iterations, bins))
-    X = rcs_mean + (noise * rcs_error)
-    X = np.clip(X, a_min=1e-12, a_max=None) # Prevent negative signal crash
-    
-    beta_mol_2d = np.tile(beta_mol, (iterations, 1))
-    
-    # 2. Reference Values at calibration altitude
-    # We assume aerosol free at ref_idx, so beta_aer(ref) = 0
-    beta_aer_ref = np.zeros(iterations)
-    X_ref = np.mean(X[:, ref_idx-5 : ref_idx+5], axis=1) # Smooth reference to avoid noise spikes
-    beta_mol_ref = beta_mol[ref_idx]
-    
-    # 3. Integral components (Trapezoidal rule vectorized backward)
-    # T = exp(-2 * integral_R_to_Ref( (Lr_aer - Lr_mol) * beta_mol ))
-    int_arg_tau = (lr_aerosol - lr_mol) * beta_mol_2d
-    tau_integral = np.zeros_like(X)
-    
-    # Backward integration from reference
-    if ref_idx > 0:
-        reversed_arg = int_arg_tau[:, :ref_idx+1][:, ::-1]
-        integ_back = cumulative_trapezoid(reversed_arg, dx=bin_m, axis=1, initial=0)
-        tau_integral[:, :ref_idx+1] = integ_back[:, ::-1]
-        
-    tau = np.exp(-2.0 * tau_integral)
-    
-    # Denominator integral: 2 * Lr_aer * integral_R_to_Ref( X * tau )
-    int_arg_den = lr_aerosol * X * tau
-    den_integral = np.zeros_like(X)
-    
-    if ref_idx > 0:
-        reversed_den = int_arg_den[:, :ref_idx+1][:, ::-1]
-        integ_den_back = cumulative_trapezoid(reversed_den, dx=bin_m, axis=1, initial=0)
-        den_integral[:, :ref_idx+1] = integ_den_back[:, ::-1]
-        
-    # 4. KFS Master Equation
-    numerator = X * tau
-    denominator = (X_ref / (beta_aer_ref + beta_mol_ref))[:, np.newaxis] + (2.0 * den_integral)
-    
-    beta_total = numerator / denominator
-    beta_aer_matrix = beta_total - beta_mol_2d
-    
-    # 5. Extract statistics
-    beta_aer_mean = np.nanmean(beta_aer_matrix, axis=0)
-    beta_aer_std = np.nanstd(beta_aer_matrix, axis=0)
-    
-    # Cleanup physical impossibilities (negative backscatter)
-    beta_aer_mean = np.where(beta_aer_mean < 0, 1e-10, beta_aer_mean)
-    
-    extinction_mean = beta_aer_mean * lr_aerosol
-    extinction_std = beta_aer_std * lr_aerosol
-    
-    return beta_aer_mean, beta_aer_std, extinction_mean, extinction_std
-    
+    return beta_mean, beta_std, alpha_mean, alpha_std
 
 def calculate_pbl_height_gradient(rcs_signal, alt_m, min_search_m=500.0, max_search_m=4000.0, smooth_bins=15):
     """
