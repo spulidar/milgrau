@@ -7,7 +7,7 @@ processing:
   apply_cloud_mask: true
   cloud_mask_multiplier: 10.0
   interactive_qa: false
-  save_intermediate_corrected: false
+  save_intermediate_corrected: true
 
 directories:
   raw_data: "01-data"
