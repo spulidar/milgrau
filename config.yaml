@@ -12,7 +12,7 @@ processing:
 directories:
   raw_data: "01-data"
   processed_data: "02-processed_data"
-  site_output: "ql-measurements"
+  site_output: "measurements"
   log_dir: "logs"
 
 physics:
