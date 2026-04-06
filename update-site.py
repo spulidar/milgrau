@@ -326,6 +326,30 @@ def update_calendar(base_site_folder, logger):
         else:
             logger.error("  -> [ERROR] Missing '// MARCADOR_AUTOMATICO' tag in your HTML.")
 
+
+# ==========================================
+# GITHUB PAGES AUTOMATION
+# ==========================================
+def push_site_updates(site_dir, logger):
+    """Commits and pushes updates to the dedicated site repository."""
+    import subprocess
+    
+    logger.info("=== Pushing updates to measurements repository ===")
+    
+    original_work_dir = os.getcwd()
+    os.chdir(site_dir)
+    
+    try:
+        subprocess.run(["git", "add", "."], check=True)
+        # Using check=False because it might not have new files to commit
+        subprocess.run(["git", "commit", "-m", "Auto-update HTML dashboards and calendar"], check=False)
+        subprocess.run(["git", "push", "origin", "main"], check=True)
+        logger.info("  -> [OK] Successfully pushed to measurements repository!")
+    except subprocess.CalledProcessError as err:
+        logger.error(f"  -> [ERROR] Git command failed: {err}")
+    finally:
+        os.chdir(original_work_dir)
+
 # ==========================================
 # MAIN ROUTINE (THE "VACUUM")
 # ==========================================
@@ -340,7 +364,7 @@ if __name__ == "__main__":
     # Setup directories
     root_dir = os.getcwd() 
     base_data_folder = os.path.join(root_dir, config['directories']['processed_data'])
-    base_site_folder = os.path.join(root_dir, config.get('directories', {}).get('site_output', 'ql-measurements'))
+    base_site_folder = os.path.join(root_dir, config.get('directories', {}).get('site_output', 'measurements'))
     ensure_directories(base_site_folder)
     
     incremental = config['processing']['incremental']
@@ -458,3 +482,4 @@ if __name__ == "__main__":
     
     # 4. Sync Calendar
     update_calendar(base_site_folder, logger)
+    push_site_updates(base_site_folder, logger)
