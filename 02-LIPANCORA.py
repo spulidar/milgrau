@@ -199,22 +199,22 @@ def process_single_file(args):
             gc.collect()
 
             attrs_common = dict(ds.attrs)
-            attrs_common["processing_level"] = "Level 1: PC->MHz, DeadTime, Dark Current, Shift, Background, Error Propagation, PBL, Tropopause"
-            attrs_common["history"] = f"{ds.attrs.get('history', '')}\nProcessed with MILGRAU LIPANCORA on {datetime.now(timezone.utc).isoformat()} UTC"
+            attrs_common["Processing_level"] = "Level 1: PC->MHz, DeadTime, Dark Current, Shift, Background, Error Propagation, PBL, Tropopause"
+            attrs_common["History"] = f"{ds.attrs.get('history', '')}\nProcessed with MILGRAU LIPANCORA on {datetime.now(timezone.utc).isoformat()} UTC"
 
             mean_pbl_km = np.nanmean(pbl_list) if pbl_list else np.nan
-            attrs_common["pbl_height_km"] = float(mean_pbl_km) if not np.isnan(mean_pbl_km) else -999.0
+            attrs_common["PBL_height_km"] = float(mean_pbl_km) if not np.isnan(mean_pbl_km) else -999.0
             if not np.isnan(mean_pbl_km):
                 logger.info(f"  -> [{stem}] Final Analog Ensemble PBL Height: {mean_pbl_km:.2f} km")
                 
             try:
                 cpt_km, lrt_km = calculate_tropopause_heights(df_radio)
-                attrs_common["tropopause_cpt_km"] = float(cpt_km) if not np.isnan(cpt_km) else -999.0
-                attrs_common["tropopause_lrt_km"] = float(lrt_km) if not np.isnan(lrt_km) else -999.0
+                attrs_common["Tropopause_CPT_km"] = float(cpt_km) if not np.isnan(cpt_km) else -999.0
+                attrs_common["Tropopause_LRT_km"] = float(lrt_km) if not np.isnan(lrt_km) else -999.0
             except Exception as e:
                 logger.warning(f"  -> [{stem}] Tropopause metadata calculation failed: {e}")
-                attrs_common["tropopause_cpt_km"] = -999.0
-                attrs_common["tropopause_lrt_km"] = -999.0
+                attrs_common["Tropopause_CPT_km"] = -999.0
+                attrs_common["Tropopause_LRT_km"] = -999.0
 
             coords = {"time": ds["time"], "channel": ("channel", np.array(channel_names_scc)), "range": ("range", np.float32(z))}
 

@@ -1,14 +1,16 @@
 """
 MILGRAU Suite - Level 0: LIdar BInary Data Standardized (LIBIDS)
 Reads raw Licel binary data, sanitizes spurious files, classifies measurement
-periods (UTC to Local Time), and converts valid data into SCC NetCDF format.
+periods (UTC to Local Time), and converts valid data into SCC compliant NetCDFs.
 
 @author: Fábio J. S. Lopes, Alexandre C. Yoshida, Alexandre Cacheffo, Luisa Mello
 """
 
 import os
 import traceback
+import logging
 import pandas as pd
+import netCDF4 as nc
 from statistics import mode
 from typing import Tuple, Dict, Any
 
@@ -29,6 +31,8 @@ from atmospheric_lidar_parameters import (
     msp_netcdf_parameters_system484,
     msp_netcdf_parameters_system565,
 )
+
+logging.getLogger('atmospheric_lidar').setLevel(logging.ERROR)
 
 # ==========================================
 # GLOBAL CLASS DEFINITIONS 
@@ -87,8 +91,8 @@ def process_single_netcdf(args: Tuple[str, pd.DataFrame, Dict[str, Any]]) -> str
         
         if weather_data:
             # Required variables for SCC
-            my_measurement.info["Temperature"] = str(round(weather_data['temperature_c'], 1))
-            my_measurement.info["Pressure"] = str(round(weather_data['pressure_hpa'], 1))
+            my_measurement.info["Temperature_C"] = str(round(weather_data['temperature_c'], 1))
+            my_measurement.info["Pressure_hPa"] = str(round(weather_data['pressure_hpa'], 1))
             
             # Custom MILGRAU variables (Will be added as Global Attributes in NetCDF)
             my_measurement.info["Relative_Humidity_Percent"] = str(round(weather_data['relative_humidity_percent'], 1))
@@ -96,15 +100,15 @@ def process_single_netcdf(args: Tuple[str, pd.DataFrame, Dict[str, Any]]) -> str
             my_measurement.info["Wind_Speed_kmh"] = str(round(weather_data['wind_speed_kmh'], 1))
             
             logger.info(
-                f"  -> [{save_id}] Weather applied: "
+                f"  -> [{save_id}] Weather applied from Open-Meteo API: "
                 f"{weather_data['temperature_c']}°C, {weather_data['pressure_hpa']} hPa, "
                 f"RH {weather_data['relative_humidity_percent']}%"
             )
         else:
             default_temp = str(config['physics'].get('default_surface_temp_c', 25.0))
             default_press = str(config['physics'].get('default_surface_pressure_hpa', 940.0))
-            my_measurement.info["Temperature"] = default_temp
-            my_measurement.info["Pressure"] = default_press
+            my_measurement.info["Temperature_C"] = default_temp
+            my_measurement.info["Pressure_hPa"] = default_press
             logger.info(f"  -> [{save_id}] Weather API failed. Applied fallback: {default_temp}°C, {default_press} hPa")
         
         # Determine expected baseline from the mode of the dataset to filter outliers
@@ -113,13 +117,30 @@ def process_single_netcdf(args: Tuple[str, pd.DataFrame, Dict[str, Any]]) -> str
         shots = mode(group_df["nshots"])
         
         my_measurement.info["Accumulated_Shots"] = str(shots)
-        my_measurement.info["Laser_Frequency"] = str(freq)
-        my_measurement.info["Measurement_Duration"] = str(duration)
+        my_measurement.info["Laser_Frequency_Hz"] = str(freq)
+        my_measurement.info["Measurements_Duration_s"] = str(duration)
 
         # Save to disk
         ensure_directories(out_dir)
         my_measurement.save_as_SCC_netcdf(netcdf_path)
         
+        # Add custom global attributes dynamically
+        try:
+            with nc.Dataset(netcdf_path, 'r+') as ds:
+                ds.Temperature = my_measurement.info.get("Temperature_C", "")
+                ds.Pressure = my_measurement.info.get("Pressure_hPa", "")
+                ds.Accumulated_Shots = my_measurement.info.get("Accumulated_Shots", "")
+                ds.Laser_Frequency = my_measurement.info.get("Laser_Frequency_Hz", "")
+                ds.Measurement_Duration = my_measurement.info.get("Measurements_Duration_s", "")
+                
+                if weather_data:
+                    ds.Relative_Humidity_Percent = my_measurement.info.get("Relative_Humidity_Percent", "")
+                    ds.Cloud_Cover_Percent = my_measurement.info.get("Cloud_Cover_Percent", "")
+                    ds.Wind_Speed_kmh = my_measurement.info.get("Wind_Speed_kmh", "")
+                    
+        except Exception as e:
+            logger.warning(f"  -> [{save_id}] Could not append custom global attributes: {e}")
+                
         return f"[OK] NetCDF successfully saved: {year_str}/{month_str}/{save_id}.nc"
         
     except Exception as e:
