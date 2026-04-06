@@ -53,38 +53,38 @@ def get_standard_atmosphere(altitude_array_m):
     
     return press, temp
 
-def calculate_molecular_profile(altitude_array_m, wavelength_nm, df_radiosonde=None):
+def calculate_molecular_profile(temp_profile, press_profile, wavelength_nm):
     """
-    Calculates molecular backscatter (beta) and extinction (alpha) using 
-    Bucholtz (1995) theory. Integrates radiosonde data if available.
-    """
-    # 1. Atmospheric State (Pressure in hPa, Temp in K)
-    if df_radiosonde is not None and not df_radiosonde.empty:
-        press = np.interp(altitude_array_m, df_radiosonde['height'].values, df_radiosonde['pressure'].values)
-        temp = np.interp(altitude_array_m, df_radiosonde['height'].values, df_radiosonde['temperature'].values + 273.15)
-    else:
-        press, temp = get_standard_atmosphere(altitude_array_m)
-        
-    # 2. Bucholtz Constants for specific Lidar wavelengths
-    # Cross sections in cm^2, converted to m^2
-    wl = int(wavelength_nm)
-    if wl == 355:
-        sigma_ray = 2.923e-27 * 1e-4  
-    elif wl == 532:
-        sigma_ray = 5.295e-28 * 1e-4
-    elif wl == 1064:
-        sigma_ray = 3.204e-29 * 1e-4
-    else:
-        # Generic approximation if wavelength is unusual
-        sigma_ray = (3.98e-28 * (550 / wl)**4) * 1e-4
-        
-    # 3. Number Density (Ideal Gas Law)
-    k_B = 1.380649e-23 # Boltzmann constant J/K
-    number_density = (press * 100) / (k_B * temp) # molecules / m^3
+    Calculates the molecular backscatter and extinction profiles based on 
+    thermodynamic profiles using the Ideal Gas Law and Rayleigh scattering.
     
-    # 4. Optical Properties
-    alpha_mol = number_density * sigma_ray
-    lr_mol = 8.0 * np.pi / 3.0
+    Args:
+        temp_profile (np.ndarray): Temperature profile in Kelvin.
+        press_profile (np.ndarray): Pressure profile in hPa.
+        wavelength_nm (int/float): Lidar wavelength in nanometers.
+        
+    Returns:
+        tuple: beta_mol (m^-1 sr^-1), alpha_mol (m^-1)
+    """
+    k_B = 1.380649e-23  # Boltzmann constant (J/K)
+    
+    # Convert pressure from hPa to Pascal (N/m^2)
+    press_pa = press_profile * 100.0
+    
+    # Atmospheric number density (molecules / m^3)
+    n_density = press_pa / (k_B * temp_profile)
+    
+    # Rayleigh scattering cross-section approximation (m^2)
+    # Using the standard empirical formula for lidar
+    sigma = 5.45e-28 * ((550.0 / wavelength_nm) ** 4)
+    
+    # Molecular Extinction (alpha) [m^-1]
+    alpha_mol = n_density * sigma
+    
+    # Molecular Lidar Ratio for pure Rayleigh scattering (8 * pi / 3 sr)
+    lr_mol = (8.0 * np.pi) / 3.0
+    
+    # Molecular Backscatter (beta) [m^-1 sr^-1]
     beta_mol = alpha_mol / lr_mol
     
     return beta_mol, alpha_mol

@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import warnings
 import traceback 
+import logging
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
@@ -102,31 +103,14 @@ def process_single_file(args):
 
                 is_elastic = any(wl in ch_name for wl in ["355", "532", "1064"])
                 
-                # --- ERROR PROPAGATION ---
-                err_bg = sig.where(bg_mask).std(dim="range") # Standard deviation of the background region
+                # -----------------------------------------------------------
+                # STEP 1: DARK CURRENT SUBTRACTION (Instrument Noise)
+                # -----------------------------------------------------------
+                # Dark current must be removed BEFORE applying non-linear 
+                # deadtime corrections, otherwise saturation is overestimated.
+                sig_dc = sig.copy()
+                err_dc = xr.zeros_like(sig)
                 
-                if not is_photon:
-                    # ANALOG CHANNELS: Dominated by electronic noise. 
-                    # The error of the entire profile is strictly defined by the background noise standard deviation.
-                    if np.nanmax(sig) > 1000: sig = sig / (shots * bin_time_us)
-                    err_dt = xr.ones_like(sig) * err_bg
-                    sig_dt = sig
-                else:
-                    # PHOTON COUNTING CHANNELS: Governed by Poisson statistics based on discrete event counts.
-                    raw_counts = xr.where(sig * shots * bin_time_us > 0, sig * shots * bin_time_us, 0)
-                    err_poisson = np.sqrt(raw_counts) / (shots * bin_time_us)
-                    
-                    # Total PC error is the sum in quadrature of Poisson noise and background fluctuation
-                    err_dt = np.sqrt(err_poisson**2 + err_bg**2)
-                    
-                    if deadtime > 0:
-                        denom = xr.where(1.0 - (sig * deadtime) <= 1e-6, np.nan, 1.0 - (sig * deadtime))
-                        sig_dt = sig / denom
-                        err_dt = err_dt / (denom**2) 
-                    else:
-                        sig_dt = sig
-
-                # Process dark current subtraction
                 if "Background_Profile" in ds:
                     dc_data = ds["Background_Profile"].isel(channel=ch_i)
                     if "time_bck" in dc_data.dims:
@@ -136,20 +120,61 @@ def process_single_file(args):
                     else:
                         dc_prof, dc_err = dc_data, xr.zeros_like(dc_data)
                     
-                    sig_dt = sig_dt - dc_prof
-                    err_dt = np.sqrt(err_dt**2 + dc_err**2) 
+                    sig_dc = sig_dc - dc_prof
+                    err_dc = dc_err
 
-                # bin shift
-                sig_shift = sig_dt.shift(range=shift, fill_value=np.nan)
-                err_shift = err_dt.shift(range=shift, fill_value=np.nan)
+                # -----------------------------------------------------------
+                # PHYSICAL ERROR PROPAGATION & UNIT NORMALIZATION
+                # -----------------------------------------------------------
+                if not is_photon:
+                    sig_dt = sig.copy()
+                    if np.nanmax(sig_dt) > 1000: 
+                        sig_dt = sig_dt / (shots * bin_time_us)
+                        
+                    err_bg = sig_dt.where(bg_mask).std(dim="range")
+                    err_dt = xr.ones_like(sig_dt) * err_bg
+                    
+                else:
+                    sig_mhz = sig.copy()
+                    if float(np.nanmax(sig_mhz)) > 150.0: 
+                        sig_mhz = sig_mhz / (shots * bin_time_us)
 
-                # background subtraction
+                    N_photons = xr.where(sig_mhz * shots * bin_time_us > 0, sig_mhz * shots * bin_time_us, 0)
+                    err_raw = np.sqrt(N_photons) / (shots * bin_time_us)
+
+                    if deadtime > 0:
+                        denom = 1.0 - (sig_mhz * deadtime)
+                        
+                        # Saturation cap (5%) safely prevents negative denominators
+                        safe_denom = xr.where(denom < 0.05, 0.05, denom)
+                        sig_dt = sig_mhz / safe_denom
+                        err_dt = err_raw / (safe_denom**2) 
+                    else:
+                        sig_dt, err_dt = sig_mhz, err_raw
+
+                # -----------------------------------------------------------
+                # STEP 3: HARDWARE SHIFT & SKY BACKGROUND SUBTRACTION
+                # -----------------------------------------------------------
+                max_sig_val = float(sig_dt.max().values) if float(sig_dt.max().values) > 0 else 0.0
+
+                if shift > 0:
+                    sig_shift = sig_dt.shift(range=shift, fill_value=max_sig_val)
+                elif shift < 0:
+                    sig_shift = sig_dt.shift(range=shift, fill_value=0.0)
+                else:
+                    sig_shift = sig_dt.copy()
+
+                err_shift = err_dt.shift(range=shift, fill_value=0.0)
+
+                # Sky Background evaluation on the protected array
                 bg_mean = sig_shift.where(bg_mask).mean(dim="range") - bg_offset
                 err_bg_mean = sig_shift.where(bg_mask).std(dim="range") / np.sqrt(bg_mask.sum().values)
 
+                # Final Corrected Signal
                 sig_c = sig_shift - bg_mean
                 err_c = np.sqrt(err_shift**2 + err_bg_mean**2)
 
+                # Final Range Corrected Signal (RCS)
                 rcs = sig_c * (z_da**2)
                 err_rcs = err_c * (z_da**2)
                 
