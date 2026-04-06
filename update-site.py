@@ -331,9 +331,19 @@ def update_calendar(base_site_folder, logger):
 # GITHUB PAGES AUTOMATION
 # ==========================================
 def push_site_updates(site_dir, logger):
-    """Commits and pushes updates to the dedicated site repository."""
+    """Commits and pushes updates to the dedicated site repository using a secure token."""
     import subprocess
+    import sys
     
+    # Safely load GitHub credentials
+    try:
+        import credentials
+        gh_user = getattr(credentials, 'GITHUB_USER', 'spulidar')
+        gh_token = credentials.GITHUB_TOKEN
+    except (ImportError, AttributeError):
+        logger.error("  -> [ERROR] GitHub token not found in credentials.py! Push aborted.")
+        return
+
     logger.info("=== Pushing updates to measurements repository ===")
     
     original_work_dir = os.getcwd()
@@ -343,10 +353,27 @@ def push_site_updates(site_dir, logger):
         subprocess.run(["git", "add", "."], check=True)
         # Using check=False because it might not have new files to commit
         subprocess.run(["git", "commit", "-m", "Auto-update HTML dashboards and calendar"], check=False)
-        subprocess.run(["git", "push", "origin", "main"], check=True)
-        logger.info("  -> [OK] Successfully pushed to measurements repository!")
+        
+        # Build the authenticated URL
+        # Format: https://<token>@github.com/<user>/<repo>.git
+        auth_repo_url = f"https://{gh_token}@github.com/{gh_user}/measurements.git"
+        
+        # Execute push with the secure URL
+        # We catch the error manually to prevent the token from being printed in the terminal logs
+        result = subprocess.run(
+            ["git", "push", auth_repo_url, "main"], 
+            capture_output=True, 
+            text=True
+        )
+        
+        if result.returncode == 0:
+            logger.info("  -> [OK] Successfully pushed to measurements repository!")
+        else:
+            logger.error("  -> [ERROR] Git push failed. (Check your internet or token permissions)")
+            logger.debug(result.stderr.replace(gh_token, "***HIDDEN_TOKEN***")) # Hides token in debug logs
+            
     except subprocess.CalledProcessError as err:
-        logger.error(f"  -> [ERROR] Git command failed: {err}")
+        logger.error("  -> [CRITICAL] A Git command failed before pushing.")
     finally:
         os.chdir(original_work_dir)
 
