@@ -180,7 +180,7 @@ def filter_laser_shots(df_raw: pd.DataFrame, logger) -> pd.DataFrame:
     return pd.concat(good_groups).reset_index(drop=True) if good_groups else pd.DataFrame()
 
 
-def append_milgrau_attributes_to_nc(netcdf_path: str, weather_data: dict, my_measurement, logger):
+def append_attributes_to_nc(netcdf_path: str, weather_data: dict, my_measurement, logger):
     """
     Dynamically appends custom attributes and weather telemetry 
     into the SCC-compliant NetCDF file after it has been created.
