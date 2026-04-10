@@ -92,7 +92,8 @@ If using the `04-LIMP.py` module to publish to the SPU Lidar dashboard, ensure y
 
 ## Authors
 
-* **Fábio J. S. Lopes**
+* **Luisa Mello**
 * **Alexandre C. Yoshida**
 * **Alexandre Cacheffo**
-* **Luisa Mello**
+* **Fábio J. S. Lopes**
+
