@@ -3,6 +3,8 @@ MILGRAU Suite - Level 1: LIdar Pre-ANalysis CORrection Algorithm (LIPANCORA)
 Reads Level 0 SCC NetCDF files, applies physical corrections (Deadtime, Dark Current, 
 Bin-shift, Sky Background), and dynamically propagates statistical uncertainties.
 Enriches the NetCDF with PBL height, Radiosonde data, and Tropopause calculations.
+
+@author: Fábio J. S. Lopes, Alexandre C. Yoshida, Alexandre Cacheffo, Luisa Mello
 """
 
 import os

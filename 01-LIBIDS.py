@@ -2,6 +2,8 @@
 MILGRAU Suite - Level 0: LIdar BInary Data Standardized (LIBIDS)
 Reads raw Licel binary data, sanitizes spurious files, classifies measurement
 periods (UTC to Local Time), and converts valid data into SCC compliant NetCDFs.
+
+@author: Fábio J. S. Lopes, Alexandre C. Yoshida, Alexandre Cacheffo, Luisa Mello
 """
 
 import os
