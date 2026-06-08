@@ -179,10 +179,13 @@ def _select_window(
     min_valid_count = max(int(np.ceil(float(min_valid_fraction) * window)), 4)
     best_score = np.inf
     for idx in range(start, stop - window + 1):
+        mask_window = invalid_mask[idx : idx + window]
+        if np.any(mask_window):
+            continue
         diag = _window_diagnostics(
             analog=analog[idx : idx + window],
             photon=photon[idx : idx + window],
-            invalid_mask=invalid_mask[idx : idx + window],
+            invalid_mask=mask_window,
         )
         valid_count = int(diag["valid_count"])
         correlation = float(diag["correlation"])
