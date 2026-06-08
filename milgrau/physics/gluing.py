@@ -26,14 +26,18 @@ def _as_1d(values: np.ndarray) -> np.ndarray:
     return arr
 
 
-def _as_bool_1d(values: np.ndarray | None, size: int) -> np.ndarray:
-    """Return a one-dimensional boolean mask, or all false when missing."""
+def _as_saturation_fraction_1d(values: np.ndarray | None, size: int) -> np.ndarray:
+    """Return a one-dimensional per-bin saturation fraction in [0, 1].
+
+    Boolean masks are accepted for backward compatibility, but block-averaged
+    LEBEAR processing should pass the fraction of profiles saturated at each bin.
+    """
     if values is None:
-        return np.zeros(size, dtype=bool)
-    arr = np.asarray(values, dtype=bool)
+        return np.zeros(size, dtype=np.float64)
+    arr = np.asarray(values, dtype=np.float64)
     if arr.ndim != 1 or arr.size != size:
         raise ValueError("pc_saturation_mask must be one-dimensional and match the signal length.")
-    return np.ascontiguousarray(arr)
+    return np.clip(np.nan_to_num(arr, nan=1.0, posinf=1.0, neginf=0.0), 0.0, 1.0)
 
 
 def _window_length(value: int) -> int:
@@ -140,7 +144,7 @@ def _window_diagnostics(
 def _select_window(
     analog: np.ndarray,
     photon: np.ndarray,
-    invalid_mask: np.ndarray,
+    saturation_fraction_profile: np.ndarray,
     window: int,
     correlation_threshold: float,
     intercept_threshold: float,
@@ -151,6 +155,7 @@ def _select_window(
     max_relative_bias: float,
     min_valid_fraction: float,
     max_saturation_fraction: float,
+    invalid_saturation_fraction: float,
 ) -> dict[str, float | int | str]:
     """Search for the best gluing window using residual minimization."""
     n_bins = analog.size
@@ -176,6 +181,7 @@ def _select_window(
         "evaluated_count": 0,
         "saturation_rejected_count": 0,
         "max_saturation_fraction": float(max_saturation_fraction),
+        "invalid_saturation_fraction": float(invalid_saturation_fraction),
         "selection_mode": "failed",
     }
     if stop - start < window:
@@ -183,11 +189,13 @@ def _select_window(
 
     min_valid_count = max(int(np.ceil(float(min_valid_fraction) * window)), 4)
     max_saturation_fraction = max(0.0, float(max_saturation_fraction))
+    invalid_saturation_fraction = np.clip(float(invalid_saturation_fraction), 0.0, 1.0)
     best_score = np.inf
     for idx in range(start, stop - window + 1):
         best["candidate_count"] = int(best["candidate_count"]) + 1
-        mask_window = invalid_mask[idx : idx + window]
-        saturation_fraction = float(np.mean(mask_window)) if mask_window.size else 1.0
+        saturation_window = saturation_fraction_profile[idx : idx + window]
+        saturation_fraction = float(np.nanmean(saturation_window)) if saturation_window.size else 1.0
+        invalid_mask = saturation_window >= invalid_saturation_fraction
         if saturation_fraction > max_saturation_fraction:
             best["saturation_rejected_count"] = int(best["saturation_rejected_count"]) + 1
             continue
@@ -195,7 +203,7 @@ def _select_window(
         diag = _window_diagnostics(
             analog=analog[idx : idx + window],
             photon=photon[idx : idx + window],
-            invalid_mask=mask_window,
+            invalid_mask=invalid_mask,
         )
         valid_count = int(diag["valid_count"])
         correlation = float(diag["correlation"])
@@ -348,6 +356,7 @@ def slide_glue_signals(
     max_relative_bias: float = 0.03,
     min_valid_fraction: float = 0.80,
     max_saturation_fraction: float = 0.20,
+    invalid_saturation_fraction: float = 1.0,
 ) -> tuple[np.ndarray, int, float, float] | tuple[np.ndarray, int, float, float, dict[str, Any]]:
     """Glue analog and photon-counting signals into one dynamic-range profile.
 
@@ -360,14 +369,14 @@ def slide_glue_signals(
     if analog.size != photon.size:
         raise ValueError("analog_sig and pc_sig must have the same length.")
 
-    invalid_mask = _as_bool_1d(pc_saturation_mask, analog.size)
+    saturation_fraction_profile = _as_saturation_fraction_1d(pc_saturation_mask, analog.size)
     window = _window_length(window_size)
     search_stop = analog.size if search_max_idx is None else int(search_max_idx)
 
     selected = _select_window(
         analog=analog,
         photon=photon,
-        invalid_mask=invalid_mask,
+        saturation_fraction_profile=saturation_fraction_profile,
         window=window,
         correlation_threshold=float(min_corr),
         intercept_threshold=float(intercept_threshold),
@@ -378,6 +387,7 @@ def slide_glue_signals(
         max_relative_bias=float(max_relative_bias),
         min_valid_fraction=float(min_valid_fraction),
         max_saturation_fraction=float(max_saturation_fraction),
+        invalid_saturation_fraction=float(invalid_saturation_fraction),
     )
 
     best_idx = int(selected["idx"])
@@ -429,6 +439,7 @@ def slide_glue_signals(
             "evaluated_count": int(selected["evaluated_count"]),
             "saturation_rejected_count": int(selected["saturation_rejected_count"]),
             "max_saturation_fraction": float(selected["max_saturation_fraction"]),
+            "invalid_saturation_fraction": float(selected["invalid_saturation_fraction"]),
             "slope": float(selected["slope"]),
             "intercept": float(selected["intercept"]),
             "slope_zero_intercept": np.nan,
