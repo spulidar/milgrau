@@ -162,9 +162,11 @@ inversion:
     enabled: true
     window_length_bins: 150
     correlation_threshold: 0.95
-    intercept_threshold: 0.5
-    gaussian_threshold: 0.1
-    minmax_threshold: 0.5
+    intercept_threshold: 5.0
+    minmax_threshold: 0.05
+    max_relative_rmse: 0.08
+    max_relative_bias: 0.05
+    min_valid_fraction: 0.80
     search_min_idx: 200
     search_max_idx: 2000
     fallback_to_photon_counting: true
@@ -218,11 +220,3 @@ inversion:
       "02": 25.52
       "03": 35.37
       "04": 40.76
-      "05": 39.81
-      "06": 43.76
-      "07": 36.92
-      "08": 30.85
-      "09": 29.74
-      "10": 33.44
-      "11": 30.83
-      "12": 41.43
