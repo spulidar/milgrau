@@ -105,6 +105,7 @@ def _get_gluing_config(config: Mapping[str, Any]) -> dict[str, Any]:
         "max_relative_rmse": float(gluing_cfg.get("max_relative_rmse", 0.08)),
         "max_relative_bias": float(gluing_cfg.get("max_relative_bias", 0.05)),
         "min_valid_fraction": float(gluing_cfg.get("min_valid_fraction", 0.80)),
+        "max_saturation_fraction": float(gluing_cfg.get("max_saturation_fraction", 0.20)),
         "fallback_to_photon_counting": bool(gluing_cfg.get("fallback_to_photon_counting", True)),
     }
 
@@ -458,6 +459,7 @@ def _process_wavelength(ds_l1: xr.Dataset, wavelength_nm: int, altitude_m: np.nd
                 max_relative_rmse=gluing_cfg["max_relative_rmse"],
                 max_relative_bias=gluing_cfg["max_relative_bias"],
                 min_valid_fraction=gluing_cfg["min_valid_fraction"],
+                max_saturation_fraction=gluing_cfg["max_saturation_fraction"],
                 pc_saturation_mask=photon_mask_block[block_idx, :] if photon_mask_block is not None else None,
                 return_diagnostics=True,
             )
