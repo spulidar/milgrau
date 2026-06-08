@@ -38,6 +38,13 @@ def _shift_with_nan(data: xr.DataArray, shift: int) -> xr.DataArray:
     return data.shift(range=int(shift), fill_value=np.nan)
 
 
+def _shift_mask_with_false(data: xr.DataArray, shift: int) -> xr.DataArray:
+    """Shift a boolean diagnostic mask without turning introduced bins into True."""
+    if shift == 0:
+        return data.copy().astype(bool)
+    return data.astype(bool).shift(range=int(shift), fill_value=False).astype(bool)
+
+
 def _invalid_shift_mask(template: xr.DataArray, shift: int) -> xr.DataArray:
     """Return a boolean mask for bins introduced by bin shifting."""
     shifted = _shift_with_nan(xr.ones_like(template), shift)
@@ -133,7 +140,7 @@ def apply_instrumental_corrections(
 
     sig_shift = _shift_with_nan(sig_dt, shift)
     err_shift = _shift_with_nan(err_dt, shift)
-    pc_saturation_mask_shift = _shift_with_nan(pc_saturation_mask, shift).fillna(False).astype(bool)
+    pc_saturation_mask_shift = _shift_mask_with_false(pc_saturation_mask, shift)
     bin_shift_invalid_mask = _invalid_shift_mask(sig_dt, shift)
 
     bg_mean = sig_shift.where(bg_mask).mean(dim="range", skipna=True) - bg_offset
