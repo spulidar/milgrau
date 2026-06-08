@@ -63,8 +63,8 @@ def test_slide_glue_signals_falls_back_when_uncorrelated() -> None:
     assert np.allclose(glued, photon)
 
 
-def test_slide_glue_signals_ignores_saturated_pc_bins() -> None:
-    """Saturated PC bins should not be allowed to define a gluing window."""
+def test_slide_glue_signals_ignores_saturated_pc_bins_when_requested() -> None:
+    """A strict saturation threshold should exclude saturated PC bins from the window."""
     altitude_m = np.arange(0.0, 6000.0, 7.5)
     analog = np.linspace(10.0, 1.0, altitude_m.size)
     photon = 2.5 * analog + 0.4
@@ -82,6 +82,7 @@ def test_slide_glue_signals_ignores_saturated_pc_bins() -> None:
         intercept_threshold=10.0,
         minmax_threshold=0.01,
         pc_saturation_mask=mask,
+        max_saturation_fraction=0.0,
         return_diagnostics=True,
     )
 
@@ -89,3 +90,32 @@ def test_slide_glue_signals_ignores_saturated_pc_bins() -> None:
     assert diagnostics["pc_saturation_fraction_window"] == 0.0
     assert np.isclose(slope, 2.5, rtol=1.0e-6, atol=1.0e-6)
     assert np.isclose(intercept, 0.4, rtol=1.0e-6, atol=1.0e-6)
+
+
+def test_slide_glue_signals_allows_small_saturated_fraction() -> None:
+    """A configurable saturation tolerance should allow partially masked windows."""
+    altitude_m = np.arange(0.0, 6000.0, 7.5)
+    analog = np.linspace(10.0, 1.0, altitude_m.size)
+    photon = 2.5 * analog + 0.4
+    mask = np.zeros_like(analog, dtype=bool)
+    mask[100:300] = True
+
+    _, split_point, _, _, diagnostics = slide_glue_signals(
+        analog_sig=analog,
+        pc_sig=photon,
+        altitude=altitude_m,
+        window_size=80,
+        min_corr=0.99,
+        search_min_idx=100,
+        search_max_idx=500,
+        intercept_threshold=10.0,
+        minmax_threshold=0.01,
+        pc_saturation_mask=mask,
+        max_saturation_fraction=0.20,
+        return_diagnostics=True,
+    )
+
+    assert split_point >= 0
+    assert 0.0 <= diagnostics["pc_saturation_fraction_window"] <= 0.20
+    assert diagnostics["evaluated_count"] > 0
+    assert diagnostics["saturation_rejected_count"] > 0
