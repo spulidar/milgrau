@@ -17,6 +17,15 @@ def _safe_nanmax_xarray(data: xr.DataArray, default: float = 0.0) -> float:
         return float(default)
 
 
+def _safe_nanmin_xarray(data: xr.DataArray, default: float = np.nan) -> float:
+    """Safely compute a finite minimum from an xarray object."""
+    try:
+        value = float(data.min(skipna=True).values)
+        return value if np.isfinite(value) else float(default)
+    except Exception:
+        return float(default)
+
+
 def _shift_with_nan(data: xr.DataArray, shift: int) -> xr.DataArray:
     """Shift a profile along range while marking introduced bins as NaN.
 
@@ -65,6 +74,11 @@ def apply_instrumental_corrections(
 ]:
     """Apply Level 1 corrections and propagate one-sigma uncertainty.
 
+    Photon-counting input is expected as accumulated counts per bin and is
+    always converted to MHz through ``counts / (shots * bin_time_us)``. Analog
+    input is expected to have already been converted by the Licel parser to
+    millivolts per shot. No magnitude-based unit heuristics are applied here.
+
     When ``return_diagnostics`` is true, the function also returns diagnostic
     masks/fractions for dead-time clipping and bin-shift invalid bins.
     """
@@ -79,6 +93,7 @@ def apply_instrumental_corrections(
     shift = int(shift)
     bg_offset = float(bg_offset)
     deadtime_min_denominator = float(deadtime_min_denominator)
+    rate_scale = shots * bin_time_us
 
     sig_dc = sig.copy()
     err_dc = xr.zeros_like(sig)
@@ -87,32 +102,30 @@ def apply_instrumental_corrections(
         if dc_err is not None:
             err_dc = dc_err
 
-    deadtime_clipped_mask = xr.zeros_like(sig_dc, dtype=bool)
+    pc_saturation_mask = xr.zeros_like(sig_dc, dtype=bool)
     deadtime_denominator_min = np.nan
 
     if not is_photon:
+        # Analog profiles are stored by the Level 0 parser as mV per shot.
         sig_dt = sig_dc.copy()
-        if _safe_nanmax_xarray(sig_dt) > 1000.0:
-            sig_dt = sig_dt / (shots * bin_time_us)
         err_bg = sig_dt.where(bg_mask).std(dim="range", skipna=True)
         err_dt = xr.ones_like(sig_dt) * err_bg
         if dc_prof is not None and dc_err is not None:
             err_dt = np.sqrt(err_dt**2 + err_dc**2)
     else:
-        sig_mhz = sig_dc.copy()
-        if _safe_nanmax_xarray(sig_mhz) > 150.0:
-            sig_mhz = sig_mhz / (shots * bin_time_us)
-        n_photons = xr.where(sig_mhz * shots * bin_time_us > 0.0, sig_mhz * shots * bin_time_us, 0.0)
-        err_raw = np.sqrt(n_photons) / (shots * bin_time_us)
+        # Photon-counting profiles are stored as accumulated counts per bin.
+        # Convert deterministically to count rate in MHz.
+        sig_mhz = sig_dc / rate_scale
+        dc_err_mhz = err_dc / rate_scale
+        n_photons = xr.where(sig_dc > 0.0, sig_dc, 0.0)
+        err_raw = np.sqrt(n_photons) / rate_scale
         if dc_prof is not None and dc_err is not None:
-            err_raw = np.sqrt(err_raw**2 + err_dc**2)
+            err_raw = np.sqrt(err_raw**2 + dc_err_mhz**2)
         if deadtime > 0.0:
             denom = 1.0 - (sig_mhz * deadtime)
-            deadtime_clipped_mask = denom < deadtime_min_denominator
-            deadtime_denominator_min = _safe_nanmax_xarray(-denom, default=np.nan)
-            if np.isfinite(deadtime_denominator_min):
-                deadtime_denominator_min *= -1.0
-            safe_denom = xr.where(deadtime_clipped_mask, deadtime_min_denominator, denom)
+            pc_saturation_mask = denom < deadtime_min_denominator
+            deadtime_denominator_min = _safe_nanmin_xarray(denom)
+            safe_denom = xr.where(pc_saturation_mask, deadtime_min_denominator, denom)
             sig_dt = sig_mhz / safe_denom
             err_dt = err_raw / (safe_denom**2)
         else:
@@ -120,6 +133,7 @@ def apply_instrumental_corrections(
 
     sig_shift = _shift_with_nan(sig_dt, shift)
     err_shift = _shift_with_nan(err_dt, shift)
+    pc_saturation_mask_shift = _shift_with_nan(pc_saturation_mask, shift).fillna(False).astype(bool)
     bin_shift_invalid_mask = _invalid_shift_mask(sig_dt, shift)
 
     bg_mean = sig_shift.where(bg_mask).mean(dim="range", skipna=True) - bg_offset
@@ -136,8 +150,10 @@ def apply_instrumental_corrections(
         return sig_c, err_c, rcs, err_rcs
 
     diagnostics = {
-        "deadtime_clipped_mask": deadtime_clipped_mask,
-        "deadtime_clipping_fraction": _fraction_over_range(deadtime_clipped_mask),
+        "deadtime_clipped_mask": pc_saturation_mask_shift,
+        "pc_saturation_mask": pc_saturation_mask_shift,
+        "deadtime_clipping_fraction": _fraction_over_range(pc_saturation_mask_shift),
+        "pc_saturation_fraction": _fraction_over_range(pc_saturation_mask_shift),
         "deadtime_min_denominator_observed": deadtime_denominator_min,
         "deadtime_min_denominator_allowed": deadtime_min_denominator,
         "deadtime_correction_applied": bool(is_photon and deadtime > 0.0),
