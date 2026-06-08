@@ -167,6 +167,7 @@ inversion:
     max_relative_bias: 0.05
     min_valid_fraction: 0.80
     max_saturation_fraction: 0.20
+    invalid_saturation_fraction: 1.0
     search_min_idx: 200
     search_max_idx: 2000
     fallback_to_photon_counting: true

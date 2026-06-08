@@ -106,6 +106,7 @@ def _get_gluing_config(config: Mapping[str, Any]) -> dict[str, Any]:
         "max_relative_bias": float(gluing_cfg.get("max_relative_bias", 0.05)),
         "min_valid_fraction": float(gluing_cfg.get("min_valid_fraction", 0.80)),
         "max_saturation_fraction": float(gluing_cfg.get("max_saturation_fraction", 0.20)),
+        "invalid_saturation_fraction": float(gluing_cfg.get("invalid_saturation_fraction", 1.0)),
         "fallback_to_photon_counting": bool(gluing_cfg.get("fallback_to_photon_counting", True)),
     }
 
@@ -289,9 +290,9 @@ def _error_by_groups(error_matrix: np.ndarray, groups: list[np.ndarray]) -> np.n
 
 
 def _mask_by_groups(mask_matrix: np.ndarray, groups: list[np.ndarray]) -> np.ndarray:
-    """Return a block mask that is true when any profile in a block is masked."""
-    mask = np.asarray(mask_matrix, dtype=bool)
-    return np.stack([np.any(mask[group, :], axis=0) for group in groups], axis=0)
+    """Return the fraction of profiles masked in each temporal block."""
+    mask = np.asarray(mask_matrix, dtype=np.float64)
+    return np.stack([np.nanmean(mask[group, :], axis=0) for group in groups], axis=0)
 
 
 def _expand_blocks_to_time(block_matrix: np.ndarray, groups: list[np.ndarray], n_time: int) -> np.ndarray:
@@ -460,6 +461,7 @@ def _process_wavelength(ds_l1: xr.Dataset, wavelength_nm: int, altitude_m: np.nd
                 max_relative_bias=gluing_cfg["max_relative_bias"],
                 min_valid_fraction=gluing_cfg["min_valid_fraction"],
                 max_saturation_fraction=gluing_cfg["max_saturation_fraction"],
+                invalid_saturation_fraction=gluing_cfg.get("invalid_saturation_fraction", 1.0),
                 pc_saturation_mask=photon_mask_block[block_idx, :] if photon_mask_block is not None else None,
                 return_diagnostics=True,
             )
