@@ -150,6 +150,7 @@ def _select_window(
     max_relative_rmse: float,
     max_relative_bias: float,
     min_valid_fraction: float,
+    max_saturation_fraction: float,
 ) -> dict[str, float | int | str]:
     """Search for the best gluing window using residual minimization."""
     n_bins = analog.size
@@ -171,17 +172,26 @@ def _select_window(
         "intercept_percent": np.inf,
         "dynamic_range_ratio": np.nan,
         "valid_count": 0,
+        "candidate_count": 0,
+        "evaluated_count": 0,
+        "saturation_rejected_count": 0,
+        "max_saturation_fraction": float(max_saturation_fraction),
         "selection_mode": "failed",
     }
     if stop - start < window:
         return best
 
     min_valid_count = max(int(np.ceil(float(min_valid_fraction) * window)), 4)
+    max_saturation_fraction = max(0.0, float(max_saturation_fraction))
     best_score = np.inf
     for idx in range(start, stop - window + 1):
+        best["candidate_count"] = int(best["candidate_count"]) + 1
         mask_window = invalid_mask[idx : idx + window]
-        if np.any(mask_window):
+        saturation_fraction = float(np.mean(mask_window)) if mask_window.size else 1.0
+        if saturation_fraction > max_saturation_fraction:
+            best["saturation_rejected_count"] = int(best["saturation_rejected_count"]) + 1
             continue
+        best["evaluated_count"] = int(best["evaluated_count"]) + 1
         diag = _window_diagnostics(
             analog=analog[idx : idx + window],
             photon=photon[idx : idx + window],
@@ -215,23 +225,26 @@ def _select_window(
         if not gluing_possible:
             continue
 
-        score = float(relative_rmse + abs(relative_bias) + 0.001 * intercept_percent)
+        score = float(relative_rmse + abs(relative_bias) + 0.001 * intercept_percent + 0.01 * saturation_fraction)
         if score < best_score:
             best_score = score
-            best = {
-                "idx": int(idx),
-                "center": int(idx + window // 2),
-                "score": score,
-                "correlation": correlation,
-                "slope": slope,
-                "intercept": intercept,
-                "relative_rmse": relative_rmse,
-                "relative_bias": relative_bias,
-                "intercept_percent": intercept_percent,
-                "dynamic_range_ratio": dynamic_range_ratio,
-                "valid_count": valid_count,
-                "selection_mode": "residual_minimization",
-            }
+            best.update(
+                {
+                    "idx": int(idx),
+                    "center": int(idx + window // 2),
+                    "score": score,
+                    "correlation": correlation,
+                    "slope": slope,
+                    "intercept": intercept,
+                    "relative_rmse": relative_rmse,
+                    "relative_bias": relative_bias,
+                    "intercept_percent": intercept_percent,
+                    "dynamic_range_ratio": dynamic_range_ratio,
+                    "valid_count": valid_count,
+                    "pc_saturation_fraction_window": saturation_fraction,
+                    "selection_mode": "residual_minimization",
+                }
+            )
 
     return best
 
@@ -334,6 +347,7 @@ def slide_glue_signals(
     max_relative_rmse: float = 0.05,
     max_relative_bias: float = 0.03,
     min_valid_fraction: float = 0.80,
+    max_saturation_fraction: float = 0.20,
 ) -> tuple[np.ndarray, int, float, float] | tuple[np.ndarray, int, float, float, dict[str, Any]]:
     """Glue analog and photon-counting signals into one dynamic-range profile.
 
@@ -363,6 +377,7 @@ def slide_glue_signals(
         max_relative_rmse=float(max_relative_rmse),
         max_relative_bias=float(max_relative_bias),
         min_valid_fraction=float(min_valid_fraction),
+        max_saturation_fraction=float(max_saturation_fraction),
     )
 
     best_idx = int(selected["idx"])
@@ -410,6 +425,10 @@ def slide_glue_signals(
             "relative_bias": float(selected["relative_bias"]),
             "dynamic_range_ratio": float(selected["dynamic_range_ratio"]),
             "valid_count": int(selected["valid_count"]),
+            "candidate_count": int(selected["candidate_count"]),
+            "evaluated_count": int(selected["evaluated_count"]),
+            "saturation_rejected_count": int(selected["saturation_rejected_count"]),
+            "max_saturation_fraction": float(selected["max_saturation_fraction"]),
             "slope": float(selected["slope"]),
             "intercept": float(selected["intercept"]),
             "slope_zero_intercept": np.nan,
@@ -419,7 +438,9 @@ def slide_glue_signals(
             "minmax_ratio": float(selected["dynamic_range_ratio"]),
             "minmax_score": float(selected["dynamic_range_ratio"]),
             "pc_saturation_fraction_window": (
-                float(np.mean(invalid_mask[min_bin:max_bin])) if split_point >= 0 and max_bin > min_bin else np.nan
+                float(selected.get("pc_saturation_fraction_window", np.nan))
+                if split_point >= 0
+                else np.nan
             ),
         }
         if altitude is not None and split_point >= 0:
