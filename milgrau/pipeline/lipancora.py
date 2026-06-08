@@ -174,6 +174,7 @@ def apply_all_physical_corrections(
                     "corrected_signal_error": corrected_error.rename({"range": "altitude"}).assign_coords(channel=ch_name).astype(np.float32),
                     "range_corrected_signal": rcs.rename({"range": "altitude"}).assign_coords(channel=ch_name).astype(np.float32),
                     "range_corrected_signal_error": rcs_error.rename({"range": "altitude"}).assign_coords(channel=ch_name).astype(np.float32),
+                    "pc_saturation_mask": diagnostics["pc_saturation_mask"].rename({"range": "altitude"}).assign_coords(channel=ch_name).astype(np.int8),
                 }
             )
             channel_datasets.append(ch_ds)
@@ -183,6 +184,7 @@ def apply_all_physical_corrections(
                     "channel": ch_name,
                     "deadtime_correction_applied": int(diagnostics["deadtime_correction_applied"]),
                     "deadtime_clipping_fraction": _diagnostic_vector(diagnostics, "deadtime_clipping_fraction", ds.time),
+                    "pc_saturation_fraction": _diagnostic_vector(diagnostics, "pc_saturation_fraction", ds.time),
                     "deadtime_min_denominator_observed": float(diagnostics["deadtime_min_denominator_observed"]),
                     "deadtime_min_denominator_allowed": float(diagnostics["deadtime_min_denominator_allowed"]),
                     "bin_shift_bins": int(diagnostics["bin_shift_bins"]),
@@ -217,6 +219,14 @@ def apply_all_physical_corrections(
         }
     )
     final_ds["range_corrected_signal_error"].attrs.update({"long_name": "One-sigma uncertainty of Range Corrected Signal", "units": "a.u. m^2"})
+    final_ds["pc_saturation_mask"].attrs.update(
+        {
+            "long_name": "Photon-counting saturation/dead-time clipping mask",
+            "description": "1 where the photon-counting non-paralyzable dead-time denominator was below the configured safety limit after bin-shift alignment; 0 elsewhere. Analog channels are always 0.",
+            "flag_values": "0, 1",
+            "flag_meanings": "valid saturated_or_clipped",
+        }
+    )
 
     status_map = {name: (ok, dc) for name, ok, dc in status_records}
     final_channels = final_ds.channel.values.astype(str)
@@ -248,9 +258,15 @@ def apply_all_physical_corrections(
     ).astype(np.int16)
 
     deadtime_fraction = np.stack([diag_by_channel[ch]["deadtime_clipping_fraction"].values for ch in final_channels], axis=1)
+    pc_saturation_fraction = np.stack([diag_by_channel[ch]["pc_saturation_fraction"].values for ch in final_channels], axis=1)
     bin_shift_fraction = np.stack([diag_by_channel[ch]["bin_shift_invalid_fraction"].values for ch in final_channels], axis=1)
     final_ds["deadtime_clipping_fraction"] = xr.DataArray(
         deadtime_fraction,
+        dims=["time", "channel"],
+        coords={"time": final_ds.time, "channel": final_channels},
+    ).astype(np.float32)
+    final_ds["pc_saturation_fraction"] = xr.DataArray(
+        pc_saturation_fraction,
         dims=["time", "channel"],
         coords={"time": final_ds.time, "channel": final_channels},
     ).astype(np.float32)
@@ -261,6 +277,7 @@ def apply_all_physical_corrections(
     ).astype(np.float32)
     final_ds["deadtime_correction_applied"].attrs.update({"flag_values": "0, 1", "flag_meanings": "not_applied applied"})
     final_ds["deadtime_clipping_fraction"].attrs.update({"units": "1", "description": "Fraction of altitude bins where the non-paralyzable dead-time denominator was clipped."})
+    final_ds["pc_saturation_fraction"].attrs.update({"units": "1", "description": "Fraction of altitude bins where pc_saturation_mask equals 1."})
     final_ds["bin_shift_invalid_fraction"].attrs.update({"units": "1", "description": "Fraction of altitude bins introduced by bin-shift alignment and marked as NaN."})
     final_ds["bin_shift_bins"].attrs.update({"units": "bins"})
     return final_ds
@@ -339,7 +356,7 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
         final_ds.attrs.update(ds_raw.attrs)
         final_ds.attrs.update(
             {
-                "Processing_level": "Level 1: PC->MHz, DeadTime, Dark Current, Bin Shift, Background subtraction, corrected signal, Range Corrected Signal, uncertainty propagation, PBL, Radiosonde, Tropopause",
+                "Processing_level": "Level 1: PC counts->MHz, DeadTime, PC saturation mask, Dark Current, Bin Shift, Background subtraction, corrected signal, Range Corrected Signal, uncertainty propagation, PBL, Radiosonde, Tropopause",
                 "Pipeline": "MILGRAU/LIPANCORA",
                 "Input_Level0_File": str(nc_file.name),
                 "Altitude_units": "m",
