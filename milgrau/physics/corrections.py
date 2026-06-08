@@ -71,6 +71,7 @@ def apply_instrumental_corrections(
     dc_prof: xr.DataArray | None = None,
     dc_err: xr.DataArray | None = None,
     deadtime_min_denominator: float = 0.05,
+    pc_saturation_max_rate_mhz: float | None = None,
     return_diagnostics: bool = False,
 ) -> tuple[xr.DataArray, xr.DataArray, xr.DataArray, xr.DataArray] | tuple[
     xr.DataArray,
@@ -86,8 +87,12 @@ def apply_instrumental_corrections(
     input is expected to have already been converted by the Licel parser to
     millivolts per shot. No magnitude-based unit heuristics are applied here.
 
-    When ``return_diagnostics`` is true, the function also returns diagnostic
-    masks/fractions for dead-time clipping and bin-shift invalid bins.
+    ``deadtime_clipped_mask`` marks bins where the non-paralyzable denominator
+    needed numerical clipping. ``pc_saturation_mask`` is intentionally separate:
+    it only marks bins above a configurable photon-counting count-rate limit.
+    When ``pc_saturation_max_rate_mhz`` is omitted, no PC saturation mask is
+    produced. This prevents a numerical dead-time safety mask from being reused
+    as an atmospheric gluing-quality mask.
     """
     if shots is None or not np.isfinite(float(shots)) or float(shots) <= 0.0:
         raise ValueError(f"Invalid laser shots value: {shots}")
@@ -109,7 +114,10 @@ def apply_instrumental_corrections(
         if dc_err is not None:
             err_dc = dc_err
 
+    deadtime_clipped_mask = xr.zeros_like(sig_dc, dtype=bool)
     pc_saturation_mask = xr.zeros_like(sig_dc, dtype=bool)
+    photon_rate_mhz_max = np.nan
+    pc_saturation_rate_limit_mhz = np.nan
     deadtime_denominator_min = np.nan
 
     if not is_photon:
@@ -123,16 +131,22 @@ def apply_instrumental_corrections(
         # Photon-counting profiles are stored as accumulated counts per bin.
         # Convert deterministically to count rate in MHz.
         sig_mhz = sig_dc / rate_scale
+        photon_rate_mhz_max = _safe_nanmax_xarray(sig_mhz)
         dc_err_mhz = err_dc / rate_scale
         n_photons = xr.where(sig_dc > 0.0, sig_dc, 0.0)
         err_raw = np.sqrt(n_photons) / rate_scale
         if dc_prof is not None and dc_err is not None:
             err_raw = np.sqrt(err_raw**2 + dc_err_mhz**2)
+
+        if pc_saturation_max_rate_mhz is not None and np.isfinite(float(pc_saturation_max_rate_mhz)) and float(pc_saturation_max_rate_mhz) > 0.0:
+            pc_saturation_rate_limit_mhz = float(pc_saturation_max_rate_mhz)
+            pc_saturation_mask = sig_mhz >= pc_saturation_rate_limit_mhz
+
         if deadtime > 0.0:
             denom = 1.0 - (sig_mhz * deadtime)
-            pc_saturation_mask = denom < deadtime_min_denominator
+            deadtime_clipped_mask = denom < deadtime_min_denominator
             deadtime_denominator_min = _safe_nanmin_xarray(denom)
-            safe_denom = xr.where(pc_saturation_mask, deadtime_min_denominator, denom)
+            safe_denom = xr.where(deadtime_clipped_mask, deadtime_min_denominator, denom)
             sig_dt = sig_mhz / safe_denom
             err_dt = err_raw / (safe_denom**2)
         else:
@@ -140,6 +154,7 @@ def apply_instrumental_corrections(
 
     sig_shift = _shift_with_nan(sig_dt, shift)
     err_shift = _shift_with_nan(err_dt, shift)
+    deadtime_clipped_mask_shift = _shift_mask_with_false(deadtime_clipped_mask, shift)
     pc_saturation_mask_shift = _shift_mask_with_false(pc_saturation_mask, shift)
     bin_shift_invalid_mask = _invalid_shift_mask(sig_dt, shift)
 
@@ -157,13 +172,15 @@ def apply_instrumental_corrections(
         return sig_c, err_c, rcs, err_rcs
 
     diagnostics = {
-        "deadtime_clipped_mask": pc_saturation_mask_shift,
+        "deadtime_clipped_mask": deadtime_clipped_mask_shift,
         "pc_saturation_mask": pc_saturation_mask_shift,
-        "deadtime_clipping_fraction": _fraction_over_range(pc_saturation_mask_shift),
+        "deadtime_clipping_fraction": _fraction_over_range(deadtime_clipped_mask_shift),
         "pc_saturation_fraction": _fraction_over_range(pc_saturation_mask_shift),
         "deadtime_min_denominator_observed": deadtime_denominator_min,
         "deadtime_min_denominator_allowed": deadtime_min_denominator,
         "deadtime_correction_applied": bool(is_photon and deadtime > 0.0),
+        "photon_rate_mhz_max": photon_rate_mhz_max,
+        "pc_saturation_rate_limit_mhz": pc_saturation_rate_limit_mhz,
         "bin_shift_bins": shift,
         "bin_shift_invalid_mask": bin_shift_invalid_mask,
         "bin_shift_invalid_fraction": _fraction_over_range(bin_shift_invalid_mask),
