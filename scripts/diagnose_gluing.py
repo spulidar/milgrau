@@ -1,15 +1,7 @@
 """Diagnose Analog/Photon-counting gluing window selection on real Level 1 data.
 
-This script intentionally mirrors the LEBEAR gluing pre-processing but prints why
-candidate windows are rejected.  It is meant for field-data tuning, not for
-routine processing.
-
-Example
--------
-python scripts/diagnose_gluing.py \
-    02-processed_data/2024/06/20240606sant/20240606sant_level1_rcs.nc \
-    --config config.yaml \
-    --wavelength 532
+This script mirrors the LEBEAR gluing pre-processing and prints why candidate
+windows are rejected. It is meant for field-data tuning, not routine processing.
 """
 
 from __future__ import annotations
@@ -60,6 +52,7 @@ def _get_gluing_config(config: dict[str, Any]) -> dict[str, Any]:
         "max_relative_bias": float(gluing_cfg.get("max_relative_bias", 0.05)),
         "min_valid_fraction": float(gluing_cfg.get("min_valid_fraction", 0.80)),
         "max_saturation_fraction": float(gluing_cfg.get("max_saturation_fraction", 0.20)),
+        "invalid_saturation_fraction": float(gluing_cfg.get("invalid_saturation_fraction", 1.0)),
     }
 
 
@@ -75,7 +68,9 @@ def _nanmean_or_nan(matrix: np.ndarray, axis: int = 0) -> np.ndarray:
     arr = np.asarray(matrix, dtype=np.float64)
     valid = np.isfinite(arr)
     count = valid.sum(axis=axis)
-    total = np.nansum(arr, axis=axis)
+    total = np.nansum(arr)
+    if axis == 0:
+        total = np.nansum(arr, axis=0)
     return np.divide(total, count, out=np.full_like(total, np.nan, dtype=np.float64), where=count > 0)
 
 
@@ -84,8 +79,9 @@ def _mean_by_groups(matrix: np.ndarray, groups: list[np.ndarray]) -> np.ndarray:
 
 
 def _mask_by_groups(mask_matrix: np.ndarray, groups: list[np.ndarray]) -> np.ndarray:
-    mask = np.asarray(mask_matrix, dtype=bool)
-    return np.stack([np.any(mask[group, :], axis=0) for group in groups], axis=0)
+    """Return per-bin fraction of profiles saturated within each temporal block."""
+    mask = np.asarray(mask_matrix, dtype=np.float64)
+    return np.stack([np.nanmean(mask[group, :], axis=0) for group in groups], axis=0)
 
 
 def _modified_regression(analog: np.ndarray, photon: np.ndarray) -> tuple[float, float]:
@@ -100,14 +96,21 @@ def _modified_regression(analog: np.ndarray, photon: np.ndarray) -> tuple[float,
     return float(1.0 / a_prime), float(-b_prime / a_prime)
 
 
-def _window_metrics(analog: np.ndarray, photon: np.ndarray, mask: np.ndarray) -> dict[str, float | int]:
-    valid = np.isfinite(analog) & np.isfinite(photon) & ~mask
+def _window_metrics(
+    analog: np.ndarray,
+    photon: np.ndarray,
+    saturation_fraction: np.ndarray,
+    invalid_saturation_fraction: float,
+) -> dict[str, float | int]:
+    sat = np.clip(np.asarray(saturation_fraction, dtype=np.float64), 0.0, 1.0)
+    invalid_mask = sat >= float(invalid_saturation_fraction)
+    valid = np.isfinite(analog) & np.isfinite(photon) & ~invalid_mask
     valid_count = int(valid.sum())
-    saturation_fraction = float(np.mean(mask)) if mask.size else 1.0
+    window_sat_fraction = float(np.nanmean(sat)) if sat.size else 1.0
     if valid_count < 4:
         return {
             "valid_count": valid_count,
-            "saturation_fraction": saturation_fraction,
+            "saturation_fraction": window_sat_fraction,
             "correlation": np.nan,
             "slope": np.nan,
             "intercept": np.nan,
@@ -122,7 +125,7 @@ def _window_metrics(analog: np.ndarray, photon: np.ndarray, mask: np.ndarray) ->
     if float(np.nanstd(a)) <= 0.0 or float(np.nanstd(p)) <= 0.0:
         return {
             "valid_count": valid_count,
-            "saturation_fraction": saturation_fraction,
+            "saturation_fraction": window_sat_fraction,
             "correlation": np.nan,
             "slope": np.nan,
             "intercept": np.nan,
@@ -136,7 +139,7 @@ def _window_metrics(analog: np.ndarray, photon: np.ndarray, mask: np.ndarray) ->
     if not np.isfinite(slope) or not np.isfinite(intercept) or slope <= 0.0:
         return {
             "valid_count": valid_count,
-            "saturation_fraction": saturation_fraction,
+            "saturation_fraction": window_sat_fraction,
             "correlation": np.nan,
             "slope": slope,
             "intercept": intercept,
@@ -156,7 +159,7 @@ def _window_metrics(analog: np.ndarray, photon: np.ndarray, mask: np.ndarray) ->
 
     return {
         "valid_count": valid_count,
-        "saturation_fraction": saturation_fraction,
+        "saturation_fraction": window_sat_fraction,
         "correlation": float(np.corrcoef(a, p)[0, 1]),
         "slope": float(slope),
         "intercept": float(intercept),
@@ -192,7 +195,7 @@ def _failure_reasons(metrics: dict[str, float | int], gluing_cfg: dict[str, Any]
 def _scan_windows(
     analog: np.ndarray,
     photon: np.ndarray,
-    mask: np.ndarray,
+    saturation_fraction_profile: np.ndarray,
     altitude_m: np.ndarray,
     gluing_cfg: dict[str, Any],
     top_n: int = 5,
@@ -217,7 +220,12 @@ def _scan_windows(
     ranked: list[dict[str, Any]] = []
     for idx in range(start, max(start, stop - window + 1)):
         counts["candidate"] += 1
-        metrics = _window_metrics(analog[idx : idx + window], photon[idx : idx + window], mask[idx : idx + window])
+        metrics = _window_metrics(
+            analog[idx : idx + window],
+            photon[idx : idx + window],
+            saturation_fraction_profile[idx : idx + window],
+            float(gluing_cfg["invalid_saturation_fraction"]),
+        )
         reasons = _failure_reasons(metrics, gluing_cfg, window)
         if not reasons:
             counts["pass"] += 1
@@ -280,10 +288,10 @@ def diagnose(path: Path, config: dict[str, Any], wavelength: int, top_n: int) ->
     analog_block = _mean_by_groups(analog, groups)
     photon_block = _mean_by_groups(photon, groups)
     if "pc_saturation_mask" in ds:
-        mask = ds["pc_saturation_mask"].sel(channel=photon_ch).values.astype(bool)
+        mask = ds["pc_saturation_mask"].sel(channel=photon_ch).values.astype(np.float64)
         mask_block = _mask_by_groups(mask, groups)
     else:
-        mask_block = np.zeros_like(photon_block, dtype=bool)
+        mask_block = np.zeros_like(photon_block, dtype=np.float64)
 
     print(f"File: {path}")
     print(f"Wavelength: {wavelength} nm | AN={analog_ch} | PC={photon_ch}")
@@ -311,6 +319,7 @@ def diagnose(path: Path, config: dict[str, Any], wavelength: int, top_n: int) ->
             max_relative_bias=gluing_cfg["max_relative_bias"],
             min_valid_fraction=gluing_cfg["min_valid_fraction"],
             max_saturation_fraction=gluing_cfg["max_saturation_fraction"],
+            invalid_saturation_fraction=gluing_cfg["invalid_saturation_fraction"],
             pc_saturation_mask=mask_block[block_idx, :],
             return_diagnostics=True,
         )
