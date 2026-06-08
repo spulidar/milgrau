@@ -70,7 +70,38 @@ def test_apply_instrumental_corrections_reports_deadtime_clipping() -> None:
 
     assert diagnostics["deadtime_correction_applied"] is True
     assert np.isclose(float(diagnostics["deadtime_clipping_fraction"].values[0]), 0.4)
+    assert np.isclose(float(diagnostics["pc_saturation_fraction"].values[0]), 0.4)
+    assert np.all(diagnostics["pc_saturation_mask"].isel(range=slice(0, 2)).values)
     assert np.isclose(diagnostics["deadtime_min_denominator_allowed"], 0.05)
+
+
+def test_apply_instrumental_corrections_converts_pc_counts_to_mhz_deterministically() -> None:
+    """Photon-counting data should always be converted from counts to MHz."""
+    time = pd.date_range("2024-01-01", periods=1)
+    raw = xr.DataArray(
+        np.array([[10.0, 20.0, 30.0, 40.0]], dtype=np.float64),
+        dims=("time", "range"),
+        coords={"time": time, "range": np.arange(4)},
+    )
+    z_da = xr.DataArray(np.arange(4, dtype=np.float64) * 7.5, dims=["range"])
+    bg_mask = xr.DataArray(np.array([False, False, True, True]), dims=["range"])
+
+    corrected, *_ = apply_instrumental_corrections(
+        sig=raw,
+        z_da=z_da,
+        shots=10.0,
+        bin_time_us=0.5,
+        deadtime=0.0,
+        shift=0,
+        bg_offset=0.0,
+        is_photon=True,
+        bg_mask=bg_mask,
+        return_diagnostics=True,
+    )
+
+    expected_mhz = raw / 5.0
+    expected_corrected = expected_mhz - expected_mhz.where(bg_mask).mean(dim="range", skipna=True)
+    assert np.allclose(corrected.values, expected_corrected.values)
 
 
 def test_apply_all_physical_corrections_persists_diagnostics() -> None:
@@ -103,11 +134,16 @@ def test_apply_all_physical_corrections_persists_diagnostics() -> None:
     result = apply_all_physical_corrections(ds, altitude, config, logging.getLogger("test"))
 
     assert "deadtime_clipping_fraction" in result
+    assert "pc_saturation_mask" in result
+    assert "pc_saturation_fraction" in result
     assert "deadtime_correction_applied" in result
     assert "bin_shift_invalid_fraction" in result
     assert "bin_shift_bins" in result
     assert int(result["deadtime_correction_applied"].sel(channel="532.PC")) == 1
     assert int(result["deadtime_correction_applied"].sel(channel="532.AN")) == 0
     assert float(result["deadtime_clipping_fraction"].sel(channel="532.PC").max()) > 0.0
+    assert float(result["pc_saturation_fraction"].sel(channel="532.PC").max()) > 0.0
+    assert int(result["pc_saturation_mask"].sel(channel="532.PC").isel(time=0, altitude=0)) == 1
+    assert int(result["pc_saturation_mask"].sel(channel="532.AN").max()) == 0
     assert np.isclose(float(result["bin_shift_invalid_fraction"].sel(channel="532.AN").max()), 0.4)
     assert np.all(np.isnan(result["corrected_signal"].sel(channel="532.AN").isel(altitude=slice(0, 2)).values))
