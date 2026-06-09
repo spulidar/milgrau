@@ -93,6 +93,27 @@ def _robust_symmetric_xlim(values: np.ndarray, default_abs: float = 1.0) -> tupl
     return -lim, lim
 
 
+def _robust_centered_xlim(values: np.ndarray, default_abs: float, percentile: float = 98.0) -> tuple[float, float]:
+    """Return signed x-limits from the central product, not from huge uncertainty tails."""
+    arr = np.asarray(values, dtype=np.float64)
+    finite = arr[np.isfinite(arr)]
+    if finite.size == 0:
+        return -default_abs, default_abs
+    lim = float(np.nanpercentile(np.abs(finite), percentile))
+    lim = max(float(default_abs), lim * 1.35)
+    return -lim, lim
+
+
+def _uncertainty_exceeds_xlim(mean: np.ndarray, sigma: np.ndarray, xlim: tuple[float, float]) -> bool:
+    """Return whether a 1-sigma band extends beyond plotted x-limits."""
+    lower = np.asarray(mean, dtype=np.float64) - np.asarray(sigma, dtype=np.float64)
+    upper = np.asarray(mean, dtype=np.float64) + np.asarray(sigma, dtype=np.float64)
+    finite = np.isfinite(lower) & np.isfinite(upper)
+    if not finite.any():
+        return False
+    return bool(np.nanmin(lower[finite]) < xlim[0] or np.nanmax(upper[finite]) > xlim[1])
+
+
 def _safe_median_dataarray(ds: xr.Dataset, name: str, wavelength: int) -> float:
     """Return wavelength-selected median for an optional Level 2 variable."""
     if name not in ds:
@@ -101,6 +122,19 @@ def _safe_median_dataarray(ds: xr.Dataset, name: str, wavelength: int) -> float:
         return float(np.nanmedian(ds[name].sel(wavelength=wavelength).values))
     except Exception:
         return np.nan
+
+
+def _block_standard_error(block_values: np.ndarray, valid_block: np.ndarray | None = None) -> np.ndarray:
+    """Return standard error across block profiles for a block x altitude matrix."""
+    arr = np.asarray(block_values, dtype=np.float64)
+    if arr.ndim != 2:
+        return np.full(arr.shape[-1] if arr.ndim else 0, np.nan, dtype=np.float64)
+    if valid_block is not None and np.asarray(valid_block).size == arr.shape[0]:
+        arr = arr[np.asarray(valid_block, dtype=bool), :]
+    finite = np.isfinite(arr)
+    count = finite.sum(axis=0)
+    std = np.nanstd(arr, axis=0, ddof=0)
+    return np.divide(std, np.sqrt(np.maximum(count, 1)), out=np.full(arr.shape[1], np.nan, dtype=np.float64), where=count > 1)
 
 
 def _visual_scale_to_reference(
@@ -425,7 +459,7 @@ def plot_qa_scattering_ratio(
     config: dict[str, Any],
     root_dir: str | Path,
 ) -> Path | None:
-    """Plot mean scattering ratio using smoothing only for visualization."""
+    """Plot mean scattering ratio with block-variability uncertainty when available."""
     wavelength = int(wavelength_nm)
     if "scattering_ratio_mean" not in ds_l2:
         return None
@@ -439,22 +473,44 @@ def plot_qa_scattering_ratio(
     sr = _smooth_for_plot(ds_l2["scattering_ratio_mean"].sel(wavelength=wavelength).values, smooth_bins)
     color = channel_color(wavelength)
 
+    sr_sigma = np.full_like(sr, np.nan, dtype=np.float64)
+    uncertainty_label = "Block SEM"
+    if "scattering_ratio_error_mean" in ds_l2:
+        sr_sigma = _smooth_for_plot(ds_l2["scattering_ratio_error_mean"].sel(wavelength=wavelength).values, smooth_bins)
+        uncertainty_label = "SR 1σ"
+    elif "scattering_ratio_block" in ds_l2:
+        valid_block = None
+        if "valid_retrieval_block_flag" in ds_l2:
+            try:
+                valid_block = np.asarray(ds_l2["valid_retrieval_block_flag"].sel(wavelength=wavelength).values, dtype=bool)
+            except Exception:
+                valid_block = None
+        sr_sigma = _smooth_for_plot(_block_standard_error(ds_l2["scattering_ratio_block"].sel(wavelength=wavelength).values, valid_block), smooth_bins)
+
     fig, ax = plt.subplots(figsize=(8.6, 9.4))
     fig.subplots_adjust(top=0.86, bottom=0.14)
+    has_uncertainty = np.isfinite(sr_sigma).any()
+    if has_uncertainty:
+        ax.fill_betweenx(alt_km[valid_alt], sr[valid_alt] - sr_sigma[valid_alt], sr[valid_alt] + sr_sigma[valid_alt], color=color, alpha=0.22, edgecolor="none", label=uncertainty_label)
     ax.plot(sr[valid_alt], alt_km[valid_alt], color=color, linewidth=2.2, label="Scattering ratio")
     ax.axvline(1.0, color="black", linestyle="--", linewidth=1.4, label="Molecular reference SR=1")
     ax.set_title(f"Scattering Ratio - {format_wavelength_label(wavelength)}", fontsize=14, fontweight="bold")
     ax.set_xlabel("Scattering ratio", fontsize=12, fontweight="bold")
     ax.set_ylabel("Altitude (km a.g.l.)", fontsize=12, fontweight="bold")
-    ax.set_xlim(*_robust_positive_xlim(sr[valid_alt], default_max=6.0))
+    xlim = _robust_positive_xlim(sr[valid_alt], default_max=6.0)
+    ax.set_xlim(*xlim)
     ax.set_ylim(0, max_alt_km)
     ax.grid(True, alpha=0.45)
     add_atmospheric_boundaries(ax, ds_l2, max_alt_km)
 
     upper_mask = (alt_km >= 10.0) & valid_alt & np.isfinite(sr)
+    notes = [f"Savgol plot smoothing = {smooth_bins} bins"]
     if np.any(upper_mask):
         mean_sr = float(np.nanmean(sr[upper_mask]))
-        ax.text(0.04, 0.96, f"Mean SR above 10 km = {mean_sr:.2f}\nSavgol plot smoothing = {smooth_bins} bins", transform=ax.transAxes, fontsize=10, va="top", bbox={"facecolor": "white", "alpha": 0.82, "edgecolor": "gray"})
+        notes.insert(0, f"Mean SR above 10 km = {mean_sr:.2f}")
+    if has_uncertainty and _uncertainty_exceeds_xlim(sr[valid_alt], sr_sigma[valid_alt], xlim):
+        notes.append("Uncertainty band clipped by robust x-axis")
+    ax.text(0.04, 0.96, "\n".join(notes), transform=ax.transAxes, fontsize=10, va="top", bbox={"facecolor": "white", "alpha": 0.82, "edgecolor": "gray"})
     ax.legend(fontsize=9, loc="best")
 
     fig.suptitle(f"MILGRAU Level 2 QA - Scattering Ratio - {format_wavelength_label(wavelength)}\n{date_title}", fontsize=15, fontweight="bold", y=0.97)
@@ -475,7 +531,7 @@ def plot_qa_l2_kfs(
     root_dir: str | Path,
     max_altitude_km: float = 30.0,
 ) -> Path | None:
-    """Render Level 2 KFS QA panel with Monte Carlo uncertainty bands."""
+    """Render Level 2 KFS QA panel with uncertainty bands clipped by robust x-limits."""
     wavelength = int(wavelength_nm)
     required = {"aerosol_backscatter", "aerosol_backscatter_error", "aerosol_extinction", "aerosol_extinction_error"}
     if not required.issubset(set(ds_l2.data_vars)):
@@ -497,26 +553,41 @@ def plot_qa_l2_kfs(
     alpha_mean = _smooth_for_plot(safe_time_mean(alpha).values, smooth_bins)
     alpha_sigma = _smooth_for_plot(safe_error_of_mean(alpha_err).values, smooth_bins)
 
+    beta_plot = beta_mean * 1e6
+    beta_sigma_plot = beta_sigma * 1e6
+    alpha_plot = alpha_mean * 1e6
+    alpha_sigma_plot = alpha_sigma * 1e6
+    beta_xlim = _robust_centered_xlim(beta_plot[valid_alt], default_abs=5.0)
+    alpha_xlim = _robust_centered_xlim(alpha_plot[valid_alt], default_abs=50.0)
+    beta_clipped = _uncertainty_exceeds_xlim(beta_plot[valid_alt], beta_sigma_plot[valid_alt], beta_xlim)
+    alpha_clipped = _uncertainty_exceeds_xlim(alpha_plot[valid_alt], alpha_sigma_plot[valid_alt], alpha_xlim)
+
     color = channel_color(wavelength)
     fig = plt.figure(figsize=(13.5, 8.5))
     gs = gridspec.GridSpec(1, 2, width_ratios=[1, 1], wspace=0.25)
     ax0 = plt.subplot(gs[0])
     ax1 = plt.subplot(gs[1], sharey=ax0)
-    ax0.plot(beta_mean[valid_alt] * 1e6, alt_km[valid_alt], color=color, linewidth=2.2, label="Mean beta aer")
-    ax0.fill_betweenx(alt_km[valid_alt], (beta_mean[valid_alt] - beta_sigma[valid_alt]) * 1e6, (beta_mean[valid_alt] + beta_sigma[valid_alt]) * 1e6, color=color, alpha=0.25, edgecolor="none", label="MC 1σ")
+    ax0.plot(beta_plot[valid_alt], alt_km[valid_alt], color=color, linewidth=2.2, label="Mean beta aer")
+    ax0.fill_betweenx(alt_km[valid_alt], beta_plot[valid_alt] - beta_sigma_plot[valid_alt], beta_plot[valid_alt] + beta_sigma_plot[valid_alt], color=color, alpha=0.25, edgecolor="none", label="MC 1σ")
     ax0.axvline(0.0, color="black", linewidth=0.8)
+    ax0.set_xlim(*beta_xlim)
     ax0.set_title("Aerosol backscatter", fontsize=14, fontweight="bold")
     ax0.set_xlabel(r"$\beta_{aer}$ [Mm$^{-1}$ sr$^{-1}$]", fontsize=12, fontweight="bold")
     ax0.set_ylabel("Altitude (km a.g.l.)", fontsize=12, fontweight="bold")
     ax0.set_ylim(0, max_alt_km)
     ax0.grid(True, alpha=0.45)
+    if beta_clipped:
+        ax0.text(0.04, 0.96, "MC 1σ clipped by robust x-axis", transform=ax0.transAxes, fontsize=9, va="top", bbox={"facecolor": "white", "alpha": 0.82, "edgecolor": "gray"})
 
-    ax1.plot(alpha_mean[valid_alt] * 1e6, alt_km[valid_alt], color=color, linewidth=2.2, label="Mean alpha aer")
-    ax1.fill_betweenx(alt_km[valid_alt], (alpha_mean[valid_alt] - alpha_sigma[valid_alt]) * 1e6, (alpha_mean[valid_alt] + alpha_sigma[valid_alt]) * 1e6, color=color, alpha=0.25, edgecolor="none", label="MC 1σ")
+    ax1.plot(alpha_plot[valid_alt], alt_km[valid_alt], color=color, linewidth=2.2, label="Mean alpha aer")
+    ax1.fill_betweenx(alt_km[valid_alt], alpha_plot[valid_alt] - alpha_sigma_plot[valid_alt], alpha_plot[valid_alt] + alpha_sigma_plot[valid_alt], color=color, alpha=0.25, edgecolor="none", label="MC 1σ")
     ax1.axvline(0.0, color="black", linewidth=0.8)
+    ax1.set_xlim(*alpha_xlim)
     ax1.set_title("Aerosol extinction", fontsize=14, fontweight="bold")
     ax1.set_xlabel(r"$\alpha_{aer}$ [Mm$^{-1}$]", fontsize=12, fontweight="bold")
     ax1.grid(True, alpha=0.45)
+    if alpha_clipped:
+        ax1.text(0.04, 0.96, "MC 1σ clipped by robust x-axis", transform=ax1.transAxes, fontsize=9, va="top", bbox={"facecolor": "white", "alpha": 0.82, "edgecolor": "gray"})
     plt.setp(ax1.get_yticklabels(), visible=False)
 
     for ax in (ax0, ax1):
