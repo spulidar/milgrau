@@ -50,7 +50,7 @@ physics:
   # Channel constants: [deadtime_us, bin_shift_bins, background_offset]
   channels:
     "355.PC": [0.0020, -2, 0.0005]
-    "355.AN": [0.0000,  8, 0.0000]
+    "355.AN": [0.0000,  -11, 0.0000]
     "387.PC": [0.0000, -2, 0.0000]
     "387.AN": [0.0000,  8, 0.0000]
     "408.PC": [0.0000, -2, 0.0000]
@@ -58,7 +58,7 @@ physics:
     "530.PC": [0.0000, -2, 0.0000]
     "530.AN": [0.0000,  7, 0.0000]
     "532.PC": [0.0035, -3, 0.0000]
-    "532.AN": [0.0000,  6, 0.0000]
+    "532.AN": [0.0000,  -12, 0.0000]
     "1064.PC": [0.0000,  0, 0.0000]
     "1064.AN": [0.0000,  1, 0.0000]
 
@@ -159,7 +159,7 @@ inversion:
     min_valid_fraction: 0.50
 
   gluing:
-    window_length_bins: 150
+    window_length_bins: 120
     correlation_threshold: 0.95
     intercept_threshold: 5.0
     minmax_threshold: 0.05
@@ -168,8 +168,8 @@ inversion:
     min_valid_fraction: 0.80
     max_saturation_fraction: 0.20
     invalid_saturation_fraction: 1.0
-    search_min_idx: 200
-    search_max_idx: 2000
+    search_min_idx: 150
+    search_max_idx: 1200
     fallback_to_photon_counting: true
 
   cloud_screening:

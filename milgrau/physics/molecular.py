@@ -2,8 +2,7 @@
 
 The molecular profile is calculated from pressure and temperature using
 Bucholtz-style Rayleigh scattering.  The returned molecular backscatter is the
-angular volume-scattering coefficient at 180 degrees, appropriate for elastic
-backscatter lidar, while molecular extinction is the total Rayleigh volume
+angular volume-scattering coefficient at 180 degrees, while molecular extinction is the total Rayleigh volume
 scattering coefficient.
 """
 
