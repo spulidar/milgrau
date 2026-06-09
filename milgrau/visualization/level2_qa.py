@@ -233,7 +233,6 @@ def infer_l1_channels_for_wavelength(ds_l1: xr.Dataset | None, wavelength_nm: in
     photon = next((ch for ch in channels if ch.startswith(f"{wavelength}.") and (ch.upper().endswith(".PC") or ch.upper().endswith(".PH"))), None)
     return analog, photon
 
-
 def plot_qa_gluing(
     ds_l1: xr.Dataset | None,
     ds_l2: xr.Dataset,
@@ -243,11 +242,7 @@ def plot_qa_gluing(
     config: dict[str, Any],
     root_dir: str | Path,
 ) -> Path | None:
-    """Plot legacy-style Analog/Photon Counting gluing QA.
-
-    The primary panel follows the old LEBEAR diagnostic: altitude is on the x-axis,
-    Analog is display-scaled to Photon Counting, all three curves are range-corrected,
-    and the selected gluing window is shown by dashed vertical lines.
+    """Plot clean vertical gluing QA with one main profile panel and a zoom inset.
     """
     wavelength = int(wavelength_nm)
     required = {"glued_range_corrected_signal", "gluing_success_flag", "gluing_split_altitude_m"}
@@ -256,89 +251,292 @@ def plot_qa_gluing(
 
     output_format, dpi = get_output_settings(config)
     date_title, _ = extract_datetime_strings(ds_l2)
+
     altitude_m = np.asarray(ds_l2["altitude"].values, dtype=np.float64)
     if np.nanmax(altitude_m) <= 100.0:
         altitude_m = altitude_m * 1000.0
     alt_km = altitude_m / 1000.0
+
     max_alt_km = min(20.0, float(np.nanmax(alt_km)))
     valid_alt = alt_km <= max_alt_km
-    smooth_bins = int(config.get("visualization", {}).get("level2_qa", {}).get("smooth_bins", 15))
 
-    glued_rcs = _smooth_for_plot(safe_time_mean(ds_l2["glued_range_corrected_signal"].sel(wavelength=wavelength)).values, smooth_bins)
-    if "glued_corrected_signal_mean" in ds_l2:
-        glued_corrected = np.asarray(ds_l2["glued_corrected_signal_mean"].sel(wavelength=wavelength).values, dtype=np.float64)
-        glued_rcs = _smooth_for_plot(glued_corrected * altitude_m**2, smooth_bins)
+    color = channel_color(wavelength)
+    smooth_bins = int(config.get("visualization", {}).get("level2_qa", {}).get("smooth_bins", 15))
 
     success = ds_l2["gluing_success_flag"].sel(wavelength=wavelength)
     success_values = np.asarray(success.values, dtype=float)
-    success_rate = 100.0 * float(np.nansum(success_values)) / max(success.size, 1)
+    n_blocks = int(success.size)
+    success_count = int(np.nansum(success_values))
+    success_rate = 100.0 * success_count / max(n_blocks, 1)
+    valid_success = np.isfinite(success_values) & (success_values == 1)
+
+    fallback_count = 0
+    if "gluing_fallback_flag" in ds_l2:
+        fallback_values = np.asarray(
+            ds_l2["gluing_fallback_flag"].sel(wavelength=wavelength).values,
+            dtype=float,
+        )
+        fallback_count = int(np.nansum(fallback_values))
+
     split_alt_km = ds_l2["gluing_split_altitude_m"].sel(wavelength=wavelength) / 1000.0
     median_split = float(np.nanmedian(split_alt_km.values)) if np.any(np.isfinite(split_alt_km.values)) else np.nan
+
     median_start = _safe_median_dataarray(ds_l2, "gluing_start_altitude_m", wavelength) / 1000.0
     median_stop = _safe_median_dataarray(ds_l2, "gluing_stop_altitude_m", wavelength) / 1000.0
-
-    analog_rcs = np.full_like(glued_rcs, np.nan, dtype=np.float64)
-    photon_rcs = np.full_like(glued_rcs, np.nan, dtype=np.float64)
-    scale_factor = np.nan
-    scale_bins = (1000, 1500)
-    analog_ch = photon_ch = None
-    if ds_l1 is not None:
-        analog_ch, photon_ch = infer_l1_channels_for_wavelength(ds_l1, wavelength)
-        if analog_ch is not None and photon_ch is not None:
-            if "corrected_signal" in ds_l1:
-                analog_corrected = safe_time_mean(ds_l1["corrected_signal"].sel(channel=analog_ch)).values
-                photon_corrected = safe_time_mean(ds_l1["corrected_signal"].sel(channel=photon_ch)).values
-                scale_factor, scale_bins = _legacy_scale_factor(analog_corrected, photon_corrected)
-                analog_rcs = _smooth_for_plot(analog_corrected * scale_factor * altitude_m**2, smooth_bins)
-                photon_rcs = _smooth_for_plot(photon_corrected * altitude_m**2, smooth_bins)
-            elif "range_corrected_signal" in ds_l1:
-                analog_raw = safe_time_mean(ds_l1["range_corrected_signal"].sel(channel=analog_ch)).values
-                photon_raw = safe_time_mean(ds_l1["range_corrected_signal"].sel(channel=photon_ch)).values
-                scale_factor, scale_bins = _legacy_scale_factor(analog_raw, photon_raw)
-                analog_rcs = _smooth_for_plot(analog_raw * scale_factor, smooth_bins)
-                photon_rcs = _smooth_for_plot(photon_raw, smooth_bins)
-
-    fig = plt.figure(figsize=(12.0, 8.0))
-    ax = fig.add_subplot(111)
-    ax.set_facecolor("gainsboro")
-    ax.grid(True, color="0.6", linestyle=":", alpha=0.85)
-
-    ax.plot(alt_km[valid_alt], analog_rcs[valid_alt], label="analog scaled", color="darkcyan", linewidth=1.8)
-    ax.plot(alt_km[valid_alt], photon_rcs[valid_alt], label="photo-counting", color="orangered", linewidth=1.8)
-    ax.plot(alt_km[valid_alt], glued_rcs[valid_alt], label="glued signal", color="darkmagenta", linewidth=2.2)
-
-    ylims = _legacy_ylim(analog_rcs[valid_alt], photon_rcs[valid_alt], glued_rcs[valid_alt])
-    if np.isfinite(median_start) and np.isfinite(median_stop) and 0.0 < median_start < median_stop <= max_alt_km:
-        ax.vlines([median_start, median_stop], ylims[0], ylims[1], colors="k", linestyles="dashed", linewidth=1.4, label="gluing region")
-    if np.isfinite(median_split) and 0 < median_split <= max_alt_km:
-        ax.axvline(median_split, color="black", linestyle="-.", linewidth=1.1, label=f"split {median_split:.2f} km")
-    ax.set_ylim(*ylims)
-    ax.set_xlim(0, max_alt_km)
-    ax.set_xlabel("Height a.g.l. [km]", fontweight="bold")
-    ax.set_ylabel("Glued signal - AN + PC [RCS a.u.]", fontweight="bold")
-    ax.set_title(f"Legacy-style Gluing QA - {format_wavelength_label(wavelength)}", fontsize=14, fontweight="bold")
 
     corr_med = _safe_median_dataarray(ds_l2, "gluing_correlation", wavelength)
     rmse_med = _safe_median_dataarray(ds_l2, "gluing_relative_rmse", wavelength)
     bias_med = _safe_median_dataarray(ds_l2, "gluing_relative_bias", wavelength)
-    note = (
-        f"success={success_rate:.1f}%\n"
-        f"scale bins={scale_bins[0]}:{scale_bins[1]}, scale={scale_factor:.3g}\n"
-        f"corr_med={corr_med:.4g}, rmse_med={rmse_med:.4g}, bias_med={bias_med:.4g}"
+    slope_med = _safe_median_dataarray(ds_l2, "gluing_slope", wavelength)
+    intercept_med = _safe_median_dataarray(ds_l2, "gluing_intercept", wavelength)
+
+    glued = ds_l2["glued_range_corrected_signal"].sel(wavelength=wavelength)
+    glued_profile = _smooth_for_plot(safe_time_mean(glued).values, smooth_bins)
+
+    # Prefer corrected-signal mean, because operational gluing is done before RCS.
+    # Convert to RCS only for visual comparison.
+    if "glued_corrected_signal_mean" in ds_l2:
+        glued_corrected = np.asarray(
+            ds_l2["glued_corrected_signal_mean"].sel(wavelength=wavelength).values,
+            dtype=np.float64,
+        )
+        glued_profile = _smooth_for_plot(glued_corrected * altitude_m**2, smooth_bins)
+
+    analog_profile_plot = np.full_like(glued_profile, np.nan, dtype=np.float64)
+    photon_profile_plot = np.full_like(glued_profile, np.nan, dtype=np.float64)
+    analog_ch = photon_ch = None
+    scaling_note = "L1 channels unavailable"
+    clip_mean = np.nan
+
+    if ds_l1 is not None:
+        analog_ch, photon_ch = infer_l1_channels_for_wavelength(ds_l1, wavelength)
+
+        if analog_ch is not None and photon_ch is not None:
+            if "corrected_signal" in ds_l1:
+                analog_corrected = safe_time_mean(ds_l1["corrected_signal"].sel(channel=analog_ch)).values
+                photon_corrected = safe_time_mean(ds_l1["corrected_signal"].sel(channel=photon_ch)).values
+
+                if (
+                    bool(valid_success.any())
+                    and np.isfinite(slope_med)
+                    and np.isfinite(intercept_med)
+                    and slope_med > 0.0
+                ):
+                    analog_scaled = slope_med * analog_corrected + intercept_med
+                    scaling_note = "AN scaled with operational coefficients"
+                else:
+                    scale_factor, scale_bins = _legacy_scale_factor(analog_corrected, photon_corrected)
+                    analog_scaled = analog_corrected * scale_factor
+                    scaling_note = f"AN display-scaled {scale_bins[0]}:{scale_bins[1]}"
+
+                analog_profile_plot = _smooth_for_plot(analog_scaled * altitude_m**2, smooth_bins)
+                photon_profile_plot = _smooth_for_plot(photon_corrected * altitude_m**2, smooth_bins)
+
+            elif "range_corrected_signal" in ds_l1:
+                analog_rcs = safe_time_mean(ds_l1["range_corrected_signal"].sel(channel=analog_ch)).values
+                photon_rcs = safe_time_mean(ds_l1["range_corrected_signal"].sel(channel=photon_ch)).values
+
+                scale_factor, scale_bins = _legacy_scale_factor(analog_rcs, photon_rcs)
+                analog_profile_plot = _smooth_for_plot(analog_rcs * scale_factor, smooth_bins)
+                photon_profile_plot = _smooth_for_plot(photon_rcs, smooth_bins)
+                scaling_note = f"AN RCS display-scaled {scale_bins[0]}:{scale_bins[1]}"
+
+            if "deadtime_clipping_fraction" in ds_l1:
+                try:
+                    clip = ds_l1["deadtime_clipping_fraction"].sel(channel=photon_ch).values
+                    clip_mean = float(np.nanmean(clip))
+                except Exception:
+                    clip_mean = np.nan
+
+    # ------------------------------------------------------------------
+    # Robust x-limits for main panel.
+    # Use positive RCS values only and ignore extreme tails.
+    # ------------------------------------------------------------------
+    main_vals = []
+    for arr in (analog_profile_plot[valid_alt], photon_profile_plot[valid_alt], glued_profile[valid_alt]):
+        arr = np.asarray(arr, dtype=np.float64)
+        arr = arr[np.isfinite(arr) & (arr > 0)]
+        if arr.size:
+            main_vals.append(arr)
+
+    if main_vals:
+        all_vals = np.concatenate(main_vals)
+        xmin = float(np.nanpercentile(all_vals, 1.0))
+        xmax = float(np.nanpercentile(all_vals, 99.5))
+        xmin = max(xmin, 1e-3)
+        xmax = max(xmax, xmin * 10.0)
+    else:
+        xmin, xmax = 1e-3, 1.0
+
+    # Portrait-ish 3:4 layout.
+    fig, ax = plt.subplots(figsize=(9.0, 12.0))
+
+    # ------------------------------------------------------------------
+    # Main curves
+    # ------------------------------------------------------------------
+    ax.plot(
+        analog_profile_plot[valid_alt],
+        alt_km[valid_alt],
+        linestyle="--",
+        linewidth=1.8,
+        color="tab:blue",
+        label=f"{analog_ch or 'AN'} scaled",
     )
-    if success_rate == 0.0:
-        note += "\nOperational gluing failed; glued curve may be fallback."
-    ax.text(0.02, 0.97, note, transform=ax.transAxes, va="top", fontsize=9, bbox={"facecolor": "white", "alpha": 0.84, "edgecolor": "gray"})
+    ax.plot(
+        photon_profile_plot[valid_alt],
+        alt_km[valid_alt],
+        linestyle=":",
+        linewidth=2.0,
+        color="tab:orange",
+        label=f"{photon_ch or 'PC'} mean",
+    )
+    ax.plot(
+        glued_profile[valid_alt],
+        alt_km[valid_alt],
+        color=color,
+        linewidth=2.5,
+        label="Glued mean",
+    )
 
-    for label in ax.get_xticklabels():
-        label.set_fontweight(500)
-    for label in ax.get_yticklabels():
-        label.set_fontweight(500)
-    ax.legend(loc="best", fontsize=9, markerscale=1.5, handletextpad=0.3)
+    # Visible gluing window.
+    if np.isfinite(median_start) and np.isfinite(median_stop) and 0.0 < median_start < median_stop <= max_alt_km:
+        ax.axhspan(
+            median_start,
+            median_stop,
+            color="gold",
+            alpha=0.30,
+            zorder=0,
+            label=f"Median gluing window {median_start:.2f}-{median_stop:.2f} km",
+        )
 
-    fig.suptitle(f"MILGRAU Level 2 QA - Signal Gluing - {format_wavelength_label(wavelength)}\n{date_title}", fontsize=15, fontweight="bold", y=0.97)
-    fig.subplots_adjust(top=0.84, bottom=0.14)
+    # Median split line.
+    if np.isfinite(median_split) and 0.0 < median_split <= max_alt_km:
+        ax.axhline(
+            median_split,
+            color="black",
+            linestyle="-.",
+            linewidth=1.5,
+            label=f"Median split {median_split:.2f} km",
+        )
+
+    # ax.set_title(
+    #     f"Gluing profile - {format_wavelength_label(wavelength)}",
+    #     fontsize=16,
+    #     fontweight="bold",
+    # )
+    ax.set_xlabel("RCS on photon-counting scale [a.u.]", fontsize=13, fontweight="bold")
+    ax.set_ylabel("Altitude (km a.g.l.)", fontsize=13, fontweight="bold")
+    ax.set_ylim(0, max_alt_km)
+    ax.set_xlim(xmin, xmax)
+    ax.set_xscale("log")
+    ax.grid(True, which="both", alpha=0.42)
+
+    # Cleaner summary box. No repeated split/window text.
+    summary_lines = [
+        f"success = {success_count}/{n_blocks} ({success_rate:.1f}%)",
+        f"corr med = {corr_med:.4g}",
+        f"rmse med = {rmse_med:.4g}",
+        f"bias med = {bias_med:.4g}",
+    ]
+    if np.isfinite(clip_mean):
+        summary_lines.append(f"deadtime clipped = {100.0 * clip_mean:.2f}%")
+    summary_lines.append(scaling_note)
+
+    ax.text(
+        0.02,
+        0.985,
+        "\n".join(summary_lines),
+        transform=ax.transAxes,
+        va="top",
+        fontsize=9.0,
+        bbox={"facecolor": "white", "alpha": 0.86, "edgecolor": "gray"},
+    )
+
+    # ------------------------------------------------------------------
+    # Zoom inset on the left.
+    # ------------------------------------------------------------------
+    if np.isfinite(median_start) and np.isfinite(median_stop):
+        zoom_ymin = max(0.0, median_start - 0.5)
+        zoom_ymax = min(max_alt_km, median_stop + 0.5)
+    elif np.isfinite(median_split):
+        zoom_ymin = max(0.0, median_split - 0.5)
+        zoom_ymax = min(max_alt_km, median_split + 0.5)
+    else:
+        zoom_ymin = 1.0
+        zoom_ymax = min(max_alt_km, 4.0)
+
+    zoom_mask = (
+        (alt_km >= zoom_ymin)
+        & (alt_km <= zoom_ymax)
+        & np.isfinite(analog_profile_plot)
+        & np.isfinite(photon_profile_plot)
+        & np.isfinite(glued_profile)
+    )
+
+    if zoom_mask.sum() > 5:
+        zoom_vals = np.concatenate(
+            [
+                analog_profile_plot[zoom_mask],
+                photon_profile_plot[zoom_mask],
+                glued_profile[zoom_mask],
+            ]
+        )
+        zoom_vals = zoom_vals[np.isfinite(zoom_vals) & (zoom_vals > 0)]
+
+        if zoom_vals.size > 5:
+            zmin = float(np.nanpercentile(zoom_vals, 1.0))
+            zmax = float(np.nanpercentile(zoom_vals, 99.0))
+
+            if np.isfinite(zmin) and np.isfinite(zmax) and zmax > zmin:
+                # left-side inset: [x0, y0, width, height]
+                inset = ax.inset_axes([0.08, 0.10, 0.38, 0.30])
+
+                inset.plot(
+                    analog_profile_plot[zoom_mask],
+                    alt_km[zoom_mask],
+                    linestyle="--",
+                    linewidth=1.2,
+                    color="tab:blue",
+                )
+                inset.plot(
+                    photon_profile_plot[zoom_mask],
+                    alt_km[zoom_mask],
+                    linestyle=":",
+                    linewidth=1.4,
+                    color="tab:orange",
+                )
+                inset.plot(
+                    glued_profile[zoom_mask],
+                    alt_km[zoom_mask],
+                    linewidth=1.6,
+                    color=color,
+                )
+
+                if np.isfinite(median_start) and np.isfinite(median_stop):
+                    inset.axhspan(median_start, median_stop, color="gold", alpha=0.30)
+                if np.isfinite(median_split):
+                    inset.axhline(median_split, color="black", linestyle="-.", linewidth=1.0)
+
+                pad = 0.08 * (zmax - zmin)
+                inset.set_xlim(max(zmin - pad, 1e-6), zmax + pad)
+                inset.set_ylim(zoom_ymin, zoom_ymax)
+                inset.set_title("Zoom near gluing region", fontsize=8.5)
+                inset.tick_params(labelsize=7)
+                inset.grid(True, alpha=0.35)
+
+    # Put legend on right to avoid the left inset/summary.
+    ax.legend(fontsize=8.8, loc="center right")
+
+    fig.suptitle(
+        f"MILGRAU Level 2 QA - Signal Gluing - {format_wavelength_label(wavelength)}\n{date_title}",
+        fontsize=17,
+        fontweight="bold",
+        y=0.975,
+    )
+
+    fig.subplots_adjust(top=0.90, bottom=0.10, left=0.13, right=0.96)
     add_footer_and_logos(fig, root_dir)
+
     out_path = Path(output_folder) / f"QA_Gluing_{file_name_prefix}_{wavelength}nm.{output_format}"
     Path(output_folder).mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=dpi)
