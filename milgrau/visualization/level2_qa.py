@@ -137,6 +137,35 @@ def _block_standard_error(block_values: np.ndarray, valid_block: np.ndarray | No
     return np.divide(std, np.sqrt(np.maximum(count, 1)), out=np.full(arr.shape[1], np.nan, dtype=np.float64), where=count > 1)
 
 
+def _legacy_scale_factor(analog: np.ndarray, photon: np.ndarray, start: int = 1000, stop: int = 1500) -> tuple[float, tuple[int, int]]:
+    """Return legacy display scale factor sum(PC)/sum(AN) over a bounded bin interval."""
+    n = min(np.asarray(analog).size, np.asarray(photon).size)
+    start = max(0, min(int(start), max(n - 2, 0)))
+    stop = max(start + 1, min(int(stop), n))
+    a = np.asarray(analog[start:stop], dtype=np.float64)
+    p = np.asarray(photon[start:stop], dtype=np.float64)
+    valid = np.isfinite(a) & np.isfinite(p)
+    denom = float(np.nansum(a[valid])) if valid.any() else np.nan
+    numer = float(np.nansum(p[valid])) if valid.any() else np.nan
+    if not np.isfinite(denom) or abs(denom) <= 1.0e-30 or not np.isfinite(numer):
+        return 1.0, (start, stop)
+    return float(numer / denom), (start, stop)
+
+
+def _legacy_ylim(*profiles: np.ndarray, fallback: tuple[float, float] = (-1e8, 4e8)) -> tuple[float, float]:
+    """Return legacy-like RCS y-limits without letting very high-altitude noise dominate."""
+    vals = np.concatenate([np.asarray(profile, dtype=np.float64).ravel() for profile in profiles])
+    vals = vals[np.isfinite(vals)]
+    if vals.size < 5:
+        return fallback
+    low = float(np.nanpercentile(vals, 1.0))
+    high = float(np.nanpercentile(vals, 99.0))
+    if not np.isfinite(low) or not np.isfinite(high) or low == high:
+        return fallback
+    pad = 0.08 * (high - low)
+    return low - pad, high + pad
+
+
 def _visual_scale_to_reference(
     lower_signal: np.ndarray,
     upper_signal: np.ndarray,
@@ -175,7 +204,7 @@ def add_atmospheric_boundaries(ax: Any, ds: xr.Dataset, max_alt_km: float) -> bo
         try:
             pbl_km = float(ds["PBL_Height_km"].mean(skipna=True).values)
             if np.isfinite(pbl_km) and 0 < pbl_km <= max_alt_km:
-                ax.axhline(pbl_km, color="crimson", linestyle="--", linewidth=1.4, label=f"Mean PBL ({pbl_km:.1f} km)")
+                ax.axvline(pbl_km, color="crimson", linestyle="--", linewidth=1.2, label=f"Mean PBL ({pbl_km:.1f} km)")
                 has_legend = True
         except Exception:
             pass
@@ -187,7 +216,7 @@ def add_atmospheric_boundaries(ax: Any, ds: xr.Dataset, max_alt_km: float) -> bo
         try:
             value = float(ds.attrs.get(attr_name, -999.0))
             if np.isfinite(value) and 0 < value <= max_alt_km:
-                ax.axhline(value, color=color, linestyle=linestyle, linewidth=1.4, label=f"{label} ({value:.1f} km)")
+                ax.axvline(value, color=color, linestyle=linestyle, linewidth=1.2, label=f"{label} ({value:.1f} km)")
                 has_legend = True
         except Exception:
             pass
@@ -214,7 +243,12 @@ def plot_qa_gluing(
     config: dict[str, Any],
     root_dir: str | Path,
 ) -> Path | None:
-    """Plot QA diagnostics for Analog/Photon Counting signal gluing."""
+    """Plot legacy-style Analog/Photon Counting gluing QA.
+
+    The primary panel follows the old LEBEAR diagnostic: altitude is on the x-axis,
+    Analog is display-scaled to Photon Counting, all three curves are range-corrected,
+    and the selected gluing window is shown by dashed vertical lines.
+    """
     wavelength = int(wavelength_nm)
     required = {"glued_range_corrected_signal", "gluing_success_flag", "gluing_split_altitude_m"}
     if not required.issubset(set(ds_l2.data_vars)):
@@ -222,155 +256,88 @@ def plot_qa_gluing(
 
     output_format, dpi = get_output_settings(config)
     date_title, _ = extract_datetime_strings(ds_l2)
-    alt_km = altitude_to_km(ds_l2["altitude"].values)
-    max_alt_km = min(15.0, float(np.nanmax(alt_km)))
+    altitude_m = np.asarray(ds_l2["altitude"].values, dtype=np.float64)
+    if np.nanmax(altitude_m) <= 100.0:
+        altitude_m = altitude_m * 1000.0
+    alt_km = altitude_m / 1000.0
+    max_alt_km = min(20.0, float(np.nanmax(alt_km)))
     valid_alt = alt_km <= max_alt_km
-    color = channel_color(wavelength)
     smooth_bins = int(config.get("visualization", {}).get("level2_qa", {}).get("smooth_bins", 15))
 
-    glued = ds_l2["glued_range_corrected_signal"].sel(wavelength=wavelength)
-    glued_profile = _smooth_for_plot(safe_time_mean(glued).values, smooth_bins)
-    split_alt_km = ds_l2["gluing_split_altitude_m"].sel(wavelength=wavelength) / 1000.0
+    glued_rcs = _smooth_for_plot(safe_time_mean(ds_l2["glued_range_corrected_signal"].sel(wavelength=wavelength)).values, smooth_bins)
+    if "glued_corrected_signal_mean" in ds_l2:
+        glued_corrected = np.asarray(ds_l2["glued_corrected_signal_mean"].sel(wavelength=wavelength).values, dtype=np.float64)
+        glued_rcs = _smooth_for_plot(glued_corrected * altitude_m**2, smooth_bins)
+
     success = ds_l2["gluing_success_flag"].sel(wavelength=wavelength)
     success_values = np.asarray(success.values, dtype=float)
     success_rate = 100.0 * float(np.nansum(success_values)) / max(success.size, 1)
-    valid_success = np.isfinite(success_values) & (success_values == 1)
+    split_alt_km = ds_l2["gluing_split_altitude_m"].sel(wavelength=wavelength) / 1000.0
+    median_split = float(np.nanmedian(split_alt_km.values)) if np.any(np.isfinite(split_alt_km.values)) else np.nan
+    median_start = _safe_median_dataarray(ds_l2, "gluing_start_altitude_m", wavelength) / 1000.0
+    median_stop = _safe_median_dataarray(ds_l2, "gluing_stop_altitude_m", wavelength) / 1000.0
 
-    fig = plt.figure(figsize=(15.5, 9.5))
-    gs = gridspec.GridSpec(2, 3, height_ratios=[1.1, 0.95], width_ratios=[1.2, 1.0, 1.0], hspace=0.34, wspace=0.30)
-    ax_profile = plt.subplot(gs[:, 0])
-    ax_split = plt.subplot(gs[0, 1])
-    ax_metrics = plt.subplot(gs[0, 2])
-    ax_residual = plt.subplot(gs[1, 1])
-    ax_mask = plt.subplot(gs[1, 2])
-
-    scaling_note = "L1 channels unavailable"
-    residual_profile = np.full_like(glued_profile, np.nan, dtype=np.float64)
+    analog_rcs = np.full_like(glued_rcs, np.nan, dtype=np.float64)
+    photon_rcs = np.full_like(glued_rcs, np.nan, dtype=np.float64)
+    scale_factor = np.nan
+    scale_bins = (1000, 1500)
     analog_ch = photon_ch = None
     if ds_l1 is not None:
         analog_ch, photon_ch = infer_l1_channels_for_wavelength(ds_l1, wavelength)
-        has_corrected = "corrected_signal" in ds_l1
-        has_rcs = "range_corrected_signal" in ds_l1
-        if analog_ch is not None and photon_ch is not None and (has_corrected or has_rcs):
-            source_var = "corrected_signal" if has_corrected else "range_corrected_signal"
-            analog_profile_raw = safe_time_mean(ds_l1[source_var].sel(channel=analog_ch)).values
-            photon_profile = _smooth_for_plot(safe_time_mean(ds_l1[source_var].sel(channel=photon_ch)).values, smooth_bins)
+        if analog_ch is not None and photon_ch is not None:
+            if "corrected_signal" in ds_l1:
+                analog_corrected = safe_time_mean(ds_l1["corrected_signal"].sel(channel=analog_ch)).values
+                photon_corrected = safe_time_mean(ds_l1["corrected_signal"].sel(channel=photon_ch)).values
+                scale_factor, scale_bins = _legacy_scale_factor(analog_corrected, photon_corrected)
+                analog_rcs = _smooth_for_plot(analog_corrected * scale_factor * altitude_m**2, smooth_bins)
+                photon_rcs = _smooth_for_plot(photon_corrected * altitude_m**2, smooth_bins)
+            elif "range_corrected_signal" in ds_l1:
+                analog_raw = safe_time_mean(ds_l1["range_corrected_signal"].sel(channel=analog_ch)).values
+                photon_raw = safe_time_mean(ds_l1["range_corrected_signal"].sel(channel=photon_ch)).values
+                scale_factor, scale_bins = _legacy_scale_factor(analog_raw, photon_raw)
+                analog_rcs = _smooth_for_plot(analog_raw * scale_factor, smooth_bins)
+                photon_rcs = _smooth_for_plot(photon_raw, smooth_bins)
 
-            if bool(valid_success.any()) and {"gluing_slope", "gluing_intercept"}.issubset(set(ds_l2.data_vars)):
-                slope_values = ds_l2["gluing_slope"].sel(wavelength=wavelength).values
-                intercept_values = ds_l2["gluing_intercept"].sel(wavelength=wavelength).values
-                slope = float(np.nanmedian(np.asarray(slope_values)[valid_success]))
-                intercept = float(np.nanmedian(np.asarray(intercept_values)[valid_success]))
-                scaling_note = "AN scaled with median operational coefficients"
-            else:
-                slope, intercept, scaling_note = _visual_scale_to_reference(analog_profile_raw, photon_profile, alt_km)
+    fig = plt.figure(figsize=(12.0, 8.0))
+    ax = fig.add_subplot(111)
+    ax.set_facecolor("gainsboro")
+    ax.grid(True, color="0.6", linestyle=":", alpha=0.85)
 
-            scaled_analog = _smooth_for_plot(slope * analog_profile_raw + intercept, smooth_bins)
-            residual_profile = scaled_analog - photon_profile
-            ax_profile.plot(scaled_analog[valid_alt], alt_km[valid_alt], linestyle="--", linewidth=1.8, label=f"{analog_ch} scaled")
-            ax_profile.plot(photon_profile[valid_alt], alt_km[valid_alt], linestyle=":", linewidth=2.0, label=f"{photon_ch} mean")
+    ax.plot(alt_km[valid_alt], analog_rcs[valid_alt], label="analog scaled", color="darkcyan", linewidth=1.8)
+    ax.plot(alt_km[valid_alt], photon_rcs[valid_alt], label="photo-counting", color="orangered", linewidth=1.8)
+    ax.plot(alt_km[valid_alt], glued_rcs[valid_alt], label="glued signal", color="darkmagenta", linewidth=2.2)
 
-    ax_profile.plot(glued_profile[valid_alt], alt_km[valid_alt], color=color, linewidth=2.4, label="Glued mean")
-    median_split = float(np.nanmedian(split_alt_km.values)) if np.any(np.isfinite(split_alt_km.values)) else np.nan
+    ylims = _legacy_ylim(analog_rcs[valid_alt], photon_rcs[valid_alt], glued_rcs[valid_alt])
+    if np.isfinite(median_start) and np.isfinite(median_stop) and 0.0 < median_start < median_stop <= max_alt_km:
+        ax.vlines([median_start, median_stop], ylims[0], ylims[1], colors="k", linestyles="dashed", linewidth=1.4, label="gluing region")
     if np.isfinite(median_split) and 0 < median_split <= max_alt_km:
-        ax_profile.axhline(median_split, color="black", linestyle="-.", linewidth=1.6, label=f"Median split {median_split:.2f} km")
+        ax.axvline(median_split, color="black", linestyle="-.", linewidth=1.1, label=f"split {median_split:.2f} km")
+    ax.set_ylim(*ylims)
+    ax.set_xlim(0, max_alt_km)
+    ax.set_xlabel("Height a.g.l. [km]", fontweight="bold")
+    ax.set_ylabel("Glued signal - AN + PC [RCS a.u.]", fontweight="bold")
+    ax.set_title(f"Legacy-style Gluing QA - {format_wavelength_label(wavelength)}", fontsize=14, fontweight="bold")
 
-    if {"gluing_start_altitude_m", "gluing_stop_altitude_m"}.issubset(set(ds_l2.data_vars)):
-        start_km = ds_l2["gluing_start_altitude_m"].sel(wavelength=wavelength).values / 1000.0
-        stop_km = ds_l2["gluing_stop_altitude_m"].sel(wavelength=wavelength).values / 1000.0
-        if np.isfinite(start_km).any() and np.isfinite(stop_km).any():
-            ax_profile.axhspan(float(np.nanmedian(start_km)), float(np.nanmedian(stop_km)), color="gray", alpha=0.14, label="Median fade window")
-
-    ax_profile.set_title(f"Corrected-signal Gluing QA - {format_wavelength_label(wavelength)}", fontsize=13, fontweight="bold")
-    ax_profile.set_xlabel("Signal on photon-counting scale [native units]", fontsize=11, fontweight="bold")
-    ax_profile.set_ylabel("Altitude (km a.g.l.)", fontsize=11, fontweight="bold")
-    ax_profile.set_ylim(0, max_alt_km)
-    ax_profile.set_xscale("symlog", linthresh=1e-3)
-    ax_profile.grid(True, which="both", alpha=0.45)
-    ax_profile.legend(fontsize=8.5, loc="best")
-
-    try:
-        time_values = pd.to_datetime(ds_l2["time"].values)
-        ax_split.plot(time_values, split_alt_km.values, marker="o", linestyle="-", linewidth=1.4, markersize=3, label="split")
-        ax_split.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
-        ax_split.set_xlabel("Time (UTC)", fontsize=10, fontweight="bold")
-    except Exception:
-        ax_split.plot(np.arange(split_alt_km.size), split_alt_km.values, marker="o", linestyle="-", linewidth=1.4, markersize=3, label="split")
-        ax_split.set_xlabel("Profile index", fontsize=10, fontweight="bold")
-    if np.isfinite(median_split) and 0 < median_split <= max_alt_km:
-        ax_split.axhline(median_split, color="black", linestyle="-.", linewidth=1.4)
-    ax_split.set_title(f"Split altitude | success {success_rate:.1f}%", fontsize=12, fontweight="bold")
-    ax_split.set_ylabel("km a.g.l.", fontsize=10, fontweight="bold")
-    ax_split.set_ylim(0, max_alt_km)
-    ax_split.grid(True, alpha=0.45)
-
-    metric_names = [
-        ("gluing_correlation", "corr", 1.0),
-        ("gluing_relative_rmse", "RMSE", np.nan),
-        ("gluing_relative_bias", "bias", np.nan),
-    ]
-    metric_x = pd.to_datetime(ds_l2["time"].values) if "time" in ds_l2.coords else np.arange(success.size)
-    for name, label, ref in metric_names:
-        if name in ds_l2:
-            values = np.asarray(ds_l2[name].sel(wavelength=wavelength).values, dtype=np.float64)
-            ax_metrics.plot(metric_x, values, marker="o", linewidth=1.2, markersize=2.7, label=label)
-            if np.isfinite(ref):
-                ax_metrics.axhline(ref, linestyle="--", linewidth=0.9, alpha=0.7)
-    if "time" in ds_l2.coords:
-        ax_metrics.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
-    ax_metrics.set_title("Operational fit diagnostics", fontsize=12, fontweight="bold")
-    ax_metrics.set_ylabel("dimensionless", fontsize=10, fontweight="bold")
-    ax_metrics.grid(True, alpha=0.45)
-    ax_metrics.legend(fontsize=8, loc="best")
-
-    if np.isfinite(residual_profile).any():
-        ax_residual.plot(residual_profile[valid_alt], alt_km[valid_alt], color="tab:purple", linewidth=1.6, label="scaled AN - PC")
-        ax_residual.axvline(0.0, color="black", linewidth=0.8)
-        ax_residual.set_xlim(*_robust_symmetric_xlim(residual_profile[valid_alt], default_abs=1.0))
-    ax_residual.set_title("Mean overlap residual", fontsize=12, fontweight="bold")
-    ax_residual.set_xlabel("Residual [native units]", fontsize=10, fontweight="bold")
-    ax_residual.set_ylabel("Altitude (km a.g.l.)", fontsize=10, fontweight="bold")
-    ax_residual.set_ylim(0, max_alt_km)
-    ax_residual.grid(True, alpha=0.45)
-
-    mask_plotted = False
-    if ds_l1 is not None and photon_ch is not None and "pc_saturation_mask" in ds_l1:
-        pc_mask = np.asarray(ds_l1["pc_saturation_mask"].sel(channel=photon_ch).values, dtype=np.float64)
-        if pc_mask.ndim == 2:
-            pc_mask_mean = np.nanmean(pc_mask, axis=0)
-            ax_mask.plot(pc_mask_mean[valid_alt], alt_km[valid_alt], color="tab:red", linewidth=1.8, label="PC saturation fraction")
-            mask_plotted = True
-    if ds_l1 is not None and photon_ch is not None and "deadtime_clipping_fraction" in ds_l1:
-        try:
-            clip = ds_l1["deadtime_clipping_fraction"].sel(channel=photon_ch).values
-            clip_mean = float(np.nanmean(clip))
-            ax_mask.text(0.04, 0.08, f"Mean deadtime clipped bins: {100.0 * clip_mean:.2f}%", transform=ax_mask.transAxes, fontsize=9, bbox={"facecolor": "white", "alpha": 0.82, "edgecolor": "gray"})
-        except Exception:
-            pass
-    if not mask_plotted:
-        ax_mask.text(0.05, 0.92, "No L1 PC saturation mask available", transform=ax_mask.transAxes, va="top", fontsize=9, bbox={"facecolor": "white", "alpha": 0.82, "edgecolor": "gray"})
-    ax_mask.set_title("PC mask diagnostic", fontsize=12, fontweight="bold")
-    ax_mask.set_xlabel("fraction of profiles", fontsize=10, fontweight="bold")
-    ax_mask.set_ylabel("Altitude (km a.g.l.)", fontsize=10, fontweight="bold")
-    ax_mask.set_xlim(-0.02, 1.02)
-    ax_mask.set_ylim(0, max_alt_km)
-    ax_mask.grid(True, alpha=0.45)
-    ax_mask.legend(fontsize=8, loc="best")
-
-    split_text = f"median split={median_split:.2f} km" if np.isfinite(median_split) else "median split=NaN"
-    summary = (
-        f"{scaling_note}\n"
-        f"{split_text}\n"
-        f"corr_med={_safe_median_dataarray(ds_l2, 'gluing_correlation', wavelength):.4g}, "
-        f"rmse_med={_safe_median_dataarray(ds_l2, 'gluing_relative_rmse', wavelength):.4g}, "
-        f"bias_med={_safe_median_dataarray(ds_l2, 'gluing_relative_bias', wavelength):.4g}"
+    corr_med = _safe_median_dataarray(ds_l2, "gluing_correlation", wavelength)
+    rmse_med = _safe_median_dataarray(ds_l2, "gluing_relative_rmse", wavelength)
+    bias_med = _safe_median_dataarray(ds_l2, "gluing_relative_bias", wavelength)
+    note = (
+        f"success={success_rate:.1f}%\n"
+        f"scale bins={scale_bins[0]}:{scale_bins[1]}, scale={scale_factor:.3g}\n"
+        f"corr_med={corr_med:.4g}, rmse_med={rmse_med:.4g}, bias_med={bias_med:.4g}"
     )
-    ax_split.text(0.04, 0.96, summary, transform=ax_split.transAxes, va="top", fontsize=8.5, bbox={"facecolor": "white", "alpha": 0.82, "edgecolor": "gray"})
     if success_rate == 0.0:
-        ax_split.text(0.04, 0.42, "Operational gluing failed for all blocks.\nInspect saturation mask and fit diagnostics.", transform=ax_split.transAxes, va="top", fontsize=9, bbox={"facecolor": "mistyrose", "alpha": 0.88, "edgecolor": "gray"})
+        note += "\nOperational gluing failed; glued curve may be fallback."
+    ax.text(0.02, 0.97, note, transform=ax.transAxes, va="top", fontsize=9, bbox={"facecolor": "white", "alpha": 0.84, "edgecolor": "gray"})
 
-    fig.suptitle(f"MILGRAU Level 2 QA - Signal Gluing - {format_wavelength_label(wavelength)}\n{date_title}", fontsize=15, fontweight="bold", y=0.98)
-    fig.subplots_adjust(top=0.88, bottom=0.12)
+    for label in ax.get_xticklabels():
+        label.set_fontweight(500)
+    for label in ax.get_yticklabels():
+        label.set_fontweight(500)
+    ax.legend(loc="best", fontsize=9, markerscale=1.5, handletextpad=0.3)
+
+    fig.suptitle(f"MILGRAU Level 2 QA - Signal Gluing - {format_wavelength_label(wavelength)}\n{date_title}", fontsize=15, fontweight="bold", y=0.97)
+    fig.subplots_adjust(top=0.84, bottom=0.14)
     add_footer_and_logos(fig, root_dir)
     out_path = Path(output_folder) / f"QA_Gluing_{file_name_prefix}_{wavelength}nm.{output_format}"
     Path(output_folder).mkdir(parents=True, exist_ok=True)
@@ -438,7 +405,6 @@ def plot_qa_molecular_fit(
     ax1.set_ylim(0, max_alt_km)
     ax1.set_xscale("symlog", linthresh=1e-3)
     ax1.grid(True, which="both", alpha=0.45)
-    add_atmospheric_boundaries(ax1, ds_l2, max_alt_km)
     ax1.legend(fontsize=9, loc="best")
 
     fig.suptitle(f"MILGRAU Level 2 QA - Molecular Rayleigh Fit - {format_wavelength_label(wavelength)}\n{date_title}", fontsize=15, fontweight="bold", y=0.97)
@@ -501,7 +467,6 @@ def plot_qa_scattering_ratio(
     ax.set_xlim(*xlim)
     ax.set_ylim(0, max_alt_km)
     ax.grid(True, alpha=0.45)
-    add_atmospheric_boundaries(ax, ds_l2, max_alt_km)
 
     upper_mask = (alt_km >= 10.0) & valid_alt & np.isfinite(sr)
     notes = [f"Savgol plot smoothing = {smooth_bins} bins"]
@@ -591,7 +556,6 @@ def plot_qa_l2_kfs(
     plt.setp(ax1.get_yticklabels(), visible=False)
 
     for ax in (ax0, ax1):
-        add_atmospheric_boundaries(ax, ds_l2, max_alt_km)
         ax.legend(fontsize=9, loc="best")
     fig.suptitle(f"MILGRAU Level 2 QA - KFS Optical Retrieval - {format_wavelength_label(wavelength)}\n{date_title}", fontsize=15, fontweight="bold", y=0.97)
     fig.subplots_adjust(top=0.84, bottom=0.14)
