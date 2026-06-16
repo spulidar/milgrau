@@ -31,12 +31,18 @@ dependencies = [
 dev = [
   "pytest>=7.0.0",
 ]
+explorer = [
+  "streamlit>=1.35.0",
+  "plotly>=5.20.0",
+  "streamlit-calendar>=1.2.0",
+]
 
 [project.scripts]
 milgrau-libids = "scripts.run_libids:main"
 milgrau-lipancora = "scripts.run_lipancora:main"
 milgrau-liracos = "scripts.run_liracos:main"
 milgrau-lebear = "scripts.run_lebear:main"
+milgrau-explorer = "milgrau.explorer.streamlit_app:main"
 
 [tool.setuptools.packages.find]
 include = ["milgrau*", "scripts*"]
