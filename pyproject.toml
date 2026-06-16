@@ -34,7 +34,6 @@ dev = [
 explorer = [
   "streamlit>=1.35.0",
   "plotly>=5.20.0",
-  "streamlit-calendar>=1.2.0",
 ]
 
 [project.scripts]
