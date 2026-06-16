@@ -42,7 +42,7 @@ milgrau-libids = "scripts.run_libids:main"
 milgrau-lipancora = "scripts.run_lipancora:main"
 milgrau-liracos = "scripts.run_liracos:main"
 milgrau-lebear = "scripts.run_lebear:main"
-milgrau-explorer = "milgrau.explorer.streamlit_app:main"
+milgrau-explorer = "scripts.run_nc_explorer:main"
 
 [tool.setuptools.packages.find]
 include = ["milgrau*", "scripts*"]
