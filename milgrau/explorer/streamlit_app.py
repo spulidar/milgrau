@@ -22,16 +22,21 @@ from milgrau.config.loader import load_config
 from milgrau.io.paths import LEVEL1_SUFFIX, LEVEL2_SUFFIX, processed_data_root
 from milgrau.visualization.style import channel_color
 
+
 LEVEL_TO_PATH = {
     "Level 0": "level0_path",
     "Level 1": "level1_path",
     "Level 2": "level2_path",
 }
+LEVEL0_VERTICAL_DIMS = ("points", "range_bin", "bins")
+ALTITUDE_DIMS = ("altitude", "height", "range")
 PREFERRED_VARIABLES = [
-    "glued_range_corrected_signal",
-    "range_corrected_signal",
-    "corrected_signal",
     "Raw_Lidar_Data",
+    "Background_Profile",
+    "range_corrected_signal",
+    "range_corrected_signal_error",
+    "corrected_signal",
+    "glued_range_corrected_signal",
     "glued_corrected_signal",
     "glued_range_corrected_signal_mean",
     "glued_corrected_signal_mean",
@@ -41,7 +46,9 @@ PREFERRED_VARIABLES = [
     "aerosol_backscatter_mean",
     "aerosol_extinction_mean",
     "aerosol_backscatter",
+    "aerosol_backscatter_error",
     "aerosol_extinction",
+    "aerosol_extinction_error",
     "molecular_backscatter",
     "molecular_extinction",
 ]
@@ -52,6 +59,10 @@ DIAGNOSTIC_NAMES = [
     "bin_shift_invalid_fraction",
     "channel_correction_success",
     "dark_current_used",
+    "Background_Profile_Available",
+    "Raw_Data_Range_Resolution",
+    "Background_Low",
+    "Background_High",
     "gluing_success_flag",
     "gluing_fallback_flag",
     "gluing_split_altitude_m",
@@ -74,8 +85,6 @@ DIAGNOSTIC_NAMES = [
 
 
 def safe_key(*parts: Any) -> str:
-    """Return a stable Streamlit widget key from arbitrary labels."""
-
     text = "_".join(str(part) for part in parts if part is not None)
     return re.sub(r"[^0-9A-Za-z_]+", "_", text).strip("_") or "widget"
 
@@ -158,26 +167,28 @@ def coord_name(obj: xr.Dataset | xr.DataArray, candidates: tuple[str, ...]) -> s
     return None
 
 
-def altitude_name(obj: xr.Dataset | xr.DataArray) -> str | None:
-    return coord_name(obj, ("altitude", "height", "range", "points", "range_bin"))
+def channel_name(obj: xr.Dataset | xr.DataArray) -> str | None:
+    return coord_name(obj, ("channel", "channels"))
 
 
 def time_name(obj: xr.Dataset | xr.DataArray) -> str | None:
     return coord_name(obj, ("time", "Time", "Raw_Data_Start_Time", "block_time", "profile"))
 
 
-def channel_name(obj: xr.Dataset | xr.DataArray) -> str | None:
-    return coord_name(obj, ("channel", "channels"))
+def vertical_name(obj: xr.Dataset | xr.DataArray, level: str) -> str | None:
+    if level == "Level 0":
+        return coord_name(obj, LEVEL0_VERTICAL_DIMS)
+    return coord_name(obj, ALTITUDE_DIMS + LEVEL0_VERTICAL_DIMS)
+
+
+def wavelength_coord_name(obj: xr.Dataset | xr.DataArray) -> str | None:
+    return coord_name(obj, ("wavelength", "wavelength_nm"))
 
 
 def coord_values(ds: xr.Dataset, name: str | None) -> list[Any]:
     if name and name in ds.variables:
         return [value.item() if hasattr(value, "item") else value for value in np.asarray(ds[name].values).ravel()]
     return []
-
-
-def wavelength_coord_name(ds: xr.Dataset | xr.DataArray) -> str | None:
-    return coord_name(ds, ("wavelength", "wavelength_nm"))
 
 
 def wavelength_values(ds: xr.Dataset) -> list[Any]:
@@ -211,6 +222,11 @@ def wavelength_label(wavelength: Any) -> str:
 
 def date_title(ds: xr.Dataset) -> str:
     if "time" not in ds.coords:
+        start = ds.attrs.get("RawData_Start_Date", "")
+        start_time = ds.attrs.get("RawData_Start_Time_UT", "")
+        stop_time = ds.attrs.get("RawData_Stop_Time_UT", "")
+        if start and start_time:
+            return f"{start} {start_time}-{stop_time} UT"
         return str(ds.attrs.get("Measurement_ID", "Unknown date"))
     try:
         times = pd.to_datetime(ds["time"].values)
@@ -233,20 +249,31 @@ def select_wavelength(da: xr.DataArray, wavelength: Any | None) -> xr.DataArray:
     return select_coord(da, wavelength_coord_name(da), wavelength)
 
 
-def altitude_km(obj: xr.Dataset | xr.DataArray) -> np.ndarray:
-    alt = altitude_name(obj)
-    if not alt or alt not in obj.coords:
-        size = int(obj.sizes.get("altitude", obj.shape[-1] if isinstance(obj, xr.DataArray) and obj.shape else 0))
+def vertical_values(obj: xr.Dataset | xr.DataArray, level: str) -> np.ndarray:
+    vdim = vertical_name(obj, level)
+    if vdim is None:
+        size = int(obj.shape[-1] if isinstance(obj, xr.DataArray) and obj.shape else 0)
         return np.arange(size, dtype=float)
-    values = np.asarray(obj[alt].values, dtype=float)
-    if values.size and np.nanmax(values) > 100.0:
-        return values / 1000.0
-    return values
+    if level == "Level 0":
+        return np.arange(int(obj.sizes.get(vdim, 0)), dtype=float)
+    if vdim in obj.coords:
+        values = np.asarray(obj[vdim].values, dtype=float)
+        if values.size and np.nanmax(values) > 100.0:
+            return values / 1000.0
+        return values
+    return np.arange(int(obj.sizes.get(vdim, 0)), dtype=float)
+
+
+def altitude_km(obj: xr.Dataset | xr.DataArray) -> np.ndarray:
+    return vertical_values(obj, "Level 1")
 
 
 def altitude_m(obj: xr.Dataset | xr.DataArray) -> np.ndarray:
-    alt = altitude_name(obj)
-    values = np.asarray(obj[alt].values, dtype=float) if alt and alt in obj.coords else altitude_km(obj)
+    vdim = vertical_name(obj, "Level 1")
+    if vdim and vdim in obj.coords:
+        values = np.asarray(obj[vdim].values, dtype=float)
+    else:
+        values = altitude_km(obj)
     if values.size and np.nanmax(values) <= 100.0:
         return values * 1000.0
     return values
@@ -256,19 +283,14 @@ def smooth_profile(values: np.ndarray | xr.DataArray, bins: int) -> np.ndarray:
     arr = np.asarray(values, dtype=np.float64)
     if bins <= 1 or arr.size < 3:
         return arr
-    return (
-        pd.Series(arr)
-        .rolling(window=int(bins), min_periods=1, center=True)
-        .mean()
-        .to_numpy(dtype=np.float64)
-    )
+    return pd.Series(arr).rolling(window=int(bins), min_periods=1, center=True).mean().to_numpy(dtype=np.float64)
 
 
-def reduce_to_altitude_profile(da: xr.DataArray, smooth_bins: int = 1) -> xr.DataArray:
-    alt = altitude_name(da) or (da.dims[-1] if da.dims else None)
-    if alt is None:
+def reduce_to_vertical_profile(da: xr.DataArray, level: str, smooth_bins: int = 1) -> xr.DataArray:
+    vdim = vertical_name(da, level) or (da.dims[-1] if da.dims else None)
+    if vdim is None:
         return da
-    reduce_dims = [dim for dim in da.dims if dim != alt]
+    reduce_dims = [dim for dim in da.dims if dim != vdim]
     reduced = da.mean(dim=reduce_dims, skipna=True) if reduce_dims else da
     if smooth_bins > 1:
         reduced = xr.DataArray(
@@ -279,6 +301,10 @@ def reduce_to_altitude_profile(da: xr.DataArray, smooth_bins: int = 1) -> xr.Dat
             name=reduced.name,
         )
     return reduced
+
+
+def reduce_to_altitude_profile(da: xr.DataArray, smooth_bins: int = 1) -> xr.DataArray:
+    return reduce_to_vertical_profile(da, "Level 1", smooth_bins)
 
 
 def error_of_mean(err_da: xr.DataArray) -> xr.DataArray:
@@ -320,24 +346,73 @@ def parse_color_range(text: str) -> tuple[float | None, float | None]:
         return None, None
 
 
+def robust_color_limits(z: np.ndarray, manual_range: str, robust: bool, low: float, high: float) -> tuple[float | None, float | None]:
+    zmin, zmax = parse_color_range(manual_range)
+    if zmin is not None or zmax is not None:
+        return zmin, zmax
+    if not robust:
+        return None, None
+    values = np.asarray(z, dtype=float)
+    finite = values[np.isfinite(values)]
+    if finite.size < 2:
+        return None, None
+    lo = float(np.nanpercentile(finite, low))
+    hi = float(np.nanpercentile(finite, high))
+    if not np.isfinite(lo) or not np.isfinite(hi) or lo == hi:
+        return None, None
+    return lo, hi
+
+
+def raw_time_strings(ds: xr.Dataset, length: int) -> list[str] | None:
+    if "Raw_Data_Start_Time" not in ds:
+        return None
+    try:
+        values = ds["Raw_Data_Start_Time"].values
+        if np.issubdtype(values.dtype, np.datetime64):
+            times = pd.to_datetime(values)
+        else:
+            times = pd.to_datetime(np.asarray(values, dtype=float), unit="s", utc=True)
+        return [t.strftime("%H:%M:%S UTC") for t in times[:length]]
+    except Exception:
+        return None
+
+
+def x_axis_values(da: xr.DataArray, level: str, ds: xr.Dataset | None = None) -> tuple[np.ndarray | pd.DatetimeIndex, str, list[str] | None]:
+    if not da.dims:
+        return np.arange(1), "profile index", None
+    xdim = da.dims[0]
+    n = int(da.sizes.get(xdim, 0))
+    if level == "Level 0":
+        hover_time = raw_time_strings(ds, n) if ds is not None and xdim == "time" else None
+        if xdim == "time_bck":
+            return np.arange(n), "background profile index", hover_time
+        return np.arange(n), "profile index", hover_time
+    if xdim in da.coords:
+        return da[xdim].values, "Time (UTC)" if xdim in ("time", "block_time") else xdim, None
+    return np.arange(n), xdim, None
+
+
 def reduce_for_heatmap(
     da: xr.DataArray,
+    level: str,
     channel: Any | None,
     wavelength: Any | None,
-    max_alt_km: float,
+    max_vertical: float,
     max_points: int = 900,
 ) -> xr.DataArray:
     da = select_coord(da, channel_name(da), channel)
     da = select_wavelength(da, wavelength)
-    alt = altitude_name(da)
-    if alt and alt in da.coords:
+    vdim = vertical_name(da, level)
+    if vdim and vdim in da.dims:
         try:
-            alt_values = altitude_km(da)
-            da = da.isel({alt: alt_values <= max_alt_km})
+            values = vertical_values(da, level)
+            da = da.isel({vdim: values <= max_vertical})
         except Exception:
             pass
     tdim = time_name(da)
-    keep = {dim for dim in (tdim, alt) if dim and dim in da.dims}
+    if level == "Level 0":
+        tdim = "time_bck" if "time_bck" in da.dims else ("time" if "time" in da.dims else tdim)
+    keep = {dim for dim in (tdim, vdim) if dim and dim in da.dims}
     for dim in list(da.dims):
         if dim not in keep:
             da = da.isel({dim: 0})
@@ -352,65 +427,83 @@ def reduce_for_heatmap(
     return da.isel(slices) if slices else da
 
 
-def heatmap_figure(da: xr.DataArray, title: str, log10: bool, color_range: str) -> go.Figure:
-    z = np.asarray(da.values, dtype=float)
+def heatmap_figure(
+    da: xr.DataArray,
+    title: str,
+    level: str,
+    log10: bool,
+    color_range: str,
+    robust: bool,
+    robust_low: float,
+    robust_high: float,
+    ds: xr.Dataset | None = None,
+) -> go.Figure:
+    values = np.asarray(da.values, dtype=float)
     if log10:
-        z = np.where(z > 0, np.log10(z), np.nan)
-    z = z.T if z.ndim == 2 else np.atleast_2d(z)
-    xdim = da.dims[0] if da.dims else "profile"
-    ydim = da.dims[-1] if len(da.dims) > 1 else "vertical"
-    x = da[xdim].values if xdim in da.coords else np.arange(z.shape[1])
-    y = altitude_km(da) if ydim == altitude_name(da) else (da[ydim].values if ydim in da.coords else np.arange(z.shape[0]))
-    zmin, zmax = parse_color_range(color_range)
-    fig = go.Figure(data=go.Heatmap(x=x, y=y, z=z, zmin=zmin, zmax=zmax, colorscale="Jet", colorbar={"title": "log10" if log10 else da.name}))
-    fig.update_layout(title=title, xaxis_title=xdim, yaxis_title="Altitude (km a.g.l.)" if ydim == altitude_name(da) else ydim, margin={"l": 60, "r": 20, "t": 70, "b": 50})
+        values = np.where(values > 0, np.log10(values), np.nan)
+    z = values.T if values.ndim == 2 else np.atleast_2d(values)
+    x, x_label, hover_time = x_axis_values(da, level, ds)
+    y = vertical_values(da, level)
+    y_label = "Range bin / point index" if level == "Level 0" else "Altitude (km a.g.l.)"
+    zmin, zmax = robust_color_limits(z, color_range, robust, robust_low, robust_high)
+    customdata = None
+    hovertemplate = "%{x}<br>%{y}<br>value=%{z:.4g}<extra></extra>"
+    if level == "Level 0" and hover_time is not None:
+        customdata = np.tile(np.asarray(hover_time, dtype=object), (z.shape[0], 1))
+        hovertemplate = "profile=%{x}<br>bin=%{y}<br>start=%{customdata}<br>value=%{z:.4g}<extra></extra>"
+    fig = go.Figure(
+        data=go.Heatmap(
+            x=x,
+            y=y,
+            z=z,
+            zmin=zmin,
+            zmax=zmax,
+            customdata=customdata,
+            hovertemplate=hovertemplate,
+            colorscale="Jet",
+            colorbar={"title": "log10" if log10 else da.name},
+        )
+    )
+    subtitle = "robust color scale" if robust and not color_range.strip() else "manual/auto color scale"
+    fig.update_layout(
+        title=f"{title}<br><sup>{subtitle}</sup>",
+        xaxis_title=x_label,
+        yaxis_title=y_label,
+        margin={"l": 70, "r": 20, "t": 85, "b": 55},
+        height=720,
+    )
     return fig
 
 
-def profile_figure(da: xr.DataArray, title: str, smooth_bins: int = 20) -> go.Figure:
-    prof = reduce_to_altitude_profile(da, smooth_bins=smooth_bins)
-    alt = altitude_km(prof)
-    fig = go.Figure(data=go.Scatter(x=np.asarray(prof.values, dtype=float), y=alt, mode="lines", name=prof.name or "mean profile"))
-    fig.update_layout(title=title, xaxis_title=prof.name or "value", yaxis_title="Altitude (km a.g.l.)", margin={"l": 60, "r": 20, "t": 70, "b": 50})
-    fig.update_yaxes(range=[0, float(np.nanmax(alt)) if alt.size else 1.0])
+def profile_figure(da: xr.DataArray, title: str, level: str, smooth_bins: int = 20) -> go.Figure:
+    prof = reduce_to_vertical_profile(da, level, smooth_bins=smooth_bins)
+    y = vertical_values(prof, level)
+    y_label = "Range bin / point index" if level == "Level 0" else "Altitude (km a.g.l.)"
+    fig = go.Figure(data=go.Scatter(x=np.asarray(prof.values, dtype=float), y=y, mode="lines", name=prof.name or "mean profile"))
+    fig.update_layout(title=title, xaxis_title=prof.name or "value", yaxis_title=y_label, margin={"l": 70, "r": 20, "t": 70, "b": 50}, height=720)
+    if y.size:
+        fig.update_yaxes(range=[float(np.nanmin(y)), float(np.nanmax(y))])
     return fig
 
 
-def add_profile_band(fig: go.Figure, y: np.ndarray, mean: np.ndarray, sigma: np.ndarray, name: str, color: str, row: int | None = None, col: int | None = None) -> None:
+def add_profile_band(fig: go.Figure, y: np.ndarray, mean: np.ndarray, sigma: np.ndarray, name: str, row: int | None = None, col: int | None = None) -> None:
     lower = np.asarray(mean, dtype=float) - np.asarray(sigma, dtype=float)
     upper = np.asarray(mean, dtype=float) + np.asarray(sigma, dtype=float)
     kwargs = {"row": row, "col": col} if row is not None and col is not None else {}
     fig.add_trace(go.Scatter(x=lower, y=y, mode="lines", line={"width": 0}, showlegend=False, hoverinfo="skip"), **kwargs)
     fig.add_trace(
-        go.Scatter(
-            x=upper,
-            y=y,
-            mode="lines",
-            fill="tonextx",
-            fillcolor="rgba(128,128,128,0.22)",
-            line={"width": 0},
-            name=name,
-            hoverinfo="skip",
-        ),
+        go.Scatter(x=upper, y=y, mode="lines", fill="tonextx", fillcolor="rgba(128,128,128,0.22)", line={"width": 0}, name=name, hoverinfo="skip"),
         **kwargs,
     )
 
 
-def maybe_add_altitude_line(fig: go.Figure, y: float, name: str, color: str, dash: str, row: int, col: int, xspan: tuple[float, float] | None = None) -> None:
+def add_altitude_reference_lines(fig: go.Figure, ds: xr.Dataset, max_alt_km: float, row: int, col: int, xspan: tuple[float, float] | None = None) -> None:
     x0, x1 = xspan or (0.0, 1.0)
-    fig.add_trace(
-        go.Scatter(x=[x0, x1], y=[y, y], mode="lines", line={"color": color, "dash": dash, "width": 1.6}, name=name, hovertemplate=f"{name}: {y:.2f} km<extra></extra>"),
-        row=row,
-        col=col,
-    )
-
-
-def add_atmospheric_boundaries_plotly(fig: go.Figure, ds: xr.Dataset, max_alt_km: float, row: int, col: int, xspan: tuple[float, float] | None = None) -> None:
     if "PBL_Height_km" in ds:
         try:
             pbl = float(ds["PBL_Height_km"].mean(skipna=True).values)
             if np.isfinite(pbl) and 0 < pbl <= max_alt_km:
-                maybe_add_altitude_line(fig, pbl, f"Mean PBL ({pbl:.1f} km)", "crimson", "dash", row, col, xspan)
+                fig.add_trace(go.Scatter(x=[x0, x1], y=[pbl, pbl], mode="lines", line={"color": "crimson", "dash": "dash"}, name=f"Mean PBL ({pbl:.1f} km)"), row=row, col=col)
         except Exception:
             pass
     for attr_name, short, color, dash in (
@@ -420,7 +513,7 @@ def add_atmospheric_boundaries_plotly(fig: go.Figure, ds: xr.Dataset, max_alt_km
         try:
             val = float(ds.attrs.get(attr_name, -999.0))
             if np.isfinite(val) and 0 < val <= max_alt_km:
-                maybe_add_altitude_line(fig, val, f"{short} ({val:.1f} km)", color, dash, row, col, xspan)
+                fig.add_trace(go.Scatter(x=[x0, x1], y=[val, val], mode="lines", line={"color": color, "dash": dash}, name=f"{short} ({val:.1f} km)"), row=row, col=col)
         except Exception:
             pass
 
@@ -433,15 +526,18 @@ def level1_quicklook_figure(
     log10: bool,
     smooth_bins: int,
     color_range: str,
+    robust: bool,
+    robust_low: float,
+    robust_high: float,
 ) -> go.Figure:
-    data = reduce_for_heatmap(ds[variable], channel, None, max_alt_km)
+    data = reduce_for_heatmap(ds[variable], "Level 1", channel, None, max_alt_km)
     error_name = f"{variable}_error"
     if error_name not in ds and variable == "range_corrected_signal":
         error_name = "range_corrected_signal_error"
     data_profile = select_coord(ds[variable], channel_name(ds[variable]), channel)
-    alt = altitude_name(data_profile)
-    if alt and alt in data_profile.coords:
-        data_profile = data_profile.isel({alt: altitude_km(data_profile) <= max_alt_km})
+    vdim = vertical_name(data_profile, "Level 1")
+    if vdim and vdim in data_profile.dims:
+        data_profile = data_profile.isel({vdim: vertical_values(data_profile, "Level 1") <= max_alt_km})
     profile = reduce_to_altitude_profile(data_profile, smooth_bins=smooth_bins)
     alt_prof = altitude_km(profile)
     mean_values = np.asarray(profile.values, dtype=float)
@@ -451,19 +547,18 @@ def level1_quicklook_figure(
     if log10:
         z = np.where(z > 0, np.log10(z), np.nan)
     z = z.T if z.ndim == 2 else np.atleast_2d(z)
-    xdim = data.dims[0] if data.dims else "profile"
-    ydim = data.dims[-1] if len(data.dims) > 1 else "vertical"
-    x = data[xdim].values if xdim in data.coords else np.arange(z.shape[1])
-    y = altitude_km(data) if ydim == altitude_name(data) else np.arange(z.shape[0])
-    zmin, zmax = parse_color_range(color_range)
+    x, x_label, _ = x_axis_values(data, "Level 1", ds)
+    y = vertical_values(data, "Level 1")
+    zmin, zmax = robust_color_limits(z, color_range, robust, robust_low, robust_high)
     fig = make_subplots(rows=1, cols=2, column_widths=[0.78, 0.22], shared_yaxes=True, horizontal_spacing=0.03, subplot_titles=("", "Mean profile"))
     fig.add_trace(go.Heatmap(x=x, y=y, z=z, zmin=zmin, zmax=zmax, colorscale="Jet", colorbar={"title": "log10 RCS" if log10 else "Intensity [a.u.]"}), row=1, col=1)
     if error_name in ds:
         err = select_coord(ds[error_name], channel_name(ds[error_name]), channel)
-        if alt and alt in err.coords:
-            err = err.isel({alt: altitude_km(err) <= max_alt_km})
+        vdim_err = vertical_name(err, "Level 1")
+        if vdim_err and vdim_err in err.dims:
+            err = err.isel({vdim_err: vertical_values(err, "Level 1") <= max_alt_km})
         err_profile = reduce_to_altitude_profile(error_of_mean(err), smooth_bins=smooth_bins)
-        add_profile_band(fig, alt_prof, mean_values, np.asarray(err_profile.values, dtype=float), "1σ error", color, row=1, col=2)
+        add_profile_band(fig, alt_prof, mean_values, np.asarray(err_profile.values, dtype=float), "1σ error", row=1, col=2)
     fig.add_trace(go.Scatter(x=mean_values, y=alt_prof, mode="lines", line={"color": color, "width": 2.4}, name="Mean RCS"), row=1, col=2)
     finite = mean_values[np.isfinite(mean_values)]
     xspan = None
@@ -473,10 +568,10 @@ def level1_quicklook_figure(
         pad = max((xmax - xmin) * 0.15, 1e-12)
         xspan = (xmin - pad, xmax + pad)
         fig.update_xaxes(range=[xspan[0], xspan[1]], row=1, col=2)
-    add_atmospheric_boundaries_plotly(fig, ds, max_alt_km, row=1, col=2, xspan=xspan)
+    add_altitude_reference_lines(fig, ds, max_alt_km, row=1, col=2, xspan=xspan)
     lower_alt = 0.16 if "AN" in pretty_channel else 0.5
     fig.update_yaxes(title_text="Altitude (km a.g.l.)", range=[lower_alt, max_alt_km], row=1, col=1)
-    fig.update_xaxes(title_text="Time (UTC)", row=1, col=1)
+    fig.update_xaxes(title_text=x_label, row=1, col=1)
     fig.update_xaxes(title_text="Mean RCS", row=1, col=2)
     fig.update_layout(
         title=f"RCS at {pretty_channel} ({lower_alt:g} - {float(max_alt_km):g} km)<br><sup>{date_title(ds)}</sup>",
@@ -493,9 +588,9 @@ def global_mean_rcs_figure(ds: xr.Dataset, channels: list[Any], max_alt_km: floa
         if "range_corrected_signal" not in ds:
             continue
         da = select_coord(ds["range_corrected_signal"], channel_name(ds["range_corrected_signal"]), channel)
-        alt = altitude_name(da)
-        if alt and alt in da.coords:
-            da = da.isel({alt: altitude_km(da) <= max_alt_km})
+        vdim = vertical_name(da, "Level 1")
+        if vdim and vdim in da.dims:
+            da = da.isel({vdim: vertical_values(da, "Level 1") <= max_alt_km})
         prof = reduce_to_altitude_profile(da, smooth_bins=smooth_bins)
         fig.add_trace(
             go.Scatter(
@@ -679,10 +774,6 @@ def qa_molecular_figure(ds_l2: xr.Dataset, wavelength: Any, smooth_bins: int) ->
     calibration_intercept = safe_median(ds_l2, "rayleigh_calibration_intercept", wavelength)
     ref_min_km = safe_median(ds_l2, "rayleigh_reference_start_altitude_m", wavelength) / 1000.0
     ref_max_km = safe_median(ds_l2, "rayleigh_reference_stop_altitude_m", wavelength) / 1000.0
-    if not np.isfinite(ref_min_km):
-        ref_min_km = np.nan
-    if not np.isfinite(ref_max_km):
-        ref_max_km = np.nan
     ref_window = np.isfinite(mean_glued) & np.isfinite(rayleigh)
     if np.isfinite(ref_min_km) and np.isfinite(ref_max_km):
         ref_window = ref_window & (alt >= ref_min_km) & (alt <= ref_max_km)
@@ -741,11 +832,10 @@ def qa_scattering_ratio_figure(ds_l2: xr.Dataset, wavelength: Any, smooth_bins: 
             except Exception:
                 valid_block = None
         sr_sigma = smooth_profile(block_standard_error(select_wavelength(ds_l2["scattering_ratio_block"], wavelength).values, valid_block), smooth_bins)
-    color = channel_color(wavelength)
     fig = go.Figure()
     if np.isfinite(sr_sigma).any():
-        add_profile_band(fig, alt[valid_alt], sr[valid_alt], sr_sigma[valid_alt], uncertainty_label, color)
-    fig.add_trace(go.Scatter(x=sr[valid_alt], y=alt[valid_alt], mode="lines", name="Scattering ratio", line={"color": color, "width": 2.4}))
+        add_profile_band(fig, alt[valid_alt], sr[valid_alt], sr_sigma[valid_alt], uncertainty_label)
+    fig.add_trace(go.Scatter(x=sr[valid_alt], y=alt[valid_alt], mode="lines", name="Scattering ratio", line={"color": channel_color(wavelength), "width": 2.4}))
     fig.add_vline(x=1.0, line_color="black", line_dash="dash", annotation_text="SR=1")
     xlim = robust_positive_xlim(sr[valid_alt], default_max=6.0)
     notes = [f"plot smoothing = {smooth_bins} bins"]
@@ -785,13 +875,12 @@ def qa_kfs_figure(ds_l2: xr.Dataset, wavelength: Any, smooth_bins: int, max_alti
     alpha_sigma = reduce_to_altitude_profile(error_of_mean(select_wavelength(ds_l2[alpha_err_name], wavelength)), smooth_bins=smooth_bins).values * 1e6
     beta_xlim = robust_centered_xlim(beta[valid_alt], default_abs=5.0)
     alpha_xlim = robust_centered_xlim(alpha[valid_alt], default_abs=50.0)
-    color = channel_color(wavelength)
     fig = make_subplots(rows=1, cols=2, shared_yaxes=True, horizontal_spacing=0.12, subplot_titles=("Aerosol backscatter", "Aerosol extinction"))
-    add_profile_band(fig, alt[valid_alt], beta[valid_alt], beta_sigma[valid_alt], "MC 1σ", color, row=1, col=1)
-    fig.add_trace(go.Scatter(x=beta[valid_alt], y=alt[valid_alt], mode="lines", name="Mean beta aer", line={"color": color, "width": 2.4}), row=1, col=1)
+    add_profile_band(fig, alt[valid_alt], beta[valid_alt], beta_sigma[valid_alt], "MC 1σ", row=1, col=1)
+    fig.add_trace(go.Scatter(x=beta[valid_alt], y=alt[valid_alt], mode="lines", name="Mean beta aer", line={"color": channel_color(wavelength), "width": 2.4}), row=1, col=1)
     fig.add_vline(x=0.0, line_color="black", line_width=0.8, row=1, col=1)
-    add_profile_band(fig, alt[valid_alt], alpha[valid_alt], alpha_sigma[valid_alt], "MC 1σ", color, row=1, col=2)
-    fig.add_trace(go.Scatter(x=alpha[valid_alt], y=alt[valid_alt], mode="lines", name="Mean alpha aer", line={"color": color, "width": 2.4}), row=1, col=2)
+    add_profile_band(fig, alt[valid_alt], alpha[valid_alt], alpha_sigma[valid_alt], "MC 1σ", row=1, col=2)
+    fig.add_trace(go.Scatter(x=alpha[valid_alt], y=alt[valid_alt], mode="lines", name="Mean alpha aer", line={"color": channel_color(wavelength), "width": 2.4}), row=1, col=2)
     fig.add_vline(x=0.0, line_color="black", line_width=0.8, row=1, col=2)
     fig.update_xaxes(title_text="β aer [Mm⁻¹ sr⁻¹]", range=list(beta_xlim), row=1, col=1)
     fig.update_xaxes(title_text="α aer [Mm⁻¹]", range=list(alpha_xlim), row=1, col=2)
@@ -802,6 +891,55 @@ def qa_kfs_figure(ds_l2: xr.Dataset, wavelength: Any, smooth_bins: int, max_alti
         margin={"l": 70, "r": 30, "t": 95, "b": 65},
     )
     return fig
+
+
+def render_level0(row: dict[str, Any]) -> None:
+    path = row.get("level0_path", "")
+    if not path or not Path(path).exists():
+        st.info("Level 0 não disponível para esta medida.")
+        return
+    st.caption(f"Arquivo: `{path}`")
+    ds = open_dataset(path)
+    variables = [name for name in ("Raw_Lidar_Data", "Background_Profile") if name in ds]
+    variables += [name for name in numeric_variables(ds) if name not in variables]
+    if not variables:
+        st.info("Não encontrei variáveis numéricas plottáveis no Level 0.")
+        return
+    prefix = safe_key(row.get("save_id"), "level0")
+    c1, c2, c3, c4 = st.columns([1.4, 1, 1, 1])
+    variable = c1.selectbox("Variável", variables, key=f"{prefix}_var")
+    channels = coord_values(ds, channel_name(ds))
+    channel = c2.selectbox("Canal", channels, key=f"{prefix}_channel") if channels else None
+    max_bin_default = int(ds.sizes.get("points", ds[variable].shape[-1] if ds[variable].shape else 1)) - 1
+    max_bin = c3.number_input("Bin/ponto máx.", min_value=1, value=min(max_bin_default, 4000), max_value=max(max_bin_default, 1), step=100, key=f"{prefix}_max_bin")
+    log10 = c4.checkbox("log10", value=False, key=f"{prefix}_log")
+    c5, c6, c7 = st.columns([1, 1, 2])
+    robust = c5.checkbox("robust color", value=True, key=f"{prefix}_robust")
+    percentile_span = c6.slider("percentis", 0.0, 100.0, (2.0, 98.0), step=0.5, key=f"{prefix}_pct")
+    color_range = c7.text_input("Range de cor `min,max`", value="", key=f"{prefix}_range")
+    view = reduce_for_heatmap(ds[variable], "Level 0", channel, None, float(max_bin))
+    title = f"Level 0 · {variable}" + (f" · {channel}" if channel is not None else "")
+    st.plotly_chart(heatmap_figure(view, title, "Level 0", log10, color_range, robust, percentile_span[0], percentile_span[1], ds=ds), use_container_width=True)
+    with st.expander("Perfil médio em bins"):
+        st.plotly_chart(profile_figure(view, f"Mean profile · {variable}", "Level 0", smooth_bins=1), use_container_width=True)
+    with st.expander("Tempo bruto dos perfis"):
+        if "Raw_Data_Start_Time" in ds:
+            try:
+                values = ds["Raw_Data_Start_Time"].values
+                if np.issubdtype(values.dtype, np.datetime64):
+                    times = pd.to_datetime(values)
+                else:
+                    times = pd.to_datetime(np.asarray(values, dtype=float), unit="s", utc=True)
+                table = pd.DataFrame({"profile_index": np.arange(len(times)), "Raw_Data_Start_Time": times.astype(str)})
+                st.dataframe(table, use_container_width=True, hide_index=True, height=220)
+            except Exception as exc:
+                st.info(f"Não consegui decodificar Raw_Data_Start_Time: {exc}")
+        else:
+            st.info("Arquivo não tem Raw_Data_Start_Time.")
+    with st.expander("Metadados deste nível"):
+        render_metadata(ds, key_prefix=f"{prefix}_embedded_metadata")
+    with st.expander("Diagnósticos deste nível"):
+        render_diagnostics(ds)
 
 
 def render_level1(row: dict[str, Any]) -> None:
@@ -822,12 +960,15 @@ def render_level1(row: dict[str, Any]) -> None:
     if mode == "Quicklook RCS + perfil":
         variables = numeric_variables(ds)
         default_var = "range_corrected_signal" if "range_corrected_signal" in ds else variables[0]
-        c1, c2, c3, c4 = st.columns([1.3, 1, 1, 1.4])
+        c1, c2, c3, c4 = st.columns([1.2, 1.1, 0.8, 1.4])
         channel = c1.selectbox("Canal", channels, key=f"{prefix}_channel")
         variable = c2.selectbox("Variável", variables, index=variables.index(default_var), key=f"{prefix}_var")
         log10 = c3.checkbox("log10", value=False, key=f"{prefix}_log")
         color_range = c4.text_input("Range de cor `min,max`", value="", key=f"{prefix}_range")
-        st.plotly_chart(level1_quicklook_figure(ds, channel, variable, max_alt_km, log10, smooth_bins, color_range), use_container_width=True)
+        c5, c6 = st.columns([1, 2])
+        robust = c5.checkbox("robust color", value=True, key=f"{prefix}_robust")
+        percentiles = c6.slider("percentis do colormap", 0.0, 100.0, (2.0, 98.0), step=0.5, key=f"{prefix}_pct")
+        st.plotly_chart(level1_quicklook_figure(ds, channel, variable, max_alt_km, log10, smooth_bins, color_range, robust, percentiles[0], percentiles[1]), use_container_width=True)
     elif mode == "Global mean RCS":
         default_channels = channels[: min(6, len(channels))]
         chosen = st.multiselect("Canais", channels, default=default_channels, key=f"{prefix}_global_channels")
@@ -905,36 +1046,34 @@ def render_generic_level(row: dict[str, Any], level: str, ds: xr.Dataset | None 
     wavelengths = wavelength_values(ds)
     wave_index = wavelengths.index(default_wavelength) if default_wavelength in wavelengths else 0
     wavelength = c3.selectbox("Comprimento de onda", wavelengths, index=wave_index, key=f"{prefix}_wave") if wavelengths else None
-    max_alt_km = c4.number_input("Altitude máx. (km)", min_value=0.1, value=15.0 if level != "Level 2" else 30.0, step=0.5, key=f"{prefix}_alt")
+    vertical_label = "Bin/ponto máx." if level == "Level 0" else "Altitude máx. (km)"
+    default_vertical = 4000.0 if level == "Level 0" else (15.0 if level != "Level 2" else 30.0)
+    max_vertical = c4.number_input(vertical_label, min_value=1.0 if level == "Level 0" else 0.1, value=default_vertical, step=100.0 if level == "Level 0" else 0.5, key=f"{prefix}_vertical")
     c5, c6, c7, c8 = st.columns([1, 1, 1, 2])
     log10 = c5.checkbox("log10", value="signal" in variable.lower(), key=f"{prefix}_log")
     mode = c6.radio("Modo", ["quicklook", "perfil médio"], horizontal=True, key=f"{prefix}_mode")
     smooth_bins = c7.number_input("smooth bins", min_value=1, value=20, step=1, key=f"{prefix}_smooth")
     color_range = c8.text_input("Range de cor `min,max`", value="", key=f"{prefix}_range")
-    view = reduce_for_heatmap(ds[variable], channel, wavelength, max_alt_km)
+    c9, c10 = st.columns([1, 2])
+    robust = c9.checkbox("robust color", value=True, key=f"{prefix}_robust")
+    percentiles = c10.slider("percentis do colormap", 0.0, 100.0, (2.0, 98.0), step=0.5, key=f"{prefix}_pct")
+    view = reduce_for_heatmap(ds[variable], level, channel, wavelength, float(max_vertical))
     title = f"{level} · {variable}" + (f" · {channel}" if channel is not None else "") + (f" · {wavelength_label(wavelength)}" if wavelength is not None else "")
-    fig = profile_figure(view, title, int(smooth_bins)) if mode == "perfil médio" else heatmap_figure(view, title, log10, color_range)
+    fig = profile_figure(view, title, level, int(smooth_bins)) if mode == "perfil médio" else heatmap_figure(view, title, level, log10, color_range, robust, percentiles[0], percentiles[1], ds=ds)
     st.plotly_chart(fig, use_container_width=True)
 
 
 def render_level(row: dict[str, Any], level: str) -> None:
+    if level == "Level 0":
+        render_level0(row)
+        return
     if level == "Level 1":
         render_level1(row)
         return
     if level == "Level 2":
         render_level2(row)
         return
-    path = row.get(LEVEL_TO_PATH[level], "")
-    if not path or not Path(path).exists():
-        st.info(f"{level} não disponível para esta medida.")
-        return
-    ds = open_dataset(path)
-    st.caption(f"Arquivo: `{path}`")
-    render_generic_level(row, level, ds=ds)
-    with st.expander("Metadados deste nível"):
-        render_metadata(ds, key_prefix=f"{safe_key(row.get('save_id'), level)}_embedded_metadata")
-    with st.expander("Diagnósticos deste nível"):
-        render_diagnostics(ds)
+    render_generic_level(row, level)
 
 
 def render_metadata(ds: xr.Dataset, key_prefix: str) -> None:
