@@ -67,12 +67,16 @@ def level1_output_path(
     return measurement_product_dir(stem, config, root_dir=root_dir) / f"{stem}{LEVEL1_SUFFIX}"
 
 
-def level2_output_path(level1_file: str | Path) -> Path:
+def level2_output_path(level1_file: str | Path, variant_tag: str | None = None) -> Path:
     """Return the Level 2 optical NetCDF output path for one Level 1 NetCDF file."""
     path = Path(level1_file)
     if not path.name.endswith(LEVEL1_SUFFIX):
         raise ValueError(f"Expected a Level 1 file ending with {LEVEL1_SUFFIX}: {path}")
     stem = path.name.removesuffix(LEVEL1_SUFFIX)
+    if variant_tag:
+        safe_tag = str(variant_tag).strip().replace(" ", "_")
+        if safe_tag:
+            stem = f"{stem}_{safe_tag}"
     return path.parent / f"{stem}{LEVEL2_SUFFIX}"
 
 

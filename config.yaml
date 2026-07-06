@@ -10,7 +10,7 @@ project:
   timezone: "America/Sao_Paulo"
 
 processing:
-  incremental: false
+  incremental: true
   interactive_qa: true
   console_level: "INFO"
   file_level: "INFO"

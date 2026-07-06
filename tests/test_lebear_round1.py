@@ -158,3 +158,25 @@ def test_process_level2_skips_existing_output_when_incremental(tmp_path: Path, m
 
     assert calls["count"] == 0
     assert any("SKIPPED" in message for message in logger.messages)
+
+
+def test_process_single_level1_file_supports_utc_time_window_outputs_variant(tmp_path: Path) -> None:
+    """LEBEAR should allow UTC subsetting and save the output with a variant tag."""
+    level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["532.AN", "532.PC"])
+    logger = _ListLogger()
+    output = level2_output_path(level1, variant_tag="0000-0010")
+
+    result = lebear.process_single_level1_file(
+        level1,
+        _config(tmp_path),
+        logger,  # type: ignore[arg-type]
+        start_utc="00:00",
+        stop_utc="00:10",
+        output_tag="0000-0010",
+    )
+
+    assert result.startswith("[OK]")
+    with xr.open_dataset(output) as ds:
+        assert ds.sizes["time"] == 2
+        assert ds.attrs["LEBEAR_Time_Window_Tag"] == "0000-0010"
+        assert "LEBEAR_Time_Window_UTC" in ds.attrs

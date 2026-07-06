@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pandas as pd
-
 
 def classify_period(local_dt: Any) -> str:
     """Classify a local timestamp into 'am', 'pm' or 'nt'."""
@@ -17,7 +15,5 @@ def classify_period(local_dt: Any) -> str:
 
 
 def get_night_date(local_dt: Any) -> Any:
-    """Assign post-midnight night measurements to the previous civil date."""
-    if local_dt.hour < 6:
-        return local_dt - pd.Timedelta(days=1)
+    """Return the civil date used to label a measurement."""
     return local_dt

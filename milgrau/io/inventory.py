@@ -108,10 +108,9 @@ def build_measurement_inventory(
     timezone = _effective_timezone(config)
     df_raw["start_time_utc"] = pd.to_datetime(df_raw["start_time_utc"]).dt.tz_localize("UTC")
     df_raw["start_time_local"] = df_raw["start_time_utc"].dt.tz_convert(timezone)
-    df_raw["meas_id"] = (
-        df_raw["start_time_local"].apply(get_night_date).dt.strftime("%Y%m%d")
-        + df_raw["start_time_local"].apply(classify_period)
-    )
+    df_raw["meas_id"] = df_raw["start_time_local"].apply(get_night_date).dt.strftime("%Y%m%d") + df_raw[
+        "start_time_local"
+    ].apply(classify_period)
     df_raw = _initialize_association_columns(df_raw)
     df_raw = _reassign_orphan_dark_currents(df_raw, config, logger)
 

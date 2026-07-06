@@ -42,6 +42,16 @@ def test_level_product_paths_are_canonical(tmp_path: Path) -> None:
     assert level2 == level0.parent / "20240101sant_level2_optical.nc"
 
 
+def test_level2_output_path_supports_variant_tags(tmp_path: Path) -> None:
+    """Level 2 paths should allow a tagged variant for filtered runs."""
+    config = _config()
+    level0 = level0_output_path("20240101nt", config, root_dir=tmp_path)
+    level1 = level1_output_path(level0, config, root_dir=tmp_path)
+
+    tagged = level2_output_path(level1, variant_tag="0400-0500")
+    assert tagged == level0.parent / "20240101sant_0400-0500_level2_optical.nc"
+
+
 def test_visual_product_paths() -> None:
     """Quicklook and global-mean plot paths should be deterministic."""
     assert quicklook_output_path("plots", "measure", "532nm AN", 15, "webp") == Path(

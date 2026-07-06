@@ -72,3 +72,25 @@ def test_inventory_keeps_incremental_decision_out_of_inventory(tmp_path: Path, m
 
     assert len(df) == 1
     assert df.iloc[0]["meas_type"] == "measurements"
+
+
+def test_inventory_keeps_post_midnight_measurements_on_same_civil_date(tmp_path: Path, monkeypatch) -> None:
+    """Night measurements after midnight should keep their actual civil date."""
+    import milgrau.io.inventory as inventory_module
+
+    measurement_path = str(tmp_path / "night_measurement")
+
+    def fake_scan_raw_files(raw_dir: str, logger: logging.Logger, config: dict) -> tuple[list[str], list[str]]:
+        return [measurement_path], ["measurements"]
+
+    def fake_read_licel_header(filepath: str, logger: logging.Logger):
+        return datetime(2024, 1, 1, 3, 30, 0), pd.Timestamp("2024-01-01T03:35:00"), 300.0, 1200, 10.0
+
+    monkeypatch.setattr(inventory_module, "scan_raw_files", fake_scan_raw_files)
+    monkeypatch.setattr(inventory_module, "read_licel_header", fake_read_licel_header)
+
+    config = {"site": {"timezone": "America/Sao_Paulo"}, "processing": {"incremental": False}}
+    df = build_measurement_inventory(str(tmp_path), config, logging.getLogger("test"))
+
+    assert len(df) == 1
+    assert df.iloc[0]["meas_id"] == "20240101nt"
