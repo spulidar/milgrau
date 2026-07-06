@@ -8,8 +8,8 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from milgrau.pipeline import liracos
-from milgrau.visualization.quicklooks import _insert_time_gap_markers
+from milgrau.viz import liracos
+from milgrau.viz.quicklooks import _insert_time_gap_markers
 
 
 class _ListLogger:

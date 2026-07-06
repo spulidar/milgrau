@@ -15,7 +15,7 @@ from matplotlib import pyplot as plt
 from milgrau.io.contracts import validate_level1_contract
 from milgrau.io.filesystem import ensure_directories
 from milgrau.io.paths import global_mean_rcs_output_path, processed_data_root, quicklook_output_path
-from milgrau.visualization.quicklooks import format_channel_name, plot_global_mean_rcs, plot_quicklook
+from milgrau.viz.quicklooks import format_channel_name, plot_global_mean_rcs, plot_quicklook
 
 RCS_VARIABLE = "range_corrected_signal"
 RCS_ERROR_VARIABLE = "range_corrected_signal_error"

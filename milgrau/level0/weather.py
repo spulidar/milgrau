@@ -1,4 +1,4 @@
-"""Surface weather retrieval and caching utilities."""
+"""Surface weather retrieval and caching utilities for Level 0 processing."""
 
 from __future__ import annotations
 

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from milgrau.io.inventory import build_measurement_inventory
+from milgrau.level0.inventory import build_measurement_inventory
 
 
 def test_inventory_reassigns_orphan_dark_current_with_provenance(
@@ -16,7 +16,7 @@ def test_inventory_reassigns_orphan_dark_current_with_provenance(
     monkeypatch,
 ) -> None:
     """Orphan dark-current files should be linked to nearby measurement groups."""
-    import milgrau.io.inventory as inventory_module
+    import milgrau.level0.inventory as inventory_module
 
     measurement_path = str(tmp_path / "measurement_file")
     dark_path = str(tmp_path / "dark_file")
@@ -50,7 +50,7 @@ def test_inventory_reassigns_orphan_dark_current_with_provenance(
 
 def test_inventory_keeps_incremental_decision_out_of_inventory(tmp_path: Path, monkeypatch) -> None:
     """Inventory should not drop groups simply because incremental mode is enabled."""
-    import milgrau.io.inventory as inventory_module
+    import milgrau.level0.inventory as inventory_module
 
     measurement_path = str(tmp_path / "measurement_file")
 
@@ -76,7 +76,7 @@ def test_inventory_keeps_incremental_decision_out_of_inventory(tmp_path: Path, m
 
 def test_inventory_keeps_post_midnight_measurements_on_same_civil_date(tmp_path: Path, monkeypatch) -> None:
     """Night measurements after midnight should keep their actual civil date."""
-    import milgrau.io.inventory as inventory_module
+    import milgrau.level0.inventory as inventory_module
 
     measurement_path = str(tmp_path / "night_measurement")
 

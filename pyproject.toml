@@ -37,14 +37,14 @@ explorer = [
 ]
 
 [project.scripts]
-milgrau-libids = "scripts.run_libids:main"
-milgrau-lipancora = "scripts.run_lipancora:main"
-milgrau-liracos = "scripts.run_liracos:main"
-milgrau-lebear = "scripts.run_lebear:main"
-milgrau-explorer = "scripts.run_nc_explorer:main"
+milgrau-libids = "milgrau.cli.libids:main"
+milgrau-lipancora = "milgrau.cli.lipancora:main"
+milgrau-liracos = "milgrau.cli.liracos:main"
+milgrau-lebear = "milgrau.cli.lebear:main"
+milgrau-explorer = "milgrau.cli.explorer:main"
 
 [tool.setuptools.packages.find]
-include = ["milgrau*", "scripts*"]
+include = ["milgrau*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

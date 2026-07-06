@@ -10,7 +10,7 @@ import pandas as pd
 import xarray as xr
 
 from milgrau.io.paths import level2_output_path
-from milgrau.pipeline import lebear
+from milgrau.level2 import lebear
 
 
 class _ListLogger:

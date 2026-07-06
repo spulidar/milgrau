@@ -1,4 +1,4 @@
-"""NetCDF writing helpers for MILGRAU products."""
+"""Level 0 NetCDF writing and provenance helpers."""
 
 from __future__ import annotations
 

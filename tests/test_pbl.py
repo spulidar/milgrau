@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from milgrau.physics.pbl import calculate_pbl_height_gradient
+from milgrau.level1.pbl import calculate_pbl_height_gradient
 
 
 def test_pbl_gradient_detects_synthetic_aerosol_drop() -> None:

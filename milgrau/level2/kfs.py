@@ -7,7 +7,7 @@ from typing import Literal
 import numpy as np
 from numba import njit, prange
 
-from milgrau.physics.constants import RAYLEIGH_LIDAR_RATIO_SR
+from milgrau.level2.constants import RAYLEIGH_LIDAR_RATIO_SR
 
 
 def _prepare_altitude_m(altitude: np.ndarray, altitude_units: Literal["auto", "m", "km"]) -> np.ndarray:

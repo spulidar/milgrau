@@ -13,12 +13,12 @@ import pandas as pd
 import xarray as xr
 from scipy.signal import savgol_filter
 
-from milgrau.visualization.quicklooks import (
+from milgrau.viz.quicklooks import (
     extract_datetime_strings,
     safe_error_of_mean,
     safe_time_mean,
 )
-from milgrau.visualization.style import add_footer_and_logos, channel_color, get_output_settings
+from milgrau.viz.style import add_footer_and_logos, channel_color, get_output_settings
 
 
 def altitude_to_km(altitude_values: np.ndarray | xr.DataArray | list[float]) -> np.ndarray:

@@ -13,7 +13,7 @@ from typing import Literal
 import numpy as np
 from scipy.integrate import cumulative_trapezoid
 
-from milgrau.physics.constants import RAYLEIGH_LIDAR_RATIO_SR
+from milgrau.level2.constants import RAYLEIGH_LIDAR_RATIO_SR
 
 _STANDARD_NUMBER_DENSITY_CM3 = 2.54743e19
 _STANDARD_PRESSURE_HPA = 1013.25

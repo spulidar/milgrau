@@ -8,8 +8,8 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from milgrau.physics.corrections import apply_instrumental_corrections
-from milgrau.pipeline.lipancora import apply_all_physical_corrections
+from milgrau.level1.corrections import apply_instrumental_corrections
+from milgrau.level1.lipancora import apply_all_physical_corrections
 
 
 def test_apply_instrumental_corrections_marks_shifted_bins_as_nan() -> None:

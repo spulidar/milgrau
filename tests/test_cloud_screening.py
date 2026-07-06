@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from milgrau.physics.cloud_screening import (
+from milgrau.level2.cloud_screening import (
     cloud_screening_config,
     detect_anomalous_layer_mask,
     detect_reference_contamination,

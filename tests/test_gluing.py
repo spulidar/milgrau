@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from milgrau.physics.gluing import slide_glue_signals
+from milgrau.level2.gluing import slide_glue_signals
 
 
 def test_slide_glue_signals_recovers_overlap_region() -> None:

@@ -88,11 +88,10 @@ def apply_instrumental_corrections(
     millivolts per shot. No magnitude-based unit heuristics are applied here.
 
     ``deadtime_clipped_mask`` marks bins where the non-paralyzable denominator
-    needed numerical clipping. ``pc_saturation_mask`` is intentionally separate:
-    it only marks bins above a configurable photon-counting count-rate limit.
-    When ``pc_saturation_max_rate_mhz`` is omitted, no PC saturation mask is
-    produced. This prevents a numerical dead-time safety mask from being reused
-    as an atmospheric gluing-quality mask.
+    needed numerical clipping. ``pc_saturation_mask`` remains the operational
+    mask exposed to downstream processing. When an explicit photon-counting
+    rate limit is provided, bins above that limit are marked; otherwise the
+    dead-time clipping mask is reused as the conservative saturation signal.
     """
     if shots is None or not np.isfinite(float(shots)) or float(shots) <= 0.0:
         raise ValueError(f"Invalid laser shots value: {shots}")
@@ -145,6 +144,8 @@ def apply_instrumental_corrections(
         if deadtime > 0.0:
             denom = 1.0 - (sig_mhz * deadtime)
             deadtime_clipped_mask = denom < deadtime_min_denominator
+            if not np.isfinite(pc_saturation_rate_limit_mhz):
+                pc_saturation_mask = deadtime_clipped_mask.copy()
             deadtime_denominator_min = _safe_nanmin_xarray(denom)
             safe_denom = xr.where(deadtime_clipped_mask, deadtime_min_denominator, denom)
             sig_dt = sig_mhz / safe_denom

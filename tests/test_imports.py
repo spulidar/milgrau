@@ -6,27 +6,33 @@ from __future__ import annotations
 def test_core_package_imports() -> None:
     """The main MILGRAU subpackages should import without side effects."""
     import milgrau
+    import milgrau.cli
     import milgrau.config
     import milgrau.io
-    import milgrau.physics
-    import milgrau.pipeline
-    import milgrau.visualization
+    import milgrau.level0
+    import milgrau.level1
+    import milgrau.level2
+    import milgrau.viz
 
+    assert "cli" in milgrau.__all__
     assert "config" in milgrau.__all__
     assert "io" in milgrau.__all__
-    assert "physics" in milgrau.__all__
-    assert "pipeline" in milgrau.__all__
-    assert "visualization" in milgrau.__all__
+    assert "level0" in milgrau.__all__
+    assert "level1" in milgrau.__all__
+    assert "level2" in milgrau.__all__
+    assert "viz" in milgrau.__all__
 
 
 def test_pipeline_entrypoints_import() -> None:
     """Command-line entrypoint modules should import cleanly."""
-    import scripts.run_libids
-    import scripts.run_lipancora
-    import scripts.run_liracos
-    import scripts.run_lebear
+    import milgrau.cli.explorer
+    import milgrau.cli.lebear
+    import milgrau.cli.libids
+    import milgrau.cli.lipancora
+    import milgrau.cli.liracos
 
-    assert callable(scripts.run_libids.main)
-    assert callable(scripts.run_lipancora.main)
-    assert callable(scripts.run_liracos.main)
-    assert callable(scripts.run_lebear.main)
+    assert callable(milgrau.cli.explorer.main)
+    assert callable(milgrau.cli.libids.main)
+    assert callable(milgrau.cli.lipancora.main)
+    assert callable(milgrau.cli.liracos.main)
+    assert callable(milgrau.cli.lebear.main)

@@ -11,7 +11,7 @@ import pytest
 import xarray as xr
 
 from milgrau.io.contracts import validate_level0_contract
-from milgrau.io.netcdf import build_level0_netcdf, validate_lidar_tensors
+from milgrau.level0.netcdf import build_level0_netcdf, validate_lidar_tensors
 
 
 def _config() -> dict:
@@ -94,7 +94,7 @@ def test_validate_lidar_tensors_rejects_shape_mismatch() -> None:
 
 def test_build_level0_netcdf_writes_dark_current_provenance(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Dark-current source metadata and channel availability should be stored."""
-    import milgrau.io.netcdf as netcdf_module
+    import milgrau.level0.netcdf as netcdf_module
 
     def fake_parse_licel_group(files: list[str], logger: logging.Logger) -> dict:
         return {
@@ -131,7 +131,7 @@ def test_build_level0_netcdf_writes_dark_current_provenance(tmp_path: Path, monk
 
 def test_build_level0_netcdf_flags_missing_dark_current_channel(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Missing dark-current channels should be NaN-filled and flagged unavailable."""
-    import milgrau.io.netcdf as netcdf_module
+    import milgrau.level0.netcdf as netcdf_module
 
     def fake_parse_licel_group(files: list[str], logger: logging.Logger) -> dict:
         return {

@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from milgrau.pipeline.lebear import process_single_level1_file
+from milgrau.level2.lebear import process_single_level1_file
 
 
 class _ListLogger:

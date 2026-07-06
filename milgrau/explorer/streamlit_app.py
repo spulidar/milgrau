@@ -20,7 +20,7 @@ from plotly.subplots import make_subplots
 
 from milgrau.config.loader import load_config
 from milgrau.io.paths import LEVEL1_SUFFIX, LEVEL2_SUFFIX, processed_data_root
-from milgrau.visualization.style import channel_color
+from milgrau.viz.style import channel_color
 
 
 LEVEL_TO_PATH = {

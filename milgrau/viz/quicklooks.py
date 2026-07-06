@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from milgrau.visualization.style import add_footer_and_logos, channel_color, get_output_settings
+from milgrau.viz.style import add_footer_and_logos, channel_color, get_output_settings
 
 RCS_VARIABLE = "range_corrected_signal"
 RCS_ERROR_VARIABLE = "range_corrected_signal_error"
