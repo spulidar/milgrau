@@ -1,4 +1,4 @@
-"""Surface weather retrieval and caching utilities for Level 0 processing."""
+"""Surface weather retrieval and caching utilities."""
 
 from __future__ import annotations
 
@@ -7,9 +7,11 @@ import logging
 import urllib.request
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Mapping, Optional
 
 from tenacity import retry, stop_after_attempt, wait_exponential
+
+from milgrau.io.paths import surface_weather_cache_dir
 
 
 def return_none_on_failure(retry_state):
@@ -17,14 +19,19 @@ def return_none_on_failure(retry_state):
     return None
 
 
-def _weather_cache_file(dt_utc: datetime, lat: float, lon: float, cache_dir: str) -> Path:
+def _weather_cache_file(
+    dt_utc: datetime,
+    lat: float,
+    lon: float,
+    cache_dir: str | Path,
+) -> Path:
     """Build the cache filename for one day of Open-Meteo hourly data."""
     date_str = dt_utc.strftime("%Y-%m-%d")
     year = dt_utc.strftime("%Y")
     month = dt_utc.strftime("%m")
     lat_tag = f"{lat:.4f}".replace("-", "m").replace(".", "p")
     lon_tag = f"{lon:.4f}".replace("-", "m").replace(".", "p")
-    cache_path = Path.cwd() / cache_dir / year / month
+    cache_path = Path(cache_dir) / year / month
     cache_path.mkdir(parents=True, exist_ok=True)
     return cache_path / f"openmeteo_{lat_tag}_{lon_tag}_{date_str}.json"
 
@@ -55,12 +62,15 @@ def fetch_surface_weather(
     lat: float,
     lon: float,
     logger: Optional[logging.Logger] = None,
-    cache_dir: str = "01-data/openmeteo_cache",
+    cache_dir: str | Path | None = None,
+    config: Mapping[str, Any] | None = None,
+    root_dir: str | Path | None = None,
 ) -> Optional[dict]:
     """Fetch historical surface weather from Open-Meteo Archive API."""
     target_time = dt_utc.strftime("%Y-%m-%dT%H:00")
     target_date = dt_utc.strftime("%Y-%m-%d")
-    cache_file = _weather_cache_file(dt_utc, lat, lon, cache_dir)
+    resolved_cache_dir = Path(cache_dir) if cache_dir is not None else surface_weather_cache_dir(config, root_dir=root_dir)
+    cache_file = _weather_cache_file(dt_utc, lat, lon, resolved_cache_dir)
 
     if cache_file.exists():
         try:

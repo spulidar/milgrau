@@ -1,4 +1,4 @@
-"""Radiosonde retrieval and caching utilities for Level 1 processing."""
+"""Radiosonde retrieval and caching utilities."""
 
 from __future__ import annotations
 
@@ -6,13 +6,14 @@ import json
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Any, Mapping, Optional
 
 import pandas as pd
 from siphon.simplewebservice.wyoming import WyomingUpperAir
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from milgrau.level0.weather import return_none_on_failure
+from milgrau.io.paths import radiosonde_cache_dir
+from milgrau.io.weather import return_none_on_failure
 
 
 @retry(
@@ -24,7 +25,9 @@ def fetch_wyoming_radiosonde(
     measurement_dt_utc: datetime,
     station_id: str,
     logger: logging.Logger,
-    cache_dir: str = "01-data/wyoming_cache",
+    cache_dir: str | Path | None = None,
+    config: Mapping[str, Any] | None = None,
+    root_dir: str | Path | None = None,
 ) -> Optional[pd.DataFrame]:
     """Fetch Wyoming radiosonde data and cache the cleaned table locally."""
     hour_utc = measurement_dt_utc.hour
@@ -42,7 +45,8 @@ def fetch_wyoming_radiosonde(
 
     year = target_dt.strftime("%Y")
     month = target_dt.strftime("%m")
-    cache_path = Path.cwd() / cache_dir / year / month
+    resolved_cache_dir = Path(cache_dir) if cache_dir is not None else radiosonde_cache_dir(config, root_dir=root_dir)
+    cache_path = Path(resolved_cache_dir) / year / month
     cache_path.mkdir(parents=True, exist_ok=True)
 
     cache_filename = f"radiosonde_{station_id}_{target_dt.strftime('%Y%m%d_%H')}Z.csv"

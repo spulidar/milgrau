@@ -231,6 +231,8 @@ def process_single_nc(args: tuple[str | Path, dict[str, Any], str | Path, loggin
         plt.close("all")
         gc.collect()
         return f"[OK] Plots generated for {file_name_prefix}: generated={generated_count}, skipped={skipped_count}"
+    except KeyError as exc:
+        return f"[SKIPPED] {nc_file.name} incompatible with current Level 1 contract: {exc}"
     except Exception:
         return f"[FAILED] Error plotting {nc_file.name}:\n{traceback.format_exc()}"
 

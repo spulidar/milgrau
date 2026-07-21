@@ -14,8 +14,14 @@ def test_validate_level0_contract_accepts_minimal_dataset() -> None:
     """A minimal Level 0 dataset with the canonical raw tensor should validate."""
     ds = xr.Dataset(
         data_vars={
-            "Raw_Data_Start_Time": (("time",), np.array([0.0, 1.0])),
+            "Raw_Data_Start_Time": (("time", "nb_of_time_scales"), np.array([[0], [60]], dtype=np.int32)),
+            "Raw_Data_Stop_Time": (("time", "nb_of_time_scales"), np.array([[60], [120]], dtype=np.int32)),
             "Raw_Data_Range_Resolution": (("channels",), np.array([7.5, 7.5])),
+            "Laser_Pointing_Angle": (("scan_angles",), np.array([0.0])),
+            "Laser_Pointing_Angle_of_Profiles": (("time", "nb_of_time_scales"), np.zeros((2, 1), dtype=np.int32)),
+            "Laser_Shots": (("time", "channels"), np.full((2, 2), 1200, dtype=np.int32)),
+            "Molecular_Calc": ((), np.array(0, dtype=np.int32)),
+            "id_timescale": (("channels",), np.zeros(2, dtype=np.int32)),
             "channel_string": (("channels",), np.array(["532.AN", "532.PC"], dtype=object)),
             "Raw_Lidar_Data": (("time", "channels", "points"), np.ones((2, 2, 4))),
         }
@@ -60,6 +66,45 @@ def test_validate_level1_contract_accepts_required_signal_tensors() -> None:
     )
 
     validate_level1_contract(ds)
+
+
+def test_validate_level1_contract_accepts_noncanonical_dim_order_when_named_dims_match() -> None:
+    """Level 1 tensors may be transposed as long as they keep the required named dimensions."""
+    time = pd.date_range("2024-01-01", periods=2)
+    channel = np.array(["532.AN"], dtype=object)
+    altitude = np.arange(4.0)
+    shape = (1, 4, 2)
+    ds = xr.Dataset(
+        data_vars={
+            "corrected_signal": (("channel", "altitude", "time"), np.ones(shape)),
+            "corrected_signal_error": (("channel", "altitude", "time"), np.ones(shape)),
+            "range_corrected_signal": (("channel", "altitude", "time"), np.ones(shape)),
+            "range_corrected_signal_error": (("channel", "altitude", "time"), np.ones(shape)),
+        },
+        coords={"time": time, "channel": channel, "altitude": altitude},
+    )
+
+    validate_level1_contract(ds)
+
+
+def test_validate_level2_contract_rejects_wrong_glued_signal_dims() -> None:
+    """Level 2 glued signal should use the canonical exact dimension order."""
+    time = pd.date_range("2024-01-01", periods=2)
+    wavelength = np.array([532])
+    altitude = np.arange(4.0)
+    ds = xr.Dataset(
+        data_vars={
+            "molecular_backscatter": (("wavelength", "altitude"), np.ones((1, 4))),
+            "molecular_extinction": (("wavelength", "altitude"), np.ones((1, 4))),
+            "glued_range_corrected_signal": (("wavelength", "time", "altitude"), np.ones((1, 2, 4))),
+            "aerosol_backscatter_mean": (("wavelength", "altitude"), np.ones((1, 4))),
+            "aerosol_extinction_mean": (("wavelength", "altitude"), np.ones((1, 4))),
+        },
+        coords={"time": time, "wavelength": wavelength, "altitude": altitude},
+    )
+
+    with pytest.raises(ValueError):
+        validate_level2_contract(ds)
 
 
 def test_validate_level2_contract_accepts_minimal_optical_dataset() -> None:

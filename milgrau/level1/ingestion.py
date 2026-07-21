@@ -12,6 +12,23 @@ import xarray as xr
 from milgrau.io.contracts import validate_level0_contract
 
 
+def _decode_level0_time_axis(ds: xr.Dataset) -> pd.DatetimeIndex:
+    """Decode SCC-style relative start times into absolute UTC timestamps."""
+    raw_start = ds["Raw_Data_Start_Time"]
+    values = np.asarray(raw_start.values)
+    if values.ndim == 2:
+        values = values[:, 0]
+    if np.issubdtype(values.dtype, np.datetime64):
+        return pd.to_datetime(values, utc=True).tz_localize(None)
+
+    raw_date = str(ds.attrs.get("RawData_Start_Date", ""))
+    raw_time = str(ds.attrs.get("RawData_Start_Time_UT", ""))
+    if len(raw_date) == 8 and len(raw_time) == 6:
+        reference = pd.Timestamp(f"{raw_date}{raw_time}", tz="UTC")
+        return pd.to_datetime(reference + pd.to_timedelta(values.astype(float), unit="s")).tz_localize(None)
+    return pd.to_datetime(values.astype(float), unit="s", utc=True).tz_localize(None)
+
+
 def load_and_prepare_level0(nc_path: str | Path, logger: logging.Logger) -> tuple[xr.Dataset, np.ndarray]:
     """Load one Level 0 NetCDF file and standardize its coordinates."""
     try:
@@ -19,7 +36,7 @@ def load_and_prepare_level0(nc_path: str | Path, logger: logging.Logger) -> tupl
         ds.load()
         validate_level0_contract(ds)
 
-        time_dt = pd.to_datetime(ds["Raw_Data_Start_Time"].values, unit="s")
+        time_dt = _decode_level0_time_axis(ds)
         ds = ds.assign_coords(time=time_dt)
 
         dz_values = np.asarray(ds["Raw_Data_Range_Resolution"].values, dtype=float)

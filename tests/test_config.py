@@ -103,3 +103,22 @@ def test_load_minimal_valid_config_from_tmp_path(tmp_path: Path) -> None:
 
     assert config["directories"]["raw_data"] == "raw"
     assert config["physics"]["channels"]["532.PC"][0] == 0.0035
+
+
+def test_schema_rejects_invalid_io_related_option_types() -> None:
+    """Optional IO-facing settings should be type-checked when present."""
+    config = {
+        "directories": {"raw_data": "raw", "processed_data": "processed", "log_dir": "logs"},
+        "processing": {
+            "incremental": False,
+            "raw_scan_ignore_dirs": "bad",
+        },
+        "physics": {
+            "vertical_resolution_m": 7.5,
+            "channels": {"532.PC": [0.0035, -3, 0.0015]},
+        },
+        "hardware": {"name_to_id": {"day": {}, "night": {}}},
+    }
+
+    with pytest.raises(ValueError):
+        validate_config_minimum(config)

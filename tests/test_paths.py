@@ -9,9 +9,13 @@ from milgrau.io.paths import (
     level0_output_path,
     level1_output_path,
     level2_output_path,
+    log_output_root,
     measurement_product_dir,
     measurement_save_id,
     quicklook_output_path,
+    radiosonde_cache_dir,
+    raw_data_root,
+    surface_weather_cache_dir,
 )
 
 
@@ -58,3 +62,17 @@ def test_visual_product_paths() -> None:
         "plots/Quicklook_measure_532nm_AN_15km.webp"
     )
     assert global_mean_rcs_output_path("plots", "measure", ".png") == Path("plots/GlobalMeanRCS_measure.png")
+
+
+def test_configured_roots_are_resolved_from_directories_section(tmp_path: Path) -> None:
+    """Raw, log and cache roots should honor configured relative directories."""
+    config = {
+        "directories": {"raw_data": "raw", "processed_data": "processed", "log_dir": "logs"},
+        "surface_weather": {"cache_dir": "custom/weather-cache"},
+        "radiosonde": {"cache_dir": "custom/radiosonde-cache"},
+    }
+
+    assert raw_data_root(config, root_dir=tmp_path) == tmp_path / "raw"
+    assert log_output_root(config, root_dir=tmp_path) == tmp_path / "logs"
+    assert surface_weather_cache_dir(config, root_dir=tmp_path) == tmp_path / "custom" / "weather-cache"
+    assert radiosonde_cache_dir(config, root_dir=tmp_path) == tmp_path / "custom" / "radiosonde-cache"

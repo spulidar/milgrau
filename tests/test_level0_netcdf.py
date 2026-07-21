@@ -92,6 +92,78 @@ def test_validate_lidar_tensors_rejects_shape_mismatch() -> None:
         validate_lidar_tensors(tensors, ["532.AN", "532.PC"])
 
 
+def test_build_level0_netcdf_truncates_time_axis_to_shorter_tensor(tmp_path: Path) -> None:
+    """When metadata and tensor counts differ, the Level 0 writer should truncate safely."""
+    output_path = tmp_path / "level0_truncated.nc"
+    lidar_data = _lidar_data()
+    lidar_data["tensors"] = {
+        "532.AN": np.ones((1, 4), dtype=np.float64),
+        "532.PC": np.ones((1, 4), dtype=np.float64) * 2.0,
+    }
+
+    build_level0_netcdf(
+        netcdf_path=str(output_path),
+        save_id="20240101sant",
+        period="nt",
+        lidar_data=lidar_data,
+        group_df=_group_df(tmp_path, include_dark_current=False),
+        weather_data={"temperature_c": 23.0, "pressure_hpa": 935.0},
+        config=_config(),
+        logger=logging.getLogger("test"),
+    )
+
+    with xr.open_dataset(output_path) as ds:
+        assert ds.sizes["time"] == 1
+        assert ds["Raw_Data_Start_Time"].shape == (1, 1)
+        assert ds["Raw_Data_Stop_Time"].shape == (1, 1)
+        assert ds["Laser_Pointing_Angle"].shape == (1,)
+        assert ds["Laser_Pointing_Angle_of_Profiles"].shape == (1, 1)
+        assert ds["Laser_Shots"].shape == (1, 2)
+        assert int(ds["Molecular_Calc"].values) == 0
+
+
+def test_build_level0_netcdf_uses_fallback_channel_id_when_missing_from_config(tmp_path: Path) -> None:
+    """Missing channel IDs should fall back to the stable default value."""
+    output_path = tmp_path / "level0_default_channel_id.nc"
+    config = _config()
+    config["hardware"]["name_to_id"]["night"] = {"532.AN": 722}
+
+    build_level0_netcdf(
+        netcdf_path=str(output_path),
+        save_id="20240101sant",
+        period="nt",
+        lidar_data=_lidar_data(),
+        group_df=_group_df(tmp_path, include_dark_current=False),
+        weather_data={"temperature_c": 23.0, "pressure_hpa": 935.0},
+        config=config,
+        logger=logging.getLogger("test"),
+    )
+
+    with xr.open_dataset(output_path) as ds:
+        assert np.array_equal(ds["channel_ID"].values, np.array([722, 9999]))
+
+
+def test_build_level0_netcdf_accepts_flat_shared_channel_id_mapping(tmp_path: Path) -> None:
+    """A flat shared hardware.name_to_id mapping should work for any acquisition period."""
+    output_path = tmp_path / "level0_flat_channel_id.nc"
+    config = _config()
+    config["hardware"]["name_to_id"] = {"532.AN": 722, "532.PC": 716}
+
+    build_level0_netcdf(
+        netcdf_path=str(output_path),
+        save_id="20240101sant",
+        period="pm",
+        lidar_data=_lidar_data(),
+        group_df=_group_df(tmp_path, include_dark_current=False),
+        weather_data={"temperature_c": 23.0, "pressure_hpa": 935.0},
+        config=config,
+        logger=logging.getLogger("test"),
+    )
+
+    with xr.open_dataset(output_path) as ds:
+        assert np.array_equal(ds["channel_ID"].values, np.array([722, 716]))
+
+
 def test_build_level0_netcdf_writes_dark_current_provenance(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Dark-current source metadata and channel availability should be stored."""
     import milgrau.level0.netcdf as netcdf_module
@@ -122,6 +194,8 @@ def test_build_level0_netcdf_writes_dark_current_provenance(tmp_path: Path, monk
     with xr.open_dataset(output_path) as ds:
         validate_level0_contract(ds)
         assert "Background_Profile" in ds
+        assert "Raw_Bck_Start_Time" in ds
+        assert "Raw_Bck_Stop_Time" in ds
         assert "Background_Profile_Available" in ds
         assert ds.attrs["Dark_Current_Source_File_Count"] == 1
         assert ds.attrs["Dark_Current_Association_Methods"] == "nearest_measurement"
