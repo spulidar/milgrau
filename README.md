@@ -15,7 +15,7 @@ The system is designed to process raw Licel lidar measurements into physically t
 MILGRAU requires:
 
 - Git
-- Python 3 and pip
+- Python 3.12 or newer and pip
 - venv support for virtual environments
 
 ---
@@ -136,6 +136,18 @@ pip install -e ".[dev]"
 
 This installs MILGRAU in editable mode and includes development dependencies such as `pytest`.
 
+Run the test suite with coverage using the same command as CI:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 \
+  python -m pytest -q -p no:cacheprovider \
+  --cov=milgrau \
+  --cov-report=term-missing \
+  --cov-report=xml
+```
+
+The terminal report shows the current baseline. `coverage.xml` is generated for CI publication; no minimum percentage is enforced yet.
+
 ---
 
 ## Update MILGRAU
@@ -172,6 +184,14 @@ milgrau-liracos
 milgrau-lebear
 ```
 
+Pipeline commands use consistent process exit codes: `0` when all inputs succeed or are skipped, `1` for a mixed batch with recoverable failures, and `2` when every input fails or a fatal error stops execution.
+
+Logging verbosity is controlled independently with `processing.console_level` and `processing.file_level` (for example, `DEBUG`, `INFO`, or `WARNING`). Reconfiguring a MILGRAU logger replaces only handlers created by MILGRAU; externally attached capture or telemetry handlers are preserved.
+
+The complete configuration inventory is in [docs/configuration_inventory.md](docs/configuration_inventory.md). Keys marked `DORMANT` are validated and preserved but do not affect pipelines; their decisions and required approvals are recorded in [docs/configuration_dormant_decisions.md](docs/configuration_dormant_decisions.md). Incremental reuse and invalidation are specified in [docs/incremental_provenance.md](docs/incremental_provenance.md). The internal Level 2 result model is documented in [docs/retrieval_contract.md](docs/retrieval_contract.md), and its reproducible performance protocol and current baseline are in [docs/level2_benchmarks.md](docs/level2_benchmarks.md). The approved, not-yet-implemented temporal schema v2 decision is recorded in [docs/level2_temporal_representation_proposal.md](docs/level2_temporal_representation_proposal.md).
+
+LEBEAR writes a temporary NetCDF beside the destination and replaces the final file atomically only after a successful write. Optional Level 2 QA runs afterward; a plotting failure is reported separately and does not invalidate or remove the completed NetCDF product. Set `visualization.level2_qa.enabled` to enable or disable that stage explicitly.
+
 
 # About MILGRAU
 
@@ -204,6 +224,8 @@ MILGRAU organizes the treatment of these signals into processing levels:
 ## Level 0 — LIBIDS
 
 LIBIDS converts raw Licel measurements into standardized Level 0 NetCDF files.
+
+Raw-data discovery is read-only: spurious extensions are detected and logged but never moved or deleted during inventory construction. Maintenance code must call `quarantine_file(s)` or `delete_file(s)` from `milgrau.io.filesystem` explicitly; both APIs report structured, idempotent outcomes.
 
 Main tasks:
 
