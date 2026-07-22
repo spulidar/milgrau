@@ -5,6 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
+import warnings
 
 import yaml
 
@@ -53,6 +54,22 @@ def _normalize_physics_config(config: dict[str, Any]) -> None:
         physics["longitude"] = site["longitude"]
     if "station_altitude_m" in site and "station_altitude_m" not in physics:
         physics["station_altitude_m"] = site["station_altitude_m"]
+
+    channels = physics.get("channels", {})
+    if isinstance(channels, dict):
+        for channel_name, constants in list(channels.items()):
+            if isinstance(constants, (list, tuple)) and len(constants) == 3:
+                warnings.warn(
+                    f"Positional constants for physics.channels.{channel_name} are deprecated and will be removed in 0.2.0; "
+                    "use deadtime_us, bin_shift_bins, and background_offset fields.",
+                    DeprecationWarning,
+                    stacklevel=3,
+                )
+                channels[channel_name] = {
+                    "deadtime_us": constants[0],
+                    "bin_shift_bins": constants[1],
+                    "background_offset": constants[2],
+                }
 
 
 def _normalize_radiosonde_config(config: dict[str, Any]) -> None:

@@ -32,14 +32,20 @@ def finite_or_fill(value: Any, fill_value: float = -999.0) -> float:
 
 
 def get_channel_constant(
-    channels_config: Mapping[str, Sequence[float]],
+    channels_config: Mapping[str, Sequence[float] | Mapping[str, float | int]],
     ch_name: str,
     logger: logging.Logger,
 ) -> tuple[float, int, float]:
     """Return instrumental constants for one channel."""
     if ch_name not in channels_config:
         logger.warning(f"  -> Channel {ch_name} is missing from physics.channels. Using neutral correction constants.")
-    deadtime, shift, bg_offset = channels_config.get(ch_name, [0.0, 0, 0.0])
+    constants = channels_config.get(ch_name, {"deadtime_us": 0.0, "bin_shift_bins": 0, "background_offset": 0.0})
+    if isinstance(constants, Mapping):
+        deadtime = constants["deadtime_us"]
+        shift = constants["bin_shift_bins"]
+        bg_offset = constants["background_offset"]
+    else:
+        deadtime, shift, bg_offset = constants
     return float(deadtime), int(shift), float(bg_offset)
 
 

@@ -8,6 +8,8 @@ from typing import Any, Mapping
 
 from milgrau.io.paths import DEFAULT_LOG_DIR, log_output_root
 
+_MILGRAU_HANDLER_MARKER = "_milgrau_owned_handler"
+
 
 def _coerce_log_level(value: Any, default: int = logging.INFO) -> int:
     """Normalize string or integer logging levels into stdlib constants."""
@@ -43,10 +45,14 @@ def setup_logger(
     log_path = resolved_log_dir / f"{module_name.lower()}.log"
 
     logger = logging.getLogger(module_name)
-    logger.setLevel(logging.INFO)
+    logger.setLevel(min(console_level, file_level))
 
-    if logger.hasHandlers():
-        logger.handlers.clear()
+    # Reconfiguration owns only handlers created by this helper. Integrations
+    # may attach capture, telemetry, or application handlers that must survive.
+    for handler in list(logger.handlers):
+        if getattr(handler, _MILGRAU_HANDLER_MARKER, False):
+            logger.removeHandler(handler)
+            handler.close()
 
     formatter = logging.Formatter(
         "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s",
@@ -54,11 +60,13 @@ def setup_logger(
     )
 
     file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    setattr(file_handler, _MILGRAU_HANDLER_MARKER, True)
     file_handler.setLevel(file_level)
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 
     stream_handler = logging.StreamHandler()
+    setattr(stream_handler, _MILGRAU_HANDLER_MARKER, True)
     stream_handler.setLevel(console_level)
     stream_handler.setFormatter(formatter)
     logger.addHandler(stream_handler)
