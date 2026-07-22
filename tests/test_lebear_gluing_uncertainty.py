@@ -10,6 +10,7 @@ import xarray as xr
 
 from milgrau.io.paths import level2_output_path
 from milgrau.level2 import lebear
+from milgrau.operations import ExecutionStatus
 
 
 class _ListLogger:
@@ -112,9 +113,9 @@ def test_level2_saves_gluing_window_diagnostics(tmp_path: Path) -> None:
     level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc")
     logger = _ListLogger()
 
-    result = lebear.process_single_level1_file(level1, _config(tmp_path), logger)  # type: ignore[arg-type]
+    summary = lebear.process_single_level1_file(level1, _config(tmp_path), logger)  # type: ignore[arg-type]
 
-    assert result.startswith("[OK]")
+    assert summary.results[0].status is ExecutionStatus.SUCCESS
     with xr.open_dataset(level2_output_path(level1)) as ds:
         assert "gluing_start_altitude_m" in ds
         assert "gluing_stop_altitude_m" in ds

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Mapping
 
 import numpy as np
 import xarray as xr
@@ -14,116 +15,118 @@ from milgrau.level2.config import (
     get_molecular_fit_config,
     kfs_mode_description,
 )
+from milgrau.level2.contracts import WavelengthRetrievalResult, validate_retrieval_results
 
 
 def build_level2_dataset(
     ds_l1: xr.Dataset,
-    results: list[dict[str, Any]],
+    results: list[WavelengthRetrievalResult],
     altitude_m: np.ndarray,
     source_file: Path,
     config: Mapping[str, Any],
 ) -> xr.Dataset:
     """Build an xarray Level 2 dataset from wavelength processing results."""
-    wavelengths = np.asarray([result["wavelength"] for result in results], dtype=np.int32)
     time_values = ds_l1["time"].values
-    block_time = np.asarray(results[0]["block_time"], dtype="datetime64[ns]")
+    validate_retrieval_results(results, n_time=len(time_values), n_altitude=len(altitude_m))
+    wavelengths = np.asarray([result.wavelength_nm for result in results], dtype=np.int32)
+    block_time = results[0].block_time
     coords = {"time": time_values, "block_time": block_time, "wavelength": wavelengths, "altitude": altitude_m}
 
-    def stack(name: str) -> np.ndarray:
-        return np.stack([np.asarray(result[name], dtype=np.float64) for result in results], axis=0)
+    def stack(selector: Callable[[WavelengthRetrievalResult], np.ndarray]) -> np.ndarray:
+        return np.stack([np.asarray(selector(result), dtype=np.float64) for result in results], axis=0)
 
-    def stack_time(name: str) -> np.ndarray:
-        return np.stack([np.asarray(result[name], dtype=np.float64) for result in results], axis=1)
+    def stack_time(selector: Callable[[WavelengthRetrievalResult], np.ndarray]) -> np.ndarray:
+        return np.stack([np.asarray(selector(result), dtype=np.float64) for result in results], axis=1)
 
-    def stack_block(name: str) -> np.ndarray:
-        return np.stack([np.asarray(result[name], dtype=np.float64) for result in results], axis=1)
+    def stack_block(selector: Callable[[WavelengthRetrievalResult], np.ndarray]) -> np.ndarray:
+        return np.stack([np.asarray(selector(result), dtype=np.float64) for result in results], axis=1)
 
-    def vector(name: str) -> np.ndarray:
-        return np.asarray([result[name] for result in results], dtype=np.float64)
+    def vector(selector: Callable[[WavelengthRetrievalResult], float | int]) -> np.ndarray:
+        return np.asarray([selector(result) for result in results], dtype=np.float64)
 
     kfs_mode = get_kfs_mode(config)
     ds_l2 = xr.Dataset(
         data_vars={
-            "molecular_backscatter": (("wavelength", "altitude"), stack("molecular_backscatter")),
-            "molecular_extinction": (("wavelength", "altitude"), stack("molecular_extinction")),
-            "molecular_transmission": (("wavelength", "altitude"), stack("molecular_transmission")),
-            "simulated_molecular_signal": (("wavelength", "altitude"), stack("simulated_molecular_signal")),
-            "simulated_molecular_range_corrected_signal": (("wavelength", "altitude"), stack("simulated_molecular_range_corrected_signal")),
-            "scaled_molecular_range_corrected_signal": (("wavelength", "altitude"), stack("scaled_molecular_range_corrected_signal")),
-            "scaled_molecular_range_corrected_signal_block": (("block_time", "wavelength", "altitude"), stack_block("scaled_molecular_range_corrected_signal_block")),
-            "glued_corrected_signal": (("time", "wavelength", "altitude"), stack_time("glued_corrected_signal")),
-            "glued_corrected_signal_error": (("time", "wavelength", "altitude"), stack_time("glued_corrected_signal_error")),
-            "glued_corrected_signal_block": (("block_time", "wavelength", "altitude"), stack_block("glued_corrected_signal_block")),
-            "glued_corrected_signal_error_block": (("block_time", "wavelength", "altitude"), stack_block("glued_corrected_signal_error_block")),
-            "glued_corrected_signal_mean": (("wavelength", "altitude"), stack("glued_corrected_signal_mean")),
-            "glued_corrected_signal_error_mean": (("wavelength", "altitude"), stack("glued_corrected_signal_error_mean")),
-            "glued_range_corrected_signal": (("time", "wavelength", "altitude"), stack_time("glued_range_corrected_signal")),
-            "glued_range_corrected_signal_error": (("time", "wavelength", "altitude"), stack_time("glued_range_corrected_signal_error")),
-            "glued_range_corrected_signal_block": (("block_time", "wavelength", "altitude"), stack_block("glued_range_corrected_signal_block")),
-            "glued_range_corrected_signal_error_block": (("block_time", "wavelength", "altitude"), stack_block("glued_range_corrected_signal_error_block")),
-            "glued_range_corrected_signal_mean": (("wavelength", "altitude"), stack("glued_range_corrected_signal_mean")),
-            "glued_range_corrected_signal_error_mean": (("wavelength", "altitude"), stack("glued_range_corrected_signal_error_mean")),
-            "gluing_merge_source_flag": (("time", "wavelength", "altitude"), stack_time("gluing_merge_source_flag").astype(np.int8)),
-            "gluing_merge_source_flag_block": (("block_time", "wavelength", "altitude"), stack_block("gluing_merge_source_flag_block").astype(np.int8)),
-            "scattering_ratio_mean": (("wavelength", "altitude"), stack("scattering_ratio_mean")),
-            "scattering_ratio_block": (("block_time", "wavelength", "altitude"), stack_block("scattering_ratio_block")),
-            "aerosol_backscatter_mean": (("wavelength", "altitude"), stack("aerosol_backscatter")),
-            "aerosol_backscatter_mean_error": (("wavelength", "altitude"), stack("aerosol_backscatter_error")),
-            "aerosol_extinction_mean": (("wavelength", "altitude"), stack("aerosol_extinction")),
-            "aerosol_extinction_mean_error": (("wavelength", "altitude"), stack("aerosol_extinction_error")),
-            "aerosol_backscatter": (("wavelength", "altitude"), stack("aerosol_backscatter")),
-            "aerosol_backscatter_error": (("wavelength", "altitude"), stack("aerosol_backscatter_error")),
-            "aerosol_extinction": (("wavelength", "altitude"), stack("aerosol_extinction")),
-            "aerosol_extinction_error": (("wavelength", "altitude"), stack("aerosol_extinction_error")),
-            "aerosol_backscatter_block": (("block_time", "wavelength", "altitude"), stack_block("aerosol_backscatter_block")),
-            "aerosol_backscatter_error_block": (("block_time", "wavelength", "altitude"), stack_block("aerosol_backscatter_error_block")),
-            "aerosol_extinction_block": (("block_time", "wavelength", "altitude"), stack_block("aerosol_extinction_block")),
-            "aerosol_extinction_error_block": (("block_time", "wavelength", "altitude"), stack_block("aerosol_extinction_error_block")),
-            "valid_retrieval_block_flag": (("block_time", "wavelength"), stack_block("valid_retrieval_block_flag").astype(np.int8)),
-            "rayleigh_reference_altitude_m": (("wavelength",), vector("rayleigh_reference_altitude_m")),
-            "rayleigh_reference_start_altitude_m": (("wavelength",), vector("rayleigh_reference_start_altitude_m")),
-            "rayleigh_reference_stop_altitude_m": (("wavelength",), vector("rayleigh_reference_stop_altitude_m")),
-            "rayleigh_reference_valid_bins": (("wavelength",), vector("rayleigh_reference_valid_bins")),
-            "rayleigh_reference_success_flag": (("wavelength",), vector("rayleigh_reference_success_flag").astype(np.int8)),
-            "rayleigh_reference_relative_slope": (("wavelength",), vector("rayleigh_reference_relative_slope")),
-            "rayleigh_reference_relative_variance": (("wavelength",), vector("rayleigh_reference_relative_variance")),
-            "rayleigh_reference_valid_fraction": (("wavelength",), vector("rayleigh_reference_valid_fraction")),
-            "rayleigh_calibration_factor": (("wavelength",), vector("rayleigh_calibration_factor")),
-            "rayleigh_calibration_intercept": (("wavelength",), vector("rayleigh_calibration_intercept")),
-            "rayleigh_reference_altitude_m_block": (("block_time", "wavelength"), stack_block("rayleigh_reference_altitude_m_block")),
-            "rayleigh_reference_start_altitude_m_block": (("block_time", "wavelength"), stack_block("rayleigh_reference_start_altitude_m_block")),
-            "rayleigh_reference_stop_altitude_m_block": (("block_time", "wavelength"), stack_block("rayleigh_reference_stop_altitude_m_block")),
-            "rayleigh_reference_valid_bins_block": (("block_time", "wavelength"), stack_block("rayleigh_reference_valid_bins_block")),
-            "rayleigh_reference_success_flag_block": (("block_time", "wavelength"), stack_block("rayleigh_reference_success_flag_block").astype(np.int8)),
-            "rayleigh_reference_relative_slope_block": (("block_time", "wavelength"), stack_block("rayleigh_reference_relative_slope_block")),
-            "rayleigh_reference_relative_variance_block": (("block_time", "wavelength"), stack_block("rayleigh_reference_relative_variance_block")),
-            "rayleigh_reference_valid_fraction_block": (("block_time", "wavelength"), stack_block("rayleigh_reference_valid_fraction_block")),
-            "rayleigh_calibration_factor_block": (("block_time", "wavelength"), stack_block("rayleigh_calibration_factor_block")),
-            "rayleigh_calibration_intercept_block": (("block_time", "wavelength"), stack_block("rayleigh_calibration_intercept_block")),
-            "lidar_ratio_assumed_sr": (("wavelength",), vector("lidar_ratio_assumed_sr")),
-            "lidar_ratio_std_sr": (("wavelength",), vector("lidar_ratio_std_sr")),
-            "kfs_branch": (("wavelength", "altitude"), stack("kfs_branch").astype(np.int8)),
-            "kfs_branch_block": (("block_time", "wavelength", "altitude"), stack_block("kfs_branch_block").astype(np.int8)),
-            "gluing_success_flag": (("time", "wavelength"), stack_time("gluing_success_flag").astype(np.int8)),
-            "gluing_fallback_flag": (("time", "wavelength"), stack_time("gluing_fallback_flag").astype(np.int8)),
-            "gluing_split_altitude_m": (("time", "wavelength"), stack_time("gluing_split_altitude_m")),
-            "gluing_start_altitude_m": (("time", "wavelength"), stack_time("gluing_start_altitude_m")),
-            "gluing_stop_altitude_m": (("time", "wavelength"), stack_time("gluing_stop_altitude_m")),
-            "gluing_slope": (("time", "wavelength"), stack_time("gluing_slope")),
-            "gluing_intercept": (("time", "wavelength"), stack_time("gluing_intercept")),
-            "gluing_correlation": (("time", "wavelength"), stack_time("gluing_correlation")),
-            "gluing_relative_rmse": (("time", "wavelength"), stack_time("gluing_relative_rmse")),
-            "gluing_relative_bias": (("time", "wavelength"), stack_time("gluing_relative_bias")),
-            "gluing_success_flag_block": (("block_time", "wavelength"), stack_block("gluing_success_flag_block").astype(np.int8)),
-            "gluing_fallback_flag_block": (("block_time", "wavelength"), stack_block("gluing_fallback_flag_block").astype(np.int8)),
-            "gluing_split_altitude_m_block": (("block_time", "wavelength"), stack_block("gluing_split_altitude_m_block")),
-            "gluing_start_altitude_m_block": (("block_time", "wavelength"), stack_block("gluing_start_altitude_m_block")),
-            "gluing_stop_altitude_m_block": (("block_time", "wavelength"), stack_block("gluing_stop_altitude_m_block")),
-            "gluing_slope_block": (("block_time", "wavelength"), stack_block("gluing_slope_block")),
-            "gluing_intercept_block": (("block_time", "wavelength"), stack_block("gluing_intercept_block")),
-            "gluing_correlation_block": (("block_time", "wavelength"), stack_block("gluing_correlation_block")),
-            "gluing_relative_rmse_block": (("block_time", "wavelength"), stack_block("gluing_relative_rmse_block")),
-            "gluing_relative_bias_block": (("block_time", "wavelength"), stack_block("gluing_relative_bias_block")),
+            "molecular_backscatter": (("wavelength", "altitude"), stack(lambda result: result.molecular.backscatter)),
+            "molecular_extinction": (("wavelength", "altitude"), stack(lambda result: result.molecular.extinction)),
+            "molecular_transmission": (("wavelength", "altitude"), stack(lambda result: result.molecular.transmission)),
+            "simulated_molecular_signal": (("wavelength", "altitude"), stack(lambda result: result.molecular.simulated_signal)),
+            "simulated_molecular_range_corrected_signal": (("wavelength", "altitude"), stack(lambda result: result.molecular.simulated_range_corrected_signal)),
+            "scaled_molecular_range_corrected_signal": (("wavelength", "altitude"), stack(lambda result: result.molecular.scaled_range_corrected_signal)),
+            "scaled_molecular_range_corrected_signal_block": (("block_time", "wavelength", "altitude"), stack_block(lambda result: result.molecular.scaled_range_corrected_signal_block)),
+            "glued_corrected_signal": (("time", "wavelength", "altitude"), stack_time(lambda result: result.glued.corrected_signal)),
+            "glued_corrected_signal_error": (("time", "wavelength", "altitude"), stack_time(lambda result: result.glued.corrected_signal_error)),
+            "glued_corrected_signal_block": (("block_time", "wavelength", "altitude"), stack_block(lambda result: result.glued.corrected_signal_block)),
+            "glued_corrected_signal_error_block": (("block_time", "wavelength", "altitude"), stack_block(lambda result: result.glued.corrected_signal_error_block)),
+            "glued_corrected_signal_mean": (("wavelength", "altitude"), stack(lambda result: result.glued.corrected_signal_mean)),
+            "glued_corrected_signal_error_mean": (("wavelength", "altitude"), stack(lambda result: result.glued.corrected_signal_error_mean)),
+            "glued_range_corrected_signal": (("time", "wavelength", "altitude"), stack_time(lambda result: result.glued.range_corrected_signal)),
+            "glued_range_corrected_signal_error": (("time", "wavelength", "altitude"), stack_time(lambda result: result.glued.range_corrected_signal_error)),
+            "glued_range_corrected_signal_block": (("block_time", "wavelength", "altitude"), stack_block(lambda result: result.glued.range_corrected_signal_block)),
+            "glued_range_corrected_signal_error_block": (("block_time", "wavelength", "altitude"), stack_block(lambda result: result.glued.range_corrected_signal_error_block)),
+            "glued_range_corrected_signal_mean": (("wavelength", "altitude"), stack(lambda result: result.glued.range_corrected_signal_mean)),
+            "glued_range_corrected_signal_error_mean": (("wavelength", "altitude"), stack(lambda result: result.glued.range_corrected_signal_error_mean)),
+            "gluing_merge_source_flag": (("time", "wavelength", "altitude"), stack_time(lambda result: result.glued.merge_source_flag).astype(np.int8)),
+            "gluing_merge_source_flag_block": (("block_time", "wavelength", "altitude"), stack_block(lambda result: result.glued.merge_source_flag_block).astype(np.int8)),
+            "scattering_ratio_mean": (("wavelength", "altitude"), stack(lambda result: result.optical.scattering_ratio_mean)),
+            "scattering_ratio_block": (("block_time", "wavelength", "altitude"), stack_block(lambda result: result.optical.scattering_ratio_block)),
+            "aerosol_backscatter_mean": (("wavelength", "altitude"), stack(lambda result: result.optical.aerosol_backscatter)),
+            "aerosol_backscatter_mean_error": (("wavelength", "altitude"), stack(lambda result: result.optical.aerosol_backscatter_error)),
+            "aerosol_extinction_mean": (("wavelength", "altitude"), stack(lambda result: result.optical.aerosol_extinction)),
+            "aerosol_extinction_mean_error": (("wavelength", "altitude"), stack(lambda result: result.optical.aerosol_extinction_error)),
+            "aerosol_backscatter": (("wavelength", "altitude"), stack(lambda result: result.optical.aerosol_backscatter)),
+            "aerosol_backscatter_error": (("wavelength", "altitude"), stack(lambda result: result.optical.aerosol_backscatter_error)),
+            "aerosol_extinction": (("wavelength", "altitude"), stack(lambda result: result.optical.aerosol_extinction)),
+            "aerosol_extinction_error": (("wavelength", "altitude"), stack(lambda result: result.optical.aerosol_extinction_error)),
+            "aerosol_backscatter_block": (("block_time", "wavelength", "altitude"), stack_block(lambda result: result.optical.aerosol_backscatter_block)),
+            "aerosol_backscatter_error_block": (("block_time", "wavelength", "altitude"), stack_block(lambda result: result.optical.aerosol_backscatter_error_block)),
+            "aerosol_extinction_block": (("block_time", "wavelength", "altitude"), stack_block(lambda result: result.optical.aerosol_extinction_block)),
+            "aerosol_extinction_error_block": (("block_time", "wavelength", "altitude"), stack_block(lambda result: result.optical.aerosol_extinction_error_block)),
+            "valid_retrieval_block_flag": (("block_time", "wavelength"), stack_block(lambda result: result.optical.valid_retrieval_block_flag).astype(np.int8)),
+            "rayleigh_reference_altitude_m": (("wavelength",), vector(lambda result: result.rayleigh.reference_altitude_m)),
+            "rayleigh_reference_start_altitude_m": (("wavelength",), vector(lambda result: result.rayleigh.reference_start_altitude_m)),
+            "rayleigh_reference_stop_altitude_m": (("wavelength",), vector(lambda result: result.rayleigh.reference_stop_altitude_m)),
+            "rayleigh_reference_valid_bins": (("wavelength",), vector(lambda result: result.rayleigh.reference_valid_bins)),
+            "rayleigh_reference_success_flag": (("wavelength",), vector(lambda result: result.rayleigh.reference_success_flag).astype(np.int8)),
+            "rayleigh_reference_relative_slope": (("wavelength",), vector(lambda result: result.rayleigh.reference_relative_slope)),
+            "rayleigh_reference_relative_variance": (("wavelength",), vector(lambda result: result.rayleigh.reference_relative_variance)),
+            "rayleigh_reference_valid_fraction": (("wavelength",), vector(lambda result: result.rayleigh.reference_valid_fraction)),
+            "rayleigh_calibration_factor": (("wavelength",), vector(lambda result: result.rayleigh.calibration_factor)),
+            "rayleigh_calibration_intercept": (("wavelength",), vector(lambda result: result.rayleigh.calibration_intercept)),
+            "rayleigh_reference_altitude_m_block": (("block_time", "wavelength"), stack_block(lambda result: result.rayleigh.reference_altitude_m_block)),
+            "rayleigh_reference_start_altitude_m_block": (("block_time", "wavelength"), stack_block(lambda result: result.rayleigh.reference_start_altitude_m_block)),
+            "rayleigh_reference_stop_altitude_m_block": (("block_time", "wavelength"), stack_block(lambda result: result.rayleigh.reference_stop_altitude_m_block)),
+            "rayleigh_reference_valid_bins_block": (("block_time", "wavelength"), stack_block(lambda result: result.rayleigh.reference_valid_bins_block)),
+            "rayleigh_reference_success_flag_block": (("block_time", "wavelength"), stack_block(lambda result: result.rayleigh.reference_success_flag_block).astype(np.int8)),
+            "rayleigh_reference_relative_slope_block": (("block_time", "wavelength"), stack_block(lambda result: result.rayleigh.reference_relative_slope_block)),
+            "rayleigh_reference_relative_variance_block": (("block_time", "wavelength"), stack_block(lambda result: result.rayleigh.reference_relative_variance_block)),
+            "rayleigh_reference_valid_fraction_block": (("block_time", "wavelength"), stack_block(lambda result: result.rayleigh.reference_valid_fraction_block)),
+            "rayleigh_calibration_factor_block": (("block_time", "wavelength"), stack_block(lambda result: result.rayleigh.calibration_factor_block)),
+            "rayleigh_calibration_intercept_block": (("block_time", "wavelength"), stack_block(lambda result: result.rayleigh.calibration_intercept_block)),
+            "lidar_ratio_assumed_sr": (("wavelength",), vector(lambda result: result.kfs.lidar_ratio_assumed_sr)),
+            "lidar_ratio_std_sr": (("wavelength",), vector(lambda result: result.kfs.lidar_ratio_std_sr)),
+            "kfs_branch": (("wavelength", "altitude"), stack(lambda result: result.kfs.branch).astype(np.int8)),
+            "kfs_branch_block": (("block_time", "wavelength", "altitude"), stack_block(lambda result: result.kfs.branch_block).astype(np.int8)),
+            "gluing_success_flag": (("time", "wavelength"), stack_time(lambda result: result.gluing.success_flag).astype(np.int8)),
+            "gluing_fallback_flag": (("time", "wavelength"), stack_time(lambda result: result.gluing.fallback_flag).astype(np.int8)),
+            "gluing_split_altitude_m": (("time", "wavelength"), stack_time(lambda result: result.gluing.split_altitude_m)),
+            "gluing_start_altitude_m": (("time", "wavelength"), stack_time(lambda result: result.gluing.start_altitude_m)),
+            "gluing_stop_altitude_m": (("time", "wavelength"), stack_time(lambda result: result.gluing.stop_altitude_m)),
+            "gluing_slope": (("time", "wavelength"), stack_time(lambda result: result.gluing.slope)),
+            "gluing_intercept": (("time", "wavelength"), stack_time(lambda result: result.gluing.intercept)),
+            "gluing_correlation": (("time", "wavelength"), stack_time(lambda result: result.gluing.correlation)),
+            "gluing_relative_rmse": (("time", "wavelength"), stack_time(lambda result: result.gluing.relative_rmse)),
+            "gluing_relative_bias": (("time", "wavelength"), stack_time(lambda result: result.gluing.relative_bias)),
+            "gluing_success_flag_block": (("block_time", "wavelength"), stack_block(lambda result: result.gluing.success_flag_block).astype(np.int8)),
+            "gluing_fallback_flag_block": (("block_time", "wavelength"), stack_block(lambda result: result.gluing.fallback_flag_block).astype(np.int8)),
+            "gluing_split_altitude_m_block": (("block_time", "wavelength"), stack_block(lambda result: result.gluing.split_altitude_m_block)),
+            "gluing_start_altitude_m_block": (("block_time", "wavelength"), stack_block(lambda result: result.gluing.start_altitude_m_block)),
+            "gluing_stop_altitude_m_block": (("block_time", "wavelength"), stack_block(lambda result: result.gluing.stop_altitude_m_block)),
+            "gluing_slope_block": (("block_time", "wavelength"), stack_block(lambda result: result.gluing.slope_block)),
+            "gluing_intercept_block": (("block_time", "wavelength"), stack_block(lambda result: result.gluing.intercept_block)),
+            "gluing_correlation_block": (("block_time", "wavelength"), stack_block(lambda result: result.gluing.correlation_block)),
+            "gluing_relative_rmse_block": (("block_time", "wavelength"), stack_block(lambda result: result.gluing.relative_rmse_block)),
+            "gluing_relative_bias_block": (("block_time", "wavelength"), stack_block(lambda result: result.gluing.relative_bias_block)),
         },
         coords=coords,
         attrs=dict(ds_l1.attrs),
@@ -166,10 +169,10 @@ def build_level2_dataset(
             "Rayleigh_Reference_Max_Relative_Slope": float(fit_cfg["max_relative_slope"]),
             "Rayleigh_Reference_Max_Relative_Variance": float(fit_cfg["max_relative_variance"]),
             "Rayleigh_Reference_Min_Valid_Fraction": float(fit_cfg["min_valid_fraction"]),
-            "Molecular_sources": ";".join(str(result["molecular_source"]) for result in results),
-            "Gluing_sources": ";".join(str(result["gluing_source"]) for result in results),
-            "Analog_channels": ";".join(str(result["analog_channel"]) for result in results),
-            "Photon_channels": ";".join(str(result["photon_channel"]) for result in results),
+            "Molecular_sources": ";".join(result.molecular.source for result in results),
+            "Gluing_sources": ";".join(result.glued.source for result in results),
+            "Analog_channels": ";".join(str(result.glued.analog_channel) for result in results),
+            "Photon_channels": ";".join(str(result.glued.photon_channel) for result in results),
         }
     )
     return ds_l2

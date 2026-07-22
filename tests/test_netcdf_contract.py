@@ -9,6 +9,43 @@ import pandas as pd
 import xarray as xr
 
 from milgrau.level2.lebear import process_single_level1_file
+from milgrau.operations import ExecutionStatus
+
+
+EXPECTED_LEVEL2_DATA_VARS = frozenset(
+    """
+    aerosol_backscatter aerosol_backscatter_block aerosol_backscatter_error
+    aerosol_backscatter_error_block aerosol_backscatter_mean aerosol_backscatter_mean_error
+    aerosol_extinction aerosol_extinction_block aerosol_extinction_error
+    aerosol_extinction_error_block aerosol_extinction_mean aerosol_extinction_mean_error
+    glued_corrected_signal glued_corrected_signal_block glued_corrected_signal_error
+    glued_corrected_signal_error_block glued_corrected_signal_error_mean glued_corrected_signal_mean
+    glued_range_corrected_signal glued_range_corrected_signal_block glued_range_corrected_signal_error
+    glued_range_corrected_signal_error_block glued_range_corrected_signal_error_mean
+    glued_range_corrected_signal_mean gluing_correlation gluing_correlation_block
+    gluing_fallback_flag gluing_fallback_flag_block gluing_intercept gluing_intercept_block
+    gluing_merge_source_flag gluing_merge_source_flag_block gluing_relative_bias
+    gluing_relative_bias_block gluing_relative_rmse gluing_relative_rmse_block gluing_slope
+    gluing_slope_block gluing_split_altitude_m gluing_split_altitude_m_block
+    gluing_start_altitude_m gluing_start_altitude_m_block gluing_stop_altitude_m
+    gluing_stop_altitude_m_block gluing_success_flag gluing_success_flag_block kfs_branch
+    kfs_branch_block lidar_ratio_assumed_sr lidar_ratio_std_sr molecular_backscatter
+    molecular_extinction molecular_transmission rayleigh_calibration_factor
+    rayleigh_calibration_factor_block rayleigh_calibration_intercept
+    rayleigh_calibration_intercept_block rayleigh_reference_altitude_m
+    rayleigh_reference_altitude_m_block rayleigh_reference_relative_slope
+    rayleigh_reference_relative_slope_block rayleigh_reference_relative_variance
+    rayleigh_reference_relative_variance_block rayleigh_reference_start_altitude_m
+    rayleigh_reference_start_altitude_m_block rayleigh_reference_stop_altitude_m
+    rayleigh_reference_stop_altitude_m_block rayleigh_reference_success_flag
+    rayleigh_reference_success_flag_block rayleigh_reference_valid_bins
+    rayleigh_reference_valid_bins_block rayleigh_reference_valid_fraction
+    rayleigh_reference_valid_fraction_block scaled_molecular_range_corrected_signal
+    scaled_molecular_range_corrected_signal_block scattering_ratio_block scattering_ratio_mean
+    simulated_molecular_range_corrected_signal simulated_molecular_signal
+    valid_retrieval_block_flag
+    """.split()
+)
 
 
 class _ListLogger:
@@ -89,7 +126,7 @@ def test_synthetic_level1_contract(tmp_path: Path) -> None:
 
 
 def test_lebear_generates_synthetic_level2_product(tmp_path: Path) -> None:
-    """LEBEAR v0 should produce a small Level 2 product from a synthetic Level 1 file."""
+    """Freeze the compact retrieval-to-NetCDF schema and deterministic reference values."""
     path = _write_synthetic_level1(tmp_path / "synthetic_level1_rcs.nc")
     logger = _ListLogger()
     config = {
@@ -105,14 +142,58 @@ def test_lebear_generates_synthetic_level2_product(tmp_path: Path) -> None:
         "visualization": {"level2_qa": {"enabled": False}},
     }
 
-    result = process_single_level1_file(path, config, logger)  # type: ignore[arg-type]
+    summary = process_single_level1_file(path, config, logger)  # type: ignore[arg-type]
     output_path = tmp_path / "synthetic_level2_optical.nc"
 
-    assert result.startswith("[OK]")
+    assert summary.results[0].status is ExecutionStatus.SUCCESS
     assert output_path.exists()
     with xr.open_dataset(output_path) as ds_l2:
-        assert "molecular_backscatter" in ds_l2
-        assert "glued_range_corrected_signal" in ds_l2
-        assert "aerosol_backscatter" in ds_l2
-        assert "gluing_success_flag" in ds_l2
+        assert set(ds_l2.data_vars) == EXPECTED_LEVEL2_DATA_VARS
+        assert dict(ds_l2.sizes) == {"wavelength": 1, "altitude": 200, "block_time": 1, "time": 3}
+        assert ds_l2["molecular_backscatter"].dims == ("wavelength", "altitude")
+        assert ds_l2["glued_corrected_signal"].dims == ("time", "wavelength", "altitude")
+        assert ds_l2["glued_corrected_signal_block"].dims == ("block_time", "wavelength", "altitude")
+        assert ds_l2["valid_retrieval_block_flag"].dims == ("block_time", "wavelength")
+        assert ds_l2["molecular_backscatter"].dtype == np.dtype("float64")
+        assert ds_l2["gluing_success_flag"].dtype == np.dtype("int8")
+        assert ds_l2["kfs_branch"].dtype == np.dtype("int8")
         assert int(ds_l2["wavelength"].values[0]) == 532
+        assert ds_l2.attrs["Processing_level"] == "Level 2: LEBEAR block-based optical inversion"
+        assert ds_l2.attrs["Pipeline"] == "MILGRAU/LEBEAR"
+        assert ds_l2.attrs["Input_Level1_File"] == path.name
+        assert ds_l2.attrs["LEBEAR_Mode"] == "block_mean_corrected_signal_gluing_rayleigh_kfs"
+        assert ds_l2.attrs["KFS_Mode"] == "two_sided"
+        assert ds_l2["gluing_success_flag"].attrs["flag_values"] == "0, 1"
+        assert ds_l2["gluing_success_flag"].attrs["flag_meanings"] == "failed success"
+        assert ds_l2["kfs_branch"].attrs["flag_values"] == "0, 1, 2, 3"
+        assert set(np.unique(ds_l2["kfs_branch"].values).tolist()) == {1, 2, 3}
+        assert set(np.unique(ds_l2["valid_retrieval_block_flag"].values).tolist()) == {1}
+
+        # Tight relative tolerances allow minor platform-level floating-point variation
+        # while detecting changes to the molecular model, gluing, or retrieval output.
+        np.testing.assert_allclose(
+            ds_l2["molecular_backscatter"].values[0, :5],
+            np.array(
+                [
+                    1.438635095291557e-06,
+                    1.4375814972649463e-06,
+                    1.4365284896434596e-06,
+                    1.4354760721978301e-06,
+                    1.4344242446988414e-06,
+                ]
+            ),
+            rtol=1e-10,
+            atol=0.0,
+        )
+        np.testing.assert_allclose(
+            ds_l2["glued_corrected_signal"].values[0, 0, :5],
+            np.array([1.15000002712507, 1.1414073077465436, 1.1328787301905783, 1.1244139205734942, 1.1160123803837163]),
+            rtol=1e-7,
+            atol=0.0,
+        )
+        np.testing.assert_allclose(
+            np.nansum(ds_l2["aerosol_backscatter"].values),
+            3.138771333634968e-06,
+            rtol=1e-5,
+            atol=1e-12,
+        )

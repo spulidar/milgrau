@@ -2,15 +2,35 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 import xarray as xr
 
 from milgrau.io.paths import level2_output_path
 from milgrau.level2 import lebear
+from milgrau.level2 import qa as level2_qa
+from milgrau.level2 import retrieval as retrieval_module
+from milgrau.level2.contracts import WavelengthRetrievalResult
+from milgrau.level2.dataset import build_level2_dataset
+from milgrau.level2.retrieval import (
+    BlockGluingResult,
+    RetrievalStageError,
+    WavelengthBlockInputs,
+    assemble_wavelength_result,
+    build_molecular_model,
+    glue_signal_blocks,
+    prepare_wavelength_blocks,
+    process_wavelength,
+    retrieve_optical_blocks,
+)
+from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary
 
 
 class _ListLogger:
@@ -27,6 +47,27 @@ class _ListLogger:
 
     def error(self, message: str) -> None:
         self.messages.append(f"ERROR: {message}")
+
+
+def _dataset_contract_digest(dataset: xr.Dataset) -> str:
+    """Hash values, dimensions, dtypes and attributes for the frozen L2 fixture."""
+    digest = hashlib.sha256()
+    for group_name, variables in (("coords", dataset.coords), ("data_vars", dataset.data_vars)):
+        digest.update(group_name.encode())
+        for name in sorted(variables):
+            array = dataset[name]
+            values = np.ascontiguousarray(array.values)
+            metadata = {
+                "name": name,
+                "dims": list(array.dims),
+                "dtype": str(values.dtype),
+                "shape": list(values.shape),
+                "attrs": dict(array.attrs),
+            }
+            digest.update(json.dumps(metadata, sort_keys=True, default=str, separators=(",", ":")).encode())
+            digest.update(values.tobytes())
+    digest.update(json.dumps(dict(dataset.attrs), sort_keys=True, default=str, separators=(",", ":")).encode())
+    return digest.hexdigest()
 
 
 def _write_level1(path: Path, channels: list[str], n_altitude: int = 240) -> Path:
@@ -92,14 +133,135 @@ def _config(tmp_path: Path, *, fallback_to_photon_counting: bool = True, kfs_mod
     }
 
 
+def test_typed_retrieval_preserves_frozen_level2_dataset_exactly(tmp_path: Path) -> None:
+    """The typed contract must preserve every frozen dataset value and metadata byte."""
+    level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["532.AN", "532.PC"])
+    config = _config(tmp_path)
+    logger = _ListLogger()
+    with xr.open_dataset(level1) as ds_l1:
+        ds_l1.load()
+        altitude_m = np.asarray(ds_l1["altitude"].values, dtype=np.float64)
+        result = process_wavelength(ds_l1, 532, altitude_m, config, logger)  # type: ignore[arg-type]
+        dataset = build_level2_dataset(ds_l1, [result], altitude_m, level1, config)
+
+    assert isinstance(result, WavelengthRetrievalResult)
+    result.validate(n_time=3, n_altitude=240)
+    assert _dataset_contract_digest(dataset) == "3a5cfa6aff51948afe8e5a2c889988cf50763f3ef07de14bc7b9261695127299"
+
+
+def test_retrieval_stages_have_explicit_conformable_boundaries(tmp_path: Path) -> None:
+    """Selection, gluing, molecular, optical and assembly stages compose explicitly."""
+    level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["532.AN", "532.PC"])
+    config = _config(tmp_path)
+    logger = _ListLogger()
+    with xr.open_dataset(level1) as ds_l1:
+        ds_l1.load()
+        altitude_m = np.asarray(ds_l1["altitude"].values, dtype=np.float64)
+        inputs = prepare_wavelength_blocks(ds_l1, 532, altitude_m, config)
+        glued = glue_signal_blocks(inputs, altitude_m, logger)  # type: ignore[arg-type]
+        molecular_model = build_molecular_model(ds_l1, 532, altitude_m, config)
+        molecular, optical, rayleigh, kfs = retrieve_optical_blocks(
+            inputs,
+            glued,
+            molecular_model,
+            altitude_m,
+            config,
+            logger,  # type: ignore[arg-type]
+        )
+        result = assemble_wavelength_result(inputs, glued, molecular, optical, rayleigh, kfs)
+
+    assert isinstance(inputs, WavelengthBlockInputs)
+    assert isinstance(glued, BlockGluingResult)
+    assert inputs.analog_block is not None and inputs.analog_block.shape == (1, 240)
+    assert inputs.photon_block is not None and inputs.photon_block.shape == (1, 240)
+    assert glued.corrected_signal.shape == (1, 240)
+    assert result.optical.valid_retrieval_block_flag.dtype == np.int8
+    result.validate(n_time=3, n_altitude=240)
+
+
+def test_gluing_stage_exposes_single_channel_fallback(tmp_path: Path) -> None:
+    """The block-gluing stage reports its photon-only fallback without later stages."""
+    level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["532.PC"])
+    config = _config(tmp_path)
+    logger = _ListLogger()
+    with xr.open_dataset(level1) as ds_l1:
+        ds_l1.load()
+        altitude_m = np.asarray(ds_l1["altitude"].values, dtype=np.float64)
+        inputs = prepare_wavelength_blocks(ds_l1, 532, altitude_m, config)
+        glued = glue_signal_blocks(inputs, altitude_m, logger)  # type: ignore[arg-type]
+
+    assert glued.source == "block_mean_corrected_signal_single_channel_532.PC"
+    assert np.all(glued.fallback_flag == 1)
+    assert np.all(glued.success_flag == 0)
+    assert np.all(glued.merge_source_flag == 0)
+
+
+def test_process_wavelength_identifies_failing_stage(monkeypatch) -> None:
+    """The sequencer should preserve the stable stage name and original cause."""
+    def fail_selection(*_args, **_kwargs):
+        raise ValueError("synthetic selection failure")
+
+    monkeypatch.setattr(retrieval_module, "prepare_wavelength_blocks", fail_selection)
+
+    with pytest.raises(RetrievalStageError, match=r"\[selection_and_blocking\]") as captured:
+        process_wavelength(xr.Dataset(), 532, np.array([0.0]), {}, _ListLogger())  # type: ignore[arg-type]
+
+    assert captured.value.stage == "selection_and_blocking"
+    assert isinstance(captured.value.__cause__, ValueError)
+
+
+def test_dataset_builder_rejects_wrong_retrieval_dtype_before_writing(tmp_path: Path) -> None:
+    """A typed result with a wrong flag dtype should fail before xarray assembly."""
+    level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["532.AN", "532.PC"])
+    config = _config(tmp_path)
+    logger = _ListLogger()
+    with xr.open_dataset(level1) as ds_l1:
+        ds_l1.load()
+        altitude_m = np.asarray(ds_l1["altitude"].values, dtype=np.float64)
+        result = process_wavelength(ds_l1, 532, altitude_m, config, logger)  # type: ignore[arg-type]
+        invalid_kfs = replace(result.kfs, branch=result.kfs.branch.astype(np.int16))
+        invalid_result = replace(result, kfs=invalid_kfs)
+        with pytest.raises(TypeError, match=r"kfs\.branch must have dtype int8"):
+            build_level2_dataset(ds_l1, [invalid_result], altitude_m, level1, config)
+
+
+def test_dataset_builder_rejects_wrong_retrieval_shape_before_writing(tmp_path: Path) -> None:
+    """A typed result with an incomplete altitude vector should fail explicitly."""
+    level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["532.AN", "532.PC"])
+    config = _config(tmp_path)
+    logger = _ListLogger()
+    with xr.open_dataset(level1) as ds_l1:
+        ds_l1.load()
+        altitude_m = np.asarray(ds_l1["altitude"].values, dtype=np.float64)
+        result = process_wavelength(ds_l1, 532, altitude_m, config, logger)  # type: ignore[arg-type]
+        invalid_molecular = replace(result.molecular, backscatter=result.molecular.backscatter[:-1])
+        invalid_result = replace(result, molecular=invalid_molecular)
+        with pytest.raises(ValueError, match=r"molecular\.backscatter must have shape \(240,\)"):
+            build_level2_dataset(ds_l1, [invalid_result], altitude_m, level1, config)
+
+
+def test_retrieval_contract_rejects_missing_fields_and_free_mapping(tmp_path: Path) -> None:
+    """Required dataclass fields and the dataset collection type are enforced."""
+    with pytest.raises(TypeError, match="required positional arguments"):
+        WavelengthRetrievalResult()  # type: ignore[call-arg]
+
+    level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["532.AN", "532.PC"])
+    with xr.open_dataset(level1) as ds_l1:
+        ds_l1.load()
+        altitude_m = np.asarray(ds_l1["altitude"].values, dtype=np.float64)
+        with pytest.raises(TypeError, match=r"results\[0\] must be WavelengthRetrievalResult"):
+            build_level2_dataset(ds_l1, [{"wavelength": 532}], altitude_m, level1, _config(tmp_path))  # type: ignore[list-item]
+
+
 def test_lebear_saves_real_kfs_mode_and_branch_flags(tmp_path: Path) -> None:
     """Level 2 output should preserve the configured KFS mode and branch traceability."""
     level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["532.AN", "532.PC"])
     logger = _ListLogger()
 
-    result = lebear.process_single_level1_file(level1, _config(tmp_path, kfs_mode="two_sided"), logger)  # type: ignore[arg-type]
+    summary = lebear.process_single_level1_file(level1, _config(tmp_path, kfs_mode="two_sided"), logger)  # type: ignore[arg-type]
 
-    assert result.startswith("[OK]")
+    assert summary.results[0].status is ExecutionStatus.SUCCESS
+    assert summary.results[1].status is ExecutionStatus.SKIPPED
     with xr.open_dataset(level2_output_path(level1)) as ds:
         assert ds.attrs["KFS_Mode"] == "two_sided"
         assert "experimental" in ds.attrs["KFS_Mode_Description"]
@@ -118,9 +280,12 @@ def test_gluing_failure_respects_disabled_photon_fallback(tmp_path: Path) -> Non
     config = _config(tmp_path, fallback_to_photon_counting=False)
     config["inversion"]["gluing"]["correlation_threshold"] = 1.1
 
-    result = lebear.process_single_level1_file(level1, config, logger)  # type: ignore[arg-type]
+    summary = lebear.process_single_level1_file(level1, config, logger)  # type: ignore[arg-type]
+    result = summary.results[0]
 
-    assert result.startswith("[FAILED]")
+    assert result.status is ExecutionStatus.RECOVERABLE_FAILURE
+    assert result.stage == "level2.retrieval"
+    assert isinstance(result.cause, RuntimeError)
     assert not level2_output_path(level1).exists()
     assert any("fallback is disabled" in message for message in logger.messages)
 
@@ -132,32 +297,36 @@ def test_gluing_failure_uses_photon_fallback_when_enabled(tmp_path: Path) -> Non
     config = _config(tmp_path, fallback_to_photon_counting=True)
     config["inversion"]["gluing"]["correlation_threshold"] = 1.1
 
-    result = lebear.process_single_level1_file(level1, config, logger)  # type: ignore[arg-type]
+    summary = lebear.process_single_level1_file(level1, config, logger)  # type: ignore[arg-type]
 
-    assert result.startswith("[OK]")
+    assert summary.results[0].status is ExecutionStatus.SUCCESS
     with xr.open_dataset(level2_output_path(level1)) as ds:
         assert int(ds["gluing_success_flag"].sum()) == 0
         assert int(ds["gluing_fallback_flag"].sum()) == ds.sizes["time"]
 
 
-def test_process_level2_skips_existing_output_when_incremental(tmp_path: Path, monkeypatch) -> None:
-    """LEBEAR process_level_2 should skip existing Level 2 files in incremental mode."""
+def test_process_level2_skips_output_with_current_provenance(tmp_path: Path, monkeypatch) -> None:
+    """LEBEAR process_level_2 should skip only a current Level 2 product."""
     level1 = _write_level1(tmp_path / "20240101sant_level1_rcs.nc", ["532.AN", "532.PC"])
     output = level2_output_path(level1)
     output.write_text("existing", encoding="utf-8")
     logger = _ListLogger()
     calls = {"count": 0}
 
-    def fake_process_single_level1_file(nc_file: str | Path, config: dict, logger: logging.Logger) -> str:
+    def fake_process_single_level1_file(nc_file: str | Path, config: dict, logger: logging.Logger) -> ExecutionSummary:
         calls["count"] += 1
-        return "[OK] should not run"
+        return ExecutionSummary.from_results(
+            [ExecutionResult.success("level2.complete", "should not run", input_path=nc_file)]
+        )
 
     monkeypatch.setattr(lebear, "process_single_level1_file", fake_process_single_level1_file)
+    monkeypatch.setattr(lebear, "level2_output_is_current", lambda *_args, **_kwargs: True)
 
-    lebear.process_level_2(_config(tmp_path), logger)  # type: ignore[arg-type]
+    summary = lebear.process_level_2(_config(tmp_path), logger)  # type: ignore[arg-type]
 
     assert calls["count"] == 0
     assert any("SKIPPED" in message for message in logger.messages)
+    assert summary.results[0].status is ExecutionStatus.SKIPPED
 
 
 def test_process_single_level1_file_supports_utc_time_window_outputs_variant(tmp_path: Path) -> None:
@@ -166,7 +335,7 @@ def test_process_single_level1_file_supports_utc_time_window_outputs_variant(tmp
     logger = _ListLogger()
     output = level2_output_path(level1, variant_tag="0000-0010")
 
-    result = lebear.process_single_level1_file(
+    summary = lebear.process_single_level1_file(
         level1,
         _config(tmp_path),
         logger,  # type: ignore[arg-type]
@@ -175,8 +344,68 @@ def test_process_single_level1_file_supports_utc_time_window_outputs_variant(tmp
         output_tag="0000-0010",
     )
 
-    assert result.startswith("[OK]")
+    assert summary.results[0].status is ExecutionStatus.SUCCESS
     with xr.open_dataset(output) as ds:
         assert ds.sizes["time"] == 2
         assert ds.attrs["LEBEAR_Time_Window_Tag"] == "0000-0010"
         assert "LEBEAR_Time_Window_UTC" in ds.attrs
+
+
+def test_valid_level2_product_remains_success_when_qa_plotting_fails(tmp_path: Path, monkeypatch) -> None:
+    """A plotting exception should be a separate recoverable result after product success."""
+    level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["532.AN", "532.PC"])
+    config = _config(tmp_path)
+    config["visualization"]["level2_qa"]["enabled"] = True
+    logger = _ListLogger()
+
+    def failing_plotter(**_kwargs):
+        raise RuntimeError("synthetic plotting failure")
+
+    monkeypatch.setattr(level2_qa, "_load_plotter", lambda: failing_plotter)
+
+    summary = lebear.process_single_level1_file(level1, config, logger)  # type: ignore[arg-type]
+
+    assert [result.status for result in summary.results] == [
+        ExecutionStatus.SUCCESS,
+        ExecutionStatus.RECOVERABLE_FAILURE,
+    ]
+    assert summary.results[1].stage == "level2.qa"
+    assert isinstance(summary.results[1].cause, RuntimeError)
+    assert level2_output_path(level1).exists()
+
+
+def test_level2_qa_disabled_is_explicit_and_does_not_load_plotter(tmp_path: Path, monkeypatch) -> None:
+    """Disabling QA should produce a skip without importing the plotting implementation."""
+    level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["532.AN", "532.PC"])
+    config = _config(tmp_path)
+    logger = _ListLogger()
+
+    def unexpected_plotter_load():
+        pytest.fail("QA plotter must not load when QA is disabled")
+
+    monkeypatch.setattr(level2_qa, "_load_plotter", unexpected_plotter_load)
+
+    summary = lebear.process_single_level1_file(level1, config, logger)  # type: ignore[arg-type]
+
+    assert [result.status for result in summary.results] == [ExecutionStatus.SUCCESS, ExecutionStatus.SKIPPED]
+    assert summary.results[1].stage == "level2.qa"
+    assert not (level2_output_path(level1).parent / "level2_qa").exists()
+
+
+def test_atomic_level2_write_preserves_existing_product_and_removes_temporary_file(tmp_path: Path, monkeypatch) -> None:
+    """A failed write should not replace a prior product or leave a partial temporary file."""
+    output_path = tmp_path / "product_level2_optical.nc"
+    output_path.write_text("stable product", encoding="utf-8")
+    dataset = xr.Dataset({"value": (("x",), np.array([1.0]))})
+
+    def fail_write(_self, path, **_kwargs):
+        Path(path).write_text("partial product", encoding="utf-8")
+        raise OSError("synthetic write failure")
+
+    monkeypatch.setattr(xr.Dataset, "to_netcdf", fail_write)
+
+    with pytest.raises(OSError, match="synthetic write failure"):
+        lebear._write_level2_atomically(dataset, output_path, {})
+
+    assert output_path.read_text(encoding="utf-8") == "stable product"
+    assert not list(tmp_path.glob(f".{output_path.name}.*.tmp"))
