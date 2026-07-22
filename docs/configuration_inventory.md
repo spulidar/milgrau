@@ -52,7 +52,7 @@ Classificações:
 | `inversion.{monte_carlo_iterations,random_seed,beta_ref_relative_std,aerosol_ref_fraction,min_lidar_ratio_sr,allow_negative_aerosol}` | YAML; defaults no retrieval | retrieval/KFS | inteiros válidos, números finitos e booleano conforme campo | consumida | validar e manter |
 | `inversion.molecular_fit.{ref_alt_min_m,ref_alt_max_m,ref_window_bins,max_relative_slope,max_relative_variance,min_valid_fraction}` | YAML; defaults em `level2/config.py` | seleção/QA da referência molecular | finitos, bins inteiro, max altitude > min | consumida | validar e manter |
 | `inversion.molecular_fit.lidar_ratio_molecular_sr` | YAML; alias normalizado | nenhum cálculo atual | finito e > 0 | dormente | decidir em ENG-017 |
-| `inversion.gluing.*` | YAML; defaults em `level2/config.py` | gluing e critérios de qualidade | finitos/inteiros/booleano; search max > min | consumida | validar e manter |
+| `inversion.gluing.*` | YAML; defaults em `level2/config.py` | gluing, `allow_single_channel_fallback` e prioridade explícita PC/AN | finitos/inteiros/booleano; search max > min; prioridade `photon_counting` ou `analog` | consumida | validar e manter; a chave antiga `fallback_to_photon_counting` foi removida por semântica contraditória |
 | `inversion.cloud_screening.*` | YAML; helpers implementados mas não chamados pelo retrieval | nenhum caminho integrado | estrutura e tipos validados | dormente | decisão científica em ENG-017 |
 | `inversion.lidar_ratio_std_sr.*` | mapa por comprimento de onda; default 10 sr | retrieval | folhas finitas e > 0 | consumida | validar e manter |
 | `inversion.lidar_ratios_sr.*.*` | mapa por comprimento de onda/mês; default 60 sr | retrieval | folhas finitas e > 0 | consumida | validar e manter |

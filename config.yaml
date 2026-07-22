@@ -171,7 +171,12 @@ inversion:
     invalid_saturation_fraction: 1.0
     search_min_idx: 150
     search_max_idx: 1200
-    fallback_to_photon_counting: true
+    # SCI-002: channel presence, gluing quality and retrieval-input validity are
+    # independent. If gluing is unavailable/rejected, assess channels separately.
+    allow_single_channel_fallback: true
+    # Preserves the established PC-first fallback policy explicitly; AN is used
+    # when PC fails minimum QA or when analog is selected here.
+    single_channel_priority: "photon_counting"
 
   # DORMANT experimental library configuration; not integrated into retrieval.
   cloud_screening:

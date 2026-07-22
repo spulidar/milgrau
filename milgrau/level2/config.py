@@ -40,6 +40,11 @@ def get_lidar_ratio(config: Mapping[str, Any], wavelength_nm: int, measurement_t
 def get_gluing_config(config: Mapping[str, Any]) -> dict[str, Any]:
     """Return gluing configuration with safe defaults."""
     gluing_cfg = config.get("inversion", {}).get("gluing", {}) or {}
+    single_channel_priority = str(
+        gluing_cfg.get("single_channel_priority", "photon_counting")
+    ).strip().lower()
+    if single_channel_priority not in {"photon_counting", "analog"}:
+        raise ValueError("inversion.gluing.single_channel_priority must be 'photon_counting' or 'analog'.")
     return {
         "window_size": int(gluing_cfg.get("window_length_bins", 150)),
         "min_corr": float(gluing_cfg.get("correlation_threshold", 0.95)),
@@ -53,7 +58,8 @@ def get_gluing_config(config: Mapping[str, Any]) -> dict[str, Any]:
         "min_valid_fraction": float(gluing_cfg.get("min_valid_fraction", 0.80)),
         "max_saturation_fraction": float(gluing_cfg.get("max_saturation_fraction", 0.20)),
         "invalid_saturation_fraction": float(gluing_cfg.get("invalid_saturation_fraction", 1.0)),
-        "fallback_to_photon_counting": bool(gluing_cfg.get("fallback_to_photon_counting", True)),
+        "allow_single_channel_fallback": bool(gluing_cfg.get("allow_single_channel_fallback", True)),
+        "single_channel_priority": single_channel_priority,
     }
 
 

@@ -18,6 +18,7 @@ from milgrau.level2 import lebear
 from milgrau.level2 import qa as level2_qa
 from milgrau.level2 import retrieval as retrieval_module
 from milgrau.level2.contracts import WavelengthRetrievalResult
+from milgrau.level2.contracts import RetrievalInputInvalidReason, SignalSource
 from milgrau.level2.dataset import build_level2_dataset
 from milgrau.level2.retrieval import (
     BlockGluingResult,
@@ -98,6 +99,12 @@ def _write_level1(path: Path, channels: list[str], n_altitude: int = 240) -> Pat
             "corrected_signal_error": (("time", "channel", "altitude"), corrected_error),
             "range_corrected_signal": (("time", "channel", "altitude"), rcs),
             "range_corrected_signal_error": (("time", "channel", "altitude"), rcs_error),
+            "pc_saturation_mask": (("time", "channel", "altitude"), np.zeros(shape, dtype=np.int8)),
+            "channel_correction_success": (("channel",), np.ones(channel.size, dtype=np.int8)),
+            "deadtime_correction_applied": (
+                ("channel",),
+                np.asarray([int(name.endswith(".PC")) for name in channels], dtype=np.int8),
+            ),
         },
         coords={"time": time, "channel": channel, "altitude": altitude},
         attrs={"Processing_level": "Level 1 synthetic test product", "Altitude_units": "m"},
@@ -106,7 +113,7 @@ def _write_level1(path: Path, channels: list[str], n_altitude: int = 240) -> Pat
     return path
 
 
-def _config(tmp_path: Path, *, fallback_to_photon_counting: bool = True, kfs_mode: str = "two_sided") -> dict:
+def _config(tmp_path: Path, *, allow_single_channel_fallback: bool = True, kfs_mode: str = "two_sided") -> dict:
     """Return a compact LEBEAR config for synthetic tests."""
     return {
         "processing": {"incremental": True},
@@ -124,7 +131,8 @@ def _config(tmp_path: Path, *, fallback_to_photon_counting: bool = True, kfs_mod
                 "correlation_threshold": 0.5,
                 "search_min_idx": 20,
                 "search_max_idx": 120,
-                "fallback_to_photon_counting": fallback_to_photon_counting,
+                "allow_single_channel_fallback": allow_single_channel_fallback,
+                "single_channel_priority": "photon_counting",
             },
             "lidar_ratios_sr": {"532": {"01": 60.0}},
             "lidar_ratio_std_sr": {"532": 5.0},
@@ -146,9 +154,9 @@ def test_typed_retrieval_freezes_fernald_v2_level2_dataset(tmp_path: Path) -> No
 
     assert isinstance(result, WavelengthRetrievalResult)
     result.validate(n_time=3, n_altitude=240)
-    # The pre-SCI-001 digest was intentionally invalidated because it encoded
-    # the wrong backward sign; it is not used as scientific truth.
-    assert _dataset_contract_digest(dataset) == "b6edc57dde2750550078f8b08011534b26171e146d1fe9127033df78d75c5ccb"
+    # SCI-002 deliberately changes state variables/metadata. Numeric assertions
+    # elsewhere preserve the already-approved glued Fernald-v2 optical path.
+    assert _dataset_contract_digest(dataset) == "4aa7f2102e5a2d4060d32311539780196a4d0b2e794770b96782ba715457d002"
 
 
 def test_retrieval_stages_have_explicit_conformable_boundaries(tmp_path: Path) -> None:
@@ -177,7 +185,13 @@ def test_retrieval_stages_have_explicit_conformable_boundaries(tmp_path: Path) -
     assert inputs.analog_block is not None and inputs.analog_block.shape == (1, 240)
     assert inputs.photon_block is not None and inputs.photon_block.shape == (1, 240)
     assert glued.corrected_signal.shape == (1, 240)
-    assert result.optical.valid_retrieval_block_flag.dtype == np.int8
+    assert np.all(glued.attempted_flag == 1)
+    assert np.all(glued.success_flag == 1)
+    assert np.all(glued.signal_source_flag == SignalSource.GLUED)
+    assert np.all(glued.retrieval_input_valid_flag == 1)
+    assert result.optical.retrieval_success_flag.dtype == np.int8
+    assert np.all(result.optical.retrieval_success_flag == 1)
+    assert np.isfinite(result.optical.aerosol_backscatter_block).any()
     result.validate(n_time=3, n_altitude=240)
 
 
@@ -193,9 +207,233 @@ def test_gluing_stage_exposes_single_channel_fallback(tmp_path: Path) -> None:
         glued = glue_signal_blocks(inputs, altitude_m, logger)  # type: ignore[arg-type]
 
     assert glued.source == "block_mean_corrected_signal_single_channel_532.PC"
-    assert np.all(glued.fallback_flag == 1)
+    assert np.all(glued.attempted_flag == 0)
+    assert np.all(glued.single_channel_fallback_flag == 1)
     assert np.all(glued.success_flag == 0)
+    assert np.all(glued.signal_source_flag == SignalSource.PHOTON_COUNTING)
+    assert np.all(glued.retrieval_input_valid_flag == 1)
     assert np.all(glued.merge_source_flag == 0)
+    assert inputs.photon_error_block is not None
+    np.testing.assert_allclose(glued.corrected_signal_error, inputs.photon_error_block)
+
+
+@pytest.mark.parametrize(
+    ("channels", "expected_source", "expected_merge_source"),
+    [
+        (["532.PC"], SignalSource.PHOTON_COUNTING, 0),
+        (["532.AN"], SignalSource.ANALOG, 2),
+    ],
+)
+def test_sci002_valid_single_channel_executes_retrieval(
+    tmp_path: Path,
+    channels: list[str],
+    expected_source: SignalSource,
+    expected_merge_source: int,
+) -> None:
+    """PC-only and AN-only blocks remain independent of gluing and reach KFS."""
+    level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", channels)
+    logger = _ListLogger()
+    with xr.open_dataset(level1) as ds_l1:
+        ds_l1.load()
+        altitude_m = np.asarray(ds_l1["altitude"].values, dtype=np.float64)
+        result = process_wavelength(ds_l1, 532, altitude_m, _config(tmp_path), logger)  # type: ignore[arg-type]
+
+    assert np.isfinite(result.glued.corrected_signal_block).all()
+    assert np.all(result.glued.merge_source_flag_block == expected_merge_source)
+    assert np.all(result.gluing.attempted_flag_block == 0)
+    assert np.all(result.gluing.single_channel_fallback_flag_block == 1)
+    assert np.all(result.gluing.success_flag_block == 0)
+    assert np.all(result.signal_selection.source_flag_block == expected_source)
+    assert np.all(result.signal_selection.retrieval_input_valid_flag_block == 1)
+    assert np.all(result.optical.retrieval_success_flag == 1)
+    assert np.isfinite(result.optical.aerosol_backscatter_block).any()
+    assert np.all(result.rayleigh.reference_success_flag_block == 1)
+
+
+@pytest.mark.parametrize(
+    ("channel", "expected_source"),
+    [
+        ("532.PC", SignalSource.PHOTON_COUNTING),
+        ("532.AN", SignalSource.ANALOG),
+    ],
+)
+def test_sci002_lebear_file_contains_finite_single_channel_optics(
+    tmp_path: Path,
+    channel: str,
+    expected_source: SignalSource,
+) -> None:
+    """The complete writer persists finite PC-only and AN-only optical products."""
+    level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", [channel])
+    summary = lebear.process_single_level1_file(level1, _config(tmp_path), _ListLogger())  # type: ignore[arg-type]
+
+    assert summary.results[0].status is ExecutionStatus.SUCCESS
+    with xr.open_dataset(level2_output_path(level1)) as ds:
+        assert int(ds["gluing_attempted_flag_block"].item()) == 0
+        assert int(ds["gluing_success_flag_block"].item()) == 0
+        assert int(ds["single_channel_fallback_flag_block"].item()) == 1
+        assert int(ds["signal_source_flag_block"].item()) == expected_source
+        assert int(ds["retrieval_input_valid_flag_block"].item()) == 1
+        assert int(ds["retrieval_success_flag"].item()) == 1
+        assert np.isfinite(ds["aerosol_backscatter_block"].values).any()
+
+
+def test_sci002_failed_gluing_selects_valid_pc_and_executes_retrieval(tmp_path: Path) -> None:
+    """Rejected gluing may coexist with a valid, deterministic PC retrieval."""
+    level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["532.AN", "532.PC"])
+    config = _config(tmp_path)
+    config["inversion"]["gluing"]["correlation_threshold"] = 1.1
+    logger = _ListLogger()
+    with xr.open_dataset(level1) as ds_l1:
+        ds_l1.load()
+        altitude_m = np.asarray(ds_l1["altitude"].values, dtype=np.float64)
+        result = process_wavelength(ds_l1, 532, altitude_m, config, logger)  # type: ignore[arg-type]
+
+    assert np.isfinite(result.glued.corrected_signal_block).all()
+    assert np.all(result.glued.merge_source_flag_block == 0)
+    assert np.all(result.gluing.attempted_flag_block == 1)
+    assert np.all(result.gluing.single_channel_fallback_flag_block == 1)
+    assert np.all(result.gluing.success_flag_block == 0)
+    assert np.all(result.signal_selection.source_flag_block == SignalSource.PHOTON_COUNTING)
+    assert np.all(result.signal_selection.retrieval_input_valid_flag_block == 1)
+    assert np.all(result.optical.retrieval_success_flag == 1)
+    assert np.isfinite(result.optical.aerosol_backscatter_block).any()
+
+
+def test_sci002_failed_gluing_rejects_saturated_pc_and_selects_valid_analog(tmp_path: Path) -> None:
+    """PC saturation invalidates only PC, allowing independently valid AN fallback."""
+    level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["532.AN", "532.PC"])
+    config = _config(tmp_path)
+    config["inversion"]["gluing"]["correlation_threshold"] = 1.1
+    logger = _ListLogger()
+    with xr.open_dataset(level1) as opened:
+        ds_l1 = opened.load()
+    ds_l1["pc_saturation_mask"].loc[dict(channel="532.PC")] = 1
+    altitude_m = np.asarray(ds_l1["altitude"].values, dtype=np.float64)
+
+    result = process_wavelength(ds_l1, 532, altitude_m, config, logger)  # type: ignore[arg-type]
+
+    assert np.all(result.gluing.attempted_flag_block == 1)
+    assert np.all(result.gluing.success_flag_block == 0)
+    assert np.all(result.signal_selection.source_flag_block == SignalSource.ANALOG)
+    assert np.all(result.signal_selection.retrieval_input_valid_flag_block == 1)
+    assert np.all(result.optical.retrieval_success_flag == 1)
+    assert np.isfinite(result.optical.aerosol_backscatter_block).any()
+
+
+@pytest.mark.parametrize("priority", ["photon_counting", "analog"])
+def test_sci002_both_valid_failed_gluing_obeys_explicit_priority(
+    tmp_path: Path,
+    priority: str,
+) -> None:
+    """Two individually valid channels are never mixed after rejected gluing."""
+    level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["532.AN", "532.PC"])
+    config = _config(tmp_path)
+    config["inversion"]["gluing"]["correlation_threshold"] = 1.1
+    config["inversion"]["gluing"]["single_channel_priority"] = priority
+    logger = _ListLogger()
+    with xr.open_dataset(level1) as ds_l1:
+        ds_l1.load()
+        altitude_m = np.asarray(ds_l1["altitude"].values, dtype=np.float64)
+        result = process_wavelength(ds_l1, 532, altitude_m, config, logger)  # type: ignore[arg-type]
+
+    expected = SignalSource.PHOTON_COUNTING if priority == "photon_counting" else SignalSource.ANALOG
+    expected_merge = 0 if expected == SignalSource.PHOTON_COUNTING else 2
+    assert np.all(result.signal_selection.source_flag_block == expected)
+    assert np.all(result.glued.merge_source_flag_block == expected_merge)
+    assert np.all(result.gluing.single_channel_fallback_flag_block == 1)
+
+
+@pytest.mark.parametrize(
+    ("invalid_case", "expected_reason"),
+    [
+        ("nonfinite", RetrievalInputInvalidReason.NONFINITE_SIGNAL),
+        ("saturated", RetrievalInputInvalidReason.PHOTON_COUNTING_SATURATED),
+        ("coverage", RetrievalInputInvalidReason.INSUFFICIENT_VERTICAL_COVERAGE),
+        ("uncertainty", RetrievalInputInvalidReason.INVALID_UNCERTAINTY),
+        ("correction", RetrievalInputInvalidReason.LEVEL1_CORRECTION_FAILED_OR_UNCONFIRMED),
+        ("correction_unconfirmed", RetrievalInputInvalidReason.LEVEL1_CORRECTION_FAILED_OR_UNCONFIRMED),
+        ("missing_saturation_diagnostic", RetrievalInputInvalidReason.SATURATION_DIAGNOSTIC_MISSING),
+    ],
+)
+def test_sci002_invalid_pc_only_is_not_retrieved(
+    tmp_path: Path,
+    invalid_case: str,
+    expected_reason: RetrievalInputInvalidReason,
+) -> None:
+    """A rejected single channel persists its reason and produces only NaN optical data."""
+    level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["532.PC"])
+    config = _config(tmp_path)
+    logger = _ListLogger()
+    with xr.open_dataset(level1) as opened:
+        ds_l1 = opened.load()
+    if invalid_case == "nonfinite":
+        ds_l1["corrected_signal"].loc[dict(channel="532.PC")].values[:, 10] = np.nan
+    elif invalid_case == "saturated":
+        ds_l1["pc_saturation_mask"].loc[dict(channel="532.PC")].values[:, 10] = 1
+    elif invalid_case == "coverage":
+        config["inversion"]["molecular_fit"]["ref_alt_max_m"] = 2500.0
+    elif invalid_case == "uncertainty":
+        ds_l1["corrected_signal_error"].loc[dict(channel="532.PC")].values[:, 10] = np.nan
+    elif invalid_case == "correction":
+        ds_l1["channel_correction_success"].loc[dict(channel="532.PC")] = 0
+    elif invalid_case == "correction_unconfirmed":
+        ds_l1 = ds_l1.drop_vars("channel_correction_success")
+    elif invalid_case == "missing_saturation_diagnostic":
+        ds_l1 = ds_l1.drop_vars("pc_saturation_mask")
+    altitude_m = np.asarray(ds_l1["altitude"].values, dtype=np.float64)
+
+    result = process_wavelength(ds_l1, 532, altitude_m, config, logger)  # type: ignore[arg-type]
+
+    assert np.all(result.signal_selection.source_flag_block == SignalSource.INVALID)
+    assert np.all(result.signal_selection.retrieval_input_valid_flag_block == 0)
+    assert np.all(result.signal_selection.retrieval_input_invalid_reason_block == expected_reason)
+    assert np.all(result.optical.retrieval_success_flag == 0)
+    assert np.isnan(result.optical.aerosol_backscatter_block).all()
+
+
+@pytest.mark.parametrize(
+    ("variable", "expected_reason"),
+    [
+        ("corrected_signal", RetrievalInputInvalidReason.NONFINITE_SIGNAL),
+        ("corrected_signal_error", RetrievalInputInvalidReason.INVALID_UNCERTAINTY),
+    ],
+)
+def test_sci002_invalid_analog_only_is_not_retrieved(
+    tmp_path: Path,
+    variable: str,
+    expected_reason: RetrievalInputInvalidReason,
+) -> None:
+    """AN-only applies the same finite signal/uncertainty minimum QA as PC."""
+    level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["532.AN"])
+    with xr.open_dataset(level1) as opened:
+        ds_l1 = opened.load()
+    ds_l1[variable].loc[dict(channel="532.AN")].values[:, 10] = np.nan
+    altitude_m = np.asarray(ds_l1["altitude"].values, dtype=np.float64)
+
+    result = process_wavelength(
+        ds_l1,
+        532,
+        altitude_m,
+        _config(tmp_path),
+        _ListLogger(),  # type: ignore[arg-type]
+    )
+
+    assert np.all(result.signal_selection.source_flag_block == SignalSource.INVALID)
+    assert np.all(result.signal_selection.retrieval_input_valid_flag_block == 0)
+    assert np.all(result.signal_selection.retrieval_input_invalid_reason_block == expected_reason)
+    assert np.all(result.optical.retrieval_success_flag == 0)
+    assert np.isnan(result.optical.aerosol_backscatter_block).all()
+
+
+def test_sci002_missing_wavelength_channels_fails_in_selection_stage(tmp_path: Path) -> None:
+    """No source channel fails clearly before any false optical result exists."""
+    level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["355.PC"])
+    logger = _ListLogger()
+    with xr.open_dataset(level1) as ds_l1:
+        ds_l1.load()
+        altitude_m = np.asarray(ds_l1["altitude"].values, dtype=np.float64)
+        with pytest.raises(RetrievalStageError, match=r"\[selection_and_blocking\].*No channel found"):
+            process_wavelength(ds_l1, 532, altitude_m, _config(tmp_path), logger)  # type: ignore[arg-type]
 
 
 def test_process_wavelength_identifies_failing_stage(monkeypatch) -> None:
@@ -242,6 +480,74 @@ def test_dataset_builder_rejects_wrong_retrieval_shape_before_writing(tmp_path: 
             build_level2_dataset(ds_l1, [invalid_result], altitude_m, level1, config)
 
 
+def test_sci002_contract_rejects_contradictory_gluing_and_source_state(tmp_path: Path) -> None:
+    """An approved gluing state cannot serialize a single-channel source."""
+    level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["532.AN", "532.PC"])
+    config = _config(tmp_path)
+    with xr.open_dataset(level1) as ds_l1:
+        ds_l1.load()
+        altitude_m = np.asarray(ds_l1["altitude"].values, dtype=np.float64)
+        result = process_wavelength(ds_l1, 532, altitude_m, config, _ListLogger())  # type: ignore[arg-type]
+        invalid_selection = replace(
+            result.signal_selection,
+            source_flag=np.full_like(result.signal_selection.source_flag, SignalSource.PHOTON_COUNTING),
+            source_flag_block=np.full_like(
+                result.signal_selection.source_flag_block,
+                SignalSource.PHOTON_COUNTING,
+            ),
+        )
+        invalid_result = replace(result, signal_selection=invalid_selection)
+
+        with pytest.raises(ValueError, match="gluing_success_flag=1 requires signal source glued"):
+            build_level2_dataset(ds_l1, [invalid_result], altitude_m, level1, config)
+
+
+def test_sci002_contract_rejects_retrieval_success_with_invalid_input(tmp_path: Path) -> None:
+    """Optical success cannot coexist with a rejected retrieval input."""
+    level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["532.PC"])
+    config = _config(tmp_path)
+    with xr.open_dataset(level1) as ds_l1:
+        ds_l1.load()
+        altitude_m = np.asarray(ds_l1["altitude"].values, dtype=np.float64)
+        result = process_wavelength(ds_l1, 532, altitude_m, config, _ListLogger())  # type: ignore[arg-type]
+        invalid_gluing = replace(
+            result.gluing,
+            single_channel_fallback_flag=np.zeros_like(
+                result.gluing.single_channel_fallback_flag
+            ),
+            single_channel_fallback_flag_block=np.zeros_like(
+                result.gluing.single_channel_fallback_flag_block
+            ),
+        )
+        invalid_selection = replace(
+            result.signal_selection,
+            source_flag=np.full_like(result.signal_selection.source_flag, SignalSource.INVALID),
+            source_flag_block=np.full_like(result.signal_selection.source_flag_block, SignalSource.INVALID),
+            retrieval_input_valid_flag=np.zeros_like(
+                result.signal_selection.retrieval_input_valid_flag
+            ),
+            retrieval_input_valid_flag_block=np.zeros_like(
+                result.signal_selection.retrieval_input_valid_flag_block
+            ),
+            retrieval_input_invalid_reason=np.full_like(
+                result.signal_selection.retrieval_input_invalid_reason,
+                RetrievalInputInvalidReason.NONFINITE_SIGNAL,
+            ),
+            retrieval_input_invalid_reason_block=np.full_like(
+                result.signal_selection.retrieval_input_invalid_reason_block,
+                RetrievalInputInvalidReason.NONFINITE_SIGNAL,
+            ),
+        )
+        invalid_result = replace(
+            result,
+            gluing=invalid_gluing,
+            signal_selection=invalid_selection,
+        )
+
+        with pytest.raises(ValueError, match="retrieval_success_flag=1 requires"):
+            build_level2_dataset(ds_l1, [invalid_result], altitude_m, level1, config)
+
+
 def test_retrieval_contract_rejects_missing_fields_and_free_mapping(tmp_path: Path) -> None:
     """Required dataclass fields and the dataset collection type are enforced."""
     with pytest.raises(TypeError, match="required positional arguments"):
@@ -276,31 +582,33 @@ def test_lebear_saves_real_kfs_mode_and_branch_flags(tmp_path: Path) -> None:
         assert 3 in branch_values
         assert int(ds["kfs_backward_valid_flag"].item()) == 1
         assert int(ds["kfs_forward_valid_flag"].item()) == 1
-        assert "gluing_fallback_flag" in ds
+        assert "single_channel_fallback_flag" in ds
 
 
-def test_gluing_failure_respects_disabled_photon_fallback(tmp_path: Path) -> None:
-    """When photon fallback is disabled, failed gluing should make the wavelength fail."""
+def test_gluing_failure_with_disabled_single_channel_fallback_persists_invalid_state(tmp_path: Path) -> None:
+    """Disabled fallback writes explicit invalid input without false optical data."""
     level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["532.AN", "532.PC"])
     logger = _ListLogger()
-    config = _config(tmp_path, fallback_to_photon_counting=False)
+    config = _config(tmp_path, allow_single_channel_fallback=False)
     config["inversion"]["gluing"]["correlation_threshold"] = 1.1
 
     summary = lebear.process_single_level1_file(level1, config, logger)  # type: ignore[arg-type]
-    result = summary.results[0]
-
-    assert result.status is ExecutionStatus.RECOVERABLE_FAILURE
-    assert result.stage == "level2.retrieval"
-    assert isinstance(result.cause, RuntimeError)
-    assert not level2_output_path(level1).exists()
-    assert any("fallback is disabled" in message for message in logger.messages)
+    assert summary.results[0].status is ExecutionStatus.SUCCESS
+    with xr.open_dataset(level2_output_path(level1)) as ds:
+        assert int(ds["gluing_attempted_flag_block"].item()) == 1
+        assert int(ds["gluing_success_flag_block"].item()) == 0
+        assert int(ds["signal_source_flag_block"].item()) == SignalSource.INVALID
+        assert int(ds["retrieval_input_valid_flag_block"].item()) == 0
+        assert int(ds["retrieval_input_invalid_reason_block"].item()) == RetrievalInputInvalidReason.SINGLE_CHANNEL_FALLBACK_DISABLED
+        assert int(ds["retrieval_success_flag"].item()) == 0
+        assert np.isnan(ds["aerosol_backscatter_block"].values).all()
 
 
 def test_gluing_failure_uses_photon_fallback_when_enabled(tmp_path: Path) -> None:
     """When photon fallback is enabled, failed gluing should be flagged and processed."""
     level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["532.AN", "532.PC"])
     logger = _ListLogger()
-    config = _config(tmp_path, fallback_to_photon_counting=True)
+    config = _config(tmp_path, allow_single_channel_fallback=True)
     config["inversion"]["gluing"]["correlation_threshold"] = 1.1
 
     summary = lebear.process_single_level1_file(level1, config, logger)  # type: ignore[arg-type]
@@ -308,7 +616,10 @@ def test_gluing_failure_uses_photon_fallback_when_enabled(tmp_path: Path) -> Non
     assert summary.results[0].status is ExecutionStatus.SUCCESS
     with xr.open_dataset(level2_output_path(level1)) as ds:
         assert int(ds["gluing_success_flag"].sum()) == 0
-        assert int(ds["gluing_fallback_flag"].sum()) == ds.sizes["time"]
+        assert int(ds["single_channel_fallback_flag"].sum()) == ds.sizes["time"]
+        assert int(ds["retrieval_input_valid_flag"].sum()) == ds.sizes["time"]
+        assert int(ds["retrieval_success_flag"].sum()) == ds.sizes["block_time"]
+        assert np.isfinite(ds["aerosol_backscatter_block"].values).any()
 
 
 def test_process_level2_skips_output_with_current_provenance(tmp_path: Path, monkeypatch) -> None:

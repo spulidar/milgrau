@@ -113,6 +113,33 @@ def test_schema_rejects_non_two_sided_productive_kfs_mode() -> None:
         validate_config_minimum(config)
 
 
+def test_schema_accepts_explicit_single_channel_selection_policy() -> None:
+    """SCI-002 exposes fallback enablement and deterministic source priority."""
+    config = _minimal_config()
+    config["inversion"] = {
+        "gluing": {
+            "allow_single_channel_fallback": True,
+            "single_channel_priority": "analog",
+        }
+    }
+
+    validate_config_minimum(config)
+
+
+def test_schema_rejects_removed_photon_only_fallback_key_and_unknown_priority() -> None:
+    """The old PC-named switch cannot retain a contradictory AN fallback meaning."""
+    legacy = _minimal_config()
+    legacy["inversion"] = {"gluing": {"fallback_to_photon_counting": True}}
+    assert find_unknown_config_keys(legacy) == (
+        "inversion.gluing.fallback_to_photon_counting",
+    )
+
+    invalid = _minimal_config()
+    invalid["inversion"] = {"gluing": {"single_channel_priority": "automatic"}}
+    with pytest.raises(ValueError, match="single_channel_priority"):
+        validate_config_minimum(invalid)
+
+
 def test_normalize_config_preserves_existing_aliases() -> None:
     """Explicit legacy aliases should not be overwritten during normalization."""
     config = {

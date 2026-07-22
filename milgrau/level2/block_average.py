@@ -20,8 +20,13 @@ def nanmean_or_nan(matrix: np.ndarray, axis: int = 0) -> np.ndarray:
 def error_of_mean(error_matrix: np.ndarray) -> np.ndarray:
     """Combine profile one-sigma errors into uncertainty of the temporal mean."""
     valid_count = np.sum(np.isfinite(error_matrix), axis=0)
-    valid_count = np.maximum(valid_count, 1)
-    return np.sqrt(np.nansum(error_matrix**2, axis=0)) / valid_count
+    combined = np.sqrt(np.nansum(error_matrix**2, axis=0))
+    return np.divide(
+        combined,
+        valid_count,
+        out=np.full_like(combined, np.nan, dtype=np.float64),
+        where=valid_count > 0,
+    )
 
 
 def block_groups(time_values: np.ndarray, minutes: int) -> tuple[np.ndarray, list[np.ndarray]]:

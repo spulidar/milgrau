@@ -3,8 +3,34 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import IntEnum
 
 import numpy as np
+
+
+class SignalSource(IntEnum):
+    """Per-block source selected as the Level 2 retrieval input."""
+
+    INVALID = 0
+    GLUED = 1
+    PHOTON_COUNTING = 2
+    ANALOG = 3
+
+
+class RetrievalInputInvalidReason(IntEnum):
+    """Stable summary code for a rejected retrieval input block."""
+
+    VALID = 0
+    NO_VALID_CHANNEL = 1
+    NONFINITE_SIGNAL = 2
+    INVALID_UNCERTAINTY = 3
+    PHOTON_COUNTING_SATURATED = 4
+    INSUFFICIENT_VERTICAL_COVERAGE = 5
+    NONPOSITIVE_SIGNAL = 6
+    LEVEL1_CORRECTION_FAILED_OR_UNCONFIRMED = 7
+    SATURATION_DIAGNOSTIC_MISSING = 8
+    SNR_UNAVAILABLE = 9
+    SINGLE_CHANNEL_FALLBACK_DISABLED = 10
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,7 +49,7 @@ class MolecularProfiles:
 
 @dataclass(frozen=True, slots=True)
 class GluedSignals:
-    """Time, block and mean signals produced by analog/PC gluing."""
+    """Time, block and mean signals selected from glued, PC-only, or AN-only input."""
 
     source: str
     analog_channel: str | None
@@ -58,7 +84,7 @@ class OpticalProducts:
     aerosol_backscatter_error_block: np.ndarray
     aerosol_extinction_block: np.ndarray
     aerosol_extinction_error_block: np.ndarray
-    valid_retrieval_block_flag: np.ndarray
+    retrieval_success_flag: np.ndarray
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,8 +131,9 @@ class KfsDiagnostics:
 class GluingDiagnostics:
     """Time-expanded and per-block gluing QA diagnostics."""
 
+    attempted_flag: np.ndarray
     success_flag: np.ndarray
-    fallback_flag: np.ndarray
+    single_channel_fallback_flag: np.ndarray
     split_altitude_m: np.ndarray
     start_altitude_m: np.ndarray
     stop_altitude_m: np.ndarray
@@ -115,8 +142,9 @@ class GluingDiagnostics:
     correlation: np.ndarray
     relative_rmse: np.ndarray
     relative_bias: np.ndarray
+    attempted_flag_block: np.ndarray
     success_flag_block: np.ndarray
-    fallback_flag_block: np.ndarray
+    single_channel_fallback_flag_block: np.ndarray
     split_altitude_m_block: np.ndarray
     start_altitude_m_block: np.ndarray
     stop_altitude_m_block: np.ndarray
@@ -125,6 +153,20 @@ class GluingDiagnostics:
     correlation_block: np.ndarray
     relative_rmse_block: np.ndarray
     relative_bias_block: np.ndarray
+
+
+@dataclass(frozen=True, slots=True)
+class SignalSelectionDiagnostics:
+    """Selected source and retrieval-input QA, independent of gluing success."""
+
+    source_flag: np.ndarray
+    retrieval_input_valid_flag: np.ndarray
+    retrieval_input_invalid_reason: np.ndarray
+    retrieval_input_snr_median: np.ndarray
+    source_flag_block: np.ndarray
+    retrieval_input_valid_flag_block: np.ndarray
+    retrieval_input_invalid_reason_block: np.ndarray
+    retrieval_input_snr_median_block: np.ndarray
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,6 +181,7 @@ class WavelengthRetrievalResult:
     rayleigh: RayleighDiagnostics
     kfs: KfsDiagnostics
     gluing: GluingDiagnostics
+    signal_selection: SignalSelectionDiagnostics
 
     def validate(self, *, n_time: int, n_altitude: int) -> None:
         """Validate scalar types plus exact array shapes and dtypes."""
@@ -223,12 +266,7 @@ class WavelengthRetrievalResult:
             "aerosol_extinction_error_block",
         ):
             _require_array(f"optical.{name}", getattr(self.optical, name), (n_block, n_altitude), np.float64)
-        _require_array(
-            "optical.valid_retrieval_block_flag",
-            self.optical.valid_retrieval_block_flag,
-            (n_block,),
-            np.int8,
-        )
+        _require_array("optical.retrieval_success_flag", self.optical.retrieval_success_flag, (n_block,), np.int8)
 
         for name in (
             "reference_altitude_m",
@@ -286,7 +324,7 @@ class WavelengthRetrievalResult:
         _require_array("kfs.branch", self.kfs.branch, (n_altitude,), np.int8)
         _require_array("kfs.branch_block", self.kfs.branch_block, (n_block, n_altitude), np.int8)
 
-        for name in ("success_flag", "fallback_flag"):
+        for name in ("attempted_flag", "success_flag", "single_channel_fallback_flag"):
             _require_array(f"gluing.{name}", getattr(self.gluing, name), (n_time,), np.int8)
         for name in (
             "split_altitude_m",
@@ -299,7 +337,7 @@ class WavelengthRetrievalResult:
             "relative_bias",
         ):
             _require_array(f"gluing.{name}", getattr(self.gluing, name), (n_time,), np.float64)
-        for name in ("success_flag_block", "fallback_flag_block"):
+        for name in ("attempted_flag_block", "success_flag_block", "single_channel_fallback_flag_block"):
             _require_array(f"gluing.{name}", getattr(self.gluing, name), (n_block,), np.int8)
         for name in (
             "split_altitude_m_block",
@@ -312,6 +350,91 @@ class WavelengthRetrievalResult:
             "relative_bias_block",
         ):
             _require_array(f"gluing.{name}", getattr(self.gluing, name), (n_block,), np.float64)
+
+        for name in (
+            "source_flag",
+            "retrieval_input_valid_flag",
+            "retrieval_input_invalid_reason",
+        ):
+            _require_array(f"signal_selection.{name}", getattr(self.signal_selection, name), (n_time,), np.int8)
+        _require_array(
+            "signal_selection.retrieval_input_snr_median",
+            self.signal_selection.retrieval_input_snr_median,
+            (n_time,),
+            np.float64,
+        )
+        for name in (
+            "source_flag_block",
+            "retrieval_input_valid_flag_block",
+            "retrieval_input_invalid_reason_block",
+        ):
+            _require_array(f"signal_selection.{name}", getattr(self.signal_selection, name), (n_block,), np.int8)
+        _require_array(
+            "signal_selection.retrieval_input_snr_median_block",
+            self.signal_selection.retrieval_input_snr_median_block,
+            (n_block,),
+            np.float64,
+        )
+        self._validate_scientific_state_invariants()
+
+    def _validate_scientific_state_invariants(self) -> None:
+        """Reject contradictory gluing, source, input-validity and retrieval states."""
+        attempted = self.gluing.attempted_flag_block
+        glued = self.gluing.success_flag_block
+        fallback = self.gluing.single_channel_fallback_flag_block
+        source = self.signal_selection.source_flag_block
+        input_valid = self.signal_selection.retrieval_input_valid_flag_block
+        reason = self.signal_selection.retrieval_input_invalid_reason_block
+        retrieval_success = self.optical.retrieval_success_flag
+
+        for label, flags in (
+            ("gluing.attempted_flag_block", attempted),
+            ("gluing.success_flag_block", glued),
+            ("gluing.single_channel_fallback_flag_block", fallback),
+            ("signal_selection.retrieval_input_valid_flag_block", input_valid),
+            ("optical.retrieval_success_flag", retrieval_success),
+        ):
+            if not np.isin(flags, (0, 1)).all():
+                raise ValueError(f"{label} must contain only 0 or 1.")
+        if not np.isin(source, [int(item) for item in SignalSource]).all():
+            raise ValueError("signal_selection.source_flag_block contains an unknown source code.")
+        if not np.isin(reason, [int(item) for item in RetrievalInputInvalidReason]).all():
+            raise ValueError("signal_selection.retrieval_input_invalid_reason_block contains an unknown reason code.")
+        if np.any((attempted == 0) & (glued == 1)):
+            raise ValueError("Successful gluing requires gluing_attempted_flag=1.")
+        if np.any((glued == 1) & (source != SignalSource.GLUED)):
+            raise ValueError("gluing_success_flag=1 requires signal source glued.")
+        if np.any((source == SignalSource.GLUED) & ((attempted != 1) | (glued != 1) | (fallback != 0))):
+            raise ValueError("Source glued requires attempted and successful gluing without fallback.")
+        single = np.isin(source, (SignalSource.PHOTON_COUNTING, SignalSource.ANALOG))
+        if np.any(single & ((glued != 0) | (fallback != 1) | (input_valid != 1))):
+            raise ValueError(
+                "A single-channel source requires failed/not-attempted gluing, fallback=1, and valid input."
+            )
+        invalid = source == SignalSource.INVALID
+        if np.any(invalid & ((input_valid != 0) | (fallback != 0))):
+            raise ValueError("An invalid source requires invalid retrieval input and no fallback selection.")
+        if np.any((input_valid == 1) & ((source == SignalSource.INVALID) | (reason != 0))):
+            raise ValueError("A valid retrieval input requires a selected source and reason code 0.")
+        if np.any((input_valid == 0) & (reason == RetrievalInputInvalidReason.VALID)):
+            raise ValueError("An invalid retrieval input requires a non-zero reason code.")
+        if np.any((retrieval_success == 1) & (input_valid != 1)):
+            raise ValueError("retrieval_success_flag=1 requires retrieval_input_valid_flag=1.")
+
+        invalid_blocks = np.flatnonzero(input_valid == 0)
+        for block_index in invalid_blocks:
+            for name in (
+                "scattering_ratio_block",
+                "aerosol_backscatter_block",
+                "aerosol_backscatter_error_block",
+                "aerosol_extinction_block",
+                "aerosol_extinction_error_block",
+            ):
+                if not np.isnan(getattr(self.optical, name)[block_index, :]).all():
+                    raise ValueError(
+                        f"optical.{name} must be all-NaN when retrieval_input_valid_flag=0 "
+                        f"for block {block_index}."
+                    )
 
 
 def validate_retrieval_results(

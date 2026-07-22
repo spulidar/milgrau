@@ -34,6 +34,9 @@ from milgrau.level2.contracts import (
     MolecularProfiles,
     OpticalProducts,
     RayleighDiagnostics,
+    RetrievalInputInvalidReason,
+    SignalSelectionDiagnostics,
+    SignalSource,
     WavelengthRetrievalResult,
 )
 from milgrau.level2.discovery import infer_channel_pair
@@ -256,7 +259,7 @@ def origin_rayleigh_calibration_factor(
 
 
 def valid_block_mean(block_matrix: np.ndarray, valid_block: np.ndarray) -> np.ndarray:
-    """Average only block products that passed gluing and Rayleigh QA."""
+    """Average only block products with successful Rayleigh/KFS retrieval."""
     block_matrix = np.asarray(block_matrix, dtype=np.float64)
     valid = np.asarray(valid_block, dtype=bool)
     if valid.any():
@@ -296,12 +299,14 @@ class WavelengthBlockInputs:
     block_time: np.ndarray
     block_groups: list[np.ndarray]
     gluing_config: dict[str, Any]
-    range_factor: np.ndarray
+    molecular_fit_config: dict[str, Any]
     analog_block: np.ndarray | None
     analog_error_block: np.ndarray | None
+    analog_correction_valid: bool
     photon_block: np.ndarray | None
     photon_error_block: np.ndarray | None
     photon_mask_block: np.ndarray | None
+    photon_correction_valid: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -314,8 +319,13 @@ class BlockGluingResult:
     range_corrected_signal: np.ndarray
     range_corrected_signal_error: np.ndarray
     merge_source_flag: np.ndarray
+    attempted_flag: np.ndarray
     success_flag: np.ndarray
-    fallback_flag: np.ndarray
+    single_channel_fallback_flag: np.ndarray
+    signal_source_flag: np.ndarray
+    retrieval_input_valid_flag: np.ndarray
+    retrieval_input_invalid_reason: np.ndarray
+    retrieval_input_snr_median: np.ndarray
     split_altitude_m: np.ndarray
     start_altitude_m: np.ndarray
     stop_altitude_m: np.ndarray
@@ -326,6 +336,124 @@ class BlockGluingResult:
     relative_bias: np.ndarray
 
 
+def _channel_correction_valid(ds_l1: xr.Dataset, channel: str | None) -> bool:
+    """Require explicit successful Level 1 correction status for one channel."""
+    if channel is None:
+        return False
+    if "channel_correction_success" not in ds_l1:
+        return False
+    return bool(int(ds_l1["channel_correction_success"].sel(channel=channel).item()) == 1)
+
+
+def _evaluate_retrieval_input(
+    signal: np.ndarray,
+    signal_error: np.ndarray,
+    altitude_m: np.ndarray,
+    fit_config: Mapping[str, Any],
+    *,
+    correction_valid: bool,
+    saturation_fraction: np.ndarray | None = None,
+    require_saturation_diagnostic: bool = False,
+) -> tuple[bool, RetrievalInputInvalidReason, float]:
+    """Apply threshold-free minimum QA to one candidate retrieval input.
+
+    Every finite positive-altitude bin is part of the two-sided input domain.
+    The configured Rayleigh interval must also be fully covered. SNR is exposed
+    as a diagnostic only; SCI-002 introduces no new SNR acceptance threshold.
+    """
+    values = np.asarray(signal, dtype=np.float64)
+    errors = np.asarray(signal_error, dtype=np.float64)
+    altitude = np.asarray(altitude_m, dtype=np.float64)
+    if values.shape != altitude.shape or errors.shape != altitude.shape:
+        raise ValueError("Signal, uncertainty, and altitude must have identical one-dimensional shapes.")
+    if altitude.ndim != 1 or not np.isfinite(altitude).all() or not np.all(np.diff(altitude) > 0.0):
+        raise ValueError("Retrieval altitude must be a finite, strictly increasing one-dimensional grid.")
+    if not correction_valid:
+        return False, RetrievalInputInvalidReason.LEVEL1_CORRECTION_FAILED_OR_UNCONFIRMED, np.nan
+
+    sampled = altitude > 0.0
+    reference = (
+        (altitude >= float(fit_config["ref_alt_min_m"]))
+        & (altitude <= float(fit_config["ref_alt_max_m"]))
+    )
+    if (
+        sampled.sum() < 3
+        or reference.sum() < 3
+        or float(altitude[sampled][0]) > float(fit_config["ref_alt_min_m"])
+        or float(altitude[sampled][-1]) < float(fit_config["ref_alt_max_m"])
+    ):
+        return False, RetrievalInputInvalidReason.INSUFFICIENT_VERTICAL_COVERAGE, np.nan
+    if not np.isfinite(values[sampled]).all():
+        return False, RetrievalInputInvalidReason.NONFINITE_SIGNAL, np.nan
+    if np.any(values[sampled] <= 0.0):
+        return False, RetrievalInputInvalidReason.NONPOSITIVE_SIGNAL, np.nan
+    if not np.isfinite(errors[sampled]).all() or np.any(errors[sampled] < 0.0):
+        return False, RetrievalInputInvalidReason.INVALID_UNCERTAINTY, np.nan
+    if require_saturation_diagnostic and saturation_fraction is None:
+        return False, RetrievalInputInvalidReason.SATURATION_DIAGNOSTIC_MISSING, np.nan
+    if saturation_fraction is not None:
+        saturation = np.asarray(saturation_fraction, dtype=np.float64)
+        if saturation.shape != altitude.shape:
+            raise ValueError("Photon-counting saturation diagnostics must match the altitude grid.")
+        if np.any(~np.isfinite(saturation[sampled])) or np.any(saturation[sampled] > 0.0):
+            return False, RetrievalInputInvalidReason.PHOTON_COUNTING_SATURATED, np.nan
+
+    snr_bins = sampled & (errors > 0.0)
+    if not snr_bins.any():
+        return False, RetrievalInputInvalidReason.SNR_UNAVAILABLE, np.nan
+    snr_median = float(np.nanmedian(np.abs(values[snr_bins]) / errors[snr_bins]))
+    if not np.isfinite(snr_median):
+        return False, RetrievalInputInvalidReason.SNR_UNAVAILABLE, np.nan
+    return True, RetrievalInputInvalidReason.VALID, snr_median
+
+
+def _single_channel_candidates(
+    inputs: WavelengthBlockInputs,
+    block_index: int,
+) -> list[tuple[SignalSource, str, np.ndarray, np.ndarray, np.ndarray | None, bool, bool]]:
+    """Return available single-channel candidates in configured deterministic order."""
+    candidates: dict[
+        SignalSource,
+        tuple[SignalSource, str, np.ndarray, np.ndarray, np.ndarray | None, bool, bool],
+    ] = {}
+    if (
+        inputs.photon_channel is not None
+        and inputs.photon_block is not None
+        and inputs.photon_error_block is not None
+    ):
+        candidates[SignalSource.PHOTON_COUNTING] = (
+            SignalSource.PHOTON_COUNTING,
+            inputs.photon_channel,
+            inputs.photon_block[block_index, :],
+            inputs.photon_error_block[block_index, :],
+            inputs.photon_mask_block[block_index, :] if inputs.photon_mask_block is not None else None,
+            inputs.photon_correction_valid,
+            True,
+        )
+    if (
+        inputs.analog_channel is not None
+        and inputs.analog_block is not None
+        and inputs.analog_error_block is not None
+    ):
+        candidates[SignalSource.ANALOG] = (
+            SignalSource.ANALOG,
+            inputs.analog_channel,
+            inputs.analog_block[block_index, :],
+            inputs.analog_error_block[block_index, :],
+            None,
+            inputs.analog_correction_valid,
+            False,
+        )
+    configured_priority = str(inputs.gluing_config["single_channel_priority"])
+    preferred = (
+        SignalSource.PHOTON_COUNTING
+        if configured_priority == "photon_counting"
+        else SignalSource.ANALOG
+    )
+    secondary = SignalSource.ANALOG if preferred == SignalSource.PHOTON_COUNTING else SignalSource.PHOTON_COUNTING
+    return [candidates[source] for source in (preferred, secondary) if source in candidates]
+
+
 def prepare_wavelength_blocks(
     ds_l1: xr.Dataset,
     wavelength_nm: int,
@@ -333,6 +461,9 @@ def prepare_wavelength_blocks(
     config: Mapping[str, Any],
 ) -> WavelengthBlockInputs:
     """Select source channels and reduce Level 1 profiles into time blocks."""
+    altitude_m = np.asarray(altitude_m, dtype=np.float64)
+    if altitude_m.ndim != 1 or not np.isfinite(altitude_m).all() or not np.all(np.diff(altitude_m) > 0.0):
+        raise ValueError("Level 2 altitude must be a finite, strictly increasing one-dimensional grid.")
     analog_channel, photon_channel = infer_channel_pair(ds_l1, wavelength_nm)
     if analog_channel is None and photon_channel is None:
         raise ValueError(f"No channel found for wavelength {wavelength_nm} nm.")
@@ -353,20 +484,24 @@ def prepare_wavelength_blocks(
             photon_mask = ds_l1["pc_saturation_mask"].sel(channel=photon_channel).values.astype(bool)
             photon_mask_block = mask_by_groups(photon_mask, groups)
         else:
-            photon_mask_block = np.zeros((n_block, n_altitude), dtype=bool)
+            photon_mask_block = None
+        photon_correction_valid = _channel_correction_valid(ds_l1, photon_channel)
     else:
         photon_block = None
         photon_error_block = None
         photon_mask_block = None
+        photon_correction_valid = False
 
     if analog_channel is not None:
         analog_signal = corrected.sel(channel=analog_channel).values.astype(np.float64)
         analog_error = corrected_error.sel(channel=analog_channel).values.astype(np.float64)
         analog_block = mean_by_groups(analog_signal, groups)
         analog_error_block = error_by_groups(analog_error, groups)
+        analog_correction_valid = _channel_correction_valid(ds_l1, analog_channel)
     else:
         analog_block = None
         analog_error_block = None
+        analog_correction_valid = False
 
     return WavelengthBlockInputs(
         wavelength_nm=wavelength_nm,
@@ -377,12 +512,14 @@ def prepare_wavelength_blocks(
         block_time=block_time,
         block_groups=groups,
         gluing_config=get_gluing_config(config),
-        range_factor=range_square_factor(altitude_m),
+        molecular_fit_config=get_molecular_fit_config(config),
         analog_block=analog_block,
         analog_error_block=analog_error_block,
+        analog_correction_valid=analog_correction_valid,
         photon_block=photon_block,
         photon_error_block=photon_error_block,
         photon_mask_block=photon_mask_block,
+        photon_correction_valid=photon_correction_valid,
     )
 
 
@@ -399,8 +536,17 @@ def glue_signal_blocks(
     rcs = np.full((n_block, n_altitude), np.nan, dtype=np.float64)
     rcs_error = np.full((n_block, n_altitude), np.nan, dtype=np.float64)
     merge_source = np.full((n_block, n_altitude), 3, dtype=np.int8)
+    attempted = np.zeros(n_block, dtype=np.int8)
     success = np.zeros(n_block, dtype=np.int8)
-    fallback = np.zeros(n_block, dtype=np.int8)
+    single_channel_fallback = np.zeros(n_block, dtype=np.int8)
+    signal_source = np.full(n_block, SignalSource.INVALID, dtype=np.int8)
+    retrieval_input_valid = np.zeros(n_block, dtype=np.int8)
+    invalid_reason = np.full(
+        n_block,
+        RetrievalInputInvalidReason.NO_VALID_CHANNEL,
+        dtype=np.int8,
+    )
+    snr_median = np.full(n_block, np.nan, dtype=np.float64)
     split = np.full(n_block, np.nan, dtype=np.float64)
     start = np.full(n_block, np.nan, dtype=np.float64)
     stop = np.full(n_block, np.nan, dtype=np.float64)
@@ -417,7 +563,7 @@ def glue_signal_blocks(
         and inputs.analog_error_block is not None
         and inputs.photon_error_block is not None
     ):
-        source = "block_mean_corrected_signal_analog_photon_glued"
+        attempted[:] = 1
         for block_index in range(n_block):
             glued_profile, split_point, slope_i, intercept_i, diagnostics = slide_glue_signals(
                 analog_sig=inputs.analog_block[block_index, :],
@@ -465,61 +611,157 @@ def glue_signal_blocks(
                 )
                 merge_source[block_index, :] = merge_source_flags(n_altitude, min_bin, max_bin)
                 success[block_index] = 1
+                signal_source[block_index] = SignalSource.GLUED
                 split[block_index] = float(altitude_m[split_point])
                 start[block_index] = float(altitude_m[min_bin])
                 stop[block_index] = float(altitude_m[max_bin - 1])
-            elif gluing_config["fallback_to_photon_counting"]:
-                corrected[block_index, :] = inputs.photon_block[block_index, :]
-                corrected_error[block_index, :] = inputs.photon_error_block[block_index, :]
-                rcs[block_index, :], rcs_error[block_index, :] = to_rcs(
+                valid, reason, block_snr = _evaluate_retrieval_input(
                     corrected[block_index, :],
                     corrected_error[block_index, :],
                     altitude_m,
+                    inputs.molecular_fit_config,
+                    correction_valid=inputs.analog_correction_valid and inputs.photon_correction_valid,
+                    saturation_fraction=(
+                        np.where(
+                            merge_source[block_index, :] == 2,
+                            0.0,
+                            inputs.photon_mask_block[block_index, :],
+                        )
+                        if inputs.photon_mask_block is not None
+                        else None
+                    ),
+                    require_saturation_diagnostic=True,
                 )
-                merge_source[block_index, :] = merge_source_flags(n_altitude, -1, -1, split_failed=True)
-                fallback[block_index] = 1
-        if success.sum() == 0 and not gluing_config["fallback_to_photon_counting"]:
-            raise ValueError(
-                f"{inputs.wavelength_nm} nm has no successful block gluing and photon fallback is disabled."
-            )
+                retrieval_input_valid[block_index] = np.int8(valid)
+                invalid_reason[block_index] = np.int8(reason)
+                snr_median[block_index] = block_snr
+            elif gluing_config["allow_single_channel_fallback"]:
+                first_rejection = RetrievalInputInvalidReason.NO_VALID_CHANNEL
+                first_snr = np.nan
+                for (
+                    candidate_source,
+                    _channel,
+                    candidate_signal,
+                    candidate_error,
+                    candidate_saturation,
+                    correction_valid,
+                    require_saturation_diagnostic,
+                ) in _single_channel_candidates(inputs, block_index):
+                    valid, reason, block_snr = _evaluate_retrieval_input(
+                        candidate_signal,
+                        candidate_error,
+                        altitude_m,
+                        inputs.molecular_fit_config,
+                        correction_valid=correction_valid,
+                        saturation_fraction=candidate_saturation,
+                        require_saturation_diagnostic=require_saturation_diagnostic,
+                    )
+                    if first_rejection == RetrievalInputInvalidReason.NO_VALID_CHANNEL:
+                        first_rejection = reason
+                        first_snr = block_snr
+                    if not valid:
+                        continue
+                    corrected[block_index, :] = candidate_signal
+                    corrected_error[block_index, :] = candidate_error
+                    rcs[block_index, :], rcs_error[block_index, :] = to_rcs(
+                        candidate_signal,
+                        candidate_error,
+                        altitude_m,
+                    )
+                    merge_source[block_index, :] = (
+                        0 if candidate_source == SignalSource.PHOTON_COUNTING else 2
+                    )
+                    single_channel_fallback[block_index] = 1
+                    signal_source[block_index] = np.int8(candidate_source)
+                    retrieval_input_valid[block_index] = 1
+                    invalid_reason[block_index] = RetrievalInputInvalidReason.VALID
+                    snr_median[block_index] = block_snr
+                    break
+                else:
+                    invalid_reason[block_index] = np.int8(first_rejection)
+                    snr_median[block_index] = first_snr
+            else:
+                invalid_reason[block_index] = RetrievalInputInvalidReason.SINGLE_CHANNEL_FALLBACK_DISABLED
         logger.info(
             f"  -> {inputs.wavelength_nm} nm block gluing success: "
             f"{100.0 * success.sum() / max(n_block, 1):.1f}% "
-            f"({inputs.analog_channel} + {inputs.photon_channel}); fallback blocks: {int(fallback.sum())}."
+            f"({inputs.analog_channel} + {inputs.photon_channel}); "
+            f"valid single-channel fallback blocks: {int(single_channel_fallback.sum())}."
         )
     else:
-        fallback_channel = inputs.photon_channel or inputs.analog_channel
-        fallback_block = inputs.photon_block if inputs.photon_block is not None else inputs.analog_block
-        fallback_error_block = (
-            inputs.photon_error_block if inputs.photon_error_block is not None else inputs.analog_error_block
-        )
-        if fallback_channel is None or fallback_block is None or fallback_error_block is None:
-            raise ValueError(f"No usable channel found for wavelength {inputs.wavelength_nm} nm.")
-        if not gluing_config["fallback_to_photon_counting"]:
-            raise ValueError(
-                f"{inputs.wavelength_nm} nm cannot perform gluing because only {fallback_channel} is available "
-                "and photon fallback is disabled."
+        for block_index in range(n_block):
+            if not gluing_config["allow_single_channel_fallback"]:
+                invalid_reason[block_index] = RetrievalInputInvalidReason.SINGLE_CHANNEL_FALLBACK_DISABLED
+                continue
+            candidates = _single_channel_candidates(inputs, block_index)
+            if not candidates:
+                continue
+            (
+                candidate_source,
+                _channel,
+                candidate_signal,
+                candidate_error,
+                candidate_saturation,
+                correction_valid,
+                require_saturation_diagnostic,
+            ) = candidates[0]
+            valid, reason, block_snr = _evaluate_retrieval_input(
+                candidate_signal,
+                candidate_error,
+                altitude_m,
+                inputs.molecular_fit_config,
+                correction_valid=correction_valid,
+                saturation_fraction=candidate_saturation,
+                require_saturation_diagnostic=require_saturation_diagnostic,
             )
-        corrected[:, :] = fallback_block
-        corrected_error[:, :] = fallback_error_block
-        rcs[:, :] = fallback_block * inputs.range_factor
-        rcs_error[:, :] = fallback_error_block * inputs.range_factor
-        merge_source[:, :] = 0 if fallback_channel == inputs.photon_channel else 2
-        fallback[:] = 1
-        source = f"block_mean_corrected_signal_single_channel_{fallback_channel}"
+            invalid_reason[block_index] = np.int8(reason)
+            snr_median[block_index] = block_snr
+            if not valid:
+                continue
+            corrected[block_index, :] = candidate_signal
+            corrected_error[block_index, :] = candidate_error
+            rcs[block_index, :], rcs_error[block_index, :] = to_rcs(
+                candidate_signal,
+                candidate_error,
+                altitude_m,
+            )
+            merge_source[block_index, :] = (
+                0 if candidate_source == SignalSource.PHOTON_COUNTING else 2
+            )
+            single_channel_fallback[block_index] = 1
+            signal_source[block_index] = np.int8(candidate_source)
+            retrieval_input_valid[block_index] = 1
         logger.warning(
-            f"  -> {inputs.wavelength_nm} nm using block single-channel fallback: {fallback_channel}."
+            f"  -> {inputs.wavelength_nm} nm single-channel selection: "
+            f"{int(retrieval_input_valid.sum())}/{n_block} valid block(s)."
         )
 
-    return BlockGluingResult(
+    selected_sources = set(signal_source.astype(int).tolist())
+    if len(selected_sources) == 1:
+        selected = SignalSource(next(iter(selected_sources)))
+        source = {
+            SignalSource.INVALID: "invalid_no_retrieval_input",
+            SignalSource.GLUED: "block_mean_corrected_signal_analog_photon_glued",
+            SignalSource.PHOTON_COUNTING: f"block_mean_corrected_signal_single_channel_{inputs.photon_channel}",
+            SignalSource.ANALOG: f"block_mean_corrected_signal_single_channel_{inputs.analog_channel}",
+        }[selected]
+    else:
+        source = "blockwise_selected_corrected_signal"
+
+    result = BlockGluingResult(
         source=source,
         corrected_signal=corrected,
         corrected_signal_error=corrected_error,
         range_corrected_signal=rcs,
         range_corrected_signal_error=rcs_error,
         merge_source_flag=merge_source,
+        attempted_flag=attempted,
         success_flag=success,
-        fallback_flag=fallback,
+        single_channel_fallback_flag=single_channel_fallback,
+        signal_source_flag=signal_source,
+        retrieval_input_valid_flag=retrieval_input_valid,
+        retrieval_input_invalid_reason=invalid_reason,
+        retrieval_input_snr_median=snr_median,
         split_altitude_m=split,
         start_altitude_m=start,
         stop_altitude_m=stop,
@@ -529,6 +771,38 @@ def glue_signal_blocks(
         relative_rmse=relative_rmse,
         relative_bias=relative_bias,
     )
+    _validate_block_signal_state(inputs, result)
+    return result
+
+
+def _validate_block_signal_state(inputs: WavelengthBlockInputs, result: BlockGluingResult) -> None:
+    """Reject contradictory states immediately after source selection."""
+    attempted = result.attempted_flag
+    success = result.success_flag
+    fallback = result.single_channel_fallback_flag
+    source = result.signal_source_flag
+    valid = result.retrieval_input_valid_flag
+    reason = result.retrieval_input_invalid_reason
+    if np.any((attempted == 0) & (success == 1)):
+        raise ValueError("Successful gluing requires gluing_attempted_flag=1.")
+    if np.any((success == 1) & (source != SignalSource.GLUED)):
+        raise ValueError("Successful gluing requires the glued signal source.")
+    if np.any((source == SignalSource.GLUED) & ((attempted != 1) | (success != 1) | (fallback != 0))):
+        raise ValueError("The glued source requires attempted/successful gluing and no fallback.")
+    single = np.isin(source, (SignalSource.PHOTON_COUNTING, SignalSource.ANALOG))
+    if np.any(single & ((success != 0) | (fallback != 1) | (valid != 1))):
+        raise ValueError("A selected single-channel fallback must be valid and cannot report gluing success.")
+    if np.any((source == SignalSource.PHOTON_COUNTING) & (inputs.photon_channel is None)):
+        raise ValueError("Photon-counting source selected without an available photon-counting channel.")
+    if np.any((source == SignalSource.ANALOG) & (inputs.analog_channel is None)):
+        raise ValueError("Analog source selected without an available analog channel.")
+    invalid = source == SignalSource.INVALID
+    if np.any(invalid & ((valid != 0) | (fallback != 0))):
+        raise ValueError("Invalid source requires invalid input and no fallback selection.")
+    if np.any((valid == 1) & (reason != RetrievalInputInvalidReason.VALID)):
+        raise ValueError("Valid retrieval input requires reason code VALID.")
+    if np.any((valid == 0) & (reason == RetrievalInputInvalidReason.VALID)):
+        raise ValueError("Invalid retrieval input requires a non-zero reason code.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -611,7 +885,7 @@ def retrieve_optical_blocks(
     fit_config = molecular.fit_config
 
     for block_index in range(n_block):
-        if glued.success_flag[block_index] != 1:
+        if glued.retrieval_input_valid_flag[block_index] != 1:
             continue
         reference_index = find_optimal_reference_altitude(
             rcs=glued.range_corrected_signal[block_index, :],
@@ -683,7 +957,7 @@ def retrieve_optical_blocks(
             kfs_backward_valid[block_index] = np.int8(bool(kfs_diagnostic["backward_valid"]))
             kfs_forward_valid[block_index] = np.int8(bool(kfs_diagnostic["forward_valid"]))
 
-    rayleigh_valid_block = (glued.success_flag == 1) & (rayleigh_success == 1)
+    rayleigh_valid_block = (glued.retrieval_input_valid_flag == 1) & (rayleigh_success == 1)
     valid_block = rayleigh_valid_block & (kfs_backward_valid == 1) & (kfs_forward_valid == 1)
     if not valid_block.any():
         logger.warning(
@@ -749,7 +1023,7 @@ def retrieve_optical_blocks(
         aerosol_backscatter_error_block=aerosol_backscatter_error,
         aerosol_extinction_block=aerosol_extinction,
         aerosol_extinction_error_block=aerosol_extinction_error,
-        valid_retrieval_block_flag=valid_block.astype(np.int8),
+        retrieval_success_flag=valid_block.astype(np.int8),
     )
     rayleigh_diagnostics = RayleighDiagnostics(
         reference_altitude_m=aggregate_reference_altitude,
@@ -795,7 +1069,7 @@ def assemble_wavelength_result(
     kfs: KfsDiagnostics,
 ) -> WavelengthRetrievalResult:
     """Expand block diagnostics to time and assemble the public typed result."""
-    valid_block = optical.valid_retrieval_block_flag.astype(bool)
+    valid_block = optical.retrieval_success_flag.astype(bool)
     time_corrected = expand_blocks_to_time(glued.corrected_signal, inputs.block_groups, inputs.n_time)
     time_corrected_error = expand_blocks_to_time(
         glued.corrected_signal_error,
@@ -842,14 +1116,20 @@ def assemble_wavelength_result(
         rayleigh=rayleigh,
         kfs=kfs,
         gluing=GluingDiagnostics(
+            attempted_flag=expand_block_vector_to_time(
+                glued.attempted_flag,
+                inputs.block_groups,
+                inputs.n_time,
+                dtype=np.int8,
+            ),
             success_flag=expand_block_vector_to_time(
                 glued.success_flag,
                 inputs.block_groups,
                 inputs.n_time,
                 dtype=np.int8,
             ),
-            fallback_flag=expand_block_vector_to_time(
-                glued.fallback_flag,
+            single_channel_fallback_flag=expand_block_vector_to_time(
+                glued.single_channel_fallback_flag,
                 inputs.block_groups,
                 inputs.n_time,
                 dtype=np.int8,
@@ -882,8 +1162,9 @@ def assemble_wavelength_result(
                 inputs.block_groups,
                 inputs.n_time,
             ),
+            attempted_flag_block=glued.attempted_flag,
             success_flag_block=glued.success_flag,
-            fallback_flag_block=glued.fallback_flag,
+            single_channel_fallback_flag_block=glued.single_channel_fallback_flag,
             split_altitude_m_block=glued.split_altitude_m,
             start_altitude_m_block=glued.start_altitude_m,
             stop_altitude_m_block=glued.stop_altitude_m,
@@ -892,6 +1173,35 @@ def assemble_wavelength_result(
             correlation_block=glued.correlation,
             relative_rmse_block=glued.relative_rmse,
             relative_bias_block=glued.relative_bias,
+        ),
+        signal_selection=SignalSelectionDiagnostics(
+            source_flag=expand_block_vector_to_time(
+                glued.signal_source_flag,
+                inputs.block_groups,
+                inputs.n_time,
+                dtype=np.int8,
+            ),
+            retrieval_input_valid_flag=expand_block_vector_to_time(
+                glued.retrieval_input_valid_flag,
+                inputs.block_groups,
+                inputs.n_time,
+                dtype=np.int8,
+            ),
+            retrieval_input_invalid_reason=expand_block_vector_to_time(
+                glued.retrieval_input_invalid_reason,
+                inputs.block_groups,
+                inputs.n_time,
+                dtype=np.int8,
+            ),
+            retrieval_input_snr_median=expand_block_vector_to_time(
+                glued.retrieval_input_snr_median,
+                inputs.block_groups,
+                inputs.n_time,
+            ),
+            source_flag_block=glued.signal_source_flag,
+            retrieval_input_valid_flag_block=glued.retrieval_input_valid_flag,
+            retrieval_input_invalid_reason_block=glued.retrieval_input_invalid_reason,
+            retrieval_input_snr_median_block=glued.retrieval_input_snr_median,
         ),
     )
     result.validate(n_time=inputs.n_time, n_altitude=inputs.n_altitude)

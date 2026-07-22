@@ -161,6 +161,10 @@ def build_synthetic_level1(scenario: Scenario) -> xr.Dataset:
                 range_corrected_error,
             ),
             "pc_saturation_mask": (("time", "channel", "altitude"), saturation_mask),
+            "channel_correction_success": (
+                ("channel",),
+                np.ones(len(channel_names), dtype=np.int8),
+            ),
         },
         coords={
             "time": time_values,
@@ -210,7 +214,8 @@ def benchmark_config(scenario: Scenario) -> dict[str, Any]:
                 "max_relative_rmse": 1.0,
                 "max_relative_bias": 1.0,
                 "min_valid_fraction": 0.80,
-                "fallback_to_photon_counting": False,
+                "allow_single_channel_fallback": False,
+                "single_channel_priority": "photon_counting",
             },
             "lidar_ratios_sr": {
                 str(wavelength_nm): {"01": 60.0}
@@ -310,7 +315,7 @@ def execute_pipeline(input_path: Path, output_path: Path, scenario: Scenario) ->
             lambda: assemble_wavelength_result(inputs, glued, molecular, optical, rayleigh, kfs),
         )
         materializations.observe(result)
-        valid_retrieval_blocks += int(result.optical.valid_retrieval_block_flag.sum())
+        valid_retrieval_blocks += int(result.optical.retrieval_success_flag.sum())
         results.append(result)
 
     if valid_retrieval_blocks == 0:

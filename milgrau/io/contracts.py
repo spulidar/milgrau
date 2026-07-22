@@ -39,12 +39,21 @@ LEVEL2_REQUIRED_VARIABLES: Final[tuple[str, ...]] = (
     "glued_range_corrected_signal",
     "aerosol_backscatter_mean",
     "aerosol_extinction_mean",
+    "gluing_attempted_flag",
+    "gluing_success_flag",
+    "single_channel_fallback_flag",
+    "signal_source_flag",
+    "retrieval_input_valid_flag",
+    "retrieval_input_invalid_reason",
+    "retrieval_success_flag",
 )
 LEVEL0_RAW_DATA_DIMS: Final[tuple[str, ...]] = ("time", "channels", "points")
 LEVEL0_TIME_SCALE_DIMS: Final[tuple[str, ...]] = ("time", "nb_of_time_scales")
 LEVEL0_BACKGROUND_DIMS: Final[tuple[str, ...]] = ("time_bck", "channels", "points")
 LEVEL1_CORE_DIMS: Final[tuple[str, ...]] = ("time", "channel", "altitude")
 LEVEL2_GLUED_SIGNAL_DIMS: Final[tuple[str, ...]] = ("time", "wavelength", "altitude")
+LEVEL2_TIME_STATE_DIMS: Final[tuple[str, ...]] = ("time", "wavelength")
+LEVEL2_BLOCK_STATE_DIMS: Final[tuple[str, ...]] = ("block_time", "wavelength")
 
 
 def _missing_names(ds: xr.Dataset, names: Iterable[str]) -> list[str]:
@@ -124,6 +133,20 @@ def validate_level2_contract(ds: xr.Dataset) -> None:
     _require_coords(ds, ("wavelength", "altitude"), "Level 2 file")
     if "glued_range_corrected_signal" in ds:
         _require_exact_dims(ds["glued_range_corrected_signal"], LEVEL2_GLUED_SIGNAL_DIMS, "Level 2 glued_range_corrected_signal")
+    for name in (
+        "gluing_attempted_flag",
+        "gluing_success_flag",
+        "single_channel_fallback_flag",
+        "signal_source_flag",
+        "retrieval_input_valid_flag",
+        "retrieval_input_invalid_reason",
+    ):
+        _require_exact_dims(ds[name], LEVEL2_TIME_STATE_DIMS, f"Level 2 {name}")
+    _require_exact_dims(
+        ds["retrieval_success_flag"],
+        LEVEL2_BLOCK_STATE_DIMS,
+        "Level 2 retrieval_success_flag",
+    )
 
 
 def netcdf_satisfies_contract(path: str | Path, validator: Callable[[xr.Dataset], None]) -> bool:

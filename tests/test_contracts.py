@@ -92,6 +92,8 @@ def test_validate_level2_contract_rejects_wrong_glued_signal_dims() -> None:
     time = pd.date_range("2024-01-01", periods=2)
     wavelength = np.array([532])
     altitude = np.arange(4.0)
+    block_time = pd.date_range("2024-01-01", periods=1)
+    time_state = np.ones((2, 1), dtype=np.int8)
     ds = xr.Dataset(
         data_vars={
             "molecular_backscatter": (("wavelength", "altitude"), np.ones((1, 4))),
@@ -99,8 +101,15 @@ def test_validate_level2_contract_rejects_wrong_glued_signal_dims() -> None:
             "glued_range_corrected_signal": (("wavelength", "time", "altitude"), np.ones((1, 2, 4))),
             "aerosol_backscatter_mean": (("wavelength", "altitude"), np.ones((1, 4))),
             "aerosol_extinction_mean": (("wavelength", "altitude"), np.ones((1, 4))),
+            "gluing_attempted_flag": (("time", "wavelength"), time_state),
+            "gluing_success_flag": (("time", "wavelength"), time_state),
+            "single_channel_fallback_flag": (("time", "wavelength"), np.zeros_like(time_state)),
+            "signal_source_flag": (("time", "wavelength"), time_state),
+            "retrieval_input_valid_flag": (("time", "wavelength"), time_state),
+            "retrieval_input_invalid_reason": (("time", "wavelength"), np.zeros_like(time_state)),
+            "retrieval_success_flag": (("block_time", "wavelength"), np.ones((1, 1), dtype=np.int8)),
         },
-        coords={"time": time, "wavelength": wavelength, "altitude": altitude},
+        coords={"time": time, "block_time": block_time, "wavelength": wavelength, "altitude": altitude},
     )
 
     with pytest.raises(ValueError):
@@ -112,6 +121,8 @@ def test_validate_level2_contract_accepts_minimal_optical_dataset() -> None:
     time = pd.date_range("2024-01-01", periods=2)
     wavelength = np.array([532])
     altitude = np.arange(4.0)
+    block_time = pd.date_range("2024-01-01", periods=1)
+    time_state = np.ones((2, 1), dtype=np.int8)
     ds = xr.Dataset(
         data_vars={
             "molecular_backscatter": (("wavelength", "altitude"), np.ones((1, 4))),
@@ -119,8 +130,15 @@ def test_validate_level2_contract_accepts_minimal_optical_dataset() -> None:
             "glued_range_corrected_signal": (("time", "wavelength", "altitude"), np.ones((2, 1, 4))),
             "aerosol_backscatter_mean": (("wavelength", "altitude"), np.ones((1, 4))),
             "aerosol_extinction_mean": (("wavelength", "altitude"), np.ones((1, 4))),
+            "gluing_attempted_flag": (("time", "wavelength"), time_state),
+            "gluing_success_flag": (("time", "wavelength"), time_state),
+            "single_channel_fallback_flag": (("time", "wavelength"), np.zeros_like(time_state)),
+            "signal_source_flag": (("time", "wavelength"), time_state),
+            "retrieval_input_valid_flag": (("time", "wavelength"), time_state),
+            "retrieval_input_invalid_reason": (("time", "wavelength"), np.zeros_like(time_state)),
+            "retrieval_success_flag": (("block_time", "wavelength"), np.ones((1, 1), dtype=np.int8)),
         },
-        coords={"time": time, "wavelength": wavelength, "altitude": altitude},
+        coords={"time": time, "block_time": block_time, "wavelength": wavelength, "altitude": altitude},
     )
 
     validate_level2_contract(ds)

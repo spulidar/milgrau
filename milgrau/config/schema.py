@@ -55,7 +55,8 @@ _KNOWN_KEYS_BY_PATH: dict[tuple[str, ...], set[str]] = {
     ("inversion", "gluing"): {
         "window_length_bins", "correlation_threshold", "intercept_threshold", "gaussian_threshold", "minmax_threshold",
         "max_relative_rmse", "max_relative_bias", "min_valid_fraction", "max_saturation_fraction",
-        "invalid_saturation_fraction", "search_min_idx", "search_max_idx", "fallback_to_photon_counting",
+        "invalid_saturation_fraction", "search_min_idx", "search_max_idx", "allow_single_channel_fallback",
+        "single_channel_priority",
     },
     ("inversion", "cloud_screening"): {
         "enabled", "min_altitude_m", "max_altitude_m", "smooth_bins", "snr_threshold", "robust_z_threshold",
@@ -293,7 +294,12 @@ def _validate_inversion(config: Mapping[str, Any]) -> None:
         "max_relative_bias", "min_valid_fraction", "max_saturation_fraction", "invalid_saturation_fraction",
     ):
         _optional_finite_number(gluing, key, "inversion.gluing", minimum=0.0)
-    _optional_boolean(gluing, "fallback_to_photon_counting", "inversion.gluing")
+    _optional_boolean(gluing, "allow_single_channel_fallback", "inversion.gluing")
+    _optional_string(gluing, "single_channel_priority", "inversion.gluing")
+    if gluing.get("single_channel_priority", "photon_counting") not in {"photon_counting", "analog"}:
+        raise ValueError(
+            "Configuration inversion.gluing.single_channel_priority must be 'photon_counting' or 'analog'."
+        )
     if gluing.get("search_min_idx") is not None and gluing.get("search_max_idx") is not None:
         if int(gluing["search_max_idx"]) <= int(gluing["search_min_idx"]):
             raise ValueError("Configuration inversion.gluing.search_max_idx must exceed search_min_idx.")

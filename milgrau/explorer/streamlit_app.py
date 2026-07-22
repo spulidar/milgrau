@@ -64,7 +64,12 @@ DIAGNOSTIC_NAMES = [
     "Background_Low",
     "Background_High",
     "gluing_success_flag",
-    "gluing_fallback_flag",
+    "gluing_attempted_flag",
+    "single_channel_fallback_flag",
+    "signal_source_flag",
+    "retrieval_input_valid_flag",
+    "retrieval_input_invalid_reason",
+    "retrieval_input_snr_median",
     "gluing_split_altitude_m",
     "gluing_start_altitude_m",
     "gluing_stop_altitude_m",
@@ -78,7 +83,7 @@ DIAGNOSTIC_NAMES = [
     "rayleigh_reference_valid_fraction",
     "rayleigh_calibration_factor",
     "rayleigh_calibration_intercept",
-    "valid_retrieval_block_flag",
+    "retrieval_success_flag",
     "lidar_ratio_assumed_sr",
     "kfs_branch",
 ]
@@ -674,7 +679,7 @@ def qa_gluing_figure(ds_l2: xr.Dataset, ds_l1: xr.Dataset | None, wavelength: An
     success_rate = 100.0 * success_count / max(n_blocks, 1)
     valid_success = np.isfinite(success_values) & (success_values == 1)
 
-    fallback_count = int(np.nansum(select_wavelength(ds_l2["gluing_fallback_flag"], wavelength).values)) if "gluing_fallback_flag" in ds_l2 else 0
+    fallback_count = int(np.nansum(select_wavelength(ds_l2["single_channel_fallback_flag"], wavelength).values)) if "single_channel_fallback_flag" in ds_l2 else 0
     split_alt_km = select_wavelength(ds_l2["gluing_split_altitude_m"], wavelength) / 1000.0
     median_split = float(np.nanmedian(split_alt_km.values)) if np.any(np.isfinite(split_alt_km.values)) else np.nan
     median_start = safe_median(ds_l2, "gluing_start_altitude_m", wavelength) / 1000.0
@@ -740,7 +745,7 @@ def qa_gluing_figure(ds_l2: xr.Dataset, ds_l1: xr.Dataset | None, wavelength: An
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=analog_plot[valid_alt], y=alt_km[valid_alt], mode="lines", name=f"{analog_ch or 'AN'} scaled", line={"color": "blue", "dash": "dash", "width": 2.0}))
     fig.add_trace(go.Scatter(x=photon_plot[valid_alt], y=alt_km[valid_alt], mode="lines", name=f"{photon_ch or 'PC'} mean", line={"color": "orange", "dash": "dot", "width": 2.2}))
-    fig.add_trace(go.Scatter(x=glued[valid_alt], y=alt_km[valid_alt], mode="lines", name="Glued mean", line={"color": color, "width": 2.8}))
+    fig.add_trace(go.Scatter(x=glued[valid_alt], y=alt_km[valid_alt], mode="lines", name="Selected signal mean", line={"color": color, "width": 2.8}))
     if np.isfinite(median_start) and np.isfinite(median_stop) and 0.0 < median_start < median_stop <= max_alt_km:
         fig.add_hrect(y0=median_start, y1=median_stop, fillcolor="gold", opacity=0.25, line_width=0, annotation_text=f"Median gluing window {median_start:.2f}-{median_stop:.2f} km", annotation_position="top left")
     if np.isfinite(median_split) and 0.0 < median_split <= max_alt_km:
@@ -834,9 +839,9 @@ def qa_scattering_ratio_figure(ds_l2: xr.Dataset, wavelength: Any, smooth_bins: 
         uncertainty_label = "SR 1σ"
     elif "scattering_ratio_block" in ds_l2:
         valid_block = None
-        if "valid_retrieval_block_flag" in ds_l2:
+        if "retrieval_success_flag" in ds_l2:
             try:
-                valid_block = np.asarray(select_wavelength(ds_l2["valid_retrieval_block_flag"], wavelength).values, dtype=bool)
+                valid_block = np.asarray(select_wavelength(ds_l2["retrieval_success_flag"], wavelength).values, dtype=bool)
             except Exception:
                 valid_block = None
         sr_sigma = smooth_profile(block_standard_error(select_wavelength(ds_l2["scattering_ratio_block"], wavelength).values, valid_block), smooth_bins)

@@ -271,9 +271,9 @@ def plot_qa_gluing(
     valid_success = np.isfinite(success_values) & (success_values == 1)
 
     fallback_count = 0
-    if "gluing_fallback_flag" in ds_l2:
+    if "single_channel_fallback_flag" in ds_l2:
         fallback_values = np.asarray(
-            ds_l2["gluing_fallback_flag"].sel(wavelength=wavelength).values,
+            ds_l2["single_channel_fallback_flag"].sel(wavelength=wavelength).values,
             dtype=float,
         )
         fallback_count = int(np.nansum(fallback_values))
@@ -395,7 +395,7 @@ def plot_qa_gluing(
         alt_km[valid_alt],
         color=color,
         linewidth=2.5,
-        label="Glued mean",
+        label="Selected signal mean",
     )
 
     # Visible gluing window.
@@ -424,7 +424,7 @@ def plot_qa_gluing(
     #     fontsize=16,
     #     fontweight="bold",
     # )
-    ax.set_xlabel("RCS on photon-counting scale [a.u.]", fontsize=13, fontweight="bold")
+    ax.set_xlabel("Selected-signal RCS [a.u.]", fontsize=13, fontweight="bold")
     ax.set_ylabel("Altitude (km a.g.l.)", fontsize=13, fontweight="bold")
     ax.set_ylim(0, max_alt_km)
     ax.set_xlim(xmin, xmax)
@@ -434,6 +434,7 @@ def plot_qa_gluing(
     # Cleaner summary box. No repeated split/window text.
     summary_lines = [
         f"success = {success_count}/{n_blocks} ({success_rate:.1f}%)",
+        f"single-channel selected = {fallback_count}",
         f"corr med = {corr_med:.4g}",
         f"rmse med = {rmse_med:.4g}",
         f"bias med = {bias_med:.4g}",
@@ -644,9 +645,9 @@ def plot_qa_scattering_ratio(
         uncertainty_label = "SR 1σ"
     elif "scattering_ratio_block" in ds_l2:
         valid_block = None
-        if "valid_retrieval_block_flag" in ds_l2:
+        if "retrieval_success_flag" in ds_l2:
             try:
-                valid_block = np.asarray(ds_l2["valid_retrieval_block_flag"].sel(wavelength=wavelength).values, dtype=bool)
+                valid_block = np.asarray(ds_l2["retrieval_success_flag"].sel(wavelength=wavelength).values, dtype=bool)
             except Exception:
                 valid_block = None
         sr_sigma = _smooth_for_plot(_block_standard_error(ds_l2["scattering_ratio_block"].sel(wavelength=wavelength).values, valid_block), smooth_bins)

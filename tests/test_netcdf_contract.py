@@ -22,8 +22,8 @@ EXPECTED_LEVEL2_DATA_VARS = frozenset(
     glued_corrected_signal_error_block glued_corrected_signal_error_mean glued_corrected_signal_mean
     glued_range_corrected_signal glued_range_corrected_signal_block glued_range_corrected_signal_error
     glued_range_corrected_signal_error_block glued_range_corrected_signal_error_mean
-    glued_range_corrected_signal_mean gluing_correlation gluing_correlation_block
-    gluing_fallback_flag gluing_fallback_flag_block gluing_intercept gluing_intercept_block
+    glued_range_corrected_signal_mean gluing_attempted_flag gluing_attempted_flag_block
+    gluing_correlation gluing_correlation_block gluing_intercept gluing_intercept_block
     gluing_merge_source_flag gluing_merge_source_flag_block gluing_relative_bias
     gluing_relative_bias_block gluing_relative_rmse gluing_relative_rmse_block gluing_slope
     gluing_slope_block gluing_split_altitude_m gluing_split_altitude_m_block
@@ -43,8 +43,11 @@ EXPECTED_LEVEL2_DATA_VARS = frozenset(
     rayleigh_reference_valid_bins_block rayleigh_reference_valid_fraction
     rayleigh_reference_valid_fraction_block scaled_molecular_range_corrected_signal
     scaled_molecular_range_corrected_signal_block scattering_ratio_block scattering_ratio_mean
-    simulated_molecular_range_corrected_signal simulated_molecular_signal
-    valid_retrieval_block_flag
+    retrieval_input_invalid_reason retrieval_input_invalid_reason_block
+    retrieval_input_snr_median retrieval_input_snr_median_block
+    retrieval_input_valid_flag retrieval_input_valid_flag_block retrieval_success_flag
+    signal_source_flag signal_source_flag_block simulated_molecular_range_corrected_signal
+    simulated_molecular_signal single_channel_fallback_flag single_channel_fallback_flag_block
     """.split()
 )
 
@@ -92,6 +95,8 @@ def _write_synthetic_level1(path: Path) -> Path:
             "corrected_signal_error": (("time", "channel", "altitude"), corrected_signal_error),
             "range_corrected_signal": (("time", "channel", "altitude"), range_corrected_signal),
             "range_corrected_signal_error": (("time", "channel", "altitude"), range_corrected_signal_error),
+            "pc_saturation_mask": (("time", "channel", "altitude"), np.zeros(shape, dtype=np.int8)),
+            "channel_correction_success": (("channel",), np.ones(channel.size, dtype=np.int8)),
             "PBL_Height_km": (("time",), np.array([0.8, 0.9, 1.0], dtype=np.float32)),
         },
         coords={"time": time, "channel": channel, "altitude": altitude},
@@ -138,7 +143,14 @@ def test_lebear_generates_synthetic_level2_product(tmp_path: Path) -> None:
             "monte_carlo_iterations": 10,
             "random_seed": 123,
             "molecular_fit": {"ref_alt_min_m": 500.0, "ref_alt_max_m": 1400.0, "ref_window_bins": 20},
-            "gluing": {"window_length_bins": 80, "correlation_threshold": 0.95, "search_min_idx": 20, "search_max_idx": 120},
+            "gluing": {
+                "window_length_bins": 80,
+                "correlation_threshold": 0.95,
+                "search_min_idx": 20,
+                "search_max_idx": 120,
+                "allow_single_channel_fallback": True,
+                "single_channel_priority": "photon_counting",
+            },
         },
         "visualization": {"level2_qa": {"enabled": False}},
     }
@@ -154,7 +166,7 @@ def test_lebear_generates_synthetic_level2_product(tmp_path: Path) -> None:
         assert ds_l2["molecular_backscatter"].dims == ("wavelength", "altitude")
         assert ds_l2["glued_corrected_signal"].dims == ("time", "wavelength", "altitude")
         assert ds_l2["glued_corrected_signal_block"].dims == ("block_time", "wavelength", "altitude")
-        assert ds_l2["valid_retrieval_block_flag"].dims == ("block_time", "wavelength")
+        assert ds_l2["retrieval_success_flag"].dims == ("block_time", "wavelength")
         assert ds_l2["molecular_backscatter"].dtype == np.dtype("float64")
         assert ds_l2["gluing_success_flag"].dtype == np.dtype("int8")
         assert ds_l2["kfs_branch"].dtype == np.dtype("int8")
@@ -162,7 +174,7 @@ def test_lebear_generates_synthetic_level2_product(tmp_path: Path) -> None:
         assert ds_l2.attrs["Processing_level"] == "Level 2: LEBEAR block-based optical inversion"
         assert ds_l2.attrs["Pipeline"] == "MILGRAU/LEBEAR"
         assert ds_l2.attrs["Input_Level1_File"] == path.name
-        assert ds_l2.attrs["LEBEAR_Mode"] == "block_mean_corrected_signal_gluing_rayleigh_kfs"
+        assert ds_l2.attrs["LEBEAR_Mode"] == "block_mean_signal_selection_rayleigh_kfs"
         assert ds_l2.attrs["KFS_Mode"] == "two_sided"
         assert ds_l2.attrs["elastic_backscatter_inversion_method"] == "Klett-Fernald-Sasano"
         assert ds_l2.attrs["integration_mode"] == "two_sided"
@@ -170,10 +182,10 @@ def test_lebear_generates_synthetic_level2_product(tmp_path: Path) -> None:
         assert ds_l2.attrs["fernald_implementation_version"] == "2"
         assert ds_l2.attrs["scientific_change"] == "corrected_backward_molecular_factor_sign"
         assert ds_l2["gluing_success_flag"].attrs["flag_values"] == "0, 1"
-        assert ds_l2["gluing_success_flag"].attrs["flag_meanings"] == "failed success"
+        assert ds_l2["gluing_success_flag"].attrs["flag_meanings"] == "failed_or_not_attempted approved"
         assert ds_l2["kfs_branch"].attrs["flag_values"] == "0, 1, 2, 3"
         assert set(np.unique(ds_l2["kfs_branch"].values).tolist()) == {1, 2, 3}
-        assert set(np.unique(ds_l2["valid_retrieval_block_flag"].values).tolist()) == {1}
+        assert set(np.unique(ds_l2["retrieval_success_flag"].values).tolist()) == {1}
 
         # Tight relative tolerances allow minor platform-level floating-point variation
         # while detecting changes to the molecular model, gluing, or retrieval output.
