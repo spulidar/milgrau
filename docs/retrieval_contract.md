@@ -11,7 +11,7 @@ remain visible:
 | `GluedSignals` | source channels plus time, block, and mean corrected/RCS signals and merge-source flags |
 | `OpticalProducts` | scattering ratio, aerosol backscatter/extinction, uncertainties, and valid-block flags |
 | `RayleighDiagnostics` | aggregate and per-block reference window, QA, and calibration diagnostics |
-| `KfsDiagnostics` | lidar-ratio assumptions and aggregate/per-block branch flags |
+| `KfsDiagnostics` | lidar-ratio assumptions, aggregate/per-block branch flags, and independent backward/forward validity flags |
 | `GluingDiagnostics` | aggregate-time and per-block gluing success, fallback, window, fit, and residual diagnostics |
 
 The only optional fields are `analog_channel` and `photon_channel`, because a
@@ -58,23 +58,26 @@ Failures are wrapped as `RetrievalStageError` with one of the stable stage names
 `selection_and_blocking`, `gluing`, `molecular_model`, `rayleigh_kfs`, or
 `result_assembly`, while preserving the original exception as `__cause__`.
 
-## Dataset compatibility
+## SCI-001 scientific versioning
 
 `milgrau.level2.dataset` consumes named attributes from the typed records; it no
-longer synchronizes arbitrary dictionary keys with NetCDF variables. Dataset
-names, dimensions, dtypes, attributes, and numerical values remain unchanged.
-In particular, Rayleigh valid-bin counts remain converted to the historical
-NetCDF `float64` representation even though their retrieval-contract dtype is
-`int32`.
+longer synchronizes arbitrary dictionary keys with NetCDF variables. SCI-001
+deliberately changes aerosol optical values, adds independent backward/forward
+validity flags, marks only the exact boundary bin as the reference branch, and
+writes the Fernald implementation identity. Rayleigh valid-bin counts remain
+converted to the existing NetCDF `float64` representation even though their
+retrieval-contract dtype is `int32`.
 
-The frozen synthetic 532 nm fixture hashes every coordinate and data variable,
+The synthetic 532 nm fixture hashes every coordinate and data variable,
 including name, dimensions, dtype, shape, attributes, and contiguous value
-bytes, plus global attributes. Its digest before and after migration is:
+bytes, plus global attributes. The version-2 digest is:
 
 ```text
-3a5cfa6aff51948afe8e5a2c889988cf50763f3ef07de14bc7b9261695127299
+b6edc57dde2750550078f8b08011534b26171e146d1fe9127033df78d75c5ccb
 ```
 
-This change defines an internal engineering boundary only. It does not alter
-gluing, molecular calculations, Rayleigh selection, KFS inversion, aggregation,
-scientific parameters, or the public Level 2 NetCDF schema.
+The earlier digest is intentionally obsolete: it encoded the incorrect
+backward molecular sign and is not scientific truth. Gluing, molecular
+calculations, automatic Rayleigh-window selection and the lidar-ratio prior are
+unchanged. Level 2 products with Fernald implementation versions before 2 must
+be reprocessed.

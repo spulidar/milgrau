@@ -259,8 +259,8 @@ def _validate_inversion(config: Mapping[str, Any]) -> None:
     for key in ("block_average_minutes", "temporal_average_minutes", "monte_carlo_iterations"):
         _optional_integer(inversion, key, "inversion", minimum=1)
     _optional_integer(inversion, "random_seed", "inversion", minimum=0)
-    if "kfs_mode" in inversion and inversion["kfs_mode"] not in {"backward", "two_sided"}:
-        raise ValueError("Configuration inversion.kfs_mode must be 'backward' or 'two_sided'.")
+    if "kfs_mode" in inversion and inversion["kfs_mode"] != "two_sided":
+        raise ValueError("Configuration inversion.kfs_mode must be 'two_sided' for Level 2 processing.")
     for key in ("beta_ref_relative_std", "aerosol_ref_fraction"):
         _optional_finite_number(inversion, key, "inversion", minimum=0.0)
     _optional_finite_number(inversion, "min_lidar_ratio_sr", "inversion", positive=True)

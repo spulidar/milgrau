@@ -48,8 +48,8 @@ from milgrau.level2.molecular import (
 )
 
 KFS_BRANCH_BACKWARD_BELOW_REFERENCE = 1
-KFS_BRANCH_REFERENCE_WINDOW = 2
-KFS_BRANCH_FORWARD_ABOVE_REFERENCE_EXPERIMENTAL = 3
+KFS_BRANCH_REFERENCE_BIN = 2
+KFS_BRANCH_FORWARD_ABOVE_REFERENCE = 3
 _StageResult = TypeVar("_StageResult")
 
 
@@ -71,15 +71,20 @@ def _run_retrieval_stage(stage: str, operation: Callable[[], _StageResult]) -> _
         raise RetrievalStageError(stage, exc) from exc
 
 
-def build_kfs_branch(altitude_m: np.ndarray, ref_start_m: float, ref_stop_m: float, mode: str) -> np.ndarray:
-    """Build per-altitude validity/branch flags for KFS products."""
+def build_kfs_branch(altitude_m: np.ndarray, reference_index: int, mode: str) -> np.ndarray:
+    """Build branch flags around the one boundary bin used by the inversion."""
     altitude = np.asarray(altitude_m, dtype=np.float64)
     branch = np.zeros(altitude.size, dtype=np.int8)
     finite = np.isfinite(altitude)
-    branch[finite & (altitude < ref_start_m)] = KFS_BRANCH_BACKWARD_BELOW_REFERENCE
-    branch[finite & (altitude >= ref_start_m) & (altitude <= ref_stop_m)] = KFS_BRANCH_REFERENCE_WINDOW
+    reference_index = int(reference_index)
+    if altitude.ndim != 1 or reference_index < 0 or reference_index >= altitude.size:
+        raise ValueError("reference_index must identify one bin on the 1D altitude grid.")
+    indices = np.arange(altitude.size)
+    branch[finite & (indices < reference_index)] = KFS_BRANCH_BACKWARD_BELOW_REFERENCE
+    if finite[reference_index]:
+        branch[reference_index] = KFS_BRANCH_REFERENCE_BIN
     if mode == "two_sided":
-        branch[finite & (altitude > ref_stop_m)] = KFS_BRANCH_FORWARD_ABOVE_REFERENCE_EXPERIMENTAL
+        branch[finite & (indices > reference_index)] = KFS_BRANCH_FORWARD_ABOVE_REFERENCE
     return branch
 
 
@@ -203,7 +208,7 @@ def run_kfs_profile(
     lr_base: float,
     lr_std: float,
     config: Mapping[str, Any],
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
     """Run KFS for one RCS profile using the configured inversion options."""
     inv_cfg = config.get("inversion", {})
     return kfs_inversion_monte_carlo(
@@ -221,6 +226,7 @@ def run_kfs_profile(
         min_lidar_ratio=float(inv_cfg.get("min_lidar_ratio_sr", 10.0)),
         allow_negative_aerosol=bool(inv_cfg.get("allow_negative_aerosol", False)),
         seed=inv_cfg.get("random_seed"),
+        return_diagnostics=True,
         mode=get_kfs_mode(config),
     )
 
@@ -600,6 +606,8 @@ def retrieve_optical_blocks(
     aerosol_extinction = np.full((n_block, n_altitude), np.nan, dtype=np.float64)
     aerosol_extinction_error = np.full((n_block, n_altitude), np.nan, dtype=np.float64)
     kfs_branch = np.zeros((n_block, n_altitude), dtype=np.int8)
+    kfs_backward_valid = np.zeros(n_block, dtype=np.int8)
+    kfs_forward_valid = np.zeros(n_block, dtype=np.int8)
     fit_config = molecular.fit_config
 
     for block_index in range(n_block):
@@ -653,13 +661,12 @@ def retrieve_optical_blocks(
         )
         kfs_branch[block_index, :] = build_kfs_branch(
             altitude_m,
-            ref_start_m,
-            ref_stop_m,
+            reference_index,
             molecular.kfs_mode,
         )
         if int(qa["success_flag"]) == 1:
             rayleigh_success[block_index] = 1
-            beta_mean, beta_std, alpha_mean, alpha_std = run_kfs_profile(
+            beta_mean, beta_std, alpha_mean, alpha_std, kfs_diagnostic = run_kfs_profile(
                 glued.range_corrected_signal[block_index, :],
                 glued.range_corrected_signal_error[block_index, :],
                 altitude_m,
@@ -673,28 +680,30 @@ def retrieve_optical_blocks(
             aerosol_backscatter_error[block_index, :] = beta_std
             aerosol_extinction[block_index, :] = alpha_mean
             aerosol_extinction_error[block_index, :] = alpha_std
+            kfs_backward_valid[block_index] = np.int8(bool(kfs_diagnostic["backward_valid"]))
+            kfs_forward_valid[block_index] = np.int8(bool(kfs_diagnostic["forward_valid"]))
 
-    valid_block = (glued.success_flag == 1) & (rayleigh_success == 1)
+    rayleigh_valid_block = (glued.success_flag == 1) & (rayleigh_success == 1)
+    valid_block = rayleigh_valid_block & (kfs_backward_valid == 1) & (kfs_forward_valid == 1)
     if not valid_block.any():
         logger.warning(
             f"  -> {inputs.wavelength_nm} nm has no valid retrieval block. Mean optical products set to NaN."
         )
 
-    if valid_block.any():
-        aggregate_factor = float(np.nanmedian(calibration_factor[valid_block]))
-        aggregate_intercept = float(np.nanmedian(calibration_intercept[valid_block]))
-        aggregate_reference_altitude = float(np.nanmedian(reference_altitude[valid_block]))
-        aggregate_reference_start = float(np.nanmedian(reference_start[valid_block]))
-        aggregate_reference_stop = float(np.nanmedian(reference_stop[valid_block]))
-        aggregate_valid_bins = int(np.nanmedian(reference_valid_bins[valid_block]))
-        aggregate_relative_slope = float(np.nanmedian(reference_relative_slope[valid_block]))
-        aggregate_relative_variance = float(np.nanmedian(reference_relative_variance[valid_block]))
-        aggregate_valid_fraction = float(np.nanmedian(reference_valid_fraction[valid_block]))
+    if rayleigh_valid_block.any():
+        aggregate_factor = float(np.nanmedian(calibration_factor[rayleigh_valid_block]))
+        aggregate_intercept = float(np.nanmedian(calibration_intercept[rayleigh_valid_block]))
+        aggregate_reference_altitude = float(np.nanmedian(reference_altitude[rayleigh_valid_block]))
+        aggregate_reference_start = float(np.nanmedian(reference_start[rayleigh_valid_block]))
+        aggregate_reference_stop = float(np.nanmedian(reference_stop[rayleigh_valid_block]))
+        aggregate_valid_bins = int(np.nanmedian(reference_valid_bins[rayleigh_valid_block]))
+        aggregate_relative_slope = float(np.nanmedian(reference_relative_slope[rayleigh_valid_block]))
+        aggregate_relative_variance = float(np.nanmedian(reference_relative_variance[rayleigh_valid_block]))
+        aggregate_valid_fraction = float(np.nanmedian(reference_valid_fraction[rayleigh_valid_block]))
         aggregate_scaled_molecular = molecular.simulated_range_corrected_signal * aggregate_factor
         aggregate_kfs_branch = build_kfs_branch(
             altitude_m,
-            aggregate_reference_start,
-            aggregate_reference_stop,
+            int(np.nanargmin(np.abs(altitude_m - aggregate_reference_altitude))),
             molecular.kfs_mode,
         )
         aggregate_rayleigh_success = 1
@@ -711,6 +720,13 @@ def retrieve_optical_blocks(
         aggregate_scaled_molecular = np.full(n_altitude, np.nan, dtype=np.float64)
         aggregate_kfs_branch = np.zeros(n_altitude, dtype=np.int8)
         aggregate_rayleigh_success = 0
+
+    aggregate_backward_valid = int(
+        rayleigh_valid_block.any() and np.all(kfs_backward_valid[rayleigh_valid_block] == 1)
+    )
+    aggregate_forward_valid = int(
+        rayleigh_valid_block.any() and np.all(kfs_forward_valid[rayleigh_valid_block] == 1)
+    )
 
     molecular_profiles = MolecularProfiles(
         source=molecular.source,
@@ -760,6 +776,10 @@ def retrieve_optical_blocks(
     kfs_diagnostics = KfsDiagnostics(
         lidar_ratio_assumed_sr=molecular.lidar_ratio_assumed_sr,
         lidar_ratio_std_sr=molecular.lidar_ratio_std_sr,
+        backward_valid_flag=aggregate_backward_valid,
+        forward_valid_flag=aggregate_forward_valid,
+        backward_valid_flag_block=kfs_backward_valid,
+        forward_valid_flag_block=kfs_forward_valid,
         branch=aggregate_kfs_branch,
         branch_block=kfs_branch,
     )

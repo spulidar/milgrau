@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Mapping
+from typing import Any, Mapping
 
 import numpy as np
 import xarray as xr
@@ -16,6 +16,7 @@ from milgrau.level2.config import (
     kfs_mode_description,
 )
 from milgrau.level2.contracts import WavelengthRetrievalResult, validate_retrieval_results
+from milgrau.scientific import elastic_inversion_algorithm_metadata
 
 
 def build_level2_dataset(
@@ -105,6 +106,10 @@ def build_level2_dataset(
             "rayleigh_calibration_intercept_block": (("block_time", "wavelength"), stack_block(lambda result: result.rayleigh.calibration_intercept_block)),
             "lidar_ratio_assumed_sr": (("wavelength",), vector(lambda result: result.kfs.lidar_ratio_assumed_sr)),
             "lidar_ratio_std_sr": (("wavelength",), vector(lambda result: result.kfs.lidar_ratio_std_sr)),
+            "kfs_backward_valid_flag": (("wavelength",), vector(lambda result: result.kfs.backward_valid_flag).astype(np.int8)),
+            "kfs_forward_valid_flag": (("wavelength",), vector(lambda result: result.kfs.forward_valid_flag).astype(np.int8)),
+            "kfs_backward_valid_flag_block": (("block_time", "wavelength"), stack_block(lambda result: result.kfs.backward_valid_flag_block).astype(np.int8)),
+            "kfs_forward_valid_flag_block": (("block_time", "wavelength"), stack_block(lambda result: result.kfs.forward_valid_flag_block).astype(np.int8)),
             "kfs_branch": (("wavelength", "altitude"), stack(lambda result: result.kfs.branch).astype(np.int8)),
             "kfs_branch_block": (("block_time", "wavelength", "altitude"), stack_block(lambda result: result.kfs.branch_block).astype(np.int8)),
             "gluing_success_flag": (("time", "wavelength"), stack_time(lambda result: result.gluing.success_flag).astype(np.int8)),
@@ -140,7 +145,14 @@ def build_level2_dataset(
     ds_l2["scattering_ratio_mean"].attrs.update({"units": "1", "description": "Mean of valid block scattering ratios."})
     ds_l2["scattering_ratio_block"].attrs.update({"units": "1", "description": "Block scattering ratio from block-mean glued RCS and block-scaled molecular RCS."})
     ds_l2["rayleigh_calibration_intercept"].attrs.update({"description": "Median intercept from free linear Rayleigh diagnostic fit. The main calibration factor is constrained through the origin."})
-    ds_l2["kfs_branch"].attrs.update({"flag_values": "0, 1, 2, 3", "flag_meanings": "invalid backward_below_reference reference_window forward_above_reference_experimental", "description": "KFS/Fernald-Sasano retrieval branch by altitude. Above-reference two-sided retrieval is experimental and noise-sensitive."})
+    ds_l2["kfs_branch"].attrs.update({"flag_values": "0, 1, 2, 3", "flag_meanings": "invalid backward_below_reference exact_reference_bin forward_above_reference", "description": "Klett-Fernald-Sasano v2 branch by altitude around the single physical boundary bin."})
+    for name in (
+        "kfs_backward_valid_flag",
+        "kfs_forward_valid_flag",
+        "kfs_backward_valid_flag_block",
+        "kfs_forward_valid_flag_block",
+    ):
+        ds_l2[name].attrs.update({"flag_values": "0, 1", "flag_meanings": "invalid valid", "description": "Whether the complete physically sampled KFS branch remained finite with positive denominators in every Monte Carlo realization."})
     ds_l2["gluing_success_flag"].attrs.update({"flag_values": "0, 1", "flag_meanings": "failed success"})
     ds_l2["gluing_fallback_flag"].attrs.update({"flag_values": "0, 1", "flag_meanings": "not_used photon_counting_fallback_used"})
     ds_l2["gluing_success_flag_block"].attrs.update({"flag_values": "0, 1", "flag_meanings": "failed success"})
@@ -173,6 +185,9 @@ def build_level2_dataset(
             "Gluing_sources": ";".join(result.glued.source for result in results),
             "Analog_channels": ";".join(str(result.glued.analog_channel) for result in results),
             "Photon_channels": ";".join(str(result.glued.photon_channel) for result in results),
+            "uncertainty_scope": "partial Monte Carlo dispersion; not a total uncertainty budget",
+            "scientific_reprocessing_required": "Level 2 optical products generated with Fernald implementation versions before 2 must be reprocessed.",
+            **elastic_inversion_algorithm_metadata(),
         }
     )
     return ds_l2

@@ -71,18 +71,18 @@ def get_molecular_fit_config(config: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def get_kfs_mode(config: Mapping[str, Any]) -> str:
-    """Return the configured KFS integration mode."""
+    """Require the approved productive KFS two-sided integration mode."""
     mode = str(config.get("inversion", {}).get("kfs_mode", "two_sided")).strip().lower()
-    if mode not in {"backward", "two_sided"}:
-        return "backward"
-    return mode
+    if mode != "two_sided":
+        raise ValueError("Level 2 KFS retrieval requires inversion.kfs_mode = 'two_sided'.")
+    return "two_sided"
 
 
 def kfs_mode_description(mode: str) -> str:
     """Return a human-readable description of the KFS mode."""
-    if mode == "two_sided":
-        return "Backward below reference and forward above reference; above-reference retrieval is experimental and noise-sensitive."
-    return "Backward Fernald-Sasano retrieval below the reference altitude."
+    if mode != "two_sided":
+        raise ValueError("The productive Level 2 integration mode must be 'two_sided'.")
+    return "Backward below and forward above one shared reference bin; the forward branch is mathematically validated but remains noise-sensitive."
 
 
 def get_block_average_minutes(config: Mapping[str, Any]) -> int:

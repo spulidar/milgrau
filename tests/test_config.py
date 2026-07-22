@@ -104,6 +104,15 @@ def test_schema_rejects_invalid_background_window() -> None:
         validate_config_minimum(config)
 
 
+def test_schema_rejects_non_two_sided_productive_kfs_mode() -> None:
+    """Backward/forward remain isolated science APIs, not productive L2 modes."""
+    config = _minimal_config()
+    config["inversion"] = {"kfs_mode": "backward"}
+
+    with pytest.raises(ValueError, match="must be 'two_sided'"):
+        validate_config_minimum(config)
+
+
 def test_normalize_config_preserves_existing_aliases() -> None:
     """Explicit legacy aliases should not be overwritten during normalization."""
     config = {

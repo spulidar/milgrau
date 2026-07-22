@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import milgrau.provenance as provenance_module
+
 from milgrau.provenance import (
     build_product_provenance,
     output_is_current,
@@ -173,5 +175,29 @@ def test_documented_product_subsets_are_available() -> None:
     assert "console_level" not in relevant_configuration("level0", config)["processing"]
     assert "cache_dir" not in relevant_configuration("level1", config)["radiosonde"]
     assert "cloud_screening" not in relevant_configuration("level2", config)["inversion"]
+    assert relevant_configuration("level2", config)["scientific_algorithms"] == {
+        "elastic_backscatter_inversion_method": "Klett-Fernald-Sasano",
+        "integration_mode": "two_sided",
+        "uncertainty_method": "Monte Carlo",
+        "fernald_implementation_version": "2",
+        "scientific_change": "corrected_backward_molecular_factor_sign",
+    }
     assert "show_pbl" not in relevant_configuration("liracos.quicklook", config)["visualization"]["quicklook"]
     assert "max_altitude_km" not in relevant_configuration("lebear.qa", config)["visualization"]["level2_qa"]
+
+
+def test_level2_algorithm_version_is_part_of_the_fingerprint(tmp_path: Path, monkeypatch) -> None:
+    """Changing only the explicit Fernald identity must invalidate old Level 2 products."""
+    input_path = tmp_path / "level1.nc"
+    input_path.write_bytes(b"level 1")
+    original = build_product_provenance("level2", [input_path], _config())
+    changed_metadata = dict(original.payload["configuration"]["scientific_algorithms"])
+    changed_metadata["fernald_implementation_version"] = "3"
+    monkeypatch.setattr(
+        provenance_module,
+        "elastic_inversion_algorithm_metadata",
+        lambda: changed_metadata,
+    )
+    changed = build_product_provenance("level2", [input_path], _config())
+
+    assert original.fingerprint != changed.fingerprint

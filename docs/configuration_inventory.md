@@ -47,7 +47,7 @@ Classificações:
 | `inversion.interactive_qa` | YAML `true`; sem interação no pipeline | nenhum | booleano | dormente | decidir em ENG-017 |
 | `inversion.wavelengths_to_process` | YAML; default `[532]` | Lebear | lista não vazia de números positivos e finitos | consumida | validar e manter |
 | `inversion.block_average_minutes` | YAML; fallback legado/default 15 | janelas do retrieval | inteiro >= 1 | consumida | validar e manter |
-| `inversion.kfs_mode` | YAML `two_sided`; default `two_sided` | KFS/retrieval e metadados | `backward` ou `two_sided` | experimental | validar e manter sinalização experimental |
+| `inversion.kfs_mode` | YAML/default `two_sided` | KFS/retrieval e metadados | somente `two_sided` no pipeline; ramos isolados existem na API científica | consumida | versão Fernald 2; forward validado matematicamente e ainda sensível a ruído |
 | `inversion.products.*` | todos `true` no YAML | writer salva atualmente o schema completo sem consultar esses flags | booleanos | dormente | decidir em ENG-017 |
 | `inversion.{monte_carlo_iterations,random_seed,beta_ref_relative_std,aerosol_ref_fraction,min_lidar_ratio_sr,allow_negative_aerosol}` | YAML; defaults no retrieval | retrieval/KFS | inteiros válidos, números finitos e booleano conforme campo | consumida | validar e manter |
 | `inversion.molecular_fit.{ref_alt_min_m,ref_alt_max_m,ref_window_bins,max_relative_slope,max_relative_variance,min_valid_fraction}` | YAML; defaults em `level2/config.py` | seleção/QA da referência molecular | finitos, bins inteiro, max altitude > min | consumida | validar e manter |

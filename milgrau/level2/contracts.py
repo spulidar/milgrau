@@ -89,10 +89,14 @@ class RayleighDiagnostics:
 
 @dataclass(frozen=True, slots=True)
 class KfsDiagnostics:
-    """Lidar-ratio assumptions and KFS branch selection."""
+    """Lidar-ratio assumptions plus KFS branch and side validity."""
 
     lidar_ratio_assumed_sr: float
     lidar_ratio_std_sr: float
+    backward_valid_flag: int
+    forward_valid_flag: int
+    backward_valid_flag_block: np.ndarray
+    forward_valid_flag_block: np.ndarray
     branch: np.ndarray
     branch_block: np.ndarray
 
@@ -265,6 +269,20 @@ class WavelengthRetrievalResult:
 
         _require_float("kfs.lidar_ratio_assumed_sr", self.kfs.lidar_ratio_assumed_sr)
         _require_float("kfs.lidar_ratio_std_sr", self.kfs.lidar_ratio_std_sr)
+        _require_integer("kfs.backward_valid_flag", self.kfs.backward_valid_flag)
+        _require_integer("kfs.forward_valid_flag", self.kfs.forward_valid_flag)
+        _require_array(
+            "kfs.backward_valid_flag_block",
+            self.kfs.backward_valid_flag_block,
+            (n_block,),
+            np.int8,
+        )
+        _require_array(
+            "kfs.forward_valid_flag_block",
+            self.kfs.forward_valid_flag_block,
+            (n_block,),
+            np.int8,
+        )
         _require_array("kfs.branch", self.kfs.branch, (n_altitude,), np.int8)
         _require_array("kfs.branch_block", self.kfs.branch_block, (n_block, n_altitude), np.int8)
 

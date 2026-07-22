@@ -128,6 +128,8 @@ inversion:
   interactive_qa: true
   wavelengths_to_process: [355, 532]
   block_average_minutes: 20
+  # SCI-001: productive Level 2 retrieval is always backward below and forward
+  # above one shared exact reference bin. Isolated branch modes are test APIs.
   kfs_mode: "two_sided"
   # DORMANT scientific controls: the complete frozen Level 2 schema is written.
   products:
@@ -141,6 +143,8 @@ inversion:
   monte_carlo_iterations: 300
   random_seed: 143
   beta_ref_relative_std: 0.10
+  # beta_a(ref) / beta_m(ref), equivalently scattering_ratio_ref - 1, applied
+  # at the selected center bin; the Rayleigh window itself remains a QA/calibration fit.
   aerosol_ref_fraction: 0.0
   min_lidar_ratio_sr: 10.0
   allow_negative_aerosol: false

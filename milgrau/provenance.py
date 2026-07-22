@@ -14,6 +14,8 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, Final
 
+from milgrau.scientific import elastic_inversion_algorithm_metadata
+
 
 PROVENANCE_FORMAT_VERSION: Final[int] = 1
 PROVENANCE_MANIFEST_SUFFIX: Final[str] = ".provenance.json"
@@ -170,6 +172,7 @@ def relevant_configuration(product: str, config: Mapping[str, Any]) -> dict[str,
             "site": _selected(config.get("site"), ("station_altitude_m",)),
             "physics": _selected(config.get("physics"), ("station_altitude_m",)),
             "inversion": relevant_inversion,
+            "scientific_algorithms": elastic_inversion_algorithm_metadata(),
         }
     if product in {"liracos.quicklook", "liracos.global_mean"}:
         visualization = config.get("visualization", {})

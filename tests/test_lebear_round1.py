@@ -133,8 +133,8 @@ def _config(tmp_path: Path, *, fallback_to_photon_counting: bool = True, kfs_mod
     }
 
 
-def test_typed_retrieval_preserves_frozen_level2_dataset_exactly(tmp_path: Path) -> None:
-    """The typed contract must preserve every frozen dataset value and metadata byte."""
+def test_typed_retrieval_freezes_fernald_v2_level2_dataset(tmp_path: Path) -> None:
+    """The typed contract freezes the deliberately changed Fernald-v2 product."""
     level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["532.AN", "532.PC"])
     config = _config(tmp_path)
     logger = _ListLogger()
@@ -146,7 +146,9 @@ def test_typed_retrieval_preserves_frozen_level2_dataset_exactly(tmp_path: Path)
 
     assert isinstance(result, WavelengthRetrievalResult)
     result.validate(n_time=3, n_altitude=240)
-    assert _dataset_contract_digest(dataset) == "3a5cfa6aff51948afe8e5a2c889988cf50763f3ef07de14bc7b9261695127299"
+    # The pre-SCI-001 digest was intentionally invalidated because it encoded
+    # the wrong backward sign; it is not used as scientific truth.
+    assert _dataset_contract_digest(dataset) == "b6edc57dde2750550078f8b08011534b26171e146d1fe9127033df78d75c5ccb"
 
 
 def test_retrieval_stages_have_explicit_conformable_boundaries(tmp_path: Path) -> None:
@@ -264,12 +266,16 @@ def test_lebear_saves_real_kfs_mode_and_branch_flags(tmp_path: Path) -> None:
     assert summary.results[1].status is ExecutionStatus.SKIPPED
     with xr.open_dataset(level2_output_path(level1)) as ds:
         assert ds.attrs["KFS_Mode"] == "two_sided"
-        assert "experimental" in ds.attrs["KFS_Mode_Description"]
+        assert "mathematically validated" in ds.attrs["KFS_Mode_Description"]
+        assert ds.attrs["fernald_implementation_version"] == "2"
+        assert ds.attrs["scientific_change"] == "corrected_backward_molecular_factor_sign"
         assert "kfs_branch" in ds
         branch_values = set(np.asarray(ds["kfs_branch"].values).ravel().astype(int).tolist())
         assert 1 in branch_values
         assert 2 in branch_values
         assert 3 in branch_values
+        assert int(ds["kfs_backward_valid_flag"].item()) == 1
+        assert int(ds["kfs_forward_valid_flag"].item()) == 1
         assert "gluing_fallback_flag" in ds
 
 

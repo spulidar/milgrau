@@ -28,8 +28,9 @@ EXPECTED_LEVEL2_DATA_VARS = frozenset(
     gluing_relative_bias_block gluing_relative_rmse gluing_relative_rmse_block gluing_slope
     gluing_slope_block gluing_split_altitude_m gluing_split_altitude_m_block
     gluing_start_altitude_m gluing_start_altitude_m_block gluing_stop_altitude_m
-    gluing_stop_altitude_m_block gluing_success_flag gluing_success_flag_block kfs_branch
-    kfs_branch_block lidar_ratio_assumed_sr lidar_ratio_std_sr molecular_backscatter
+    gluing_stop_altitude_m_block gluing_success_flag gluing_success_flag_block
+    kfs_backward_valid_flag kfs_backward_valid_flag_block kfs_branch kfs_branch_block
+    kfs_forward_valid_flag kfs_forward_valid_flag_block lidar_ratio_assumed_sr lidar_ratio_std_sr molecular_backscatter
     molecular_extinction molecular_transmission rayleigh_calibration_factor
     rayleigh_calibration_factor_block rayleigh_calibration_intercept
     rayleigh_calibration_intercept_block rayleigh_reference_altitude_m
@@ -163,6 +164,11 @@ def test_lebear_generates_synthetic_level2_product(tmp_path: Path) -> None:
         assert ds_l2.attrs["Input_Level1_File"] == path.name
         assert ds_l2.attrs["LEBEAR_Mode"] == "block_mean_corrected_signal_gluing_rayleigh_kfs"
         assert ds_l2.attrs["KFS_Mode"] == "two_sided"
+        assert ds_l2.attrs["elastic_backscatter_inversion_method"] == "Klett-Fernald-Sasano"
+        assert ds_l2.attrs["integration_mode"] == "two_sided"
+        assert ds_l2.attrs["uncertainty_method"] == "Monte Carlo"
+        assert ds_l2.attrs["fernald_implementation_version"] == "2"
+        assert ds_l2.attrs["scientific_change"] == "corrected_backward_molecular_factor_sign"
         assert ds_l2["gluing_success_flag"].attrs["flag_values"] == "0, 1"
         assert ds_l2["gluing_success_flag"].attrs["flag_meanings"] == "failed success"
         assert ds_l2["kfs_branch"].attrs["flag_values"] == "0, 1, 2, 3"
@@ -193,7 +199,7 @@ def test_lebear_generates_synthetic_level2_product(tmp_path: Path) -> None:
         )
         np.testing.assert_allclose(
             np.nansum(ds_l2["aerosol_backscatter"].values),
-            3.138771333634968e-06,
+            3.835861304163948e-06,
             rtol=1e-5,
             atol=1e-12,
         )
