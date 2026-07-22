@@ -16,7 +16,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, fields, is_dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final, TypeVar
@@ -26,6 +26,15 @@ import xarray as xr
 
 from milgrau.io.contracts import validate_level1_contract, validate_level2_contract
 from milgrau.level2.dataset import build_level2_dataset
+from milgrau.level2.completeness import (
+    Level2ProductContract,
+    ProductCompleteness,
+    WavelengthAttempt,
+    WavelengthFailureCode,
+    WavelengthFailureDiagnostic,
+    WavelengthFailureStage,
+    diagnostic_from_exception,
+)
 from milgrau.level2.lebear import _write_level2_atomically
 from milgrau.level2.retrieval import (
     assemble_wavelength_result,
@@ -57,10 +66,10 @@ class Scenario:
 SCENARIOS: Final[dict[str, Scenario]] = {
     "ci": Scenario(
         name="ci",
-        description="Small single-wavelength smoke benchmark suitable for CI.",
+        description="Small two-wavelength smoke benchmark suitable for CI.",
         n_profiles=3,
         n_altitude=240,
-        wavelengths_nm=(532,),
+        wavelengths_nm=(355, 532),
         monte_carlo_iterations=5,
     ),
     "typical": Scenario(
@@ -236,9 +245,10 @@ def _timed(
     operation: Callable[[], _Result],
 ) -> _Result:
     started_at = time.perf_counter()
-    result = operation()
-    timings[stage] = timings.get(stage, 0.0) + time.perf_counter() - started_at
-    return result
+    try:
+        return operation()
+    finally:
+        timings[stage] = timings.get(stage, 0.0) + time.perf_counter() - started_at
 
 
 def _load_level1(input_path: Path) -> xr.Dataset:
@@ -248,7 +258,12 @@ def _load_level1(input_path: Path) -> xr.Dataset:
     return loaded
 
 
-def execute_pipeline(input_path: Path, output_path: Path, scenario: Scenario) -> dict[str, Any]:
+def execute_pipeline(
+    input_path: Path,
+    output_path: Path,
+    scenario: Scenario,
+    product_mode: str = "complete",
+) -> dict[str, Any]:
     """Execute and time the production Level 2 stages once."""
     timings: dict[str, float] = {}
     materializations = _MaterializationCounter()
@@ -265,73 +280,123 @@ def execute_pipeline(input_path: Path, output_path: Path, scenario: Scenario) ->
     if np.nanmax(altitude_m) <= 100.0:
         altitude_m = altitude_m * 1000.0
 
-    results = []
+    attempts: list[WavelengthAttempt] = []
     valid_retrieval_blocks = 0
     for wavelength_nm in scenario.wavelengths_nm:
-        inputs = _timed(
-            timings,
-            "selection_and_blocking",
-            lambda wavelength_nm=wavelength_nm: prepare_wavelength_blocks(
-                ds_l1,
-                wavelength_nm,
-                altitude_m,
-                config,
-            ),
-        )
-        materializations.observe(inputs)
-        glued = _timed(
-            timings,
-            "gluing",
-            lambda: glue_signal_blocks(inputs, altitude_m, logger),
-        )
-        materializations.observe(glued)
-        molecular_model = _timed(
-            timings,
-            "molecular_model",
-            lambda wavelength_nm=wavelength_nm: build_molecular_model(
-                ds_l1,
-                wavelength_nm,
-                altitude_m,
-                config,
-            ),
-        )
-        materializations.observe(molecular_model)
-        molecular, optical, rayleigh, kfs = _timed(
-            timings,
-            "rayleigh_kfs",
-            lambda: retrieve_optical_blocks(
-                inputs,
-                glued,
-                molecular_model,
-                altitude_m,
-                config,
-                logger,
-            ),
-        )
-        materializations.observe((molecular, optical, rayleigh, kfs))
-        result = _timed(
-            timings,
-            "result_assembly",
-            lambda: assemble_wavelength_result(inputs, glued, molecular, optical, rayleigh, kfs),
-        )
+        retrieval_stage = "selection_and_blocking"
+        try:
+            inputs = _timed(
+                timings,
+                retrieval_stage,
+                lambda wavelength_nm=wavelength_nm: prepare_wavelength_blocks(
+                    ds_l1,
+                    wavelength_nm,
+                    altitude_m,
+                    config,
+                ),
+            )
+            materializations.observe(inputs)
+            retrieval_stage = "gluing"
+            glued = _timed(
+                timings,
+                retrieval_stage,
+                lambda: glue_signal_blocks(inputs, altitude_m, logger),
+            )
+            materializations.observe(glued)
+            retrieval_stage = "molecular_model"
+            molecular_model = _timed(
+                timings,
+                retrieval_stage,
+                lambda wavelength_nm=wavelength_nm: build_molecular_model(
+                    ds_l1,
+                    wavelength_nm,
+                    altitude_m,
+                    config,
+                ),
+            )
+            materializations.observe(molecular_model)
+            retrieval_stage = "rayleigh_kfs"
+            molecular, optical, rayleigh, kfs = _timed(
+                timings,
+                retrieval_stage,
+                lambda: retrieve_optical_blocks(
+                    inputs,
+                    glued,
+                    molecular_model,
+                    altitude_m,
+                    config,
+                    logger,
+                ),
+            )
+            materializations.observe((molecular, optical, rayleigh, kfs))
+            retrieval_stage = "result_assembly"
+            result = _timed(
+                timings,
+                retrieval_stage,
+                lambda: assemble_wavelength_result(inputs, glued, molecular, optical, rayleigh, kfs),
+            )
+        except Exception as exc:
+            attempts.append(
+                WavelengthAttempt.recoverable_failure(
+                    diagnostic_from_exception(
+                        wavelength_nm,
+                        exc,
+                        retrieval_stage=retrieval_stage,
+                    )
+                )
+            )
+            continue
         materializations.observe(result)
-        valid_retrieval_blocks += int(result.optical.retrieval_success_flag.sum())
-        results.append(result)
+        block_successes = int(result.optical.retrieval_success_flag.sum())
+        valid_retrieval_blocks += block_successes
+        if block_successes:
+            attempts.append(WavelengthAttempt.success(result))
+        else:
+            attempts.append(
+                WavelengthAttempt.recoverable_failure(
+                    WavelengthFailureDiagnostic(
+                        wavelength_nm=wavelength_nm,
+                        stage=WavelengthFailureStage.RETRIEVAL_VALIDATION,
+                        code=WavelengthFailureCode.NO_VALID_RETRIEVAL_BLOCK,
+                        message="Synthetic benchmark produced no valid optical block.",
+                    )
+                )
+            )
 
     if valid_retrieval_blocks == 0:
         raise RuntimeError("Synthetic benchmark produced no valid KFS retrieval blocks.")
+    product_contract = Level2ProductContract.from_attempts(
+        scenario.wavelengths_nm,
+        attempts,
+    )
+    if product_mode == "complete" and product_contract.completeness is not ProductCompleteness.COMPLETE:
+        raise RuntimeError("Complete benchmark fixture did not process every requested wavelength.")
+    if product_mode == "partial" and product_contract.completeness is not ProductCompleteness.PARTIAL:
+        raise RuntimeError("Partial benchmark fixture did not produce a partial product.")
+    results = [
+        attempt.result
+        for attempt in sorted(attempts, key=lambda item: item.wavelength_nm)
+        if attempt.result is not None
+    ]
 
     ds_l2 = _timed(
         timings,
         "dataset_assembly",
-        lambda: build_level2_dataset(ds_l1, results, altitude_m, input_path, config),
+        lambda: build_level2_dataset(
+            ds_l1,
+            results,
+            altitude_m,
+            input_path,
+            config,
+            product_contract,
+        ),
     )
     materializations.observe(ds_l2)
     _timed(timings, "output_validation", lambda: validate_level2_contract(ds_l2))
     encoding = {
         variable: {"zlib": True, "complevel": 4}
         for variable in ds_l2.data_vars
-        if ds_l2[variable].ndim > 0
+        if ds_l2[variable].ndim > 0 and ds_l2[variable].dtype.kind not in {"O", "S", "U"}
     }
     _timed(
         timings,
@@ -348,6 +413,9 @@ def execute_pipeline(input_path: Path, output_path: Path, scenario: Scenario) ->
         "observed_materialized_arrays": materializations.array_count,
         "observed_materialized_bytes": materializations.array_bytes,
         "valid_retrieval_blocks": valid_retrieval_blocks,
+        "product_completeness": product_contract.completeness.value,
+        "processed_wavelengths": list(product_contract.processed_wavelengths),
+        "failed_wavelengths": list(product_contract.failed_wavelengths),
     }
     ds_l1.close()
     ds_l2.close()
@@ -425,7 +493,12 @@ def environment_snapshot() -> dict[str, Any]:
     }
 
 
-def _worker(input_path: Path, scenario: Scenario, warmup_runs: int) -> dict[str, Any]:
+def _worker(
+    input_path: Path,
+    scenario: Scenario,
+    warmup_runs: int,
+    product_mode: str,
+) -> dict[str, Any]:
     rss_before_warmup = _current_rss_bytes()
     with tempfile.TemporaryDirectory(prefix="milgrau-level2-benchmark-worker-") as temporary_directory:
         temporary_path = Path(temporary_directory)
@@ -434,9 +507,10 @@ def _worker(input_path: Path, scenario: Scenario, warmup_runs: int) -> dict[str,
                 input_path,
                 temporary_path / f"warmup-{warmup_index}.nc",
                 scenario,
+                product_mode,
             )
             gc.collect()
-        measured = execute_pipeline(input_path, temporary_path / "measured.nc", scenario)
+        measured = execute_pipeline(input_path, temporary_path / "measured.nc", scenario, product_mode)
     peak_rss_bytes = _peak_rss_bytes()
     measured.update(
         {
@@ -501,7 +575,13 @@ def summarize_runs(runs: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     return summary
 
 
-def _coordinator(scenario: Scenario, repetitions: int, warmup_runs: int, threads: int) -> dict[str, Any]:
+def _coordinator(
+    scenario: Scenario,
+    repetitions: int,
+    warmup_runs: int,
+    threads: int,
+    product_mode: str,
+) -> dict[str, Any]:
     worker_environment = os.environ.copy()
     for name in _THREAD_ENVIRONMENT:
         worker_environment[name] = str(threads)
@@ -510,7 +590,12 @@ def _coordinator(scenario: Scenario, repetitions: int, warmup_runs: int, threads
     runs: list[dict[str, Any]] = []
     with tempfile.TemporaryDirectory(prefix="milgrau-level2-benchmark-input-") as temporary_directory:
         input_path = Path(temporary_directory) / f"{scenario.name}-level1.nc"
-        fixture = build_synthetic_level1(scenario)
+        fixture_scenario = (
+            scenario
+            if product_mode == "complete"
+            else replace(scenario, wavelengths_nm=(scenario.wavelengths_nm[-1],))
+        )
+        fixture = build_synthetic_level1(fixture_scenario)
         fixture.to_netcdf(input_path)
         fixture.close()
         for _ in range(repetitions):
@@ -522,6 +607,8 @@ def _coordinator(scenario: Scenario, repetitions: int, warmup_runs: int, threads
                 scenario.name,
                 "--warmup",
                 str(warmup_runs),
+                "--product-mode",
+                product_mode,
                 "--input",
                 str(input_path),
             ]
@@ -548,6 +635,8 @@ def _coordinator(scenario: Scenario, repetitions: int, warmup_runs: int, threads
             "n_profiles": scenario.n_profiles,
             "n_altitude": scenario.n_altitude,
             "wavelengths_nm": list(scenario.wavelengths_nm),
+            "available_wavelengths_nm": list(fixture_scenario.wavelengths_nm),
+            "product_mode": product_mode,
             "monte_carlo_iterations": scenario.monte_carlo_iterations,
             "profile_interval_minutes": scenario.profile_interval_minutes,
             "local_only": scenario.local_only,
@@ -574,8 +663,9 @@ def _human_summary(report: Mapping[str, Any]) -> str:
     output = summary["output_size_bytes"]
     return "\n".join(
         (
-            f"Scenario: {scenario['name']} ({scenario['n_profiles']} profiles, "
-            f"{scenario['n_altitude']} bins, {scenario['wavelengths_nm']} nm)",
+            f"Scenario: {scenario['name']} / {scenario['product_mode']} "
+            f"({scenario['n_profiles']} profiles, {scenario['n_altitude']} bins, "
+            f"requested {scenario['wavelengths_nm']} nm, available {scenario['available_wavelengths_nm']} nm)",
             f"Total: median {total['median']:.3f} s; min {total['min']:.3f} s; "
             f"max {total['max']:.3f} s; CV {total['coefficient_of_variation_percent']:.2f}%",
             f"Peak RSS: median {peak['median'] / (1024 ** 2):.1f} MiB",
@@ -590,6 +680,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--warmup", type=int, default=1, help="Full unmeasured pipeline runs in each worker.")
     parser.add_argument("--threads", type=int, default=1, help="Threads for Numba, OpenMP and BLAS workers.")
+    parser.add_argument("--product-mode", choices=("complete", "partial"), default="complete")
     parser.add_argument("--output", type=Path, help="Optional path for the complete JSON report.")
     parser.add_argument("--json", action="store_true", help="Print the complete JSON report instead of a summary.")
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
@@ -605,14 +696,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.worker:
         if args.input is None:
             raise SystemExit("--input is required in worker mode")
-        print(json.dumps(_worker(args.input, scenario, args.warmup), sort_keys=True))
+        print(json.dumps(_worker(args.input, scenario, args.warmup, args.product_mode), sort_keys=True))
         return 0
     if args.repetitions < 1:
         raise SystemExit("--repetitions must be one or greater")
     if args.threads < 1:
         raise SystemExit("--threads must be one or greater")
 
-    report = _coordinator(scenario, args.repetitions, args.warmup, args.threads)
+    report = _coordinator(
+        scenario,
+        args.repetitions,
+        args.warmup,
+        args.threads,
+        args.product_mode,
+    )
     serialized = json.dumps(report, indent=2, sort_keys=True) + "\n"
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)

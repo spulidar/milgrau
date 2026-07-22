@@ -9,7 +9,7 @@ montagem do dataset e escrita NetCDF.
 
 | Cenário | Perfis | Bins | Comprimentos de onda | Iterações MC | Uso |
 |---|---:|---:|---|---:|---|
-| `ci` | 3 | 240 | 532 nm | 5 | smoke benchmark pequeno |
+| `ci` | 3 | 240 | 355 e 532 nm | 5 | smoke benchmark multiespectral pequeno; modos `complete` e `partial` |
 | `typical` | 24 | 800 | 355 e 532 nm | 30 | medida reduzida de duas horas |
 | `large` | 288 | 4.000 | 355 e 532 nm | 300 | protocolo local de um dia; não executar no CI |
 
@@ -23,6 +23,7 @@ valores científicos propostos para dados reais.
 PYTHONDONTWRITEBYTECODE=1 .venv/bin/python \
   benchmarks/benchmark_level2.py \
   --scenario typical \
+  --product-mode complete \
   --repetitions 3 \
   --warmup 1 \
   --threads 1 \
@@ -83,6 +84,33 @@ runtime.
 
 O cenário `large` fica deliberadamente sem baseline neste host: o protocolo
 existe para execução local explícita e não deve consumir tempo ou memória do CI.
+
+## SCI-003: produto completo e parcial em 2026-07-22
+
+SCI-003 tornou o cenário `ci` explicitamente multiespectral. O modo
+`--product-mode complete` disponibiliza e processa 355/532 nm; o modo
+`--product-mode partial` solicita ambos, disponibiliza somente 532 nm e mede a
+falha localizada de 355 nm mais a escrita sem slice científico NaN. Por isso o
+tempo completo não deve ser comparado diretamente com o baseline histórico
+`ci` de uma única wavelength. Foram usados processos isolados, um warm-up por
+processo e um thread por runtime.
+
+| Modo | Repetições | Tempos totais (s) | Mediana | CV | Pico RSS mediano | NetCDF | Dataset em memória |
+|---|---:|---|---:|---:|---:|---:|---:|
+| completo 355/532 | 5 | 0,2882; 0,2985; 0,2997; 0,2894; 0,3059 | 0,2985 s | 2,24% | 308,8 MiB | 432.820 bytes | 163.270 bytes |
+| parcial, somente 532 | 3 | 0,2128; 0,2092; 0,2111 | 0,2111 s | 0,71% | 309,2 MiB | 400.563 bytes | 82.854 bytes |
+
+O produto completo teve dois blocos válidos (um por wavelength) e permaneceu
+sob o orçamento de alerta de mediana, memória e saída. A mediana de gluing foi
+0,1410 s para dois wavelengths, coerente com aproximadamente duas vezes os
+0,0701 s do checkpoint SCI-002 de uma wavelength; não há evidência de regressão
+relevante no caminho glued por wavelength.
+
+Omitir a wavelength falha reduziu o arquivo em 32.257 bytes (7,45%) e evitou
+80.416 bytes de arrays científicos materializados no dataset (49,25%). Um slice
+hipotético inteiramente NaN comprimiria de modo diferente, portanto seu tamanho
+em disco não foi inventado sem materializar o schema rejeitado; os números
+reportados comparam apenas os dois produtos reais aprovados.
 
 ## Orçamento inicial aprovado
 

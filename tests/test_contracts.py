@@ -108,8 +108,17 @@ def test_validate_level2_contract_rejects_wrong_glued_signal_dims() -> None:
             "retrieval_input_valid_flag": (("time", "wavelength"), time_state),
             "retrieval_input_invalid_reason": (("time", "wavelength"), np.zeros_like(time_state)),
             "retrieval_success_flag": (("block_time", "wavelength"), np.ones((1, 1), dtype=np.int8)),
+            "retrieval_success_fraction": (("wavelength",), np.ones(1, dtype=np.float64)),
+            "requested_wavelengths": (("requested_wavelength",), np.array([532], dtype=np.int32)),
+            "processed_wavelengths": (("processed_wavelength",), np.array([532], dtype=np.int32)),
+            "failed_wavelengths": (("failed_wavelength",), np.array([], dtype=np.int32)),
+            "failed_wavelength_stage": (("failed_wavelength",), np.array([], dtype=np.int8)),
+            "failed_wavelength_code": (("failed_wavelength",), np.array([], dtype=np.int16)),
+            "failed_wavelength_message": (("failed_wavelength",), np.array([], dtype=str)),
+            "failed_wavelength_cause": (("failed_wavelength",), np.array([], dtype=str)),
         },
         coords={"time": time, "block_time": block_time, "wavelength": wavelength, "altitude": altitude},
+        attrs={"product_completeness": "complete", "product_status": "success"},
     )
 
     with pytest.raises(ValueError):
@@ -137,8 +146,17 @@ def test_validate_level2_contract_accepts_minimal_optical_dataset() -> None:
             "retrieval_input_valid_flag": (("time", "wavelength"), time_state),
             "retrieval_input_invalid_reason": (("time", "wavelength"), np.zeros_like(time_state)),
             "retrieval_success_flag": (("block_time", "wavelength"), np.ones((1, 1), dtype=np.int8)),
+            "retrieval_success_fraction": (("wavelength",), np.ones(1, dtype=np.float64)),
+            "requested_wavelengths": (("requested_wavelength",), np.array([532], dtype=np.int32)),
+            "processed_wavelengths": (("processed_wavelength",), np.array([532], dtype=np.int32)),
+            "failed_wavelengths": (("failed_wavelength",), np.array([], dtype=np.int32)),
+            "failed_wavelength_stage": (("failed_wavelength",), np.array([], dtype=np.int8)),
+            "failed_wavelength_code": (("failed_wavelength",), np.array([], dtype=np.int16)),
+            "failed_wavelength_message": (("failed_wavelength",), np.array([], dtype=str)),
+            "failed_wavelength_cause": (("failed_wavelength",), np.array([], dtype=str)),
         },
         coords={"time": time, "block_time": block_time, "wavelength": wavelength, "altitude": altitude},
+        attrs={"product_completeness": "complete", "product_status": "success"},
     )
 
     validate_level2_contract(ds)

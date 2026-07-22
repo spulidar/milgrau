@@ -121,9 +121,63 @@ have `retrieval_success_flag=0` if Rayleigh QA or either KFS side fails later.
 The current schema duplicates several block states on `time`; ENG-022/035 will
 centralize temporal representation later without changing these semantics.
 
-The SCI-002 schema-only golden digest (the approved glued optical values remain
-covered independently by numeric assertions) is:
+The SCI-002 checkpoint schema-only golden digest (the approved glued optical
+values remain covered independently by numeric assertions) was:
 
 ```text
 4aa7f2102e5a2d4060d32311539780196a4d0b2e794770b96782ba715457d002
 ```
+
+## SCI-003 multispectral completeness
+
+Each configured wavelength is attempted independently. A wavelength is
+`processed` only when its typed contract contains at least one block with
+`retrieval_success_flag=1`; rejected blocks may coexist with successful blocks,
+and `retrieval_success_fraction` records that internal coverage separately.
+A pre-contract failure or a contract with no valid optical block is a failed
+wavelength and is omitted from the scientific `wavelength` coordinate.
+
+`Level2ProductContract` keeps the following states deterministic and mutually
+consistent:
+
+- `requested_wavelengths`: every wavelength evaluated in ascending order;
+- `processed_wavelengths`: exactly the values in scientific `wavelength`;
+- `failed_wavelengths`: requested values omitted from scientific arrays;
+- `complete/success`: processed is requested and failed is empty;
+- `partial/partial_failure`: at least one processed and one failed;
+- `failed/failure`: no processed wavelength; this state is operational only and
+  cannot be written as a scientific NetCDF.
+
+Before SCI-003, a per-wavelength exception was already caught, but a resulting
+partial file had no explicit completeness contract, returned operational
+success, and could pass the generic provenance skip. A result with no valid
+retrieval block could also be persisted as an all-NaN wavelength. After
+SCI-003, the behavior is:
+
+| Requested outcome | Scientific file | `wavelength` | Product status | Execution status |
+| --- | --- | --- | --- | --- |
+| all processed | written | every processed wavelength | `success` | `success` |
+| some processed | written | processed wavelengths only | `partial_failure` | `recoverable_failure` |
+| none processed | not replaced/written | none | `failure` | recoverable for local data failures |
+
+Auxiliary integer arrays persist requested, processed, and failed lists.
+Failure stage/code enums and short message/cause arrays describe omitted
+wavelengths without embedding tracebacks in NetCDF. Scientific variables of a
+successful wavelength are numerically identical to an isolated execution under
+the same configuration.
+
+The expected provenance fingerprint includes the requested list. The sidecar
+stores processed/failed lists and product status as result metadata outside the
+expectation fingerprint. Only an intact `complete/success` result with every
+requested wavelength processed authorizes incremental skip. Partial and legacy
+products without explicit completeness are reprocessed in full; slices from
+different runs are never merged.
+
+The SCI-003 contract digest is:
+
+```text
+8b736f21ac09edf3ee8191b1fe079c92998ce81ed2fe380c46d5784138bc1508
+```
+
+This digest change reflects the explicit completeness schema and does not alter
+the SCI-001 Fernald-v2 equations. Existing Level 2 products must be reprocessed.

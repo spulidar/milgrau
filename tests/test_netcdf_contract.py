@@ -45,7 +45,9 @@ EXPECTED_LEVEL2_DATA_VARS = frozenset(
     scaled_molecular_range_corrected_signal_block scattering_ratio_block scattering_ratio_mean
     retrieval_input_invalid_reason retrieval_input_invalid_reason_block
     retrieval_input_snr_median retrieval_input_snr_median_block
-    retrieval_input_valid_flag retrieval_input_valid_flag_block retrieval_success_flag
+    retrieval_input_valid_flag retrieval_input_valid_flag_block retrieval_success_flag retrieval_success_fraction
+    requested_wavelengths processed_wavelengths failed_wavelengths
+    failed_wavelength_stage failed_wavelength_code failed_wavelength_message failed_wavelength_cause
     signal_source_flag signal_source_flag_block simulated_molecular_range_corrected_signal
     simulated_molecular_signal single_channel_fallback_flag single_channel_fallback_flag_block
     """.split()
@@ -162,7 +164,15 @@ def test_lebear_generates_synthetic_level2_product(tmp_path: Path) -> None:
     assert output_path.exists()
     with xr.open_dataset(output_path) as ds_l2:
         assert set(ds_l2.data_vars) == EXPECTED_LEVEL2_DATA_VARS
-        assert dict(ds_l2.sizes) == {"wavelength": 1, "altitude": 200, "block_time": 1, "time": 3}
+        assert dict(ds_l2.sizes) == {
+            "wavelength": 1,
+            "altitude": 200,
+            "block_time": 1,
+            "time": 3,
+            "requested_wavelength": 1,
+            "processed_wavelength": 1,
+            "failed_wavelength": 0,
+        }
         assert ds_l2["molecular_backscatter"].dims == ("wavelength", "altitude")
         assert ds_l2["glued_corrected_signal"].dims == ("time", "wavelength", "altitude")
         assert ds_l2["glued_corrected_signal_block"].dims == ("block_time", "wavelength", "altitude")

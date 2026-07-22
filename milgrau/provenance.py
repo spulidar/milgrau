@@ -58,15 +58,23 @@ class ProductProvenance:
     fingerprint: str
     payload: dict[str, Any]
 
-    def manifest_payload(self, output_path: str | Path) -> dict[str, Any]:
+    def manifest_payload(
+        self,
+        output_path: str | Path,
+        *,
+        result_metadata: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Return the persisted manifest, including the generated-output digest."""
-        return {
+        manifest = {
             "format_version": PROVENANCE_FORMAT_VERSION,
             "product": self.product,
             "fingerprint": self.fingerprint,
             "payload": self.payload,
             "output": file_signature(output_path),
         }
+        if result_metadata is not None:
+            manifest["result"] = _json_value(result_metadata)
+        return manifest
 
 
 def _json_value(value: Any) -> Any:
@@ -273,12 +281,17 @@ def load_provenance_manifest(output_path: str | Path) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
-def write_provenance_manifest(output_path: str | Path, provenance: ProductProvenance) -> Path:
+def write_provenance_manifest(
+    output_path: str | Path,
+    provenance: ProductProvenance,
+    *,
+    result_metadata: Mapping[str, Any] | None = None,
+) -> Path:
     """Atomically write provenance only after a complete product exists."""
     output = Path(output_path)
     manifest_path = provenance_manifest_path(output)
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = provenance.manifest_payload(output)
+    payload = provenance.manifest_payload(output, result_metadata=result_metadata)
     descriptor, temporary_name = tempfile.mkstemp(
         dir=manifest_path.parent,
         prefix=f".{manifest_path.name}.",

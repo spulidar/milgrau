@@ -28,7 +28,7 @@ def test_synthetic_level1_fixture_is_deterministic() -> None:
     second = build_synthetic_level1(SCENARIOS["ci"])
 
     xr.testing.assert_identical(first, second)
-    assert first.sizes == {"time": 3, "channel": 2, "altitude": 240}
+    assert first.sizes == {"time": 3, "channel": 4, "altitude": 240}
     assert first.attrs["Benchmark_scenario"] == "ci"
 
 
@@ -63,6 +63,36 @@ def test_pipeline_benchmark_measures_all_explicit_stages(tmp_path: Path) -> None
     assert result["observed_materialized_arrays"] > 0
     assert result["observed_materialized_bytes"] > result["output_dataset_bytes"]
     assert result["output_size_bytes"] == output_path.stat().st_size
+
+
+def test_pipeline_benchmark_measures_partial_product_without_nan_wavelength(tmp_path: Path) -> None:
+    scenario = Scenario(
+        name="test-partial",
+        description="Minimal partial test workload.",
+        n_profiles=3,
+        n_altitude=240,
+        wavelengths_nm=(355, 532),
+        monte_carlo_iterations=2,
+    )
+    available = Scenario(
+        name="test-partial",
+        description=scenario.description,
+        n_profiles=scenario.n_profiles,
+        n_altitude=scenario.n_altitude,
+        wavelengths_nm=(532,),
+        monte_carlo_iterations=scenario.monte_carlo_iterations,
+    )
+    input_path = tmp_path / "synthetic-level1.nc"
+    output_path = tmp_path / "synthetic-level2.nc"
+    build_synthetic_level1(available).to_netcdf(input_path)
+
+    result = execute_pipeline(input_path, output_path, scenario, "partial")
+
+    assert result["product_completeness"] == "partial"
+    assert result["processed_wavelengths"] == [532]
+    assert result["failed_wavelengths"] == [355]
+    with xr.open_dataset(output_path) as dataset:
+        assert dataset["wavelength"].values.tolist() == [532]
 
 
 def test_benchmark_summary_records_variability() -> None:

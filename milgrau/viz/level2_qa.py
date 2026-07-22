@@ -13,6 +13,7 @@ import pandas as pd
 import xarray as xr
 from scipy.signal import savgol_filter
 
+from milgrau.level2.completeness import format_dataset_product_summary
 from milgrau.viz.quicklooks import (
     extract_datetime_strings,
     safe_error_of_mean,
@@ -775,7 +776,14 @@ def plot_all_level2_qa(
     ds_l1: xr.Dataset | None = None,
 ) -> list[Path]:
     """Generate available Level 2 QA plots for each wavelength."""
-    generated: list[Path] = []
+    output_path = Path(output_folder)
+    output_path.mkdir(parents=True, exist_ok=True)
+    status_path = output_path / f"QA_L2_Product_Status_{file_name_prefix}.txt"
+    status_path.write_text(
+        "\n".join(format_dataset_product_summary(ds_l2)) + "\n",
+        encoding="utf-8",
+    )
+    generated: list[Path] = [status_path]
     qa_cfg = config.get("visualization", {}).get("level2_qa", {}) or {}
     for wavelength_nm in get_wavelength_values(ds_l2):
         if bool(qa_cfg.get("generate_gluing_qa", True)):

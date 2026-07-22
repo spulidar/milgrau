@@ -12,6 +12,7 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Final
 
+import numpy as np
 import xarray as xr
 
 
@@ -46,6 +47,14 @@ LEVEL2_REQUIRED_VARIABLES: Final[tuple[str, ...]] = (
     "retrieval_input_valid_flag",
     "retrieval_input_invalid_reason",
     "retrieval_success_flag",
+    "retrieval_success_fraction",
+    "requested_wavelengths",
+    "processed_wavelengths",
+    "failed_wavelengths",
+    "failed_wavelength_stage",
+    "failed_wavelength_code",
+    "failed_wavelength_message",
+    "failed_wavelength_cause",
 )
 LEVEL0_RAW_DATA_DIMS: Final[tuple[str, ...]] = ("time", "channels", "points")
 LEVEL0_TIME_SCALE_DIMS: Final[tuple[str, ...]] = ("time", "nb_of_time_scales")
@@ -147,6 +156,96 @@ def validate_level2_contract(ds: xr.Dataset) -> None:
         LEVEL2_BLOCK_STATE_DIMS,
         "Level 2 retrieval_success_flag",
     )
+    _require_exact_dims(
+        ds["retrieval_success_fraction"],
+        ("wavelength",),
+        "Level 2 retrieval_success_fraction",
+    )
+    _validate_level2_completeness(ds)
+
+
+def _validate_level2_completeness(ds: xr.Dataset) -> None:
+    """Validate SCI-003 lists, diagnostics and scientific wavelength membership."""
+    # Imported lazily to avoid the level2 package's public orchestration imports
+    # forming a cycle while this shared I/O contract module is initialized.
+    from milgrau.level2.completeness import (
+        Level2ProductContract,
+        ProductCompleteness,
+        ProductStatus,
+        WavelengthFailureCode,
+        WavelengthFailureDiagnostic,
+        WavelengthFailureStage,
+    )
+
+    expected_dims = {
+        "requested_wavelengths": ("requested_wavelength",),
+        "processed_wavelengths": ("processed_wavelength",),
+        "failed_wavelengths": ("failed_wavelength",),
+        "failed_wavelength_stage": ("failed_wavelength",),
+        "failed_wavelength_code": ("failed_wavelength",),
+        "failed_wavelength_message": ("failed_wavelength",),
+        "failed_wavelength_cause": ("failed_wavelength",),
+    }
+    for name, dims in expected_dims.items():
+        _require_exact_dims(ds[name], dims, f"Level 2 {name}")
+
+    try:
+        completeness = ProductCompleteness(str(ds.attrs["product_completeness"]))
+        product_status = ProductStatus(str(ds.attrs["product_status"]))
+    except (KeyError, ValueError) as exc:
+        raise ValueError(
+            "Level 2 product_completeness/product_status attributes are missing or invalid."
+        ) from exc
+    requested = tuple(int(value) for value in np.asarray(ds["requested_wavelengths"].values).tolist())
+    processed = tuple(int(value) for value in np.asarray(ds["processed_wavelengths"].values).tolist())
+    failed = tuple(int(value) for value in np.asarray(ds["failed_wavelengths"].values).tolist())
+    stages = np.asarray(ds["failed_wavelength_stage"].values).tolist()
+    codes = np.asarray(ds["failed_wavelength_code"].values).tolist()
+    messages = np.asarray(ds["failed_wavelength_message"].values).astype(str).tolist()
+    causes = np.asarray(ds["failed_wavelength_cause"].values).astype(str).tolist()
+    diagnostics: list[WavelengthFailureDiagnostic] = []
+    try:
+        diagnostics = [
+            WavelengthFailureDiagnostic(
+                wavelength_nm=wavelength,
+                stage=WavelengthFailureStage(int(stage)),
+                code=WavelengthFailureCode(int(code)),
+                message=message,
+                cause_summary=cause,
+            )
+            for wavelength, stage, code, message, cause in zip(
+                failed,
+                stages,
+                codes,
+                messages,
+                causes,
+                strict=True,
+            )
+        ]
+        product_contract = Level2ProductContract(
+            requested_wavelengths=requested,
+            processed_wavelengths=processed,
+            failed_wavelengths=failed,
+            completeness=completeness,
+            product_status=product_status,
+            failure_diagnostics=tuple(diagnostics),
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid Level 2 multispectral completeness contract: {exc}") from exc
+    if product_contract.completeness is ProductCompleteness.FAILED:
+        raise ValueError("A published Level 2 scientific file requires at least one processed wavelength.")
+    scientific_wavelengths = tuple(int(value) for value in np.asarray(ds["wavelength"].values).tolist())
+    if scientific_wavelengths != product_contract.processed_wavelengths:
+        raise ValueError("Scientific wavelength coordinate must equal processed_wavelengths exactly.")
+    retrieval_success = np.asarray(ds["retrieval_success_flag"].values, dtype=np.int8)
+    if retrieval_success.ndim != 2 or retrieval_success.shape[1] != len(scientific_wavelengths):
+        raise ValueError("retrieval_success_flag is not conformable with processed wavelengths.")
+    if np.any(np.sum(retrieval_success == 1, axis=0) == 0):
+        raise ValueError("Every processed wavelength requires at least one successful optical block.")
+    expected_fraction = np.mean(retrieval_success == 1, axis=0)
+    observed_fraction = np.asarray(ds["retrieval_success_fraction"].values, dtype=np.float64)
+    if not np.allclose(observed_fraction, expected_fraction, rtol=0.0, atol=0.0):
+        raise ValueError("retrieval_success_fraction must equal the successful block fraction.")
 
 
 def netcdf_satisfies_contract(path: str | Path, validator: Callable[[xr.Dataset], None]) -> bool:

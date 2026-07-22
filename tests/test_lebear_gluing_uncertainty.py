@@ -58,14 +58,13 @@ def _write_level1(path: Path) -> Path:
     channel = np.array(["532.AN", "532.PC"], dtype=object)
     shape = (time.size, channel.size, altitude.size)
 
-    analog = np.tile(np.linspace(10.0, 100.0, altitude.size), (time.size, 1))
-    photon = 2.0 * analog + 5.0
-    rcs = np.stack([analog, photon], axis=1).astype(np.float32)
-    rcs_error = np.empty(shape, dtype=np.float32)
-    rcs_error[:, 0, :] = 3.0
-    rcs_error[:, 1, :] = 11.0
-    corrected = rcs.copy()
-    corrected_error = rcs_error.copy()
+    analog = np.tile(np.exp(-altitude / 900.0) + 0.1, (time.size, 1))
+    photon = 2.0 * analog + 0.05
+    corrected = np.stack([analog, photon], axis=1).astype(np.float32)
+    corrected_error = (0.02 * corrected).astype(np.float32)
+    range_factor = altitude.astype(np.float32) ** 2
+    rcs = corrected * range_factor[None, None, :]
+    rcs_error = corrected_error * range_factor[None, None, :]
 
     ds = xr.Dataset(
         data_vars={
@@ -95,7 +94,13 @@ def _config(tmp_path: Path) -> dict:
             "temporal_average_minutes": 15,
             "monte_carlo_iterations": 5,
             "random_seed": 123,
-            "molecular_fit": {"ref_alt_min_m": 500.0, "ref_alt_max_m": 1500.0, "ref_window_bins": 20},
+            "molecular_fit": {
+                "ref_alt_min_m": 500.0,
+                "ref_alt_max_m": 1500.0,
+                "ref_window_bins": 20,
+                "max_relative_slope": 10.0,
+                "max_relative_variance": 10.0,
+            },
             "gluing": {
                 "window_length_bins": 20,
                 "correlation_threshold": 0.5,

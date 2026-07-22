@@ -19,6 +19,7 @@ import xarray as xr
 from plotly.subplots import make_subplots
 
 from milgrau.config.loader import load_config
+from milgrau.explorer.level2 import available_level2_wavelengths, level2_status_summary
 from milgrau.io.paths import LEVEL1_SUFFIX, LEVEL2_SUFFIX, processed_data_root
 from milgrau.viz.style import channel_color
 
@@ -1011,7 +1012,27 @@ def render_level2(row: dict[str, Any]) -> None:
     ds_l2 = open_dataset(path)
     ds_l1 = open_dataset(row["level1_path"]) if row.get("level1_path") else None
     prefix = safe_key(row.get("save_id"), "level2")
-    wavelengths = wavelength_values(ds_l2)
+    product_summary = level2_status_summary(ds_l2)
+    processed_label = ", ".join(
+        f"{value} nm" for value in product_summary["processed_wavelengths"]
+    ) or "nenhum"
+    failed_label = ", ".join(
+        f"{value} nm" for value in product_summary["failed_wavelengths"]
+    ) or "nenhum"
+    status_text = (
+        f"Completude: {product_summary['product_completeness']} · "
+        f"processados: {processed_label} · falhos: {failed_label}"
+    )
+    if product_summary["product_completeness"] == "partial":
+        st.warning(status_text)
+        for failure in product_summary["failures"]:
+            st.caption(
+                f"{failure['wavelength_nm']} nm: {failure['stage']} / "
+                f"{failure['code']} — {failure['message']}"
+            )
+    else:
+        st.caption(status_text)
+    wavelengths = available_level2_wavelengths(ds_l2)
     wavelength = st.selectbox("Comprimento de onda", wavelengths, key=f"{prefix}_wave") if wavelengths else None
     smooth_bins = st.slider("Suavização vertical dos perfis (bins)", 1, 80, 15, key=f"{prefix}_smooth")
     available_modes = ["Genérico"]

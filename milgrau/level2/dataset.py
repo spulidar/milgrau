@@ -15,6 +15,12 @@ from milgrau.level2.config import (
     get_molecular_fit_config,
     kfs_mode_description,
 )
+from milgrau.level2.completeness import (
+    Level2ProductContract,
+    WavelengthFailureCode,
+    WavelengthFailureStage,
+    enum_flag_metadata,
+)
 from milgrau.level2.contracts import WavelengthRetrievalResult, validate_retrieval_results
 from milgrau.scientific import elastic_inversion_algorithm_metadata
 
@@ -25,10 +31,15 @@ def build_level2_dataset(
     altitude_m: np.ndarray,
     source_file: Path,
     config: Mapping[str, Any],
+    product_contract: Level2ProductContract,
 ) -> xr.Dataset:
     """Build an xarray Level 2 dataset from wavelength processing results."""
     time_values = ds_l1["time"].values
+    if not isinstance(product_contract, Level2ProductContract):
+        raise TypeError("product_contract must be Level2ProductContract.")
     validate_retrieval_results(results, n_time=len(time_values), n_altitude=len(altitude_m))
+    product_contract.validate_results(results)
+    results = sorted(results, key=lambda result: int(result.wavelength_nm))
     wavelengths = np.asarray([result.wavelength_nm for result in results], dtype=np.int32)
     block_time = results[0].block_time
     coords = {"time": time_values, "block_time": block_time, "wavelength": wavelengths, "altitude": altitude_m}
@@ -84,6 +95,10 @@ def build_level2_dataset(
             "aerosol_extinction_block": (("block_time", "wavelength", "altitude"), stack_block(lambda result: result.optical.aerosol_extinction_block)),
             "aerosol_extinction_error_block": (("block_time", "wavelength", "altitude"), stack_block(lambda result: result.optical.aerosol_extinction_error_block)),
             "retrieval_success_flag": (("block_time", "wavelength"), stack_block(lambda result: result.optical.retrieval_success_flag).astype(np.int8)),
+            "retrieval_success_fraction": (
+                ("wavelength",),
+                vector(lambda result: float(np.mean(result.optical.retrieval_success_flag == 1))),
+            ),
             "rayleigh_reference_altitude_m": (("wavelength",), vector(lambda result: result.rayleigh.reference_altitude_m)),
             "rayleigh_reference_start_altitude_m": (("wavelength",), vector(lambda result: result.rayleigh.reference_start_altitude_m)),
             "rayleigh_reference_stop_altitude_m": (("wavelength",), vector(lambda result: result.rayleigh.reference_stop_altitude_m)),
@@ -142,16 +157,75 @@ def build_level2_dataset(
             "retrieval_input_valid_flag_block": (("block_time", "wavelength"), stack_block(lambda result: result.signal_selection.retrieval_input_valid_flag_block).astype(np.int8)),
             "retrieval_input_invalid_reason_block": (("block_time", "wavelength"), stack_block(lambda result: result.signal_selection.retrieval_input_invalid_reason_block).astype(np.int8)),
             "retrieval_input_snr_median_block": (("block_time", "wavelength"), stack_block(lambda result: result.signal_selection.retrieval_input_snr_median_block)),
+            "requested_wavelengths": (
+                ("requested_wavelength",),
+                np.asarray(product_contract.requested_wavelengths, dtype=np.int32),
+            ),
+            "processed_wavelengths": (
+                ("processed_wavelength",),
+                np.asarray(product_contract.processed_wavelengths, dtype=np.int32),
+            ),
+            "failed_wavelengths": (
+                ("failed_wavelength",),
+                np.asarray(product_contract.failed_wavelengths, dtype=np.int32),
+            ),
+            "failed_wavelength_stage": (
+                ("failed_wavelength",),
+                np.asarray(
+                    [int(item.stage) for item in product_contract.failure_diagnostics],
+                    dtype=np.int8,
+                ),
+            ),
+            "failed_wavelength_code": (
+                ("failed_wavelength",),
+                np.asarray(
+                    [int(item.code) for item in product_contract.failure_diagnostics],
+                    dtype=np.int16,
+                ),
+            ),
+            "failed_wavelength_message": (
+                ("failed_wavelength",),
+                np.asarray(
+                    [item.message for item in product_contract.failure_diagnostics],
+                    dtype=str,
+                ),
+            ),
+            "failed_wavelength_cause": (
+                ("failed_wavelength",),
+                np.asarray(
+                    [item.cause_summary for item in product_contract.failure_diagnostics],
+                    dtype=str,
+                ),
+            ),
         },
         coords=coords,
         attrs=dict(ds_l1.attrs),
     )
     ds_l2["altitude"].attrs.update({"units": "m", "long_name": "Altitude above station"})
     ds_l2["wavelength"].attrs.update({"units": "nm"})
+    for name in ("requested_wavelengths", "processed_wavelengths", "failed_wavelengths"):
+        ds_l2[name].attrs.update({"units": "nm"})
+    stage_values, stage_meanings = enum_flag_metadata(WavelengthFailureStage)
+    code_values, code_meanings = enum_flag_metadata(WavelengthFailureCode)
+    ds_l2["failed_wavelength_stage"].attrs.update(
+        {"flag_values": stage_values, "flag_meanings": stage_meanings}
+    )
+    ds_l2["failed_wavelength_code"].attrs.update(
+        {"flag_values": code_values, "flag_meanings": code_meanings}
+    )
+    ds_l2["failed_wavelength_message"].attrs.update(
+        {"description": "Short human-readable diagnosis; stable logic uses the numeric stage/code fields."}
+    )
+    ds_l2["failed_wavelength_cause"].attrs.update(
+        {"description": "Compact cause class/summary; full tracebacks remain operational logs only."}
+    )
     ds_l2["glued_corrected_signal"].attrs.update({"description": "Analog/PC merged Level 1 corrected signal before range correction."})
     ds_l2["glued_range_corrected_signal"].attrs.update({"description": "Range-corrected signal computed after gluing corrected_signal."})
     ds_l2["gluing_merge_source_flag"].attrs.update({"flag_values": "0, 1, 2, 3", "flag_meanings": "photon_counting blend analog invalid", "description": "Per-bin source used by the corrected-signal gluing step."})
     ds_l2["retrieval_success_flag"].attrs.update({"flag_values": "0, 1", "flag_meanings": "failed success", "description": "Valid retrieval input passed Rayleigh QA and both KFS-v2 branches; only successful blocks enter mean optical products."})
+    ds_l2["retrieval_success_fraction"].attrs.update(
+        {"units": "1", "description": "Fraction of blocks with successful optical retrieval; independent of wavelength presence/completeness."}
+    )
     ds_l2["scattering_ratio_mean"].attrs.update({"units": "1", "description": "Mean of valid block scattering ratios."})
     ds_l2["scattering_ratio_block"].attrs.update({"units": "1", "description": "Block scattering ratio from block-mean glued RCS and block-scaled molecular RCS."})
     ds_l2["rayleigh_calibration_intercept"].attrs.update({"description": "Median intercept from free linear Rayleigh diagnostic fit. The main calibration factor is constrained through the origin."})
@@ -214,6 +288,10 @@ def build_level2_dataset(
             "Gluing_sources": ";".join(result.glued.source for result in results),
             "Analog_channels": ";".join(str(result.glued.analog_channel) for result in results),
             "Photon_channels": ";".join(str(result.glued.photon_channel) for result in results),
+            "product_completeness": product_contract.completeness.value,
+            "product_status": product_contract.product_status.value,
+            "Wavelength_Order": "Ascending numeric order; scientific wavelength equals processed_wavelengths exactly.",
+            "Partial_Product_Reuse": "Partial products are never incrementally reusable; the next run recalculates every requested wavelength.",
             "uncertainty_scope": "partial Monte Carlo dispersion; not a total uncertainty budget",
             "scientific_reprocessing_required": "Level 2 optical products generated with Fernald implementation versions before 2 must be reprocessed.",
             **elastic_inversion_algorithm_metadata(),

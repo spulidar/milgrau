@@ -14,11 +14,17 @@ import pytest
 import xarray as xr
 
 from milgrau.io.paths import level2_output_path
+from milgrau.io.contracts import validate_level2_contract
 from milgrau.level2 import lebear
 from milgrau.level2 import qa as level2_qa
 from milgrau.level2 import retrieval as retrieval_module
 from milgrau.level2.contracts import WavelengthRetrievalResult
 from milgrau.level2.contracts import RetrievalInputInvalidReason, SignalSource
+from milgrau.level2.completeness import (
+    Level2ProductContract,
+    ProductCompleteness,
+    ProductStatus,
+)
 from milgrau.level2.dataset import build_level2_dataset
 from milgrau.level2.retrieval import (
     BlockGluingResult,
@@ -32,6 +38,8 @@ from milgrau.level2.retrieval import (
     retrieve_optical_blocks,
 )
 from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary
+from milgrau.provenance import load_provenance_manifest, provenance_manifest_path
+from milgrau.viz.level2_qa import get_wavelength_values, plot_all_level2_qa
 
 
 class _ListLogger:
@@ -141,6 +149,386 @@ def _config(tmp_path: Path, *, allow_single_channel_fallback: bool = True, kfs_m
     }
 
 
+def _multispectral_config(tmp_path: Path, wavelengths: list[int]) -> dict:
+    """Return the compact fixture configured for an explicit wavelength set."""
+    config = _config(tmp_path)
+    config["inversion"]["wavelengths_to_process"] = list(wavelengths)
+    config["inversion"]["lidar_ratios_sr"] = {
+        str(wavelength): {"01": 60.0} for wavelength in wavelengths
+    }
+    config["inversion"]["lidar_ratio_std_sr"] = {
+        str(wavelength): 5.0 for wavelength in wavelengths
+    }
+    return config
+
+
+def _complete_product_contract(*wavelengths: int) -> Level2ProductContract:
+    ordered = tuple(sorted(wavelengths))
+    return Level2ProductContract(
+        requested_wavelengths=ordered,
+        processed_wavelengths=ordered,
+        failed_wavelengths=(),
+        completeness=ProductCompleteness.COMPLETE,
+        product_status=ProductStatus.SUCCESS,
+    )
+
+
+def test_sci003_characterizes_two_successful_wavelengths(tmp_path: Path) -> None:
+    """Both successful requests produce an explicitly complete product."""
+    level1 = _write_level1(
+        tmp_path / "synthetic_level1_rcs.nc",
+        ["355.PC", "532.PC"],
+    )
+
+    summary = lebear.process_single_level1_file(
+        level1,
+        _multispectral_config(tmp_path, [355, 532]),
+        _ListLogger(),  # type: ignore[arg-type]
+    )
+
+    assert summary.results[0].status is ExecutionStatus.SUCCESS
+    with xr.open_dataset(level2_output_path(level1)) as ds:
+        assert ds["wavelength"].values.tolist() == [355, 532]
+        assert ds.attrs["product_completeness"] == "complete"
+        assert ds.attrs["product_status"] == "success"
+        assert ds["requested_wavelengths"].values.tolist() == [355, 532]
+        assert ds["processed_wavelengths"].values.tolist() == [355, 532]
+        assert ds["failed_wavelengths"].values.tolist() == []
+
+
+@pytest.mark.parametrize(
+    ("requested", "available"),
+    [([355, 532], 532), ([532, 355], 355)],
+)
+def test_sci003_one_failed_wavelength_is_explicit_partial_failure(
+    tmp_path: Path,
+    requested: list[int],
+    available: int,
+) -> None:
+    """A local wavelength failure preserves the other wavelength and returns exit 1."""
+    level1 = _write_level1(
+        tmp_path / "synthetic_level1_rcs.nc",
+        [f"{available}.PC"],
+    )
+
+    summary = lebear.process_single_level1_file(
+        level1,
+        _multispectral_config(tmp_path, requested),
+        _ListLogger(),  # type: ignore[arg-type]
+    )
+
+    assert summary.overall_status is ExecutionStatus.RECOVERABLE_FAILURE
+    assert int(summary.exit_code) == 1
+    partial_result = next(result for result in summary.results if result.stage == "level2.partial")
+    assert partial_result.status is ExecutionStatus.RECOVERABLE_FAILURE
+    assert partial_result.output_path == level2_output_path(level1)
+    with xr.open_dataset(level2_output_path(level1)) as ds:
+        assert ds["wavelength"].values.tolist() == [available]
+        assert ds.attrs["product_completeness"] == "partial"
+        assert ds.attrs["product_status"] == "partial_failure"
+        assert ds["requested_wavelengths"].values.tolist() == [355, 532]
+        assert ds["processed_wavelengths"].values.tolist() == [available]
+        assert ds["failed_wavelengths"].values.tolist() == [355 if available == 532 else 532]
+        assert ds["failed_wavelength_stage"].values.tolist() == [1]
+        assert ds["failed_wavelength_code"].values.tolist() == [1]
+        assert "No channel found" in str(ds["failed_wavelength_message"].item())
+        assert "RetrievalStageError" in str(ds["failed_wavelength_cause"].item())
+
+
+def test_sci003_characterizes_total_wavelength_failure(tmp_path: Path) -> None:
+    """Before SCI-003, total local failure writes no new scientific product."""
+    level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["1064.PC"])
+
+    summary = lebear.process_single_level1_file(
+        level1,
+        _multispectral_config(tmp_path, [355, 532]),
+        _ListLogger(),  # type: ignore[arg-type]
+    )
+
+    assert summary.results[0].status is ExecutionStatus.RECOVERABLE_FAILURE
+    assert summary.results[0].metadata["product_completeness"] == "failed"
+    assert summary.results[0].metadata["product_status"] == "failure"
+    assert not level2_output_path(level1).exists()
+
+
+def test_sci003_characterizes_unrequested_wavelength_omission(tmp_path: Path) -> None:
+    """Available but unrequested wavelengths do not enter any current result."""
+    level1 = _write_level1(
+        tmp_path / "synthetic_level1_rcs.nc",
+        ["355.PC", "532.PC"],
+    )
+
+    summary = lebear.process_single_level1_file(
+        level1,
+        _multispectral_config(tmp_path, [532]),
+        _ListLogger(),  # type: ignore[arg-type]
+    )
+
+    assert summary.results[0].status is ExecutionStatus.SUCCESS
+    with xr.open_dataset(level2_output_path(level1)) as ds:
+        assert ds["wavelength"].values.tolist() == [532]
+        assert ds["requested_wavelengths"].values.tolist() == [532]
+        assert ds["processed_wavelengths"].values.tolist() == [532]
+        assert ds["failed_wavelengths"].values.tolist() == []
+
+
+@pytest.mark.parametrize("available", [355, 532])
+def test_sci003_partial_wavelength_values_equal_isolated_execution(
+    tmp_path: Path,
+    available: int,
+) -> None:
+    """A preserved partial slice is numerically identical to its isolated run."""
+    missing = 532 if available == 355 else 355
+    level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", [f"{available}.PC"])
+    partial_config = _multispectral_config(tmp_path, [355, 532])
+    isolated_config = _multispectral_config(tmp_path, [available])
+
+    partial = lebear.process_single_level1_file(
+        level1,
+        partial_config,
+        _ListLogger(),  # type: ignore[arg-type]
+        output_tag="partial",
+    )
+    isolated = lebear.process_single_level1_file(
+        level1,
+        isolated_config,
+        _ListLogger(),  # type: ignore[arg-type]
+        output_tag="isolated",
+    )
+
+    assert partial.overall_status is ExecutionStatus.RECOVERABLE_FAILURE
+    assert isolated.overall_status is ExecutionStatus.SUCCESS
+    partial_path = level2_output_path(level1, variant_tag="partial")
+    isolated_path = level2_output_path(level1, variant_tag="isolated")
+    with xr.open_dataset(partial_path) as partial_ds, xr.open_dataset(isolated_path) as isolated_ds:
+        assert partial_ds["wavelength"].values.tolist() == [available]
+        assert partial_ds["failed_wavelengths"].values.tolist() == [missing]
+        for name, variable in isolated_ds.data_vars.items():
+            if "wavelength" not in variable.dims or name in {
+                "requested_wavelengths",
+                "processed_wavelengths",
+                "failed_wavelengths",
+                "failed_wavelength_stage",
+                "failed_wavelength_code",
+                "failed_wavelength_message",
+                "failed_wavelength_cause",
+            }:
+                continue
+            np.testing.assert_allclose(
+                partial_ds[name].values,
+                isolated_ds[name].values,
+                rtol=0.0,
+                atol=0.0,
+                equal_nan=True,
+            )
+
+
+def test_sci003_some_failed_blocks_keep_wavelength_with_fraction_below_one(tmp_path: Path) -> None:
+    """Internal block failure reduces coverage without failing a usable wavelength."""
+    level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["532.PC"])
+    with xr.open_dataset(level1) as opened:
+        ds_l1 = opened.load()
+    ds_l1["corrected_signal"].values[0, 0, 10] = np.nan
+    ds_l1.to_netcdf(level1, mode="w")
+    config = _multispectral_config(tmp_path, [532])
+    config["inversion"]["temporal_average_minutes"] = 5
+
+    summary = lebear.process_single_level1_file(level1, config, _ListLogger())  # type: ignore[arg-type]
+
+    assert summary.overall_status is ExecutionStatus.SUCCESS
+    with xr.open_dataset(level2_output_path(level1)) as ds:
+        assert ds["wavelength"].values.tolist() == [532]
+        assert int(ds["retrieval_success_flag"].sum()) == 2
+        assert float(ds["retrieval_success_fraction"].item()) == pytest.approx(2.0 / 3.0)
+        assert ds.attrs["product_completeness"] == "complete"
+
+
+def test_sci003_total_failure_preserves_previous_product(tmp_path: Path) -> None:
+    """No locally usable wavelength leaves an existing artifact untouched."""
+    level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["1064.PC"])
+    output = level2_output_path(level1)
+    output.write_bytes(b"previous-stable-product")
+
+    summary = lebear.process_single_level1_file(
+        level1,
+        _multispectral_config(tmp_path, [355, 532]),
+        _ListLogger(),  # type: ignore[arg-type]
+    )
+
+    assert summary.overall_status is ExecutionStatus.RECOVERABLE_FAILURE
+    assert int(summary.exit_code) == 2
+    assert output.read_bytes() == b"previous-stable-product"
+
+
+def test_sci003_global_configuration_failure_is_fatal(tmp_path: Path) -> None:
+    """A product-wide configuration error cannot be downgraded to wavelength partiality."""
+    level1 = _write_level1(
+        tmp_path / "synthetic_level1_rcs.nc",
+        ["355.PC", "532.PC"],
+    )
+    config = _multispectral_config(tmp_path, [355, 532])
+    config["inversion"]["kfs_mode"] = "backward"
+
+    summary = lebear.process_single_level1_file(level1, config, _ListLogger())  # type: ignore[arg-type]
+
+    assert summary.results[0].status is ExecutionStatus.FATAL_FAILURE
+    assert summary.results[0].stage == "level2.configuration"
+    assert int(summary.exit_code) == 2
+    assert not level2_output_path(level1).exists()
+
+
+def test_sci003_complete_is_current_but_partial_reprocesses_all_requests(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Only a complete sidecar may skip; partial reruns the whole request set."""
+    complete_l1 = _write_level1(
+        tmp_path / "complete_level1_rcs.nc",
+        ["355.PC", "532.PC"],
+    )
+    complete_config = _multispectral_config(tmp_path, [355, 532])
+    complete_summary = lebear.process_single_level1_file(
+        complete_l1,
+        complete_config,
+        _ListLogger(),  # type: ignore[arg-type]
+    )
+    assert complete_summary.overall_status is ExecutionStatus.SUCCESS
+    assert lebear.level2_output_is_current(
+        complete_l1,
+        level2_output_path(complete_l1),
+        complete_config,
+    )
+    changed_config = json.loads(json.dumps(complete_config))
+    changed_config["inversion"]["lidar_ratio_std_sr"]["532"] = 6.0
+    assert not lebear.level2_output_is_current(
+        complete_l1,
+        level2_output_path(complete_l1),
+        changed_config,
+    )
+    complete_manifest_path = provenance_manifest_path(level2_output_path(complete_l1))
+    old_manifest = json.loads(complete_manifest_path.read_text(encoding="utf-8"))
+    old_manifest.pop("result")
+    complete_manifest_path.write_text(json.dumps(old_manifest), encoding="utf-8")
+    assert not lebear.level2_output_is_current(
+        complete_l1,
+        level2_output_path(complete_l1),
+        complete_config,
+    )
+
+    partial_l1 = _write_level1(tmp_path / "partial_level1_rcs.nc", ["532.PC"])
+    partial_config = _multispectral_config(tmp_path, [355, 532])
+    first = lebear.process_single_level1_file(
+        partial_l1,
+        partial_config,
+        _ListLogger(),  # type: ignore[arg-type]
+    )
+    partial_output = level2_output_path(partial_l1)
+    assert first.overall_status is ExecutionStatus.RECOVERABLE_FAILURE
+    assert not lebear.level2_output_is_current(partial_l1, partial_output, partial_config)
+    manifest = load_provenance_manifest(partial_output)
+    assert manifest is not None
+    assert manifest["result"]["processed_wavelengths"] == [532]
+    assert manifest["result"]["failed_wavelengths"] == [355]
+
+    original = lebear.process_single_level1_file
+    calls: list[Path] = []
+
+    def counted_process(path, config, logger, **kwargs):
+        calls.append(Path(path))
+        return original(path, config, logger, **kwargs)
+
+    monkeypatch.setattr(lebear, "discover_level1_files", lambda _config: [partial_l1])
+    monkeypatch.setattr(lebear, "process_single_level1_file", counted_process)
+    second = lebear.process_level_2(partial_config, _ListLogger())  # type: ignore[arg-type]
+
+    assert calls == [partial_l1]
+    assert second.overall_status is ExecutionStatus.RECOVERABLE_FAILURE
+
+
+def test_sci003_request_order_does_not_change_partial_membership(tmp_path: Path) -> None:
+    """Canonical ordering makes [355,532] and [532,355] equivalent."""
+    level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["532.PC"])
+    for requested, tag in (([355, 532], "forward"), ([532, 355], "reverse")):
+        lebear.process_single_level1_file(
+            level1,
+            _multispectral_config(tmp_path, requested),
+            _ListLogger(),  # type: ignore[arg-type]
+            output_tag=tag,
+        )
+
+    with xr.open_dataset(level2_output_path(level1, variant_tag="forward")) as first, xr.open_dataset(
+        level2_output_path(level1, variant_tag="reverse")
+    ) as second:
+        for name in ("requested_wavelengths", "processed_wavelengths", "failed_wavelengths", "wavelength"):
+            assert first[name].values.tolist() == second[name].values.tolist()
+        np.testing.assert_allclose(
+            first["aerosol_backscatter"].values,
+            second["aerosol_backscatter"].values,
+            rtol=0.0,
+            atol=0.0,
+            equal_nan=True,
+        )
+
+
+def test_sci003_contract_rejects_divergent_scientific_dimension(tmp_path: Path) -> None:
+    """The scientific coordinate cannot disagree with processed_wavelengths."""
+    level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["532.PC"])
+    lebear.process_single_level1_file(
+        level1,
+        _multispectral_config(tmp_path, [532]),
+        _ListLogger(),  # type: ignore[arg-type]
+    )
+    with xr.open_dataset(level2_output_path(level1)) as opened:
+        ds = opened.load()
+    ds["processed_wavelengths"] = (("processed_wavelength",), np.array([355], dtype=np.int32))
+
+    with pytest.raises(ValueError, match="equal requested"):
+        validate_level2_contract(ds)
+
+
+def test_sci003_qa_and_explorer_expose_only_processed_wavelengths(tmp_path: Path) -> None:
+    """Partial QA/Explorer lists the failure without selecting its absent slice."""
+    from milgrau.explorer.level2 import available_level2_wavelengths, level2_status_summary
+
+    level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["532.PC"])
+    lebear.process_single_level1_file(
+        level1,
+        _multispectral_config(tmp_path, [355, 532]),
+        _ListLogger(),  # type: ignore[arg-type]
+    )
+    with xr.open_dataset(level2_output_path(level1)) as opened:
+        ds = opened.load()
+
+    assert get_wavelength_values(ds) == [532]
+    assert available_level2_wavelengths(ds) == [532]
+    summary = level2_status_summary(ds)
+    assert summary["product_completeness"] == "partial"
+    assert summary["processed_wavelengths"] == [532]
+    assert summary["failed_wavelengths"] == [355]
+    qa_config = {
+        "visualization": {
+            "level2_qa": {
+                "generate_gluing_qa": False,
+                "generate_molecular_fit_qa": False,
+                "generate_scattering_ratio_qa": False,
+                "generate_kfs_qa": False,
+            }
+        }
+    }
+    generated = plot_all_level2_qa(
+        ds,
+        tmp_path / "qa",
+        "partial",
+        qa_config,
+        tmp_path,
+    )
+    assert len(generated) == 1
+    status_text = generated[0].read_text(encoding="utf-8")
+    assert "product_completeness: partial" in status_text
+    assert "processed_wavelengths_nm: 532" in status_text
+    assert "failed_wavelengths_nm: 355" in status_text
+
+
 def test_typed_retrieval_freezes_fernald_v2_level2_dataset(tmp_path: Path) -> None:
     """The typed contract freezes the deliberately changed Fernald-v2 product."""
     level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["532.AN", "532.PC"])
@@ -150,13 +538,20 @@ def test_typed_retrieval_freezes_fernald_v2_level2_dataset(tmp_path: Path) -> No
         ds_l1.load()
         altitude_m = np.asarray(ds_l1["altitude"].values, dtype=np.float64)
         result = process_wavelength(ds_l1, 532, altitude_m, config, logger)  # type: ignore[arg-type]
-        dataset = build_level2_dataset(ds_l1, [result], altitude_m, level1, config)
+        dataset = build_level2_dataset(
+            ds_l1,
+            [result],
+            altitude_m,
+            level1,
+            config,
+            _complete_product_contract(532),
+        )
 
     assert isinstance(result, WavelengthRetrievalResult)
     result.validate(n_time=3, n_altitude=240)
-    # SCI-002 deliberately changes state variables/metadata. Numeric assertions
-    # elsewhere preserve the already-approved glued Fernald-v2 optical path.
-    assert _dataset_contract_digest(dataset) == "4aa7f2102e5a2d4060d32311539780196a4d0b2e794770b96782ba715457d002"
+    # SCI-003 deliberately adds completeness/result-state variables. Numeric
+    # assertions preserve the already-approved glued Fernald-v2 optical path.
+    assert _dataset_contract_digest(dataset) == "8b736f21ac09edf3ee8191b1fe079c92998ce81ed2fe380c46d5784138bc1508"
 
 
 def test_retrieval_stages_have_explicit_conformable_boundaries(tmp_path: Path) -> None:
@@ -462,7 +857,7 @@ def test_dataset_builder_rejects_wrong_retrieval_dtype_before_writing(tmp_path: 
         invalid_kfs = replace(result.kfs, branch=result.kfs.branch.astype(np.int16))
         invalid_result = replace(result, kfs=invalid_kfs)
         with pytest.raises(TypeError, match=r"kfs\.branch must have dtype int8"):
-            build_level2_dataset(ds_l1, [invalid_result], altitude_m, level1, config)
+            build_level2_dataset(ds_l1, [invalid_result], altitude_m, level1, config, _complete_product_contract(532))
 
 
 def test_dataset_builder_rejects_wrong_retrieval_shape_before_writing(tmp_path: Path) -> None:
@@ -477,7 +872,7 @@ def test_dataset_builder_rejects_wrong_retrieval_shape_before_writing(tmp_path: 
         invalid_molecular = replace(result.molecular, backscatter=result.molecular.backscatter[:-1])
         invalid_result = replace(result, molecular=invalid_molecular)
         with pytest.raises(ValueError, match=r"molecular\.backscatter must have shape \(240,\)"):
-            build_level2_dataset(ds_l1, [invalid_result], altitude_m, level1, config)
+            build_level2_dataset(ds_l1, [invalid_result], altitude_m, level1, config, _complete_product_contract(532))
 
 
 def test_sci002_contract_rejects_contradictory_gluing_and_source_state(tmp_path: Path) -> None:
@@ -499,7 +894,7 @@ def test_sci002_contract_rejects_contradictory_gluing_and_source_state(tmp_path:
         invalid_result = replace(result, signal_selection=invalid_selection)
 
         with pytest.raises(ValueError, match="gluing_success_flag=1 requires signal source glued"):
-            build_level2_dataset(ds_l1, [invalid_result], altitude_m, level1, config)
+            build_level2_dataset(ds_l1, [invalid_result], altitude_m, level1, config, _complete_product_contract(532))
 
 
 def test_sci002_contract_rejects_retrieval_success_with_invalid_input(tmp_path: Path) -> None:
@@ -545,7 +940,7 @@ def test_sci002_contract_rejects_retrieval_success_with_invalid_input(tmp_path: 
         )
 
         with pytest.raises(ValueError, match="retrieval_success_flag=1 requires"):
-            build_level2_dataset(ds_l1, [invalid_result], altitude_m, level1, config)
+            build_level2_dataset(ds_l1, [invalid_result], altitude_m, level1, config, _complete_product_contract(532))
 
 
 def test_retrieval_contract_rejects_missing_fields_and_free_mapping(tmp_path: Path) -> None:
@@ -558,7 +953,14 @@ def test_retrieval_contract_rejects_missing_fields_and_free_mapping(tmp_path: Pa
         ds_l1.load()
         altitude_m = np.asarray(ds_l1["altitude"].values, dtype=np.float64)
         with pytest.raises(TypeError, match=r"results\[0\] must be WavelengthRetrievalResult"):
-            build_level2_dataset(ds_l1, [{"wavelength": 532}], altitude_m, level1, _config(tmp_path))  # type: ignore[list-item]
+            build_level2_dataset(
+                ds_l1,
+                [{"wavelength": 532}],  # type: ignore[list-item]
+                altitude_m,
+                level1,
+                _config(tmp_path),
+                _complete_product_contract(532),
+            )
 
 
 def test_lebear_saves_real_kfs_mode_and_branch_flags(tmp_path: Path) -> None:
@@ -585,23 +987,17 @@ def test_lebear_saves_real_kfs_mode_and_branch_flags(tmp_path: Path) -> None:
         assert "single_channel_fallback_flag" in ds
 
 
-def test_gluing_failure_with_disabled_single_channel_fallback_persists_invalid_state(tmp_path: Path) -> None:
-    """Disabled fallback writes explicit invalid input without false optical data."""
+def test_gluing_failure_with_disabled_single_channel_fallback_fails_wavelength(tmp_path: Path) -> None:
+    """A sole wavelength with no valid optical block cannot publish an all-NaN slice."""
     level1 = _write_level1(tmp_path / "synthetic_level1_rcs.nc", ["532.AN", "532.PC"])
     logger = _ListLogger()
     config = _config(tmp_path, allow_single_channel_fallback=False)
     config["inversion"]["gluing"]["correlation_threshold"] = 1.1
 
     summary = lebear.process_single_level1_file(level1, config, logger)  # type: ignore[arg-type]
-    assert summary.results[0].status is ExecutionStatus.SUCCESS
-    with xr.open_dataset(level2_output_path(level1)) as ds:
-        assert int(ds["gluing_attempted_flag_block"].item()) == 1
-        assert int(ds["gluing_success_flag_block"].item()) == 0
-        assert int(ds["signal_source_flag_block"].item()) == SignalSource.INVALID
-        assert int(ds["retrieval_input_valid_flag_block"].item()) == 0
-        assert int(ds["retrieval_input_invalid_reason_block"].item()) == RetrievalInputInvalidReason.SINGLE_CHANNEL_FALLBACK_DISABLED
-        assert int(ds["retrieval_success_flag"].item()) == 0
-        assert np.isnan(ds["aerosol_backscatter_block"].values).all()
+    assert summary.results[0].status is ExecutionStatus.RECOVERABLE_FAILURE
+    assert summary.results[0].metadata["failed_wavelengths"] == "532"
+    assert not level2_output_path(level1).exists()
 
 
 def test_gluing_failure_uses_photon_fallback_when_enabled(tmp_path: Path) -> None:
