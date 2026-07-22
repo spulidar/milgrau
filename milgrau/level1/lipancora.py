@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-import traceback
+import time
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -11,9 +11,11 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from milgrau.io.contracts import validate_level1_contract
+from milgrau.io.contracts import netcdf_satisfies_contract, validate_level1_contract
 from milgrau.io.filesystem import ensure_directories
 from milgrau.io.paths import processed_data_root
+from milgrau.operations import ExecutionResult, ExecutionSummary
+from milgrau.provenance import build_product_provenance, output_is_current, write_provenance_manifest
 from milgrau.level1.common import (
     diagnostic_vector,
     get_channel_constant,
@@ -207,19 +209,35 @@ def _discover_level0_files(config: Mapping[str, Any]) -> list[Path]:
     return discovered
 
 
-def _files_requiring_level1(files: list[Path], config: Mapping[str, Any], logger: logging.Logger) -> tuple[list[Path], int]:
+def _files_requiring_level1(
+    files: list[Path], config: Mapping[str, Any], logger: logging.Logger
+) -> tuple[list[Path], list[ExecutionResult]]:
     """Filter candidate Level 0 files according to incremental mode."""
     incremental = incremental_enabled(config)
     files_to_process: list[Path] = []
-    skipped_count = 0
+    skipped_results: list[ExecutionResult] = []
     for file_path in files:
         output_path = level1_output_path(file_path, config)
+        is_current = False
         if incremental and output_path.exists():
-            logger.info(f"[SKIPPED] Level 1 already exists for {file_path.name}: {output_path}")
-            skipped_count += 1
+            expected = build_product_provenance("level1", [file_path], config)
+            is_current = output_is_current(
+                output_path,
+                expected,
+                integrity_check=lambda path: netcdf_satisfies_contract(path, validate_level1_contract),
+            )
+        if is_current:
+            result = ExecutionResult.skipped(
+                "level1.incremental",
+                f"Level 1 provenance is current for {file_path.name}",
+                input_path=file_path,
+                output_path=output_path,
+            )
+            result.log(logger)
+            skipped_results.append(result)
             continue
         files_to_process.append(file_path)
-    return files_to_process, skipped_count
+    return files_to_process, skipped_results
 
 
 def apply_all_physical_corrections(
@@ -268,43 +286,79 @@ def apply_all_physical_corrections(
     return finalize_correction_dataset(final_ds, status_records, diagnostic_records)
 
 
-def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logger]) -> str:
+def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logger]) -> ExecutionResult:
     """Process one Level 0 NetCDF into a Level 1 RCS NetCDF product."""
     nc_path, config, logger = args
+    started_at = time.perf_counter()
+    nc_file = Path(nc_path)
+    save_path: Path | None = None
+    stage = "level1.initialize"
     try:
-        nc_file = Path(nc_path)
         stem = nc_file.stem
+        stage = "level1.output_path"
         save_path = level1_output_path(nc_file, config)
         logger.info(f"[{stem}] Initializing Level 1 processing...")
+        stage = "level1.provenance"
+        provenance = build_product_provenance("level1", [nc_file], config)
+        stage = "level1.ingestion"
         ds_raw, z_arr = load_and_prepare_level0(nc_file, logger)
+        stage = "level1.corrections"
         final_ds = apply_all_physical_corrections(ds_raw, z_arr, config, logger)
+        stage = "level1.pbl"
         final_ds = estimate_pbl_timeseries(final_ds, z_arr, config, logger)
+        stage = "level1.thermodynamics"
         final_ds = integrate_thermodynamics(final_ds, config, logger)
         final_ds.attrs.update(ds_raw.attrs)
         final_ds.attrs.update(_processing_metadata(nc_file))
         final_ds = _make_level1_netcdf_safe(final_ds)
+        stage = "level1.validation"
         validate_level1_contract(final_ds)
+        stage = "level1.write"
         ensure_directories(save_path.parent)
         final_ds.to_netcdf(save_path, encoding=_level1_encoding(final_ds))
-        return f"[OK] {stem} Level 1 generated successfully: {save_path}"
-    except Exception:
-        return f"[FAILED] {nc_path} execution halted:\n{traceback.format_exc()}"
+        stage = "level1.provenance.write"
+        write_provenance_manifest(save_path, provenance)
+        return ExecutionResult.success(
+            "level1.complete",
+            f"{stem} Level 1 generated successfully",
+            input_path=nc_file,
+            output_path=save_path,
+            duration_seconds=time.perf_counter() - started_at,
+            metadata={"pipeline": "LIPANCORA"},
+        )
+    except Exception as exc:
+        return ExecutionResult.failure(
+            stage,
+            f"{nc_file} execution halted",
+            input_path=nc_file,
+            output_path=save_path,
+            cause=exc,
+            include_traceback=True,
+            duration_seconds=time.perf_counter() - started_at,
+            metadata={"pipeline": "LIPANCORA"},
+        )
 
 
-def process_level_1(config: Mapping[str, Any], logger: logging.Logger) -> None:
+def process_level_1(config: Mapping[str, Any], logger: logging.Logger) -> ExecutionSummary:
     """Discover and process every Level 0 NetCDF file into Level 1."""
     in_dir = processed_data_root(config)
     files = _discover_level0_files(config)
     if not files:
         logger.warning(f"No Level 0 files found in {in_dir}. Exiting.")
-        return
+        return ExecutionSummary.from_results(
+            [ExecutionResult.skipped("level1.discovery", "No Level 0 files found", input_path=in_dir)]
+        )
 
-    files_to_process, skipped_count = _files_requiring_level1(files, config, logger)
+    files_to_process, skipped_results = _files_requiring_level1(files, config, logger)
 
     if not files_to_process:
-        logger.info(f"No Level 0 files require Level 1 processing. Skipped {skipped_count} existing products.")
-        return
+        logger.info(f"No Level 0 files require Level 1 processing. Skipped {len(skipped_results)} existing products.")
+        return ExecutionSummary.from_results(skipped_results)
 
-    logger.info(f"Found {len(files_to_process)} Level 0 files to process ({skipped_count} skipped).")
+    logger.info(f"Found {len(files_to_process)} Level 0 files to process ({len(skipped_results)} skipped).")
+    results = list(skipped_results)
     for file_path in files_to_process:
-        logger.info(process_single_file((str(file_path), config, logger)))
+        result = process_single_file((str(file_path), config, logger))
+        result.log(logger)
+        results.append(result)
+    return ExecutionSummary.from_results(results)

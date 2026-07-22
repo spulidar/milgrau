@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from milgrau.operations import ExecutionStatus
 from milgrau.viz import liracos
 from milgrau.viz.quicklooks import _insert_time_gap_markers
 
@@ -94,7 +95,7 @@ def test_time_gap_markers_insert_nan_profiles() -> None:
     assert np.isnan(result.isel(time=3).values).all()
 
 
-def test_global_mean_manifest_skips_current_plot(tmp_path: Path, monkeypatch) -> None:
+def test_global_mean_provenance_skips_current_plot(tmp_path: Path, monkeypatch) -> None:
     """Current global mean plots should be skipped when signature matches."""
     level1 = _write_level1(tmp_path / "20240101sant_level1_rcs.nc", ["532.AN"])
     logger = _ListLogger()
@@ -118,14 +119,17 @@ def test_global_mean_manifest_skips_current_plot(tmp_path: Path, monkeypatch) ->
     first = liracos.process_single_nc((level1, _config(["532.AN"], incremental=True), tmp_path, logger))
     second = liracos.process_single_nc((level1, _config(["532.AN"], incremental=True), tmp_path, logger))
 
-    assert first.startswith("[OK]")
-    assert second.startswith("[OK]")
+    assert first.status is ExecutionStatus.SUCCESS
+    assert second.status is ExecutionStatus.SUCCESS
+    assert first.metadata["generated"] == 2
+    assert second.metadata["generated"] == 1
+    assert second.metadata["skipped"] == 1
     assert calls["global"] == 1
     assert any("Global mean RCS is current" in message for message in logger.messages)
 
 
 def test_global_mean_regenerates_when_channel_config_changes(tmp_path: Path, monkeypatch) -> None:
-    """Changing configured channels should invalidate the global mean manifest."""
+    """Changing configured channels should invalidate global-mean provenance."""
     level1 = _write_level1(tmp_path / "20240101sant_level1_rcs.nc", ["532.AN", "355.AN"])
     logger = _ListLogger()
     calls = {"quicklook": 0, "global": 0}

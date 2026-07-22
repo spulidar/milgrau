@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import gc
-import json
 import logging
-import traceback
+import time
 from pathlib import Path
 from typing import Any
 
@@ -15,11 +14,18 @@ from matplotlib import pyplot as plt
 from milgrau.io.contracts import validate_level1_contract
 from milgrau.io.filesystem import ensure_directories
 from milgrau.io.paths import global_mean_rcs_output_path, processed_data_root, quicklook_output_path
+from milgrau.operations import ExecutionResult, ExecutionSummary
+from milgrau.provenance import (
+    build_product_provenance_from_signatures,
+    file_signature,
+    output_is_current,
+    write_provenance_manifest,
+)
 from milgrau.viz.quicklooks import format_channel_name, plot_global_mean_rcs, plot_quicklook
+from milgrau.viz.style import DEFAULT_LOGO_SPECS
 
 RCS_VARIABLE = "range_corrected_signal"
 RCS_ERROR_VARIABLE = "range_corrected_signal_error"
-GLOBAL_MEAN_MANIFEST_SUFFIX = ".manifest.json"
 
 
 def _as_bool(value: Any, default: bool = False) -> bool:
@@ -54,11 +60,6 @@ def _global_mean_output_path(output_folder: Path, file_name_prefix: str, config:
     return global_mean_rcs_output_path(output_folder, file_name_prefix, _get_output_format(config))
 
 
-def _manifest_path(plot_path: Path) -> Path:
-    """Return the metadata manifest path associated with one plot."""
-    return plot_path.with_suffix(plot_path.suffix + GLOBAL_MEAN_MANIFEST_SUFFIX)
-
-
 def _get_visualization_channels(config: dict[str, Any]) -> list[str]:
     """Return configured channels without duplicates, preserving YAML order."""
     channels = config.get("visualization", {}).get("channels_to_plot", []) or []
@@ -86,48 +87,15 @@ def _get_altitude_ranges_km(config: dict[str, Any]) -> list[float]:
     return altitude_ranges or [5.0, 15.0, 30.0]
 
 
-def _global_mean_signature(
-    nc_file: Path,
-    ds: xr.Dataset,
-    config: dict[str, Any],
-    channels_to_plot: list[str],
-    altitude_ranges_km: list[float],
-) -> dict[str, Any]:
-    """Build a lightweight signature for deciding whether global mean is stale."""
-    available_channels = {str(channel) for channel in ds.channel.values}
-    plotted_channels = [channel for channel in channels_to_plot if channel in available_channels]
-    return {
-        "source_file": nc_file.name,
-        "source_mtime_ns": nc_file.stat().st_mtime_ns if nc_file.exists() else None,
-        "output_format": _get_output_format(config),
-        "channels_to_plot": plotted_channels,
-        "altitude_ranges_km": [float(value) for value in altitude_ranges_km],
-        "rcs_variable": RCS_VARIABLE,
-        "rcs_error_variable": RCS_ERROR_VARIABLE,
-    }
-
-
-def _load_manifest(path: Path) -> dict[str, Any] | None:
-    """Load a JSON manifest if it exists and is valid."""
-    if not path.exists():
-        return None
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-
-
-def _write_manifest(path: Path, payload: dict[str, Any]) -> None:
-    """Write a JSON manifest for incremental plot decisions."""
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
-
-
-def _is_global_mean_current(plot_path: Path, signature: dict[str, Any]) -> bool:
-    """Return whether a global mean plot exists and matches the current signature."""
-    if not plot_path.exists():
-        return False
-    stored = _load_manifest(_manifest_path(plot_path))
-    return stored == signature
+def _visual_input_signatures(nc_file: Path, root_path: Path) -> list[dict[str, Any]]:
+    """Hash the Level 1 source and any logo assets actually available for plots."""
+    paths = [nc_file]
+    paths.extend(
+        logo_path
+        for logo_name, _height in DEFAULT_LOGO_SPECS
+        if (logo_path := root_path / "img" / logo_name).is_file()
+    )
+    return [file_signature(path) for path in paths]
 
 
 def _prepare_level1_for_visualization(ds: xr.Dataset) -> xr.Dataset:
@@ -155,11 +123,14 @@ def _validate_l1_visualization_contract(ds: xr.Dataset) -> None:
     validate_level1_contract(ds)
 
 
-def process_single_nc(args: tuple[str | Path, dict[str, Any], str | Path, logging.Logger]) -> str:
+def process_single_nc(args: tuple[str | Path, dict[str, Any], str | Path, logging.Logger]) -> ExecutionResult:
     """Render all Level 1 quicklooks for one NetCDF file."""
     nc_file_path, config, root_dir, logger = args
     nc_file = Path(nc_file_path)
     root_path = Path(root_dir)
+    started_at = time.perf_counter()
+    output_folder: Path | None = None
+    stage = "visualization.initialize"
     try:
         file_name_prefix = nc_file.name.replace("_level1_rcs.nc", "")
         output_folder = nc_file.parent / "quicklooks"
@@ -169,8 +140,11 @@ def process_single_nc(args: tuple[str | Path, dict[str, Any], str | Path, loggin
         skipped_count = 0
 
         logger.info(f"[{file_name_prefix}] Loading Level 1 data and preparing axes...")
+        stage = "visualization.ingestion"
+        input_signatures = _visual_input_signatures(nc_file, root_path)
         with xr.open_dataset(nc_file) as ds:
             ds.load()
+            stage = "visualization.validation"
             _validate_l1_visualization_contract(ds)
             ds = _prepare_level1_for_visualization(ds)
             pbl_da, cpt_km, lrt_km = _extract_level1_boundaries(ds)
@@ -179,6 +153,7 @@ def process_single_nc(args: tuple[str | Path, dict[str, Any], str | Path, loggin
             available_channels = {str(channel) for channel in ds.channel.values}
 
             logger.info(f"[{file_name_prefix}] Rendering quicklooks for {len(channels_to_plot)} configured channels.")
+            stage = "visualization.quicklooks"
             for channel_name in channels_to_plot:
                 if channel_name not in available_channels:
                     logger.warning(f"[{file_name_prefix}] Channel not found, skipping: {channel_name}")
@@ -187,8 +162,14 @@ def process_single_nc(args: tuple[str | Path, dict[str, Any], str | Path, loggin
                 rc_error = ds[RCS_ERROR_VARIABLE].sel(channel=channel_name)
                 for max_altitude in altitude_ranges:
                     expected_path = _quicklook_output_path(output_folder, file_name_prefix, channel_name, max_altitude, config)
-                    if incremental and expected_path.exists():
-                        logger.info(f"[SKIPPED] Quicklook already exists: {expected_path.name}")
+                    quicklook_provenance = build_product_provenance_from_signatures(
+                        "liracos.quicklook",
+                        input_signatures,
+                        config,
+                        variant={"channel": channel_name, "max_altitude_km": float(max_altitude)},
+                    )
+                    if incremental and output_is_current(expected_path, quicklook_provenance):
+                        logger.info(f"[SKIPPED] Quicklook provenance is current: {expected_path.name}")
                         skipped_count += 1
                         continue
 
@@ -197,7 +178,7 @@ def process_single_nc(args: tuple[str | Path, dict[str, Any], str | Path, loggin
                     if sig_slice.size == 0:
                         logger.warning(f"[{file_name_prefix}] Empty altitude slice for {channel_name} up to {max_altitude} km.")
                         continue
-                    plot_quicklook(
+                    plot_path = plot_quicklook(
                         data_slice=sig_slice,
                         error_slice=err_slice,
                         max_altitude=max_altitude,
@@ -211,48 +192,80 @@ def process_single_nc(args: tuple[str | Path, dict[str, Any], str | Path, loggin
                         cpt_km=cpt_km,
                         lrt_km=lrt_km,
                     )
+                    write_provenance_manifest(plot_path, quicklook_provenance)
                     generated_count += 1
                     del sig_slice, err_slice
                     plt.close("all")
                     gc.collect()
 
+            stage = "visualization.global_mean"
             global_mean_path = _global_mean_output_path(output_folder, file_name_prefix, config)
-            global_signature = _global_mean_signature(nc_file, ds, config, channels_to_plot, altitude_ranges)
-            if incremental and _is_global_mean_current(global_mean_path, global_signature):
+            plotted_channels = [channel for channel in channels_to_plot if channel in available_channels]
+            global_provenance = build_product_provenance_from_signatures(
+                "liracos.global_mean",
+                input_signatures,
+                config,
+                variant={"plotted_channels": plotted_channels},
+            )
+            if incremental and output_is_current(global_mean_path, global_provenance):
                 logger.info(f"[SKIPPED] Global mean RCS is current: {global_mean_path.name}")
                 skipped_count += 1
             else:
                 logger.info(f"[{file_name_prefix}] Generating global mean RCS profile...")
                 plot_path = plot_global_mean_rcs(ds, str(output_folder), file_name_prefix, config, str(root_path))
                 if plot_path is not None:
-                    _write_manifest(_manifest_path(Path(plot_path)), global_signature)
+                    write_provenance_manifest(plot_path, global_provenance)
                     generated_count += 1
 
         plt.close("all")
         gc.collect()
-        return f"[OK] Plots generated for {file_name_prefix}: generated={generated_count}, skipped={skipped_count}"
+        return ExecutionResult.success(
+            "visualization.complete",
+            f"Plots generated for {file_name_prefix}: generated={generated_count}, skipped={skipped_count}",
+            input_path=nc_file,
+            output_path=output_folder,
+            duration_seconds=time.perf_counter() - started_at,
+            metadata={"pipeline": "LIRACOS", "generated": generated_count, "skipped": skipped_count},
+        )
     except KeyError as exc:
-        return f"[SKIPPED] {nc_file.name} incompatible with current Level 1 contract: {exc}"
-    except Exception:
-        return f"[FAILED] Error plotting {nc_file.name}:\n{traceback.format_exc()}"
+        return ExecutionResult.skipped(
+            stage,
+            f"{nc_file.name} incompatible with current Level 1 contract: {exc}",
+            input_path=nc_file,
+            output_path=output_folder,
+            metadata={"pipeline": "LIRACOS", "cause_type": type(exc).__name__},
+        )
+    except Exception as exc:
+        return ExecutionResult.failure(
+            stage,
+            f"Error plotting {nc_file.name}",
+            input_path=nc_file,
+            output_path=output_folder,
+            cause=exc,
+            include_traceback=True,
+            duration_seconds=time.perf_counter() - started_at,
+            metadata={"pipeline": "LIRACOS"},
+        )
 
 
 def process_all_level1_files(
     config: dict[str, Any],
     logger: logging.Logger,
     root_dir: str | Path | None = None,
-) -> None:
+) -> ExecutionSummary:
     """Discover and render all Level 1 NetCDF files under processed_data."""
     root_path = Path.cwd() if root_dir is None else Path(root_dir)
     base_data_folder = processed_data_root(config, root_dir=root_path)
     nc_files = sorted(base_data_folder.rglob("*_level1_rcs.nc"))
     if not nc_files:
         logger.warning(f"No Level 1 NetCDF data found in '{base_data_folder}'. Exiting.")
-        return
+        return ExecutionSummary.from_results(
+            [ExecutionResult.skipped("visualization.discovery", "No Level 1 NetCDF data found", input_path=base_data_folder)]
+        )
     logger.info(f"Found {len(nc_files)} Level 1 files.")
+    results: list[ExecutionResult] = []
     for nc_file in nc_files:
         result = process_single_nc((nc_file, config, root_path, logger))
-        if "[OK]" in result or "[SKIPPED]" in result:
-            logger.info(result)
-        else:
-            logger.error(result)
+        result.log(logger)
+        results.append(result)
+    return ExecutionSummary.from_results(results)

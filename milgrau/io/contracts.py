@@ -8,7 +8,8 @@ coordinates that would make downstream processing scientifically ambiguous.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from pathlib import Path
 from typing import Final
 
 import xarray as xr
@@ -123,3 +124,14 @@ def validate_level2_contract(ds: xr.Dataset) -> None:
     _require_coords(ds, ("wavelength", "altitude"), "Level 2 file")
     if "glued_range_corrected_signal" in ds:
         _require_exact_dims(ds["glued_range_corrected_signal"], LEVEL2_GLUED_SIGNAL_DIMS, "Level 2 glued_range_corrected_signal")
+
+
+def netcdf_satisfies_contract(path: str | Path, validator: Callable[[xr.Dataset], None]) -> bool:
+    """Return whether a NetCDF file opens fully and satisfies one product contract."""
+    try:
+        with xr.open_dataset(path) as dataset:
+            dataset.load()
+            validator(dataset)
+    except Exception:
+        return False
+    return True

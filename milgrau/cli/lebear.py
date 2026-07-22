@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import re
 from pathlib import Path
 from typing import Sequence
 
+from milgrau.cli.common import finish_cli, run_guarded
 from milgrau.config.loader import load_config
 from milgrau.io.paths import LEVEL1_SUFFIX, level2_output_path, measurement_product_dir
 from milgrau.io.logging_utils import setup_logger
-from milgrau.level2.lebear import process_single_level1_file
+from milgrau.level2.lebear import level2_output_is_current, process_single_level1_file
 from milgrau.level2.discovery import discover_level1_files
+from milgrau.level2.qa import generate_level2_qa, level2_qa_enabled
+from milgrau.operations import ExecutionResult, ExecutionSummary
 
 
 def _incremental_enabled(config: dict) -> bool:
@@ -100,7 +104,69 @@ def _format_time_window_tag(start_utc: str, stop_utc: str) -> str:
     return f"{start_tag}-{stop_tag}"
 
 
-def main() -> None:
+def _process_selected_files(args: argparse.Namespace, config: dict, logger: logging.Logger) -> ExecutionSummary:
+    """Process CLI-selected Level 1 files and aggregate structured results."""
+    files = _expand_level1_inputs(args.inputs, config)
+    if not files:
+        logger.warning("No Level 1 files found for LEBEAR processing.")
+        return ExecutionSummary.from_results(
+            [ExecutionResult.skipped("level2.discovery", "No Level 1 files found")]
+        )
+
+    incremental = _incremental_enabled(config)
+    files_to_process: list[Path] = []
+    skipped_results: list[ExecutionResult] = []
+    output_tag = None
+    if args.time_window is not None:
+        output_tag = _format_time_window_tag(args.time_window[0], args.time_window[1])
+    for file_path in files:
+        output_path = level2_output_path(file_path, variant_tag=output_tag)
+        if incremental and level2_output_is_current(
+            file_path,
+            output_path,
+            config,
+            start_utc=args.time_window[0] if args.time_window else None,
+            stop_utc=args.time_window[1] if args.time_window else None,
+            output_tag=output_tag,
+        ):
+            result = ExecutionResult.skipped(
+                "level2.incremental",
+                f"Level 2 provenance is current for {file_path.name}",
+                input_path=file_path,
+                output_path=output_path,
+            )
+            result.log(logger)
+            skipped_results.append(result)
+            if level2_qa_enabled(config):
+                qa_result = generate_level2_qa(file_path, output_path, config, logger)
+                qa_result.log(logger)
+                skipped_results.append(qa_result)
+            continue
+        files_to_process.append(file_path)
+
+    if not files_to_process:
+        logger.info(f"No Level 1 files require Level 2 processing. Skipped {len(skipped_results)} existing products.")
+        return ExecutionSummary.from_results(skipped_results)
+
+    logger.info(f"Found {len(files_to_process)} Level 1 files to process ({len(skipped_results)} skipped).")
+    results = list(skipped_results)
+    for file_path in files_to_process:
+        file_summary = process_single_level1_file(
+            file_path,
+            config,
+            logger,
+            start_utc=args.time_window[0] if args.time_window else None,
+            stop_utc=args.time_window[1] if args.time_window else None,
+            output_tag=output_tag,
+        )
+        for result in file_summary.results:
+            if result.stage != "level2.qa":
+                result.log(logger)
+        results.extend(file_summary.results)
+    return ExecutionSummary.from_results(results)
+
+
+def main() -> int:
     """Run LEBEAR from the command line."""
     parser = _build_parser()
     args = parser.parse_args()
@@ -109,46 +175,13 @@ def main() -> None:
     logger = setup_logger("LEBEAR", config=config)
     logger.info("=== Starting MILGRAU LEBEAR processing (Level 2) ===")
 
-    files = _expand_level1_inputs(args.inputs, config)
-    if not files:
-        logger.warning("No Level 1 files found for LEBEAR processing.")
-        logger.info("=== LEBEAR finished. ===")
-        return
-
-    incremental = _incremental_enabled(config)
-    files_to_process: list[Path] = []
-    skipped_count = 0
-    output_tag = None
-    if args.time_window is not None:
-        output_tag = _format_time_window_tag(args.time_window[0], args.time_window[1])
-    for file_path in files:
-        output_path = level2_output_path(file_path, variant_tag=output_tag)
-        if incremental and output_path.exists():
-            logger.info(f"[SKIPPED] Level 2 already exists for {file_path.name}: {output_path}")
-            skipped_count += 1
-            continue
-        files_to_process.append(file_path)
-
-    if not files_to_process:
-        logger.info(f"No Level 1 files require Level 2 processing. Skipped {skipped_count} existing products.")
-        logger.info("=== LEBEAR finished. ===")
-        return
-
-    logger.info(f"Found {len(files_to_process)} Level 1 files to process ({skipped_count} skipped).")
-    for file_path in files_to_process:
-        logger.info(
-            process_single_level1_file(
-                file_path,
-                config,
-                logger,
-                start_utc=args.time_window[0] if args.time_window else None,
-                stop_utc=args.time_window[1] if args.time_window else None,
-                output_tag=output_tag,
-            )
-        )
-
-    logger.info("=== LEBEAR finished. ===")
+    summary = run_guarded(
+        "cli.lebear",
+        logger,
+        lambda: _process_selected_files(args, config, logger),
+    )
+    return finish_cli("LEBEAR", summary, logger)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

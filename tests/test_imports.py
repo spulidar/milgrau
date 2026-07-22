@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
+
 
 def test_core_package_imports() -> None:
     """The main MILGRAU subpackages should import without side effects."""
@@ -36,3 +39,28 @@ def test_pipeline_entrypoints_import() -> None:
     assert callable(milgrau.cli.lipancora.main)
     assert callable(milgrau.cli.liracos.main)
     assert callable(milgrau.cli.lebear.main)
+
+
+def test_level2_core_import_does_not_require_matplotlib() -> None:
+    """The Level 2 retrieval/orchestration core should import with plotting blocked."""
+    script = """
+import importlib.abc
+import sys
+
+class BlockMatplotlib(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path, target=None):
+        if fullname == 'matplotlib' or fullname.startswith('matplotlib.'):
+            raise ModuleNotFoundError('matplotlib intentionally blocked')
+        return None
+
+sys.meta_path.insert(0, BlockMatplotlib())
+import milgrau.level2.lebear
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
