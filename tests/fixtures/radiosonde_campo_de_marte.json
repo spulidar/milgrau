@@ -1,0 +1,21 @@
+{
+  "description": "Small synthetic Wyoming/Siphon-compatible Campo de Marte sounding; no network origin",
+  "station_id": "83779",
+  "station_name": "Campo de Marte",
+  "latitude_deg_north": -23.5167,
+  "longitude_deg_east": -46.6333,
+  "nominal_time_utc": "2026-07-05T12:00:00+00:00",
+  "observation_time_utc": "2026-07-05T12:03:00+00:00",
+  "records": [
+    {"pressure": 930.0, "height": 760.0, "temperature": 18.5, "dewpoint": 14.0, "relative_humidity": 75.0, "direction": 80.0, "speed": 3.0},
+    {"pressure": 900.0, "height": 1000.0, "temperature": 17.0, "dewpoint": 12.5, "relative_humidity": 75.0, "direction": 90.0, "speed": 4.0},
+    {"pressure": 899.5, "height": 1000.0, "temperature": 16.8, "dewpoint": null, "relative_humidity": null, "direction": 91.0, "speed": 4.1},
+    {"pressure": 840.0, "height": 1600.0, "temperature": 13.0, "dewpoint": 8.0, "relative_humidity": 70.0, "direction": 100.0, "speed": 5.0},
+    {"pressure": null, "height": 2400.0, "temperature": 7.0, "dewpoint": 1.0, "relative_humidity": 65.0, "direction": 110.0, "speed": 7.0},
+    {"pressure": 650.0, "height": 3500.0, "temperature": 1.0, "dewpoint": -5.0, "relative_humidity": 60.0, "direction": 120.0, "speed": 9.0},
+    {"pressure": 470.0, "height": 6500.0, "temperature": -16.0, "dewpoint": -24.0, "relative_humidity": 45.0, "direction": 140.0, "speed": 14.0},
+    {"pressure": 310.0, "height": 9000.0, "temperature": -33.0, "dewpoint": null, "relative_humidity": null, "direction": 160.0, "speed": 18.0},
+    {"pressure": 200.0, "height": 12000.0, "temperature": -52.0, "dewpoint": null, "relative_humidity": null, "direction": 180.0, "speed": 22.0},
+    {"pressure": 120.0, "height": 15000.0, "temperature": -57.0, "dewpoint": null, "relative_humidity": null, "direction": 200.0, "speed": 26.0}
+  ]
+}
