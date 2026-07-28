@@ -16,6 +16,7 @@ def _write_synthetic_licel_file(
     n_shots: int = 100,
     laser_freq: int = 20,
     channels: list[dict] | None = None,
+    channel_separators: bool = False,
 ) -> Path:
     """Write a minimal synthetic Licel-like file for parser tests."""
     if channels is None:
@@ -68,8 +69,16 @@ def _write_synthetic_licel_file(
             ]
             handle.write((" ".join(fields) + "\n").encode("utf-8"))
         handle.write(b"\n")
-        payload = np.concatenate([np.asarray(channel["payload"], dtype=np.int32) for channel in channels if channel["active"]])
-        payload.tofile(handle)
+        active_channels = [channel for channel in channels if channel["active"]]
+        if channel_separators:
+            for channel in active_channels:
+                np.asarray(channel["payload"], dtype="<i4").tofile(handle)
+                handle.write(b"\r\n")
+        else:
+            payload = np.concatenate(
+                [np.asarray(channel["payload"], dtype="<i4") for channel in active_channels]
+            )
+            payload.tofile(handle)
 
     return path
 
@@ -99,6 +108,24 @@ def test_parse_single_licel_file_converts_analog_and_pc_channels(tmp_path: Path)
     assert parsed["extra_payload_samples"] == 0
     assert set(parsed["data"]) == {"532.AN", "532.PC"}
     np.testing.assert_allclose(parsed["data"]["532.AN"], np.array([0.12207031, 0.24414062, 0.36621094, 0.48828125]))
+    np.testing.assert_array_equal(parsed["data"]["532.PC"], np.array([1.0, 2.0, 3.0, 4.0]))
+
+
+def test_parse_single_licel_file_consumes_channel_separators(tmp_path: Path) -> None:
+    """Licel CRLF block separators must not shift subsequent int32 samples."""
+    path = _write_synthetic_licel_file(
+        tmp_path / "separated.licel",
+        channel_separators=True,
+    )
+
+    parsed = parse_single_licel_file(str(path))
+
+    assert parsed["payload_samples_used"] == 8
+    assert parsed["extra_payload_samples"] == 0
+    np.testing.assert_allclose(
+        parsed["data"]["532.AN"],
+        np.array([0.12207031, 0.24414062, 0.36621094, 0.48828125]),
+    )
     np.testing.assert_array_equal(parsed["data"]["532.PC"], np.array([1.0, 2.0, 3.0, 4.0]))
 
 

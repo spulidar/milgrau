@@ -16,6 +16,7 @@ LICEL_DATETIME_PATTERN: Final[str] = r"\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}:\d{2}"
 DEFAULT_ANALOG_ADC_BITS: Final[int] = 12
 DEFAULT_ANALOG_ADC_RANGE_V: Final[float] = 0.5
 BYTES_PER_PAYLOAD_SAMPLE: Final[int] = 4
+CHANNEL_PAYLOAD_SEPARATOR: Final[bytes] = b"\r\n"
 
 
 def _split_header_parts(line: str, minimum_parts: int, label: str) -> list[str]:
@@ -83,6 +84,60 @@ def _parse_channel_metadata(line: str, filepath: str) -> dict[str, int | float |
     }
 
 
+def _split_channel_payloads(
+    payload: bytes,
+    channels_meta: list[dict[str, int | float | bool | str]],
+    filepath: str,
+) -> tuple[list[np.ndarray], int]:
+    """Decode active channel blocks, consuming optional Licel CRLF separators.
+
+    Operational Licel files terminate every channel's binary block with
+    ``CRLF``. Treating those bytes as part of one continuous int32 vector shifts
+    every other block by two bytes and corrupts the channel values. Separator-
+    free payloads remain supported for compatibility with older fixtures and
+    exports.
+    """
+    active_channels = [channel for channel in channels_meta if int(channel["active"]) != 0]
+    expected_data_bytes = sum(int(channel["points"]) * BYTES_PER_PAYLOAD_SAMPLE for channel in active_channels)
+    if len(payload) < expected_data_bytes:
+        raise ValueError(
+            f"Binary payload too short in {filepath}: expected {expected_data_bytes // BYTES_PER_PAYLOAD_SAMPLE} "
+            f"samples, found {len(payload) // BYTES_PER_PAYLOAD_SAMPLE}"
+        )
+
+    separated_blocks: list[np.ndarray] = []
+    separated_cursor = 0
+    for channel in active_channels:
+        block_bytes = int(channel["points"]) * BYTES_PER_PAYLOAD_SAMPLE
+        block_stop = separated_cursor + block_bytes
+        separator_stop = block_stop + len(CHANNEL_PAYLOAD_SEPARATOR)
+        if (
+            separator_stop > len(payload)
+            or payload[block_stop:separator_stop] != CHANNEL_PAYLOAD_SEPARATOR
+        ):
+            separated_blocks = []
+            break
+        separated_blocks.append(
+            np.frombuffer(payload[separated_cursor:block_stop], dtype="<i4").astype(np.int32, copy=True)
+        )
+        separated_cursor = separator_stop
+
+    if separated_blocks:
+        extra_payload_samples = max(len(payload) - separated_cursor, 0) // BYTES_PER_PAYLOAD_SAMPLE
+        return separated_blocks, int(extra_payload_samples)
+
+    contiguous_payload = payload[:expected_data_bytes]
+    contiguous_samples = np.frombuffer(contiguous_payload, dtype="<i4")
+    blocks: list[np.ndarray] = []
+    sample_cursor = 0
+    for channel in active_channels:
+        points = int(channel["points"])
+        blocks.append(contiguous_samples[sample_cursor : sample_cursor + points].astype(np.int32, copy=True))
+        sample_cursor += points
+    extra_payload_samples = max(len(payload) - expected_data_bytes, 0) // BYTES_PER_PAYLOAD_SAMPLE
+    return blocks, int(extra_payload_samples)
+
+
 def read_licel_header(
     filepath: str,
     logger: Optional[logging.Logger] = None,
@@ -118,26 +173,21 @@ def parse_single_licel_file(filepath: str) -> dict:
             channels_meta.append(_parse_channel_metadata(ch_line, filepath))
 
         file.readline()
-        binary_payload = np.fromfile(file, dtype=np.int32)
+        binary_payload = file.read()
 
-    expected_payload_points = sum(ch["points"] for ch in channels_meta if ch["active"] != 0)
-    if binary_payload.size < expected_payload_points:
-        raise ValueError(
-            f"Binary payload too short in {filepath}: expected {expected_payload_points}, "
-            f"found {binary_payload.size}"
-        )
+    channel_payloads, extra_payload_samples = _split_channel_payloads(
+        binary_payload,
+        channels_meta,
+        filepath,
+    )
 
     data_dict: dict[str, np.ndarray] = {}
-    cursor = 0
-    for ch in channels_meta:
-        if ch["active"] == 0:
-            continue
+    active_channels = [channel for channel in channels_meta if int(channel["active"]) != 0]
+    for ch, raw_int_array in zip(active_channels, channel_payloads, strict=True):
         ch_name = ch["name"]
         if ch_name in data_dict:
             raise ValueError(f"Duplicated active channel name in {filepath}: {ch_name}")
 
-        raw_int_array = binary_payload[cursor : cursor + ch["points"]]
-        cursor += ch["points"]
         if ch["is_pc"]:
             physical_array = raw_int_array.astype(np.float64)
         else:
@@ -145,8 +195,7 @@ def parse_single_licel_file(filepath: str) -> dict:
             physical_array = (raw_int_array.astype(np.float64) / n_shots) * adc_factor
         data_dict[ch_name] = physical_array
 
-    payload_samples_used = cursor
-    extra_payload_samples = int(binary_payload.size - payload_samples_used)
+    payload_samples_used = sum(int(channel["points"]) for channel in active_channels)
     return {
         "data": data_dict,
         "shots": n_shots,

@@ -11,7 +11,7 @@ from typing import Any
 REQUIRED_TOP_LEVEL_SECTIONS = ("directories", "processing", "physics", "hardware")
 
 _KNOWN_KEYS_BY_PATH: dict[tuple[str, ...], set[str]] = {
-    (): {"project", "processing", "directories", "site", "location", "physics", "hardware", "radiosonde", "surface_weather", "visualization", "inversion"},
+    (): {"project", "processing", "directories", "site", "location", "physics", "hardware", "radiosonde", "surface_weather", "meteorology", "visualization", "inversion"},
     ("project",): {"name", "full_name", "station_name", "institution", "timezone"},
     ("processing",): {
         "incremental", "interactive_qa", "console_level", "file_level", "laser_shot_tolerance_fraction",
@@ -30,6 +30,15 @@ _KNOWN_KEYS_BY_PATH: dict[tuple[str, ...], set[str]] = {
     ("hardware",): {"name_to_id"},
     ("radiosonde",): {"station_id", "station_name", "fallback_to_standard_atmosphere", "fallback_to_standard", "cache_dir"},
     ("surface_weather",): {"provider", "cache_dir", "fallback_to_config_defaults"},
+    ("meteorology",): {
+        "acquisition_mode", "cache_directory", "allow_era5t", "timeout_seconds",
+        "max_retries", "contract_version", "radiosonde", "era5",
+    },
+    ("meteorology", "radiosonde"): {"provider", "station_id"},
+    ("meteorology", "era5"): {
+        "dataset", "vertical_coordinate", "levels", "variables", "grid_degrees",
+        "spatial_sampling", "temporal_interpolation", "raw_format",
+    },
     ("visualization",): {"output_format", "dpi", "altitude_ranges_km", "channels_to_plot", "quicklook", "level2_qa"},
     ("visualization", "quicklook"): {
         "show_pbl", "show_tropopause", "mean_profile_smooth_bins", "max_time_gap_minutes", "missing_data_color", "colormap",
@@ -408,6 +417,61 @@ def validate_config_minimum(config: Mapping[str, Any]) -> None:
     for key in ("provider", "cache_dir"):
         _optional_string(surface_weather, key, "surface_weather")
     _optional_boolean(surface_weather, "fallback_to_config_defaults", "surface_weather")
+
+    meteorology = _optional_mapping(config, "meteorology")
+    if meteorology:
+        _optional_string(meteorology, "acquisition_mode", "meteorology")
+        if meteorology.get("acquisition_mode") not in {None, "auto", "cache_only", "prefetch"}:
+            raise ValueError("Configuration meteorology.acquisition_mode must be auto, cache_only or prefetch.")
+        _optional_string(meteorology, "cache_directory", "meteorology")
+        _optional_string(meteorology, "contract_version", "meteorology")
+        _optional_boolean(meteorology, "allow_era5t", "meteorology")
+        _optional_finite_number(
+            meteorology, "timeout_seconds", "meteorology", positive=True
+        )
+        _optional_integer(meteorology, "max_retries", "meteorology", minimum=1)
+        meteorology_radiosonde = _optional_mapping(meteorology, "radiosonde")
+        _optional_string(meteorology_radiosonde, "provider", "meteorology.radiosonde")
+        _optional_string(meteorology_radiosonde, "station_id", "meteorology.radiosonde")
+        if meteorology_radiosonde.get("provider") not in {None, "wyoming_siphon"}:
+            raise ValueError("Configuration meteorology.radiosonde.provider must be wyoming_siphon.")
+        if "station_id" in meteorology_radiosonde and not str(
+            meteorology_radiosonde["station_id"]
+        ).isdigit():
+            raise ValueError("Configuration meteorology.radiosonde.station_id must contain only digits.")
+        era5 = _optional_mapping(meteorology, "era5")
+        for key in (
+            "dataset",
+            "vertical_coordinate",
+            "levels",
+            "spatial_sampling",
+            "temporal_interpolation",
+            "raw_format",
+        ):
+            _optional_string(era5, key, "meteorology.era5")
+        _optional_finite_number(era5, "grid_degrees", "meteorology.era5", positive=True)
+        expected_fixed = {
+            "dataset": "reanalysis-era5-complete",
+            "vertical_coordinate": "model_levels",
+            "levels": "1-137",
+            "spatial_sampling": "surrounding_four_points",
+            "temporal_interpolation": "linear",
+            "raw_format": "grib",
+        }
+        for key, expected in expected_fixed.items():
+            if key in era5 and era5[key] != expected:
+                raise ValueError(f"Configuration meteorology.era5.{key} must be {expected!r}.")
+        if "variables" in era5:
+            variables = era5["variables"]
+            if not isinstance(variables, Sequence) or isinstance(variables, (str, bytes)):
+                raise ValueError("Configuration meteorology.era5.variables must be a list.")
+            if tuple(variables) != (
+                "temperature",
+                "specific_humidity",
+                "lnsp",
+                "surface_geopotential",
+            ):
+                raise ValueError("Configuration meteorology.era5.variables must match the fixed SCI-004B contract.")
 
     _validate_visualization(config)
     _validate_inversion(config)
