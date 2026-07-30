@@ -11,8 +11,6 @@ project:
 
 processing:
   incremental: false
-  # DORMANT: reserved for a future interactive CLI/UX contract (ENG-064).
-  interactive_qa: true
   console_level: "INFO"
   file_level: "INFO"
   laser_shot_tolerance_fraction: 0.002
