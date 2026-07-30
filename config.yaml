@@ -1,5 +1,5 @@
 # ==========================================
-# MILGRAU Suite Configuration File
+# MILGRAU Configuration File
 # ==========================================
 
 project:
@@ -20,15 +20,10 @@ processing:
   spurious_extensions: [".dpp", ".zip", ".txt"]
   quarantine_dir: "01-data/_quarantine"
   raw_scan_ignore_dirs: ["openmeteo_cache", "wyoming_cache", "meteorology_cache"]
-  # DORMANT: parallel execution remains disabled pending benchmarks (ENG-034).
-  max_workers_io: 1
-  max_workers_cpu: 1
 
 directories:
   raw_data: "01-data"
   processed_data: "02-processed_data"
-  # DORMANT metadata: no writer currently consumes this path (ENG-064).
-  site_output: "measurements"
   log_dir: "logs"
 
 site:
@@ -48,7 +43,6 @@ physics:
   pbl_max_search_m: 4000.0
   pbl_smooth_bins: 15
 
-  # Named channel constants. Legacy three-item lists are accepted only until 0.2.0.
   channels:
     "355.PC": {deadtime_us: 0.0020, bin_shift_bins: -2, background_offset: 0.0005}
     "355.AN": {deadtime_us: 0.0000, bin_shift_bins: -11, background_offset: 0.0000}
@@ -80,18 +74,10 @@ hardware:
 
 radiosonde:
   station_id: "83779"
-  # DORMANT metadata; downloads use station_id.
-  station_name: "Campo de Marte"
-  # DORMANT scientific control; no standard-atmosphere branch is connected.
-  fallback_to_standard_atmosphere: true
   cache_dir: "01-data/wyoming_cache"
 
 surface_weather:
-  # DORMANT selector: the only implemented provider is Open-Meteo.
-  provider: "open-meteo"
   cache_dir: "01-data/openmeteo_cache"
-  # DORMANT scientific control: the current LIBIDS fallback is unconditional.
-  fallback_to_config_defaults: true
 
 meteorology:
   acquisition_mode: auto
@@ -124,7 +110,6 @@ visualization:
     - "355.PC"
     - "355.AN"
   quicklook:
-    # DORMANT display controls pending the visualization contract in ENG-041.
     show_pbl: true
     show_tropopause: true
     mean_profile_smooth_bins: 20
@@ -133,7 +118,6 @@ visualization:
     colormap: "jet"
   level2_qa:
     enabled: true
-    # DORMANT: the QA orchestrator does not yet pass this limit to plotters.
     max_altitude_km: 30.0
     smooth_bins: 15
     generate_gluing_qa: true
@@ -142,16 +126,9 @@ visualization:
     generate_kfs_qa: true
 
 inversion:
-  # DORMANT orchestration control; invoking LEBEAR still runs processing.
-  enabled: true
-  # DORMANT: no interactive acceptance gate exists.
-  interactive_qa: true
   wavelengths_to_process: [355, 532]
   block_average_minutes: 20
-  # SCI-001: productive Level 2 retrieval is always backward below and forward
-  # above one shared exact reference bin. Isolated branch modes are test APIs.
   kfs_mode: "two_sided"
-  # DORMANT scientific controls: the complete frozen Level 2 schema is written.
   products:
     save_glued_signal: true
     save_molecular_profile: true
@@ -163,8 +140,6 @@ inversion:
   monte_carlo_iterations: 300
   random_seed: 143
   beta_ref_relative_std: 0.10
-  # beta_a(ref) / beta_m(ref), equivalently scattering_ratio_ref - 1, applied
-  # at the selected center bin; the Rayleigh window itself remains a QA/calibration fit.
   aerosol_ref_fraction: 0.0
   min_lidar_ratio_sr: 10.0
   allow_negative_aerosol: false
@@ -173,7 +148,6 @@ inversion:
     ref_alt_min_m: 5000.0
     ref_alt_max_m: 25000.0
     ref_window_bins: 667
-    # DORMANT scientific constant; not consumed by the current retrieval.
     lidar_ratio_molecular_sr: 8.377580409572781
     max_relative_slope: 0.25
     max_relative_variance: 0.50
@@ -191,25 +165,8 @@ inversion:
     invalid_saturation_fraction: 1.0
     search_min_idx: 150
     search_max_idx: 1200
-    # SCI-002: channel presence, gluing quality and retrieval-input validity are
-    # independent. If gluing is unavailable/rejected, assess channels separately.
     allow_single_channel_fallback: true
-    # Preserves the established PC-first fallback policy explicitly; AN is used
-    # when PC fails minimum QA or when analog is selected here.
     single_channel_priority: "photon_counting"
-
-  # DORMANT experimental library configuration; not integrated into retrieval.
-  cloud_screening:
-    enabled: true
-    min_altitude_m: 500.0
-    max_altitude_m: 15000.0
-    smooth_bins: 9
-    snr_threshold: 8.0
-    robust_z_threshold: 6.0
-    min_cloud_bins: 3
-    vertical_dilation_bins: 2
-    exclude_clouds_from_reference_fit: true
-    stop_kfs_below_optically_thick_clouds: true
 
   lidar_ratio_std_sr:
     "355": 15.0
