@@ -15,7 +15,6 @@ env/
 test.py
 milgrau.egg-info/
 build/
-MILGRAU_TRACKER.md
 
 # ==========================================
 # MILGRAU Data Directories (Do NOT commit heavy data)
