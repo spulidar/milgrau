@@ -135,6 +135,14 @@ profiles:
           "1064.AN": 4071
           "355.PC": 4072
           "355.AN": 4073
+        # Product 3687 uses elastic backscatter retrievals. Value 1 tells
+        # ELPP to use the fixed lidar-ratio input configured in the SCC DB.
+        lr_input:
+          "532.AN": 1
+          "532.PC": 1
+          "1064.AN": 1
+          "355.PC": 1
+          "355.AN": 1
       night:
         configuration_id: 1046
         name: "SPU-Lidar - Nigthtime-10September2024"
