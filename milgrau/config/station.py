@@ -79,6 +79,19 @@ def _validate_scc(profile_id: str, scc: Mapping[str, Any]) -> None:
                 raise ValueError(f"profiles.{profile_id}.scc.{mode} duplicates SCC channel ID {resolved}.")
             ids.add(resolved)
 
+        if "lr_input" in config:
+            lr_input = _mapping(config["lr_input"], f"profiles.{profile_id}.scc.{mode}.lr_input")
+            unknown_channels = sorted(set(lr_input) - set(channels))
+            if unknown_channels:
+                raise ValueError(
+                    f"profiles.{profile_id}.scc.{mode}.lr_input references channels outside the SCC configuration: {unknown_channels}."
+                )
+            for channel, value in lr_input.items():
+                if isinstance(value, bool) or not isinstance(value, Integral) or int(value) not in {0, 1}:
+                    raise ValueError(
+                        f"profiles.{profile_id}.scc.{mode}.lr_input.{channel} must be integer 0 or 1."
+                    )
+
 
 def validate_station_config(catalog: Mapping[str, Any]) -> None:
     """Validate station.yaml; a profile may omit SCC metadata entirely."""
@@ -195,18 +208,31 @@ def resolve_station_context(config: Mapping[str, Any], measurement_time: datetim
         "site": resolved_site, "laser": deepcopy(profile.get("laser", {})),
     }
     if "scc" not in profile:
-        return {**common, "scc_available": False, "scc_configuration_id": None, "scc_configuration_name": None,
-                "channel_ids": {}, "selected_channels": available, "extra_channels": []}
+        return {
+            **common,
+            "scc_available": False,
+            "scc_configuration_id": None,
+            "scc_configuration_name": None,
+            "channel_ids": {},
+            "lr_input": {},
+            "selected_channels": available,
+            "extra_channels": [],
+        }
 
     scc = profile["scc"][mode]
     channel_ids = {str(name): int(value) for name, value in scc["channels"].items()}
+    lr_input = {str(name): int(value) for name, value in scc.get("lr_input", {}).items()}
     available_set = set(available)
     missing = sorted(set(channel_ids) - available_set)
     if missing:
         raise ValueError(f"SCC configuration {scc['configuration_id']} ({mode}) requires channels missing from the Licel group: {missing}. Available channels: {sorted(available_set)}")
     return {
-        **common, "scc_available": True, "scc_configuration_id": int(scc["configuration_id"]),
-        "scc_configuration_name": str(scc["name"]), "channel_ids": channel_ids,
+        **common,
+        "scc_available": True,
+        "scc_configuration_id": int(scc["configuration_id"]),
+        "scc_configuration_name": str(scc["name"]),
+        "channel_ids": channel_ids,
+        "lr_input": lr_input,
         "selected_channels": [name for name in channel_ids if name in available_set],
         "extra_channels": [name for name in available if name not in channel_ids],
     }
