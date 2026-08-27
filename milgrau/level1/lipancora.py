@@ -32,19 +32,16 @@ DEFAULT_SPEED_OF_LIGHT_M_S = 299792458.0
 
 
 def _physics_config(config: Mapping[str, Any]) -> Mapping[str, Any]:
-    """Return the physics configuration section."""
     physics = config.get("physics", {})
     return physics if isinstance(physics, Mapping) else {}
 
 
 def _speed_of_light_m_s(config: Mapping[str, Any]) -> float:
-    """Return the configured speed of light constant."""
     physics = _physics_config(config)
     return float(physics.get("speed_of_light", physics.get("speed_of_light_m_s", DEFAULT_SPEED_OF_LIGHT_M_S)))
 
 
 def _bin_time_us(z_arr: np.ndarray, config: Mapping[str, Any]) -> float:
-    """Return the bin integration time derived from the altitude grid."""
     if len(z_arr) < 2:
         raise ValueError("Altitude grid must contain at least two bins.")
     dz = float(z_arr[1] - z_arr[0])
@@ -53,19 +50,35 @@ def _bin_time_us(z_arr: np.ndarray, config: Mapping[str, Any]) -> float:
     return (2.0 * dz / _speed_of_light_m_s(config)) * 1e6
 
 
-def _accumulated_shots(ds: xr.Dataset) -> float:
-    """Return the accumulated laser shots stored in the Level 0 product."""
-    shots = float(ds.attrs.get("Accumulated_Shots", np.nan))
-    if not np.isfinite(shots) or shots <= 0.0:
-        raise ValueError(f"Invalid Accumulated_Shots attribute: {shots}")
-    return shots
+def _channel_laser_shots(ds: xr.Dataset, channel_index: int) -> xr.DataArray:
+    """Return positive per-profile SCC Laser_Shots for one channel."""
+    shots = ds["Laser_Shots"].isel(channel=channel_index).astype(np.float64)
+    if shots.dims != ("time",):
+        raise ValueError(f"Laser_Shots channel slice must have dimensions ('time',); got {shots.dims}.")
+    values = np.asarray(shots.values, dtype=np.float64)
+    if not np.all(np.isfinite(values)) or np.any(values <= 0.0):
+        raise ValueError("Laser_Shots contains non-finite or non-positive values for the selected channel.")
+    return shots.assign_coords(time=ds.time)
 
 
-def _background_mask(ds: xr.Dataset, channel_index: int, channel_name: str, logger: logging.Logger) -> xr.DataArray:
-    """Return the background-selection mask for one channel."""
+def _native_channel_grid(ds: xr.Dataset, channel_index: int) -> np.ndarray:
+    """Return center-bin range coordinates from one channel's native SCC resolution."""
+    dz = float(ds["Raw_Data_Range_Resolution"].isel(channel=channel_index).values)
+    if not np.isfinite(dz) or dz <= 0.0:
+        raise ValueError(f"Invalid native range resolution for channel index {channel_index}: {dz}")
+    return (np.arange(ds.sizes["altitude"], dtype=np.float64) + 0.5) * dz
+
+
+def _background_mask(
+    ds: xr.Dataset,
+    channel_index: int,
+    channel_name: str,
+    z_da: xr.DataArray,
+    logger: logging.Logger,
+) -> xr.DataArray:
     bg_low = float(ds["Background_Low"].isel(channel=channel_index))
     bg_high = float(ds["Background_High"].isel(channel=channel_index))
-    bg_mask = (ds["altitude"] >= bg_low) & (ds["altitude"] <= bg_high)
+    bg_mask = (z_da >= bg_low) & (z_da <= bg_high)
     if int(bg_mask.sum().values) < 2:
         logger.warning(f"  -> Channel {channel_name}: background mask has fewer than 2 bins ({bg_low:.1f}-{bg_high:.1f} m).")
     return bg_mask
@@ -74,21 +87,38 @@ def _background_mask(ds: xr.Dataset, channel_index: int, channel_name: str, logg
 def _dark_current_profile(
     ds: xr.Dataset,
     channel_index: int,
+    source_z_arr: np.ndarray,
 ) -> tuple[xr.DataArray | None, xr.DataArray | None, bool]:
-    """Return dark-current mean profile and uncertainty for one channel when available."""
     if not level0_dark_current_available(ds, channel_index):
         return None, None, False
-
     dc_data = ds["Background_Profile"].isel(channel=channel_index)
     if dc_data.sizes.get("time_bck", 0) <= 0:
         return None, None, False
-
     dc_mean = dc_data.mean(dim="time_bck", skipna=True)
     if not np.isfinite(dc_mean.values).any():
         return None, None, False
+    count = max(ds.sizes.get("time_bck", 1), 1)
+    dc_err = dc_data.std(dim="time_bck", skipna=True) / np.sqrt(count)
+    dc_mean = dc_mean.rename({"altitude": "range"}).assign_coords(range=source_z_arr)
+    dc_err = dc_err.rename({"altitude": "range"}).assign_coords(range=source_z_arr)
+    return dc_mean, dc_err, True
 
-    dc_err = dc_data.std(dim="time_bck", skipna=True).rename({"altitude": "range"}) / np.sqrt(max(ds.sizes.get("time_bck", 1), 1))
-    return dc_mean.rename({"altitude": "range"}), dc_err, True
+
+def _same_grid(source: xr.DataArray, target_z_arr: np.ndarray) -> bool:
+    source_range = np.asarray(source["range"].values, dtype=np.float64)
+    return source_range.shape == target_z_arr.shape and np.allclose(source_range, target_z_arr, rtol=0.0, atol=1e-9)
+
+
+def _interpolate_numeric(data: xr.DataArray, target_z_arr: np.ndarray) -> xr.DataArray:
+    if _same_grid(data, target_z_arr):
+        return data
+    return data.interp(range=target_z_arr)
+
+
+def _interpolate_mask(data: xr.DataArray, target_z_arr: np.ndarray) -> xr.DataArray:
+    if _same_grid(data, target_z_arr):
+        return data.astype(bool)
+    return data.astype(np.float32).interp(range=target_z_arr, method="nearest").fillna(0.0) >= 0.5
 
 
 def _channel_result_dataset(
@@ -98,25 +128,25 @@ def _channel_result_dataset(
     rcs: xr.DataArray,
     rcs_error: xr.DataArray,
     diagnostics: Mapping[str, Any],
+    target_z_arr: np.ndarray,
 ) -> xr.Dataset:
-    """Build the per-channel Level 1 dataset returned by the correction kernel."""
+    corrected = _interpolate_numeric(corrected, target_z_arr)
+    corrected_error = _interpolate_numeric(corrected_error, target_z_arr)
+    rcs = _interpolate_numeric(rcs, target_z_arr)
+    rcs_error = _interpolate_numeric(rcs_error, target_z_arr)
+    pc_saturation_mask = _interpolate_mask(diagnostics["pc_saturation_mask"], target_z_arr)
     return xr.Dataset(
         {
             "corrected_signal": corrected.rename({"range": "altitude"}).assign_coords(channel=channel_name).astype(np.float32),
             "corrected_signal_error": corrected_error.rename({"range": "altitude"}).assign_coords(channel=channel_name).astype(np.float32),
             "range_corrected_signal": rcs.rename({"range": "altitude"}).assign_coords(channel=channel_name).astype(np.float32),
             "range_corrected_signal_error": rcs_error.rename({"range": "altitude"}).assign_coords(channel=channel_name).astype(np.float32),
-            "pc_saturation_mask": diagnostics["pc_saturation_mask"].rename({"range": "altitude"}).assign_coords(channel=channel_name).astype(np.int8),
+            "pc_saturation_mask": pc_saturation_mask.rename({"range": "altitude"}).assign_coords(channel=channel_name).astype(np.int8),
         }
     )
 
 
-def _channel_diagnostic_record(
-    ds: xr.Dataset,
-    channel_name: str,
-    diagnostics: Mapping[str, Any],
-) -> dict[str, Any]:
-    """Return the channel-level diagnostic record consumed by the finalizer."""
+def _channel_diagnostic_record(ds: xr.Dataset, channel_name: str, diagnostics: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "channel": channel_name,
         "deadtime_correction_applied": int(diagnostics["deadtime_correction_applied"]),
@@ -131,23 +161,24 @@ def _channel_diagnostic_record(
 
 def _correct_single_channel(
     ds: xr.Dataset,
-    z_da: xr.DataArray,
+    source_z_arr: np.ndarray,
+    target_z_arr: np.ndarray,
     channel_index: int,
     channel_name: str,
-    shots: float,
+    shots: xr.DataArray,
     bin_time_us: float,
     channels_config: Mapping[str, Any],
     logger: logging.Logger,
 ) -> tuple[xr.Dataset, dict[str, Any], bool]:
-    """Apply Level 1 corrections to one channel and return result, diagnostics and DC usage."""
-    sig = ds["Raw_Lidar_Data"].isel(channel=channel_index)
-    bg_mask = _background_mask(ds, channel_index, channel_name, logger)
+    """Apply native-grid corrections, then map one channel onto the common output grid."""
+    z_da = xr.DataArray(source_z_arr, dims=["range"], coords={"range": source_z_arr}, attrs={"units": "m"})
+    sig = ds["Raw_Lidar_Data"].isel(channel=channel_index).rename({"altitude": "range"}).assign_coords(range=source_z_arr)
+    bg_mask = _background_mask(ds, channel_index, channel_name, z_da, logger)
     deadtime, shift, bg_offset = get_channel_constant(channels_config, channel_name, logger)
     is_photon = "pc" in channel_name.lower() or "ph" in channel_name.lower()
-    dc_prof, dc_err, dark_current_used = _dark_current_profile(ds, channel_index)
-
+    dc_prof, dc_err, dark_current_used = _dark_current_profile(ds, channel_index, source_z_arr)
     corrected, corrected_error, rcs, rcs_error, diagnostics = apply_instrumental_corrections(
-        sig=sig.rename({"altitude": "range"}),
+        sig=sig,
         z_da=z_da,
         shots=shots,
         bin_time_us=bin_time_us,
@@ -155,37 +186,35 @@ def _correct_single_channel(
         shift=shift,
         bg_offset=bg_offset,
         is_photon=is_photon,
-        bg_mask=bg_mask.rename({"altitude": "range"}),
+        bg_mask=bg_mask,
         dc_prof=dc_prof,
         dc_err=dc_err,
         return_diagnostics=True,
     )
-    channel_dataset = _channel_result_dataset(channel_name, corrected, corrected_error, rcs, rcs_error, diagnostics)
+    channel_dataset = _channel_result_dataset(channel_name, corrected, corrected_error, rcs, rcs_error, diagnostics, target_z_arr)
     diagnostic_record = _channel_diagnostic_record(ds, channel_name, diagnostics)
     return channel_dataset, diagnostic_record, dark_current_used
 
 
 def _processing_metadata(input_file: Path) -> dict[str, str]:
-    """Return standardized Level 1 processing metadata."""
     return {
         "Processing_level": (
-            "Level 1: PC counts->MHz, DeadTime, PC saturation mask, Dark Current, "
-            "Bin Shift, Background subtraction, corrected signal, Range Corrected Signal, "
-            "uncertainty propagation, PBL, Radiosonde, Tropopause"
+            "Level 1: PC counts->MHz using Laser_Shots(time,channel), DeadTime, PC saturation mask, Dark Current, "
+            "Bin Shift, Background subtraction, native-grid correction and common-grid interpolation, corrected signal, "
+            "Range Corrected Signal, uncertainty propagation, PBL, Radiosonde, Tropopause"
         ),
         "Pipeline": "MILGRAU/LIPANCORA",
         "Input_Level0_File": input_file.name,
         "Altitude_units": "m",
+        "Altitude_grid_convention": "range-bin centers on finest native Raw_Data_Range_Resolution",
     }
 
 
 def _level1_encoding(ds: xr.Dataset) -> dict[str, dict[str, int | bool]]:
-    """Return the NetCDF encoding used for Level 1 outputs."""
     return {var: {"zlib": True, "complevel": 4} for var in ds.data_vars if ds[var].ndim > 0}
 
 
 def _make_level1_netcdf_safe(ds: xr.Dataset) -> xr.Dataset:
-    """Return a copy with NetCDF-safe datetime coordinates."""
     if "time" not in ds.coords:
         return ds
     time_index = pd.to_datetime(ds["time"].values)
@@ -195,7 +224,6 @@ def _make_level1_netcdf_safe(ds: xr.Dataset) -> xr.Dataset:
 
 
 def _discover_level0_files(config: Mapping[str, Any]) -> list[Path]:
-    """Return all candidate Level 0 NetCDF files under processed_data."""
     in_dir = processed_data_root(config)
     discovered: list[Path] = []
     for path in sorted(in_dir.rglob("*.nc")):
@@ -209,10 +237,7 @@ def _discover_level0_files(config: Mapping[str, Any]) -> list[Path]:
     return discovered
 
 
-def _files_requiring_level1(
-    files: list[Path], config: Mapping[str, Any], logger: logging.Logger
-) -> tuple[list[Path], list[ExecutionResult]]:
-    """Filter candidate Level 0 files according to incremental mode."""
+def _files_requiring_level1(files: list[Path], config: Mapping[str, Any], logger: logging.Logger) -> tuple[list[Path], list[ExecutionResult]]:
     incremental = incremental_enabled(config)
     files_to_process: list[Path] = []
     skipped_results: list[ExecutionResult] = []
@@ -240,27 +265,27 @@ def _files_requiring_level1(
     return files_to_process, skipped_results
 
 
-def apply_all_physical_corrections(
-    ds: xr.Dataset,
-    z_arr: np.ndarray,
-    config: Mapping[str, Any],
-    logger: logging.Logger,
-) -> xr.Dataset:
-    """Apply Level 1 instrumental corrections to all available channels."""
+def apply_all_physical_corrections(ds: xr.Dataset, z_arr: np.ndarray, config: Mapping[str, Any], logger: logging.Logger) -> xr.Dataset:
+    """Apply corrections on native channel grids and return one common-grid Level 1 dataset."""
     channels_config = _physics_config(config).get("channels", {})
-    bin_time_us = _bin_time_us(z_arr, config)
-    shots = _accumulated_shots(ds)
-    z_da = xr.DataArray(z_arr, dims=["range"], attrs={"units": "m"})
     channel_datasets = []
     status_records = []
     diagnostic_records = []
     logger.info("  -> Running instrumental corrections channel-by-channel...")
-
     for ch_idx, ch_name in enumerate(ds.channel.values.astype(str)):
         try:
+            source_z_arr = _native_channel_grid(ds, ch_idx)
+            bin_time_us = _bin_time_us(source_z_arr, config)
+            shots = _channel_laser_shots(ds, ch_idx)
+            if not np.allclose(source_z_arr, z_arr, rtol=0.0, atol=1e-9):
+                logger.info(
+                    f"  -> Channel {ch_name}: native dz={source_z_arr[1] - source_z_arr[0]:.6f} m; "
+                    f"corrected natively then interpolated to dz={z_arr[1] - z_arr[0]:.6f} m."
+                )
             channel_dataset, diagnostic_record, dark_current_used = _correct_single_channel(
                 ds=ds,
-                z_da=z_da,
+                source_z_arr=source_z_arr,
+                target_z_arr=z_arr,
                 channel_index=ch_idx,
                 channel_name=ch_name,
                 shots=shots,
@@ -278,16 +303,13 @@ def apply_all_physical_corrections(
         except Exception as exc:
             status_records.append((ch_name, 0, 0))
             logger.warning(f"  -> Channel {ch_name} failed during correction: {exc}")
-
     if not channel_datasets:
         raise RuntimeError("All channels failed during instrumental correction.")
-
     final_ds = xr.concat(channel_datasets, dim="channel")
     return finalize_correction_dataset(final_ds, status_records, diagnostic_records)
 
 
 def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logger]) -> ExecutionResult:
-    """Process one Level 0 NetCDF into a Level 1 RCS NetCDF product."""
     nc_path, config, logger = args
     started_at = time.perf_counter()
     nc_file = Path(nc_path)
@@ -340,21 +362,15 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
 
 
 def process_level_1(config: Mapping[str, Any], logger: logging.Logger) -> ExecutionSummary:
-    """Discover and process every Level 0 NetCDF file into Level 1."""
     in_dir = processed_data_root(config)
     files = _discover_level0_files(config)
     if not files:
         logger.warning(f"No Level 0 files found in {in_dir}. Exiting.")
-        return ExecutionSummary.from_results(
-            [ExecutionResult.skipped("level1.discovery", "No Level 0 files found", input_path=in_dir)]
-        )
-
+        return ExecutionSummary.from_results([ExecutionResult.skipped("level1.discovery", "No Level 0 files found", input_path=in_dir)])
     files_to_process, skipped_results = _files_requiring_level1(files, config, logger)
-
     if not files_to_process:
         logger.info(f"No Level 0 files require Level 1 processing. Skipped {len(skipped_results)} existing products.")
         return ExecutionSummary.from_results(skipped_results)
-
     logger.info(f"Found {len(files_to_process)} Level 0 files to process ({len(skipped_results)} skipped).")
     results = list(skipped_results)
     for file_path in files_to_process:
