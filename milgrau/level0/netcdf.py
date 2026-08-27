@@ -273,6 +273,33 @@ def _write_daq_range(ds: nc.Dataset, channels: list[str], lidar_data: Mapping[st
     variable[:] = values
 
 
+def _write_lr_input(ds: nc.Dataset, channels: list[str], config: Mapping[str, Any]) -> None:
+    """Write SCC elastic-backscatter lidar-ratio source flags when configured."""
+    resolved = _resolved_station(config)
+    raw = resolved.get("lr_input", {})
+    if not isinstance(raw, Mapping) or not raw:
+        return
+
+    unknown = sorted(set(str(name) for name in raw) - set(channels))
+    if unknown:
+        raise ValueError(f"LR_Input references channels not present in the exported Level 0: {unknown}")
+
+    values = np.ma.masked_all(len(channels), dtype=np.int32)
+    for index, channel_name in enumerate(channels):
+        if channel_name not in raw:
+            continue
+        value = int(raw[channel_name])
+        if value not in {0, 1}:
+            raise ValueError(f"LR_Input for {channel_name} must be 0 or 1; got {value}.")
+        values[index] = value
+
+    variable = ds.createVariable("LR_Input", "i4", ("channels",))
+    variable.long_name = "Lidar-ratio input source for elastic backscatter retrieval"
+    variable.flag_values = "0, 1"
+    variable.flag_meanings = "external_profile fixed_scc_db_value"
+    variable[:] = values
+
+
 def _dark_current_attributes(group_df: pd.DataFrame) -> dict:
     df_dc = group_df[group_df["meas_type"] == "dark_current"].copy()
     if df_dc.empty:
@@ -431,6 +458,7 @@ def build_level0_netcdf(netcdf_path: str, save_id: str, period: str, lidar_data:
             variables["temperature_at_station"].assignValue(np.float64(temperature_c))
             _write_channel_metadata(variables, channels, lidar_data, config, period, logger)
             _write_daq_range(ds, channels, lidar_data)
+            _write_lr_input(ds, channels, config)
             write_dark_current_profile(ds, group_df, channels, num_channels, num_points, logger)
     except Exception as exc:
         raise RuntimeError(f"Failed to build NetCDF: {exc}") from exc
