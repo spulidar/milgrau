@@ -50,6 +50,13 @@ def test_repository_station_catalog_covers_all_scc_eras() -> None:
     assert merion_day["scc_configuration_id"] == 1047
     assert merion_day["channel_ids"]["532.AN"] == 4069
     assert merion_day["channel_ids"]["355.AN"] == 4073
+    assert merion_day["lr_input"] == {
+        "532.AN": 1,
+        "532.PC": 1,
+        "1064.AN": 1,
+        "355.PC": 1,
+        "355.AN": 1,
+    }
 
 
 def test_pre_scc_measurement_uses_legacy_profile_without_scc_mapping() -> None:
@@ -61,6 +68,7 @@ def test_pre_scc_measurement_uses_legacy_profile_without_scc_mapping() -> None:
     assert context["scc_available"] is False
     assert context["scc_configuration_id"] is None
     assert context["channel_ids"] == {}
+    assert context["lr_input"] == {}
     assert context["selected_channels"] == channels
 
 
@@ -77,6 +85,7 @@ def test_merion_night_configuration_contains_raman_channels() -> None:
     assert context["channel_ids"]["530.AN"] == 4075
     assert context["channel_ids"]["387.AN"] == 4076
     assert context["channel_ids"]["387.PC"] == 4077
+    assert context["lr_input"] == {}
 
 
 def test_station_resolver_rejects_scc_configuration_with_missing_raw_channel() -> None:
@@ -105,6 +114,7 @@ def test_station_context_applies_profile_altitude_and_flat_channel_map() -> None
         "355.PC": 4072,
         "355.AN": 4073,
     }
+    assert resolved["_resolved_station"]["lr_input"]["532.AN"] == 1
 
 
 def test_select_lidar_channels_reindexes_laser_shots() -> None:
