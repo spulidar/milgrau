@@ -23,7 +23,7 @@ def _context(config: dict, when: str, period: str, channels: list[str]) -> dict:
 def test_repository_station_catalog_covers_all_scc_eras() -> None:
     config = load_config("config.yaml")
 
-    legacy_day = _context(
+    apel_day = _context(
         config,
         "2017-10-01T12:00:00",
         "pm",
@@ -42,14 +42,26 @@ def test_repository_station_catalog_covers_all_scc_eras() -> None:
         ["532.AN", "532.PC", "1064.AN", "355.PC", "355.AN"],
     )
 
-    assert legacy_day["profile_id"] == "spu-apel-2017"
-    assert legacy_day["scc_configuration_id"] == 248
+    assert apel_day["profile_id"] == "spu-apel-2017"
+    assert apel_day["scc_configuration_id"] == 248
     assert raman_night["profile_id"] == "spu-raman-2018"
     assert raman_night["scc_configuration_id"] == 484
     assert merion_day["profile_id"] == "spu-merionc-2024"
     assert merion_day["scc_configuration_id"] == 1047
     assert merion_day["channel_ids"]["532.AN"] == 4069
     assert merion_day["channel_ids"]["355.AN"] == 4073
+
+
+def test_pre_scc_measurement_uses_legacy_profile_without_scc_mapping() -> None:
+    config = load_config("config.yaml")
+    channels = ["355.AN", "355.PC", "532.AN", "532.PC", "1064.AN"]
+    context = _context(config, "2015-06-01T12:00:00", "pm", channels)
+
+    assert context["profile_id"] == "spu-legacy"
+    assert context["scc_available"] is False
+    assert context["scc_configuration_id"] is None
+    assert context["channel_ids"] == {}
+    assert context["selected_channels"] == channels
 
 
 def test_merion_night_configuration_contains_raman_channels() -> None:

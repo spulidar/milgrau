@@ -57,6 +57,18 @@ def _physics_config(config: Mapping[str, Any]) -> Mapping[str, Any]:
     return physics if isinstance(physics, Mapping) else {}
 
 
+def _resolved_station(config: Mapping[str, Any]) -> Mapping[str, Any]:
+    value = config.get("_resolved_station", {})
+    return value if isinstance(value, Mapping) else {}
+
+
+def _scc_ready(config: Mapping[str, Any]) -> bool:
+    resolved = _resolved_station(config)
+    if not resolved:
+        return True
+    return bool(resolved.get("scc_available", False))
+
+
 def _hardware_map(config: Mapping[str, Any], period: str) -> Mapping[str, Any]:
     name_to_id = config.get("hardware", {}).get("name_to_id", {})
     if not isinstance(name_to_id, Mapping):
@@ -179,7 +191,7 @@ def _create_level0_dimensions(ds: nc.Dataset, *, num_times: int, num_channels: i
     ds.createDimension("scan_angles", 1)
 
 
-def _create_level0_core_variables(ds: nc.Dataset) -> dict[str, nc.Variable]:
+def _create_level0_core_variables(ds: nc.Dataset, *, include_channel_ids: bool = True) -> dict[str, nc.Variable]:
     raw_data_start = ds.createVariable("Raw_Data_Start_Time", "i4", TIME_SCALE_DIMENSIONS)
     raw_data_start.units = "s"
     raw_data_stop = ds.createVariable("Raw_Data_Stop_Time", "i4", TIME_SCALE_DIMENSIONS)
@@ -203,7 +215,7 @@ def _create_level0_core_variables(ds: nc.Dataset) -> dict[str, nc.Variable]:
     bg_low.units = "m"
     bg_high = ds.createVariable("Background_High", "f8", ("channels",))
     bg_high.units = "m"
-    return {
+    variables = {
         "raw_data_start": raw_data_start,
         "raw_data_stop": raw_data_stop,
         "raw_lidar_data": raw_lidar_data,
@@ -213,13 +225,15 @@ def _create_level0_core_variables(ds: nc.Dataset) -> dict[str, nc.Variable]:
         "molecular_calc": molecular_calc,
         "pressure_at_station": pressure_at_station,
         "temperature_at_station": temperature_at_station,
-        "channel_ids": ds.createVariable("channel_ID", "i4", ("channels",)),
         "id_timescale": ds.createVariable("id_timescale", "i4", ("channels",)),
         "range_resolution": range_res,
         "background_low": bg_low,
         "background_high": bg_high,
         "channel_names": ds.createVariable("channel_string", str, ("channels",)),
     }
+    if include_channel_ids:
+        variables["channel_ids"] = ds.createVariable("channel_ID", "i4", ("channels",))
+    return variables
 
 
 def _write_channel_metadata(variables: Mapping[str, nc.Variable], channels: list[str], lidar_data: Mapping[str, Any], config: Mapping[str, Any], period: str, logger: logging.Logger) -> None:
@@ -227,7 +241,8 @@ def _write_channel_metadata(variables: Mapping[str, nc.Variable], channels: list
     background_start_m, background_stop_m = _background_window_m(config)
     for index, channel_name in enumerate(channels):
         variables["channel_names"][index] = channel_name
-        variables["channel_ids"][index] = _channel_id(channel_name, hardware_map, period, logger)
+        if "channel_ids" in variables:
+            variables["channel_ids"][index] = _channel_id(channel_name, hardware_map, period, logger)
         variables["id_timescale"][index] = 0
         variables["range_resolution"][index] = _channel_range_resolution_m(lidar_data, channel_name, config)
         variables["background_low"][index] = background_start_m
@@ -248,7 +263,7 @@ def _write_daq_range(ds: nc.Dataset, channels: list[str], lidar_data: Mapping[st
         except (TypeError, ValueError):
             daq_range_mv = np.nan
         if not np.isfinite(daq_range_mv) or daq_range_mv <= 0.0:
-            raise ValueError(f"Analog channel {channel_name} lacks a positive Licel Discriminator/DAQ range required by SCC.")
+            raise ValueError(f"Analog channel {channel_name} lacks a positive Licel Discriminator/DAQ range required by acquisition metadata.")
         values[index] = daq_range_mv
     if not analog_count:
         return
@@ -288,11 +303,14 @@ def build_level0_global_attributes(save_id: str, lidar_data: dict, group_df: pd.
     max_stop_utc = pd.to_datetime(group_df["stop_time"]).max()
     source_files = _source_file_names(group_df)
     physics = _physics_config(config)
+    resolved = _resolved_station(config)
+    ready = _scc_ready(config)
     attrs = {
         "Measurement_ID": save_id,
-        "System": "SPU-Lidar",
-        "Processing_level": "Level 0: Raw Licel to SCC-compliant NetCDF",
+        "System": str(resolved.get("station_name", config.get("project", {}).get("station_name", "Lidar"))),
+        "Processing_level": "Level 0: Raw Licel to SCC-compatible NetCDF" if ready else "Level 0: Raw Licel NetCDF (SCC mapping unavailable)",
         "Pipeline": "MILGRAU",
+        "SCC_Ready": np.int8(1 if ready else 0),
         "Latitude_degrees_north": float(physics.get("latitude", DEFAULT_LATITUDE_DEGREES)),
         "Longitude_degrees_east": float(physics.get("longitude", DEFAULT_LONGITUDE_DEGREES)),
         "Accumulated_Shots": int(lidar_data.get("shots", 0)),
@@ -307,6 +325,11 @@ def build_level0_global_attributes(save_id: str, lidar_data: dict, group_df: pd.
         "Source_File_Count": int(len(source_files)),
         "Source_Files": ";".join(source_files),
     }
+    if resolved:
+        attrs["Station_Profile"] = str(resolved.get("profile_id", ""))
+        if ready:
+            attrs["SCC_Configuration_ID"] = int(resolved["scc_configuration_id"])
+            attrs["SCC_Configuration_Name"] = str(resolved["scc_configuration_name"])
     attrs.update(_dark_current_attributes(group_df))
     return attrs
 
@@ -375,7 +398,7 @@ def write_dark_current_profile(ds: nc.Dataset, group_df: pd.DataFrame, channels:
 
 
 def build_level0_netcdf(netcdf_path: str, save_id: str, period: str, lidar_data: dict, group_df: pd.DataFrame, weather_data: dict, config: dict, logger: logging.Logger) -> None:
-    """Generate an SCC-compliant Level-0 NetCDF from parsed Licel tensors."""
+    """Generate a Level-0 NetCDF from parsed Licel tensors, with optional SCC mapping."""
     try:
         tensors = lidar_data["tensors"]
         channels = lidar_data["channels"]
@@ -396,7 +419,7 @@ def build_level0_netcdf(netcdf_path: str, save_id: str, period: str, lidar_data:
         with nc.Dataset(netcdf_path, "w", format="NETCDF4") as ds:
             ds.setncatts(build_level0_global_attributes(save_id, lidar_data, group_df, weather_data, config))
             _create_level0_dimensions(ds, num_times=num_times, num_channels=num_channels, num_points=num_points)
-            variables = _create_level0_core_variables(ds)
+            variables = _create_level0_core_variables(ds, include_channel_ids=_scc_ready(config))
             variables["raw_data_start"][:, 0] = start_offsets
             variables["raw_data_stop"][:, 0] = stop_offsets
             variables["raw_lidar_data"][:] = _stack_raw_lidar_data(tensors, channels, num_times, num_points)

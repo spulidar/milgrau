@@ -75,7 +75,7 @@ def _resolve_group_station_config(
     config: Mapping[str, Any],
     logger: logging.Logger,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Resolve station/SCC metadata when a station catalog is configured."""
+    """Resolve station metadata and optional SCC mapping for one measurement group."""
     if not isinstance(config.get("_station_catalog"), Mapping):
         return dict(config), dict(lidar_data)
 
@@ -92,18 +92,25 @@ def _resolve_group_station_config(
     selected_lidar = select_lidar_channels(lidar_data, context["selected_channels"])
     effective_config = apply_station_context(config, context)
 
-    logger.info(
-        "  -> Station profile %s; SCC configuration %s (%s); exporting %d channels.",
-        context["profile_id"],
-        context["scc_configuration_id"],
-        context["mode"],
-        len(context["selected_channels"]),
-    )
-    if context["extra_channels"]:
+    if context.get("scc_available", False):
         logger.info(
-            "  -> Raw channels outside SCC configuration %s are omitted from this Level 0: %s",
+            "  -> Station profile %s; SCC configuration %s (%s); exporting %d channels.",
+            context["profile_id"],
             context["scc_configuration_id"],
-            ", ".join(context["extra_channels"]),
+            context["mode"],
+            len(context["selected_channels"]),
+        )
+        if context["extra_channels"]:
+            logger.info(
+                "  -> Raw channels outside SCC configuration %s are omitted from this Level 0: %s",
+                context["scc_configuration_id"],
+                ", ".join(context["extra_channels"]),
+            )
+    else:
+        logger.info(
+            "  -> Station profile %s has no SCC configuration; processing all %d Licel channels for internal MILGRAU use.",
+            context["profile_id"],
+            len(context["selected_channels"]),
         )
     return effective_config, selected_lidar
 
@@ -174,12 +181,10 @@ def process_measurement_group(
         result_metadata = {"pipeline": "LIBIDS", "save_id": save_id, "file_count": len(files_meas)}
         resolved_station = effective_config.get("_resolved_station")
         if isinstance(resolved_station, Mapping):
-            result_metadata.update(
-                {
-                    "station_profile": resolved_station["profile_id"],
-                    "scc_configuration_id": resolved_station["scc_configuration_id"],
-                }
-            )
+            result_metadata["station_profile"] = resolved_station["profile_id"]
+            result_metadata["scc_available"] = bool(resolved_station.get("scc_available", False))
+            if resolved_station.get("scc_configuration_id") is not None:
+                result_metadata["scc_configuration_id"] = resolved_station["scc_configuration_id"]
         return ExecutionResult.success(
             "level0.complete",
             f"NetCDF successfully generated for {save_id}",

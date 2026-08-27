@@ -27,6 +27,15 @@ channel_corrections:
   "1064.AN": {deadtime_us: 0.0000, bin_shift_bins: 1, background_offset: 0.0000}
 
 profiles:
+  # Historical measurements before the first known SCC configuration.
+  # These data are processed from the Licel headers and remain usable by
+  # MILGRAU L0/L1/L2, but are not advertised as SCC-ready.
+  - id: "spu-legacy"
+    valid_from: "1900-01-01"
+    valid_to: "2017-03-07"
+    site:
+      station_altitude_m: 766.0
+
   - id: "spu-apel-2017"
     valid_from: "2017-03-08"
     valid_to: "2018-03-18"
