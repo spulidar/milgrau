@@ -1,0 +1,140 @@
+station:
+  id: "spu"
+  name: "SPU-Lidar"
+  institution: "IPEN/USP"
+  timezone: "America/Sao_Paulo"
+  site:
+    latitude: -23.5607
+    longitude: -46.7398
+    station_altitude_m: 766.0
+  radiosonde:
+    station_id: "83779"
+    station_name: "SBMT Marte Civ"
+    fallback_to_standard_atmosphere: true
+
+channel_corrections:
+  "355.PC": {deadtime_us: 0.0020, bin_shift_bins: -2, background_offset: 0.0005}
+  "355.AN": {deadtime_us: 0.0000, bin_shift_bins: -11, background_offset: 0.0000}
+  "387.PC": {deadtime_us: 0.0000, bin_shift_bins: -2, background_offset: 0.0000}
+  "387.AN": {deadtime_us: 0.0000, bin_shift_bins: 8, background_offset: 0.0000}
+  "408.PC": {deadtime_us: 0.0000, bin_shift_bins: -2, background_offset: 0.0000}
+  "408.AN": {deadtime_us: 0.0000, bin_shift_bins: 8, background_offset: 0.0000}
+  "530.PC": {deadtime_us: 0.0000, bin_shift_bins: -2, background_offset: 0.0000}
+  "530.AN": {deadtime_us: 0.0000, bin_shift_bins: 7, background_offset: 0.0000}
+  "532.PC": {deadtime_us: 0.0035, bin_shift_bins: -3, background_offset: 0.0000}
+  "532.AN": {deadtime_us: 0.0000, bin_shift_bins: -12, background_offset: 0.0000}
+  "1064.PC": {deadtime_us: 0.0000, bin_shift_bins: 0, background_offset: 0.0000}
+  "1064.AN": {deadtime_us: 0.0000, bin_shift_bins: 1, background_offset: 0.0000}
+
+profiles:
+  - id: "spu-apel-2017"
+    valid_from: "2017-03-08"
+    valid_to: "2018-03-18"
+    site:
+      station_altitude_m: 766.0
+    laser:
+      manufacturer: "Quantel Brillant"
+      model: "B -10 Hz"
+      repetition_rate_hz: 10
+    scc:
+      day:
+        configuration_id: 248
+        name: "apel config - Day"
+        channels:
+          "532.PC": 716
+          "532.AN": 722
+          "355.PC": 736
+          "355.AN": 737
+          "607.AN": 739
+          "607.PC": 741
+          "387.PC": 748
+          "387.AN": 749
+          "1064.AN": 934
+          "1064.PC": 935
+          "408.AN": 1446
+          "408.PC": 1447
+      night:
+        configuration_id: 294
+        name: "apel config - Night"
+        channels:
+          "532.PC": 716
+          "532.AN": 722
+          "355.PC": 736
+          "355.AN": 737
+          "607.AN": 739
+          "607.PC": 741
+          "387.PC": 748
+          "387.AN": 749
+          "1064.AN": 934
+          "1064.PC": 935
+          "408.AN": 1446
+          "408.PC": 1447
+
+  - id: "spu-raman-2018"
+    valid_from: "2018-03-19"
+    valid_to: "2024-09-09"
+    site:
+      station_altitude_m: 766.0
+    laser:
+      manufacturer: "Quantel Brillant"
+      model: "B -10 Hz"
+      repetition_rate_hz: 10
+    scc:
+      day:
+        configuration_id: 565
+        name: "Sao Paolo Lidar - Daytime-19March2018"
+        channels:
+          "1064.AN": 934
+          "532.AN": 1593
+          "355.AN": 1594
+          "530.AN": 1595
+          "387.AN": 1596
+      night:
+        configuration_id: 484
+        name: "SPU-Lidar - Nigthtime19March2018"
+        channels:
+          "532.PC": 716
+          "532.AN": 722
+          "355.PC": 736
+          "355.AN": 737
+          "387.PC": 748
+          "387.AN": 749
+          "1064.AN": 934
+          "1064.PC": 935
+          "408.AN": 1446
+          "408.PC": 1447
+          "530.PC": 1557
+          "530.AN": 1558
+
+  - id: "spu-merionc-2024"
+    valid_from: "2024-09-10"
+    valid_to: null
+    site:
+      station_altitude_m: 740.0
+    laser:
+      manufacturer: "Quantel"
+      model: "MerionC"
+      repetition_rate_hz: 100
+    scc:
+      day:
+        configuration_id: 1047
+        name: "Sao Paolo Lidar - Daytime-10September2024"
+        channels:
+          "532.AN": 4069
+          "532.PC": 4070
+          "1064.AN": 4071
+          "355.PC": 4072
+          "355.AN": 4073
+      night:
+        configuration_id: 1046
+        name: "SPU-Lidar - Nigthtime-10September2024"
+        channels:
+          "532.AN": 4069
+          "532.PC": 4070
+          "1064.AN": 4071
+          "355.PC": 4072
+          "355.AN": 4073
+          "530.PC": 4074
+          "530.AN": 4075
+          "387.AN": 4076
+          "387.PC": 4077

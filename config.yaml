@@ -1,13 +1,13 @@
 # ==========================================
-# MILGRAU Configuration File
+# MILGRAU algorithm / processing configuration
+# Station-specific metadata lives in station.yaml.
 # ==========================================
+
+station_config: "station.yaml"
 
 project:
   name: "MILGRAU"
   full_name: "Multi-Indexed LALINET GeneRAlized and Unified algorithm"
-  station_name: "SPU-Lidar"
-  institution: "IPEN/USP"
-  timezone: "America/Sao_Paulo"
 
 processing:
   incremental: false
@@ -24,12 +24,6 @@ directories:
   processed_data: "02-processed_data"
   log_dir: "logs"
 
-site:
-  latitude: -23.5615
-  longitude: -46.7383
-  station_altitude_m: 760.0
-  timezone: "America/Sao_Paulo"
-
 physics:
   vertical_resolution_m: 7.5
   speed_of_light_m_s: 299792458.0
@@ -41,37 +35,7 @@ physics:
   pbl_max_search_m: 4000.0
   pbl_smooth_bins: 15
 
-  channels:
-    "355.PC": {deadtime_us: 0.0020, bin_shift_bins: -2, background_offset: 0.0005}
-    "355.AN": {deadtime_us: 0.0000, bin_shift_bins: -11, background_offset: 0.0000}
-    "387.PC": {deadtime_us: 0.0000, bin_shift_bins: -2, background_offset: 0.0000}
-    "387.AN": {deadtime_us: 0.0000, bin_shift_bins: 8, background_offset: 0.0000}
-    "408.PC": {deadtime_us: 0.0000, bin_shift_bins: -2, background_offset: 0.0000}
-    "408.AN": {deadtime_us: 0.0000, bin_shift_bins: 8, background_offset: 0.0000}
-    "530.PC": {deadtime_us: 0.0000, bin_shift_bins: -2, background_offset: 0.0000}
-    "530.AN": {deadtime_us: 0.0000, bin_shift_bins: 7, background_offset: 0.0000}
-    "532.PC": {deadtime_us: 0.0035, bin_shift_bins: -3, background_offset: 0.0000}
-    "532.AN": {deadtime_us: 0.0000, bin_shift_bins: -12, background_offset: 0.0000}
-    "1064.PC": {deadtime_us: 0.0000, bin_shift_bins: 0, background_offset: 0.0000}
-    "1064.AN": {deadtime_us: 0.0000, bin_shift_bins: 1, background_offset: 0.0000}
-
-hardware:
-  name_to_id:
-    "1064.AN": 934
-    "1064.PC": 935
-    "532.AN": 722
-    "532.PC": 716
-    "530.AN": 1558
-    "530.PC": 1557
-    "355.AN": 737
-    "355.PC": 736
-    "387.AN": 749
-    "387.PC": 748
-    "408.AN": 1446
-    "408.PC": 1447
-
 radiosonde:
-  station_id: "83779"
   cache_dir: "01-data/wyoming_cache"
 
 surface_weather:

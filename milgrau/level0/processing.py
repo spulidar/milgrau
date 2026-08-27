@@ -10,6 +10,7 @@ from typing import Any, Mapping
 import numpy as np
 import pandas as pd
 
+from milgrau.config.station import apply_station_context, resolve_station_context, select_lidar_channels
 from milgrau.io.filesystem import ensure_directories
 from milgrau.io.licel import parse_licel_group
 from milgrau.io.paths import level0_output_path, measurement_save_id
@@ -67,6 +68,46 @@ def fetch_group_weather(group_df: pd.DataFrame, config: Mapping[str, Any], logge
     }
 
 
+def _resolve_group_station_config(
+    group_df: pd.DataFrame,
+    period: str,
+    lidar_data: Mapping[str, Any],
+    config: Mapping[str, Any],
+    logger: logging.Logger,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Resolve station/SCC metadata when a station catalog is configured."""
+    if not isinstance(config.get("_station_catalog"), Mapping):
+        return dict(config), dict(lidar_data)
+
+    measurement_rows = group_df[group_df["meas_type"] == "measurements"]
+    if measurement_rows.empty:
+        raise ValueError("Cannot resolve station profile without measurement rows.")
+    measurement_time = pd.to_datetime(measurement_rows["start_time_utc"], utc=True).min().to_pydatetime()
+    context = resolve_station_context(
+        config,
+        measurement_time=measurement_time,
+        period=period,
+        available_channels=lidar_data.get("channels", []),
+    )
+    selected_lidar = select_lidar_channels(lidar_data, context["selected_channels"])
+    effective_config = apply_station_context(config, context)
+
+    logger.info(
+        "  -> Station profile %s; SCC configuration %s (%s); exporting %d channels.",
+        context["profile_id"],
+        context["scc_configuration_id"],
+        context["mode"],
+        len(context["selected_channels"]),
+    )
+    if context["extra_channels"]:
+        logger.info(
+            "  -> Raw channels outside SCC configuration %s are omitted from this Level 0: %s",
+            context["scc_configuration_id"],
+            ", ".join(context["extra_channels"]),
+        )
+    return effective_config, selected_lidar
+
+
 def process_measurement_group(
     meas_id: str,
     group_df: pd.DataFrame,
@@ -94,8 +135,7 @@ def process_measurement_group(
 
         stage = "level0.provenance"
         provenance = measurement_group_provenance(meas_id, group_df, config)
-        stage = "level0.weather"
-        weather_data = fetch_group_weather(group_df, config, logger)
+
         stage = "level0.parse"
         lidar_data_tensors = parse_licel_group(files_meas, logger)
         if not lidar_data_tensors.get("tensors"):
@@ -107,27 +147,46 @@ def process_measurement_group(
                 metadata={"pipeline": "LIBIDS", "save_id": save_id},
             )
 
+        stage = "level0.station"
+        period = meas_id[8:]
+        effective_config, lidar_data_tensors = _resolve_group_station_config(
+            group_df, period, lidar_data_tensors, config, logger
+        )
+
+        stage = "level0.weather"
+        weather_data = fetch_group_weather(group_df, effective_config, logger)
+
         stage = "level0.write"
         ensure_directories(out_dir)
         build_level0_netcdf(
             netcdf_path=str(netcdf_path),
             save_id=save_id,
-            period=meas_id[8:],
+            period=period,
             lidar_data=lidar_data_tensors,
             group_df=group_df,
             weather_data=weather_data,
-            config=config,
+            config=effective_config,
             logger=logger,
         )
         stage = "level0.provenance.write"
         write_provenance_manifest(netcdf_path, provenance)
+
+        result_metadata = {"pipeline": "LIBIDS", "save_id": save_id, "file_count": len(files_meas)}
+        resolved_station = effective_config.get("_resolved_station")
+        if isinstance(resolved_station, Mapping):
+            result_metadata.update(
+                {
+                    "station_profile": resolved_station["profile_id"],
+                    "scc_configuration_id": resolved_station["scc_configuration_id"],
+                }
+            )
         return ExecutionResult.success(
             "level0.complete",
             f"NetCDF successfully generated for {save_id}",
             input_path=files_meas[0],
             output_path=netcdf_path,
             duration_seconds=time.perf_counter() - started_at,
-            metadata={"pipeline": "LIBIDS", "save_id": save_id, "file_count": len(files_meas)},
+            metadata=result_metadata,
         )
     except Exception as exc:
         return ExecutionResult.failure(

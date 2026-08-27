@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import os
 from pathlib import Path
 from typing import Any
 import warnings
@@ -10,6 +11,7 @@ import warnings
 import yaml
 
 from milgrau.config.schema import validate_config_minimum
+from milgrau.config.station import merge_station_defaults, validate_station_config
 
 
 def _project_root() -> Path:
@@ -29,6 +31,31 @@ def _resolve_config_path(config_path: str | Path) -> Path:
     if project_relative.exists():
         return project_relative.resolve()
     return path.resolve()
+
+
+def _resolve_station_path(station_path: str | Path, config_path: Path) -> Path:
+    """Resolve station.yaml relative to config.yaml before repository fallback."""
+    path = Path(station_path).expanduser()
+    if path.is_absolute():
+        return path
+    config_relative = config_path.parent / path
+    if config_relative.exists():
+        return config_relative.resolve()
+    return _resolve_config_path(path)
+
+
+def _read_yaml_mapping(path: Path, label: str) -> dict[str, Any]:
+    if not path.exists():
+        raise FileNotFoundError(f"{label} file not found: {path}")
+    try:
+        payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise RuntimeError(f"Error parsing {label} YAML: {exc}") from exc
+    if payload is None:
+        raise RuntimeError(f"{label} file is empty: {path}")
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"{label} root must be a mapping: {path}")
+    return payload
 
 
 def _copy_if_missing(mapping: dict[str, Any], canonical_key: str, alias_key: str) -> None:
@@ -90,9 +117,9 @@ def _normalize_inversion_config(config: dict[str, Any]) -> None:
 def normalize_config(config: dict[str, Any]) -> dict[str, Any]:
     """Return a normalized copy of the MILGRAU configuration.
 
-    The repository ``config.yaml`` uses canonical, non-duplicated key names.  This
-    function injects legacy aliases in memory so existing pipeline code remains
-    compatible while modules are migrated gradually.
+    ``config.yaml`` contains algorithm and processing controls. Station-specific
+    fields may already have been merged from station.yaml before this function is
+    called. Legacy aliases are injected only in memory.
     """
     normalized = deepcopy(config)
     _normalize_physics_config(normalized)
@@ -102,22 +129,47 @@ def normalize_config(config: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def load_config(config_path: str | Path = "config.yaml") -> dict[str, Any]:
-    """Load, normalize and validate the MILGRAU YAML configuration file."""
+def load_config(
+    config_path: str | Path = "config.yaml",
+    station_config_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Load algorithm config and optionally merge one station catalog.
+
+    Station selection precedence is:
+    1. explicit ``station_config_path`` argument;
+    2. ``MILGRAU_STATION_CONFIG`` environment variable;
+    3. ``station_config`` path declared in config.yaml.
+
+    The station catalog is attached to the normalized runtime mapping under
+    ``_station_catalog`` so Level 0 can resolve temporal/SCC profiles per group.
+    """
     path = _resolve_config_path(config_path)
-    if not path.exists():
-        raise FileNotFoundError(f"Configuration file not found: {path}")
+    config = _read_yaml_mapping(path, "Configuration")
+
+    declared_station_path = config.pop("station_config", None)
+    requested_station_path = (
+        station_config_path
+        if station_config_path is not None
+        else os.environ.get("MILGRAU_STATION_CONFIG") or declared_station_path
+    )
+
+    station_catalog: dict[str, Any] | None = None
+    station_path: Path | None = None
+    if requested_station_path is not None:
+        station_path = _resolve_station_path(requested_station_path, path)
+        station_catalog = _read_yaml_mapping(station_path, "Station configuration")
+        try:
+            validate_station_config(station_catalog)
+            config = merge_station_defaults(config, station_catalog)
+        except Exception as exc:
+            raise type(exc)(f"{exc} [station config: {station_path}]") from exc
 
     try:
-        config = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except yaml.YAMLError as exc:
-        raise RuntimeError(f"Error parsing YAML configuration: {exc}") from exc
-
-    if config is None:
-        raise RuntimeError(f"Configuration file is empty: {path}")
-    if not isinstance(config, dict):
-        raise RuntimeError(f"Configuration root must be a mapping: {path}")
-    try:
-        return normalize_config(config)
+        normalized = normalize_config(config)
     except Exception as exc:
         raise type(exc)(f"{exc} [config: {path}]") from exc
+
+    if station_catalog is not None:
+        normalized["_station_catalog"] = deepcopy(station_catalog)
+        normalized["_station_config_file"] = station_path.name if station_path is not None else "station.yaml"
+    return normalized
