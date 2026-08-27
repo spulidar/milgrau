@@ -17,7 +17,7 @@ processing:
   dark_current_max_association_hours: 12.0
   spurious_extensions: [".dpp", ".zip", ".txt"]
   quarantine_dir: "01-data/_quarantine"
-  raw_scan_ignore_dirs: ["openmeteo_cache", "wyoming_cache", "meteorology_cache"]
+  raw_scan_ignore_dirs: ["openmeteo_cache", "wyoming_cache"]
 
 directories:
   raw_data: "01-data"
@@ -76,26 +76,6 @@ radiosonde:
 
 surface_weather:
   cache_dir: "01-data/openmeteo_cache"
-
-meteorology:
-  acquisition_mode: auto
-  cache_directory: "01-data/meteorology_cache"
-  allow_era5t: true
-  timeout_seconds: 300.0
-  max_retries: 3
-  contract_version: "meteorology-request-v1"
-  radiosonde:
-    provider: "wyoming_siphon"
-    station_id: "83779"
-  era5:
-    dataset: "reanalysis-era5-complete"
-    vertical_coordinate: "model_levels"
-    levels: "1-137"
-    variables: ["temperature", "specific_humidity", "lnsp", "surface_geopotential"]
-    grid_degrees: 0.25
-    spatial_sampling: "surrounding_four_points"
-    temporal_interpolation: "linear"
-    raw_format: "grib"
 
 visualization:
   output_format: "webp"

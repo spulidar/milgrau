@@ -36,17 +36,12 @@ explorer = [
   "streamlit>=1.35.0",
   "plotly>=5.20.0",
 ]
-meteorology = [
-  "cdsapi>=0.7.7",
-  "eccodes>=2.38.0",
-]
 
 [project.scripts]
 milgrau-libids = "milgrau.cli.libids:main"
 milgrau-lipancora = "milgrau.cli.lipancora:main"
 milgrau-liracos = "milgrau.cli.liracos:main"
 milgrau-lebear = "milgrau.cli.lebear:main"
-milgrau-meteorology = "milgrau.cli.meteorology:main"
 milgrau-explorer = "milgrau.cli.explorer:main"
 
 [tool.setuptools.packages.find]
