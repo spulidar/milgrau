@@ -140,8 +140,8 @@ def load_config(
     2. ``MILGRAU_STATION_CONFIG`` environment variable;
     3. ``station_config`` path declared in config.yaml.
 
-    The station catalog is attached to the normalized runtime mapping under
-    ``_station_catalog`` so Level 0 can resolve temporal/SCC profiles per group.
+    Resolved config paths are kept only in the runtime mapping so the simple
+    incremental rule can invalidate products when either YAML file changes.
     """
     path = _resolve_config_path(config_path)
     config = _read_yaml_mapping(path, "Configuration")
@@ -169,7 +169,10 @@ def load_config(
     except Exception as exc:
         raise type(exc)(f"{exc} [config: {path}]") from exc
 
+    normalized["_config_file"] = str(path)
     if station_catalog is not None:
         normalized["_station_catalog"] = deepcopy(station_catalog)
         normalized["_station_config_file"] = station_path.name if station_path is not None else "station.yaml"
+        if station_path is not None:
+            normalized["_station_config_path"] = str(station_path)
     return normalized
