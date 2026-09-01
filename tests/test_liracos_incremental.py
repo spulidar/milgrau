@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import numpy as np
@@ -63,9 +64,9 @@ def _write_level1(path: Path, channels: list[str]) -> Path:
     return path
 
 
-def _config(channels: list[str], incremental: bool = True) -> dict:
+def _config(channels: list[str], incremental: bool = True, config_file: Path | None = None) -> dict:
     """Return a minimal LIRACOS config."""
-    return {
+    config = {
         "processing": {"incremental": incremental},
         "directories": {"processed_data": "02-processed_data"},
         "visualization": {
@@ -76,10 +77,12 @@ def _config(channels: list[str], incremental: bool = True) -> dict:
             "quicklook": {"max_time_gap_minutes": 10, "missing_data_color": "lightgray", "colormap": "viridis"},
         },
     }
+    if config_file is not None:
+        config["_config_file"] = str(config_file)
+    return config
 
 
 def test_time_gap_markers_insert_nan_profiles() -> None:
-    """Large temporal gaps should be represented by inserted NaN profiles."""
     times = pd.to_datetime(["2024-01-01T00:00:00", "2024-01-01T00:05:00", "2024-01-01T00:40:00"])
     altitude = np.array([0.0, 0.5, 1.0])
     data = xr.DataArray(
@@ -95,8 +98,7 @@ def test_time_gap_markers_insert_nan_profiles() -> None:
     assert np.isnan(result.isel(time=3).values).all()
 
 
-def test_global_mean_provenance_skips_current_plot(tmp_path: Path, monkeypatch) -> None:
-    """Current global mean plots should be skipped when signature matches."""
+def test_global_mean_timestamp_skips_current_plot(tmp_path: Path, monkeypatch) -> None:
     level1 = _write_level1(tmp_path / "20240101sant_level1_rcs.nc", ["532.AN"])
     logger = _ListLogger()
     calls = {"quicklook": 0, "global": 0}
@@ -128,9 +130,10 @@ def test_global_mean_provenance_skips_current_plot(tmp_path: Path, monkeypatch) 
     assert any("Global mean RCS is current" in message for message in logger.messages)
 
 
-def test_global_mean_regenerates_when_channel_config_changes(tmp_path: Path, monkeypatch) -> None:
-    """Changing configured channels should invalidate global-mean provenance."""
+def test_global_mean_regenerates_when_config_file_changes(tmp_path: Path, monkeypatch) -> None:
     level1 = _write_level1(tmp_path / "20240101sant_level1_rcs.nc", ["532.AN", "355.AN"])
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text("first", encoding="utf-8")
     logger = _ListLogger()
     calls = {"quicklook": 0, "global": 0}
 
@@ -149,7 +152,15 @@ def test_global_mean_regenerates_when_channel_config_changes(tmp_path: Path, mon
     monkeypatch.setattr(liracos, "plot_quicklook", fake_quicklook)
     monkeypatch.setattr(liracos, "plot_global_mean_rcs", fake_global)
 
-    liracos.process_single_nc((level1, _config(["532.AN"], incremental=True), tmp_path, logger))
-    liracos.process_single_nc((level1, _config(["532.AN", "355.AN"], incremental=True), tmp_path, logger))
+    first_config = _config(["532.AN"], incremental=True, config_file=config_file)
+    liracos.process_single_nc((level1, first_config, tmp_path, logger))
+
+    global_path = tmp_path / "quicklooks" / "GlobalMeanRCS_20240101sant.png"
+    newer_ns = global_path.stat().st_mtime_ns + 1_000_000_000
+    config_file.write_text("changed", encoding="utf-8")
+    os.utime(config_file, ns=(newer_ns, newer_ns))
+
+    second_config = _config(["532.AN", "355.AN"], incremental=True, config_file=config_file)
+    liracos.process_single_nc((level1, second_config, tmp_path, logger))
 
     assert calls["global"] == 2
