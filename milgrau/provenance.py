@@ -31,7 +31,7 @@ class ProductProvenance:
 
 
 class _RuntimeManifestHandle:
-    """Path-like test/backward-compatibility handle that never touches disk."""
+    """Path-like backward-compatibility handle that never touches disk."""
 
     def __init__(self, output_path: str | Path) -> None:
         self.output_path = Path(output_path).expanduser()
@@ -126,8 +126,8 @@ def load_provenance_manifest(output_path: str | Path) -> dict[str, Any] | None:
     """Return process-local result metadata, falling back to Level 2 NetCDF state."""
     path = Path(output_path).expanduser()
     state = _RUNTIME_STATE.get(str(path.resolve()))
-    if state is not None and "result" in state:
-        return {"result": deepcopy(state["result"])}
+    if state is not None:
+        return {"result": deepcopy(state["result"])} if "result" in state else None
     if not path.is_file() or path.suffix.lower() != ".nc":
         return None
     result = _netcdf_result_metadata(path)
