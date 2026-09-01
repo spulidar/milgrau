@@ -16,6 +16,7 @@ DEFAULT_LOG_DIR = "logs"
 DEFAULT_SURFACE_WEATHER_CACHE_DIRNAME = "openmeteo_cache"
 DEFAULT_RADIOSONDE_CACHE_DIRNAME = "wyoming_cache"
 LEVEL0_SUFFIX = ".nc"
+LEVEL0_SCC_SUFFIX = "_scc.nc"
 LEVEL1_SUFFIX = "_level1_rcs.nc"
 LEVEL2_SUFFIX = "_level2_optical.nc"
 
@@ -108,9 +109,19 @@ def level0_output_path(
     config: Mapping[str, Any],
     root_dir: str | Path | None = None,
 ) -> Path:
-    """Return the Level 0 NetCDF output path for one inventory measurement ID."""
+    """Return the full-channel internal Level 0 NetCDF path."""
     save_id = measurement_save_id(measurement_id)
     return measurement_product_dir(save_id, config, root_dir=root_dir) / f"{save_id}{LEVEL0_SUFFIX}"
+
+
+def level0_scc_output_path(
+    measurement_id: str,
+    config: Mapping[str, Any],
+    root_dir: str | Path | None = None,
+) -> Path:
+    """Return the derived SCC-filtered Level 0 NetCDF path."""
+    save_id = measurement_save_id(measurement_id)
+    return measurement_product_dir(save_id, config, root_dir=root_dir) / f"{save_id}{LEVEL0_SCC_SUFFIX}"
 
 
 def level1_output_path(
