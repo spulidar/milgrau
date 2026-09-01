@@ -1,6 +1,6 @@
 """Compatibility helpers for the former provenance API.
 
-The old SHA-256 provenance/sidecar system was intentionally retired.  Existing
+The old SHA-256 provenance/sidecar system was intentionally retired. Existing
 pipeline call sites may temporarily use these names, but they now delegate to the
 simple timestamp-based incremental policy in :mod:`milgrau.incremental` and never
 write ``*.provenance.json`` files.
@@ -69,10 +69,32 @@ def provenance_manifest_path(output_path: str | Path) -> Path:
     return path.with_suffix(path.suffix + ".provenance.json")
 
 
-def load_provenance_manifest(output_path: str | Path) -> None:
-    """The retired sidecar format is no longer read."""
-    del output_path
-    return None
+def load_provenance_manifest(output_path: str | Path) -> dict[str, Any] | None:
+    """Expose Level 2 completeness directly from its NetCDF, without a sidecar.
+
+    This is a temporary compatibility bridge for the Level 2 incremental caller.
+    Other products receive ``None`` because they no longer need manifest state.
+    """
+    path = Path(output_path)
+    if not path.is_file() or path.suffix.lower() != ".nc":
+        return None
+    try:
+        import numpy as np
+        import xarray as xr
+
+        with xr.open_dataset(path) as ds:
+            if "requested_wavelengths" not in ds or "processed_wavelengths" not in ds or "failed_wavelengths" not in ds:
+                return None
+            result = {
+                "product_completeness": str(ds.attrs.get("product_completeness", "")),
+                "product_status": str(ds.attrs.get("product_status", "")),
+                "requested_wavelengths": [int(value) for value in np.asarray(ds["requested_wavelengths"].values).tolist()],
+                "processed_wavelengths": [int(value) for value in np.asarray(ds["processed_wavelengths"].values).tolist()],
+                "failed_wavelengths": [int(value) for value in np.asarray(ds["failed_wavelengths"].values).tolist()],
+            }
+        return {"result": result}
+    except Exception:
+        return None
 
 
 def write_provenance_manifest(
