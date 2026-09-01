@@ -10,7 +10,7 @@ project:
   full_name: "Multi-Indexed LALINET GeneRAlized and Unified algorithm"
 
 processing:
-  incremental: false
+  incremental: true
   console_level: "INFO"
   file_level: "INFO"
   laser_shot_tolerance_fraction: 0.002
