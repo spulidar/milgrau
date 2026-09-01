@@ -22,8 +22,8 @@ scc_defaults:
   lr_input:
     value: 1
     elastic_wavelengths:
-      "355": [387]
-      "532": [530, 607]
+      "355": [387, 408]
+      "532": [530]
       "1064": []
 
 channel_corrections:
