@@ -11,11 +11,11 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from milgrau.incremental import output_is_current
 from milgrau.io.contracts import netcdf_satisfies_contract, validate_level1_contract
 from milgrau.io.filesystem import ensure_directories
 from milgrau.io.paths import processed_data_root
 from milgrau.operations import ExecutionResult, ExecutionSummary
-from milgrau.provenance import build_product_provenance, output_is_current, write_provenance_manifest
 from milgrau.level1.common import (
     diagnostic_vector,
     get_channel_constant,
@@ -245,16 +245,16 @@ def _files_requiring_level1(files: list[Path], config: Mapping[str, Any], logger
         output_path = level1_output_path(file_path, config)
         is_current = False
         if incremental and output_path.exists():
-            expected = build_product_provenance("level1", [file_path], config)
             is_current = output_is_current(
                 output_path,
-                expected,
+                [file_path],
+                config=config,
                 integrity_check=lambda path: netcdf_satisfies_contract(path, validate_level1_contract),
             )
         if is_current:
             result = ExecutionResult.skipped(
                 "level1.incremental",
-                f"Level 1 provenance is current for {file_path.name}",
+                f"Level 1 is up to date for {file_path.name}",
                 input_path=file_path,
                 output_path=output_path,
             )
@@ -320,8 +320,6 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
         stage = "level1.output_path"
         save_path = level1_output_path(nc_file, config)
         logger.info(f"[{stem}] Initializing Level 1 processing...")
-        stage = "level1.provenance"
-        provenance = build_product_provenance("level1", [nc_file], config)
         stage = "level1.ingestion"
         ds_raw, z_arr = load_and_prepare_level0(nc_file, logger)
         stage = "level1.corrections"
@@ -338,8 +336,6 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
         stage = "level1.write"
         ensure_directories(save_path.parent)
         final_ds.to_netcdf(save_path, encoding=_level1_encoding(final_ds))
-        stage = "level1.provenance.write"
-        write_provenance_manifest(save_path, provenance)
         return ExecutionResult.success(
             "level1.complete",
             f"{stem} Level 1 generated successfully",
