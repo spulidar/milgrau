@@ -38,7 +38,6 @@ from milgrau.level2.retrieval import (
     retrieve_optical_blocks,
 )
 from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary
-from milgrau.provenance import load_provenance_manifest, provenance_manifest_path
 from milgrau.viz.level2_qa import get_wavelength_values, plot_all_level2_qa
 
 
@@ -381,7 +380,7 @@ def test_sci003_complete_is_current_but_partial_reprocesses_all_requests(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    """Only a complete sidecar may skip; partial reruns the whole request set."""
+    """Only a complete Level 2 NetCDF may skip; partial products rerun all requests."""
     complete_l1 = _write_level1(
         tmp_path / "complete_level1_rcs.nc",
         ["355.PC", "532.PC"],
@@ -392,28 +391,13 @@ def test_sci003_complete_is_current_but_partial_reprocesses_all_requests(
         complete_config,
         _ListLogger(),  # type: ignore[arg-type]
     )
+    complete_output = level2_output_path(complete_l1)
     assert complete_summary.overall_status is ExecutionStatus.SUCCESS
-    assert lebear.level2_output_is_current(
-        complete_l1,
-        level2_output_path(complete_l1),
-        complete_config,
-    )
-    changed_config = json.loads(json.dumps(complete_config))
-    changed_config["inversion"]["lidar_ratio_std_sr"]["532"] = 6.0
-    assert not lebear.level2_output_is_current(
-        complete_l1,
-        level2_output_path(complete_l1),
-        changed_config,
-    )
-    complete_manifest_path = provenance_manifest_path(level2_output_path(complete_l1))
-    old_manifest = json.loads(complete_manifest_path.read_text(encoding="utf-8"))
-    old_manifest.pop("result")
-    complete_manifest_path.write_text(json.dumps(old_manifest), encoding="utf-8")
-    assert not lebear.level2_output_is_current(
-        complete_l1,
-        level2_output_path(complete_l1),
-        complete_config,
-    )
+    assert lebear.level2_output_is_current(complete_l1, complete_output, complete_config)
+    with xr.open_dataset(complete_output) as ds:
+        assert ds.attrs["product_completeness"] == "complete"
+        assert ds["processed_wavelengths"].values.tolist() == [355, 532]
+        assert ds["failed_wavelengths"].values.tolist() == []
 
     partial_l1 = _write_level1(tmp_path / "partial_level1_rcs.nc", ["532.PC"])
     partial_config = _multispectral_config(tmp_path, [355, 532])
@@ -425,10 +409,10 @@ def test_sci003_complete_is_current_but_partial_reprocesses_all_requests(
     partial_output = level2_output_path(partial_l1)
     assert first.overall_status is ExecutionStatus.RECOVERABLE_FAILURE
     assert not lebear.level2_output_is_current(partial_l1, partial_output, partial_config)
-    manifest = load_provenance_manifest(partial_output)
-    assert manifest is not None
-    assert manifest["result"]["processed_wavelengths"] == [532]
-    assert manifest["result"]["failed_wavelengths"] == [355]
+    with xr.open_dataset(partial_output) as ds:
+        assert ds.attrs["product_completeness"] == "partial"
+        assert ds["processed_wavelengths"].values.tolist() == [532]
+        assert ds["failed_wavelengths"].values.tolist() == [355]
 
     original = lebear.process_single_level1_file
     calls: list[Path] = []
@@ -1018,7 +1002,7 @@ def test_gluing_failure_uses_photon_fallback_when_enabled(tmp_path: Path) -> Non
         assert np.isfinite(ds["aerosol_backscatter_block"].values).any()
 
 
-def test_process_level2_skips_output_with_current_provenance(tmp_path: Path, monkeypatch) -> None:
+def test_process_level2_skips_current_output(tmp_path: Path, monkeypatch) -> None:
     """LEBEAR process_level_2 should skip only a current Level 2 product."""
     level1 = _write_level1(tmp_path / "20240101sant_level1_rcs.nc", ["532.AN", "532.PC"])
     output = level2_output_path(level1)
