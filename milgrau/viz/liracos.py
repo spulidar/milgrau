@@ -11,16 +11,11 @@ from typing import Any
 import xarray as xr
 from matplotlib import pyplot as plt
 
+from milgrau.incremental import output_is_current
 from milgrau.io.contracts import validate_level1_contract
 from milgrau.io.filesystem import ensure_directories
 from milgrau.io.paths import global_mean_rcs_output_path, processed_data_root, quicklook_output_path
 from milgrau.operations import ExecutionResult, ExecutionSummary
-from milgrau.provenance import (
-    build_product_provenance_from_signatures,
-    file_signature,
-    output_is_current,
-    write_provenance_manifest,
-)
 from milgrau.viz.quicklooks import format_channel_name, plot_global_mean_rcs, plot_quicklook
 from milgrau.viz.style import DEFAULT_LOGO_SPECS
 
@@ -87,15 +82,13 @@ def _get_altitude_ranges_km(config: dict[str, Any]) -> list[float]:
     return altitude_ranges or [5.0, 15.0, 30.0]
 
 
-def _visual_input_signatures(nc_file: Path, root_path: Path) -> list[dict[str, Any]]:
-    """Hash the Level 1 source and any logo assets actually available for plots."""
-    paths = [nc_file]
-    paths.extend(
+def _visual_dependencies(root_path: Path) -> list[Path]:
+    """Return optional logo assets that affect rendered plots."""
+    return [
         logo_path
         for logo_name, _height in DEFAULT_LOGO_SPECS
         if (logo_path := root_path / "img" / logo_name).is_file()
-    )
-    return [file_signature(path) for path in paths]
+    ]
 
 
 def _prepare_level1_for_visualization(ds: xr.Dataset) -> xr.Dataset:
@@ -136,12 +129,12 @@ def process_single_nc(args: tuple[str | Path, dict[str, Any], str | Path, loggin
         output_folder = nc_file.parent / "quicklooks"
         ensure_directories(output_folder)
         incremental = _as_bool(config.get("processing", {}).get("incremental", False))
+        dependencies = _visual_dependencies(root_path)
         generated_count = 0
         skipped_count = 0
 
         logger.info(f"[{file_name_prefix}] Loading Level 1 data and preparing axes...")
         stage = "visualization.ingestion"
-        input_signatures = _visual_input_signatures(nc_file, root_path)
         with xr.open_dataset(nc_file) as ds:
             ds.load()
             stage = "visualization.validation"
@@ -162,14 +155,13 @@ def process_single_nc(args: tuple[str | Path, dict[str, Any], str | Path, loggin
                 rc_error = ds[RCS_ERROR_VARIABLE].sel(channel=channel_name)
                 for max_altitude in altitude_ranges:
                     expected_path = _quicklook_output_path(output_folder, file_name_prefix, channel_name, max_altitude, config)
-                    quicklook_provenance = build_product_provenance_from_signatures(
-                        "liracos.quicklook",
-                        input_signatures,
-                        config,
-                        variant={"channel": channel_name, "max_altitude_km": float(max_altitude)},
-                    )
-                    if incremental and output_is_current(expected_path, quicklook_provenance):
-                        logger.info(f"[SKIPPED] Quicklook provenance is current: {expected_path.name}")
+                    if incremental and output_is_current(
+                        expected_path,
+                        [nc_file],
+                        config=config,
+                        extra_dependencies=dependencies,
+                    ):
+                        logger.info(f"[SKIPPED] Quicklook is up to date: {expected_path.name}")
                         skipped_count += 1
                         continue
 
@@ -178,7 +170,7 @@ def process_single_nc(args: tuple[str | Path, dict[str, Any], str | Path, loggin
                     if sig_slice.size == 0:
                         logger.warning(f"[{file_name_prefix}] Empty altitude slice for {channel_name} up to {max_altitude} km.")
                         continue
-                    plot_path = plot_quicklook(
+                    plot_quicklook(
                         data_slice=sig_slice,
                         error_slice=err_slice,
                         max_altitude=max_altitude,
@@ -192,7 +184,6 @@ def process_single_nc(args: tuple[str | Path, dict[str, Any], str | Path, loggin
                         cpt_km=cpt_km,
                         lrt_km=lrt_km,
                     )
-                    write_provenance_manifest(plot_path, quicklook_provenance)
                     generated_count += 1
                     del sig_slice, err_slice
                     plt.close("all")
@@ -200,21 +191,18 @@ def process_single_nc(args: tuple[str | Path, dict[str, Any], str | Path, loggin
 
             stage = "visualization.global_mean"
             global_mean_path = _global_mean_output_path(output_folder, file_name_prefix, config)
-            plotted_channels = [channel for channel in channels_to_plot if channel in available_channels]
-            global_provenance = build_product_provenance_from_signatures(
-                "liracos.global_mean",
-                input_signatures,
-                config,
-                variant={"plotted_channels": plotted_channels},
-            )
-            if incremental and output_is_current(global_mean_path, global_provenance):
-                logger.info(f"[SKIPPED] Global mean RCS is current: {global_mean_path.name}")
+            if incremental and output_is_current(
+                global_mean_path,
+                [nc_file],
+                config=config,
+                extra_dependencies=dependencies,
+            ):
+                logger.info(f"[SKIPPED] Global mean RCS is up to date: {global_mean_path.name}")
                 skipped_count += 1
             else:
                 logger.info(f"[{file_name_prefix}] Generating global mean RCS profile...")
                 plot_path = plot_global_mean_rcs(ds, str(output_folder), file_name_prefix, config, str(root_path))
                 if plot_path is not None:
-                    write_provenance_manifest(plot_path, global_provenance)
                     generated_count += 1
 
         plt.close("all")
