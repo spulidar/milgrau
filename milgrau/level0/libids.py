@@ -4,28 +4,69 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Mapping
 
+import pandas as pd
+import xarray as xr
+
+from milgrau.config.station import resolve_station_context
+from milgrau.incremental import output_is_current
 from milgrau.io.contracts import netcdf_satisfies_contract, validate_level0_contract
-from milgrau.io.paths import level0_output_path, measurement_save_id, raw_data_root
+from milgrau.io.paths import level0_output_path, level0_scc_output_path, measurement_save_id, raw_data_root
 from milgrau.level0.common import incremental_enabled
 from milgrau.level0.inventory import build_measurement_inventory
-from milgrau.level0.processing import measurement_group_provenance, process_measurement_group
+from milgrau.level0.processing import process_measurement_group
 from milgrau.level0.quality import filter_laser_shots
 from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary
-from milgrau.provenance import output_is_current
+
+
+def _raw_input_paths(group_df) -> list[Path]:
+    return [Path(path) for path in group_df["filepath"].tolist()]
+
+
+def _expected_scc_export(meas_id: str, group_df, config: Mapping, output_path: Path) -> bool:
+    """Return whether the current station profile expects a complete SCC subset."""
+    if not isinstance(config.get("_station_catalog"), Mapping):
+        return False
+    measurement_rows = group_df[group_df["meas_type"] == "measurements"]
+    if measurement_rows.empty:
+        return False
+    try:
+        with xr.open_dataset(output_path) as ds:
+            channels = [str(value) for value in ds["channel_string"].values]
+        measurement_time = pd.to_datetime(measurement_rows["start_time_utc"], utc=True).min().to_pydatetime()
+        context = resolve_station_context(
+            config,
+            measurement_time=measurement_time,
+            period=meas_id[8:],
+            available_channels=channels,
+        )
+    except Exception:
+        return False
+    return bool(context.get("scc_available", False) and context.get("scc_export_ready", False))
 
 
 def _level0_is_current(meas_id: str, group_df, config: dict, output_path) -> bool:
-    """Return whether one Level 0 output matches its current inputs and contract."""
-    if not Path(output_path).exists():
+    """Return whether primary and expected SCC Level 0 products are up to date."""
+    output = Path(output_path)
+    inputs = _raw_input_paths(group_df)
+    primary_current = output_is_current(
+        output,
+        inputs,
+        config=config,
+        integrity_check=lambda path: netcdf_satisfies_contract(path, validate_level0_contract),
+    )
+    if not primary_current:
         return False
-    try:
-        expected = measurement_group_provenance(meas_id, group_df, config)
-    except (KeyError, OSError, ValueError):
-        return False
+
+    if not _expected_scc_export(meas_id, group_df, config, output):
+        return True
+
+    scc_path = level0_scc_output_path(meas_id, config)
     return output_is_current(
-        output_path,
-        expected,
+        scc_path,
+        inputs,
+        config=config,
         integrity_check=lambda path: netcdf_satisfies_contract(path, validate_level0_contract),
     )
 
@@ -59,7 +100,7 @@ def process_level_0(config: dict, logger: logging.Logger) -> ExecutionSummary:
         if incremental and _level0_is_current(meas_id, group_df, config, netcdf_path):
             result = ExecutionResult.skipped(
                 "level0.incremental",
-                f"Level 0 provenance is current for {save_id}",
+                f"Level 0 is up to date for {save_id}",
                 output_path=netcdf_path,
                 metadata={"pipeline": "LIBIDS", "save_id": save_id},
             )
