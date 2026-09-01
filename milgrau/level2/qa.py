@@ -55,7 +55,13 @@ def level2_qa_is_current(
     qa_dir = level2_path.parent / "level2_qa"
     if not qa_dir.is_dir():
         return False
-    outputs = [path for path in qa_dir.iterdir() if path.is_file() and not path.name.startswith(".")]
+    outputs = [
+        path
+        for path in qa_dir.iterdir()
+        if path.is_file()
+        and not path.name.startswith(".")
+        and not path.name.endswith(".provenance.json")
+    ]
     if not outputs:
         return False
     inputs, logos = _qa_dependencies(level1_path, level2_path, root_path)
