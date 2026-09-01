@@ -12,19 +12,11 @@ from typing import Mapping, Any
 import numpy as np
 import xarray as xr
 
+from milgrau.incremental import output_is_current
 from milgrau.io.contracts import netcdf_satisfies_contract, validate_level1_contract, validate_level2_contract
 from milgrau.io.filesystem import ensure_directories
 from milgrau.io.paths import level2_output_path
 from milgrau.operations import ExecutionResult, ExecutionSummary
-from milgrau.provenance import (
-    ProductProvenance,
-    build_product_provenance,
-    build_product_provenance_from_signatures,
-    file_signature,
-    load_provenance_manifest,
-    output_is_current,
-    write_provenance_manifest,
-)
 from milgrau.level2.completeness import (
     Level2ProductContract,
     ProductCompleteness,
@@ -56,34 +48,6 @@ from milgrau.level2.qa import generate_level2_qa, level2_qa_enabled
 from milgrau.level2.time_window import subset_level1_time_window
 
 
-def level2_product_provenance(
-    nc_file: str | Path,
-    config: Mapping[str, Any],
-    *,
-    start_utc: str | None = None,
-    stop_utc: str | None = None,
-    output_tag: str | None = None,
-    input_signature: Mapping[str, Any] | None = None,
-) -> ProductProvenance:
-    """Build provenance for a complete or time-windowed Level 2 product."""
-    variant = {
-        "start_utc": start_utc,
-        "stop_utc": stop_utc,
-        "output_tag": output_tag,
-        "requested_wavelengths": list(
-            canonical_wavelengths(get_wavelengths_to_process(config))
-        ),
-    }
-    if input_signature is not None:
-        return build_product_provenance_from_signatures(
-            "level2",
-            [input_signature],
-            config,
-            variant=variant,
-        )
-    return build_product_provenance("level2", [nc_file], config, variant=variant)
-
-
 def level2_output_is_current(
     nc_file: str | Path,
     output_path: str | Path,
@@ -93,34 +57,33 @@ def level2_output_is_current(
     stop_utc: str | None = None,
     output_tag: str | None = None,
 ) -> bool:
-    """Return whether one Level 2 output is intact and has matching provenance."""
-    if not Path(output_path).exists():
+    """Return whether one complete Level 2 output is intact and up to date."""
+    output = Path(output_path)
+    if not output.is_file():
         return False
     requested = list(canonical_wavelengths(get_wavelengths_to_process(config)))
-    manifest = load_provenance_manifest(output_path)
-    if manifest is None:
+    try:
+        with xr.open_dataset(output) as ds:
+            validate_level2_contract(ds)
+            if (
+                str(ds.attrs.get("product_completeness", "")) != "complete"
+                or str(ds.attrs.get("product_status", "")) != "success"
+                or "requested_wavelengths" not in ds
+                or "processed_wavelengths" not in ds
+                or "failed_wavelengths" not in ds
+            ):
+                return False
+            requested_written = [int(value) for value in np.asarray(ds["requested_wavelengths"].values).tolist()]
+            processed_written = [int(value) for value in np.asarray(ds["processed_wavelengths"].values).tolist()]
+            failed_written = [int(value) for value in np.asarray(ds["failed_wavelengths"].values).tolist()]
+            if requested_written != requested or processed_written != requested or failed_written != []:
+                return False
+    except Exception:
         return False
-    result_metadata = manifest.get("result")
-    if not isinstance(result_metadata, dict):
-        return False
-    if (
-        result_metadata.get("product_completeness") != "complete"
-        or result_metadata.get("product_status") != "success"
-        or result_metadata.get("requested_wavelengths") != requested
-        or result_metadata.get("processed_wavelengths") != requested
-        or result_metadata.get("failed_wavelengths") != []
-    ):
-        return False
-    expected = level2_product_provenance(
-        nc_file,
-        config,
-        start_utc=start_utc,
-        stop_utc=stop_utc,
-        output_tag=output_tag,
-    )
     return output_is_current(
-        output_path,
-        expected,
+        output,
+        [nc_file],
+        config=config,
         integrity_check=lambda path: netcdf_satisfies_contract(path, validate_level2_contract),
     )
 
@@ -201,7 +164,6 @@ def process_single_level1_file(
     output_path: Path | None = None
     stage = "level2.ingestion"
     try:
-        source_signature = file_signature(nc_path)
         with xr.open_dataset(nc_path) as ds_l1:
             ds_l1.load()
             stage = "level2.validation.input"
@@ -275,20 +237,6 @@ def process_single_level1_file(
             if ds_l2[var].ndim > 0 and ds_l2[var].dtype.kind not in {"O", "S", "U"}
         }
         _write_level2_atomically(ds_l2, output_path, encoding)
-        stage = "level2.provenance.write"
-        provenance = level2_product_provenance(
-            nc_path,
-            config,
-            start_utc=start_utc,
-            stop_utc=stop_utc,
-            output_tag=output_tag,
-            input_signature=source_signature,
-        )
-        write_provenance_manifest(
-            output_path,
-            provenance,
-            result_metadata=product_contract.provenance_result(),
-        )
         if product_contract.completeness is ProductCompleteness.COMPLETE:
             logger.info(f"  -> [OK] Complete Level 2 NetCDF generated: {output_path}")
             product_results = [
@@ -343,7 +291,6 @@ def process_single_level1_file(
             "level2.dataset",
             "level2.validation.output",
             "level2.write",
-            "level2.provenance.write",
         }
         return ExecutionSummary.from_results(
             [
@@ -379,7 +326,7 @@ def process_level_2(config: Mapping[str, Any], logger: logging.Logger) -> Execut
         if incremental and level2_output_is_current(file_path, output_path, config):
             result = ExecutionResult.skipped(
                 "level2.incremental",
-                f"Level 2 provenance is current for {file_path.name}",
+                f"Level 2 is up to date for {file_path.name}",
                 input_path=file_path,
                 output_path=output_path,
             )
