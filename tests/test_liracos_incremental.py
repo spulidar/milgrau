@@ -127,7 +127,7 @@ def test_global_mean_timestamp_skips_current_plot(tmp_path: Path, monkeypatch) -
     assert second.metadata["generated"] == 1
     assert second.metadata["skipped"] == 1
     assert calls["global"] == 1
-    assert any("Global mean RCS is current" in message for message in logger.messages)
+    assert any("Global mean RCS is up to date" in message for message in logger.messages)
 
 
 def test_global_mean_regenerates_when_config_file_changes(tmp_path: Path, monkeypatch) -> None:
