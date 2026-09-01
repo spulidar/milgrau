@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import numpy as np
-import pytest
 
 from milgrau.config.loader import load_config
 from milgrau.config.station import apply_station_context, resolve_station_context, select_lidar_channels
@@ -50,6 +49,7 @@ def test_repository_station_catalog_covers_all_scc_eras() -> None:
     assert merion_day["scc_configuration_id"] == 1047
     assert merion_day["channel_ids"]["532.AN"] == 4069
     assert merion_day["channel_ids"]["355.AN"] == 4073
+    assert merion_day["scc_export_ready"] is True
     assert merion_day["lr_input"] == {
         "532.AN": 1,
         "532.PC": 1,
@@ -66,6 +66,7 @@ def test_pre_scc_measurement_uses_legacy_profile_without_scc_mapping() -> None:
 
     assert context["profile_id"] == "spu-legacy"
     assert context["scc_available"] is False
+    assert context["scc_export_ready"] is False
     assert context["scc_configuration_id"] is None
     assert context["channel_ids"] == {}
     assert context["lr_input"] == {}
@@ -88,15 +89,30 @@ def test_merion_night_configuration_contains_raman_channels() -> None:
     assert context["lr_input"] == {}
 
 
-def test_station_resolver_rejects_scc_configuration_with_missing_raw_channel() -> None:
+def test_station_resolver_preserves_all_raw_channels_and_separates_scc_subset() -> None:
     config = load_config("config.yaml")
-    with pytest.raises(ValueError, match="requires channels missing"):
-        _context(
-            config,
-            "2025-01-01T12:00:00",
-            "am",
-            ["532.AN", "532.PC", "1064.AN", "355.PC"],
-        )
+    channels = [
+        "532.AN", "532.PC", "1064.AN", "355.PC", "355.AN",
+        "530.PC", "530.AN", "387.AN", "387.PC",
+    ]
+    context = _context(config, "2025-01-01T12:00:00", "am", channels)
+
+    assert context["selected_channels"] == channels
+    assert context["scc_channels"] == ["532.AN", "532.PC", "1064.AN", "355.PC", "355.AN"]
+    assert context["extra_channels"] == ["530.PC", "530.AN", "387.AN", "387.PC"]
+    assert context["missing_scc_channels"] == []
+    assert context["scc_export_ready"] is True
+
+
+def test_missing_scc_channel_disables_only_scc_export() -> None:
+    config = load_config("config.yaml")
+    channels = ["532.AN", "532.PC", "1064.AN", "355.PC"]
+    context = _context(config, "2025-01-01T12:00:00", "am", channels)
+
+    assert context["selected_channels"] == channels
+    assert context["missing_scc_channels"] == ["355.AN"]
+    assert context["scc_export_ready"] is False
+    assert context["scc_available"] is True
 
 
 def test_station_context_applies_profile_altitude_and_flat_channel_map() -> None:
