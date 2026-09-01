@@ -43,7 +43,7 @@ def test_measurement_group_preserves_parse_failure_stage_and_cause(tmp_path: Pat
     assert "invalid Licel header" in result.traceback
 
 
-def test_measurement_group_success_keeps_level0_file_effect(tmp_path: Path, monkeypatch) -> None:
+def test_measurement_group_success_keeps_only_level0_file_effect(tmp_path: Path, monkeypatch) -> None:
     input_path = tmp_path / "measurement"
     input_path.write_text("raw lidar", encoding="utf-8")
     group = pd.DataFrame({"meas_type": ["measurements"], "filepath": [str(input_path)]})
@@ -60,7 +60,7 @@ def test_measurement_group_success_keeps_level0_file_effect(tmp_path: Path, monk
     assert result.status is ExecutionStatus.SUCCESS
     assert result.stage == "level0.complete"
     assert result.output_path is not None and result.output_path.exists()
-    assert result.output_path.with_suffix(result.output_path.suffix + ".provenance.json").exists()
+    assert not result.output_path.with_suffix(result.output_path.suffix + ".provenance.json").exists()
 
 
 class _NullLogger:
