@@ -43,8 +43,10 @@ def test_repository_station_catalog_covers_all_scc_eras() -> None:
 
     assert apel_day["profile_id"] == "spu-apel-2017"
     assert apel_day["scc_configuration_id"] == 248
+    assert apel_day["lr_input"] == {"1064.AN": 1, "1064.PC": 1}
     assert raman_night["profile_id"] == "spu-raman-2018"
     assert raman_night["scc_configuration_id"] == 484
+    assert raman_night["lr_input"] == {"1064.AN": 1, "1064.PC": 1}
     assert merion_day["profile_id"] == "spu-merionc-2024"
     assert merion_day["scc_configuration_id"] == 1047
     assert merion_day["channel_ids"]["532.AN"] == 4069
@@ -73,7 +75,7 @@ def test_pre_scc_measurement_uses_legacy_profile_without_scc_mapping() -> None:
     assert context["selected_channels"] == channels
 
 
-def test_merion_night_configuration_contains_raman_channels() -> None:
+def test_merion_night_configuration_contains_raman_channels_and_only_1064_lr_input() -> None:
     config = load_config("config.yaml")
     channels = [
         "532.AN", "532.PC", "1064.AN", "355.PC", "355.AN",
@@ -86,7 +88,16 @@ def test_merion_night_configuration_contains_raman_channels() -> None:
     assert context["channel_ids"]["530.AN"] == 4075
     assert context["channel_ids"]["387.AN"] == 4076
     assert context["channel_ids"]["387.PC"] == 4077
-    assert context["lr_input"] == {}
+    assert context["lr_input"] == {"1064.AN": 1}
+
+
+def test_raman_2018_day_uses_raman_for_355_532_and_fixed_lr_only_for_1064() -> None:
+    config = load_config("config.yaml")
+    channels = ["1064.AN", "532.AN", "355.AN", "530.AN", "387.AN"]
+    context = _context(config, "2019-06-01T15:00:00", "pm", channels)
+
+    assert context["scc_configuration_id"] == 565
+    assert context["lr_input"] == {"1064.AN": 1}
 
 
 def test_station_resolver_preserves_all_raw_channels_and_separates_scc_subset() -> None:
