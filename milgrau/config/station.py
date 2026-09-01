@@ -88,9 +88,7 @@ def _validate_scc(profile_id: str, scc: Mapping[str, Any]) -> None:
                 )
             for channel, value in lr_input.items():
                 if isinstance(value, bool) or not isinstance(value, Integral) or int(value) not in {0, 1}:
-                    raise ValueError(
-                        f"profiles.{profile_id}.scc.{mode}.lr_input.{channel} must be integer 0 or 1."
-                    )
+                    raise ValueError(f"profiles.{profile_id}.scc.{mode}.lr_input.{channel} must be integer 0 or 1.")
 
 
 def validate_station_config(catalog: Mapping[str, Any]) -> None:
@@ -182,7 +180,7 @@ def _period_mode(period: str) -> str:
 
 
 def resolve_station_context(config: Mapping[str, Any], measurement_time: datetime, period: str, available_channels: Sequence[str]) -> dict[str, Any]:
-    """Resolve the temporal profile; SCC mapping is optional for legacy data."""
+    """Resolve station/SCC metadata without discarding any Licel channels."""
     catalog = config.get("_station_catalog")
     if not isinstance(catalog, Mapping):
         raise KeyError("No station catalog is loaded; configure station_config in config.yaml.")
@@ -200,41 +198,51 @@ def resolve_station_context(config: Mapping[str, Any], measurement_time: datetim
     station = catalog["station"]
     mode = _period_mode(period)
     available = [str(channel) for channel in available_channels]
+    available_set = set(available)
     resolved_site = deepcopy(station["site"])
     resolved_site.update(profile.get("site", {}))
     common = {
-        "station_id": station["id"], "station_name": station["name"], "profile_id": profile["id"],
-        "valid_from": profile["valid_from"], "valid_to": profile.get("valid_to"), "mode": mode,
-        "site": resolved_site, "laser": deepcopy(profile.get("laser", {})),
+        "station_id": station["id"],
+        "station_name": station["name"],
+        "profile_id": profile["id"],
+        "valid_from": profile["valid_from"],
+        "valid_to": profile.get("valid_to"),
+        "mode": mode,
+        "site": resolved_site,
+        "laser": deepcopy(profile.get("laser", {})),
+        "selected_channels": available,
     }
     if "scc" not in profile:
         return {
             **common,
             "scc_available": False,
+            "scc_export_ready": False,
             "scc_configuration_id": None,
             "scc_configuration_name": None,
             "channel_ids": {},
             "lr_input": {},
-            "selected_channels": available,
-            "extra_channels": [],
+            "scc_channels": [],
+            "missing_scc_channels": [],
+            "extra_channels": available,
         }
 
     scc = profile["scc"][mode]
     channel_ids = {str(name): int(value) for name, value in scc["channels"].items()}
     lr_input = {str(name): int(value) for name, value in scc.get("lr_input", {}).items()}
-    available_set = set(available)
-    missing = sorted(set(channel_ids) - available_set)
-    if missing:
-        raise ValueError(f"SCC configuration {scc['configuration_id']} ({mode}) requires channels missing from the Licel group: {missing}. Available channels: {sorted(available_set)}")
+    missing = [name for name in channel_ids if name not in available_set]
+    scc_channels = [name for name in channel_ids if name in available_set]
+    extra = [name for name in available if name not in channel_ids]
     return {
         **common,
         "scc_available": True,
+        "scc_export_ready": not missing,
         "scc_configuration_id": int(scc["configuration_id"]),
         "scc_configuration_name": str(scc["name"]),
         "channel_ids": channel_ids,
         "lr_input": lr_input,
-        "selected_channels": [name for name in channel_ids if name in available_set],
-        "extra_channels": [name for name in available if name not in channel_ids],
+        "scc_channels": scc_channels,
+        "missing_scc_channels": missing,
+        "extra_channels": extra,
     }
 
 
@@ -253,7 +261,7 @@ def apply_station_context(config: Mapping[str, Any], context: Mapping[str, Any])
 
 
 def select_lidar_channels(lidar_data: Mapping[str, Any], selected_channels: Sequence[str]) -> dict[str, Any]:
-    """Subset parsed Licel data; legacy profiles simply select every raw channel."""
+    """Subset parsed Licel data for a derived product such as an SCC export."""
     original = [str(channel) for channel in lidar_data.get("channels", [])]
     selected = [str(channel) for channel in selected_channels]
     missing = [channel for channel in selected if channel not in original]
