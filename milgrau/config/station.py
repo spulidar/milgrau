@@ -49,6 +49,15 @@ def _date(value: Any, label: str) -> date:
     raise ValueError(f"{label} must use ISO date YYYY-MM-DD.")
 
 
+def _channel_wavelength_nm(channel_name: str) -> int | None:
+    """Return the integer wavelength prefix from canonical names such as 532.PC."""
+    prefix = str(channel_name).split(".", 1)[0].strip()
+    try:
+        return int(prefix)
+    except ValueError:
+        return None
+
+
 def _validate_corrections(corrections: Mapping[str, Any]) -> None:
     required = {"deadtime_us", "bin_shift_bins", "background_offset"}
     for channel, raw in corrections.items():
@@ -59,6 +68,51 @@ def _validate_corrections(corrections: Mapping[str, Any]) -> None:
         if isinstance(values["bin_shift_bins"], bool) or not isinstance(values["bin_shift_bins"], Integral):
             raise ValueError(f"channel_corrections.{channel}.bin_shift_bins must be an integer.")
         _number(values["background_offset"], f"channel_corrections.{channel}.background_offset")
+
+
+def _validate_lr_input_map(lr_input: Mapping[str, Any], channels: Mapping[str, Any], label: str) -> None:
+    unknown_channels = sorted(set(lr_input) - set(channels))
+    if unknown_channels:
+        raise ValueError(f"{label} references channels outside the SCC configuration: {unknown_channels}.")
+    for channel, value in lr_input.items():
+        if isinstance(value, bool) or not isinstance(value, Integral) or int(value) not in {0, 1}:
+            raise ValueError(f"{label}.{channel} must be integer 0 or 1.")
+
+
+def _validate_scc_defaults(catalog: Mapping[str, Any]) -> None:
+    raw_defaults = catalog.get("scc_defaults")
+    if raw_defaults is None:
+        return
+    defaults = _mapping(raw_defaults, "scc_defaults")
+    unknown = sorted(set(defaults) - {"lr_input"})
+    if unknown:
+        raise ValueError(f"Unknown scc_defaults key(s): {unknown}")
+    if "lr_input" not in defaults:
+        return
+    lr_default = _mapping(defaults["lr_input"], "scc_defaults.lr_input")
+    required = {"value", "elastic_wavelengths"}
+    if set(lr_default) != required:
+        raise ValueError(f"scc_defaults.lr_input must contain exactly {sorted(required)}.")
+    value = lr_default["value"]
+    if isinstance(value, bool) or not isinstance(value, Integral) or int(value) not in {0, 1}:
+        raise ValueError("scc_defaults.lr_input.value must be integer 0 or 1.")
+    elastic = _mapping(lr_default["elastic_wavelengths"], "scc_defaults.lr_input.elastic_wavelengths")
+    if not elastic:
+        raise ValueError("scc_defaults.lr_input.elastic_wavelengths must not be empty.")
+    for raw_wavelength, raw_companions in elastic.items():
+        try:
+            wavelength = int(raw_wavelength)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid elastic wavelength in SCC LR defaults: {raw_wavelength!r}.") from exc
+        if wavelength <= 0:
+            raise ValueError("SCC LR default elastic wavelengths must be positive integers.")
+        if not isinstance(raw_companions, Sequence) or isinstance(raw_companions, (str, bytes)):
+            raise ValueError(f"scc_defaults.lr_input.elastic_wavelengths.{raw_wavelength} must be a list.")
+        for companion in raw_companions:
+            if isinstance(companion, bool) or not isinstance(companion, Integral) or int(companion) <= 0:
+                raise ValueError(
+                    f"scc_defaults.lr_input.elastic_wavelengths.{raw_wavelength} companions must be positive integers."
+                )
 
 
 def _validate_scc(profile_id: str, scc: Mapping[str, Any]) -> None:
@@ -81,14 +135,7 @@ def _validate_scc(profile_id: str, scc: Mapping[str, Any]) -> None:
 
         if "lr_input" in config:
             lr_input = _mapping(config["lr_input"], f"profiles.{profile_id}.scc.{mode}.lr_input")
-            unknown_channels = sorted(set(lr_input) - set(channels))
-            if unknown_channels:
-                raise ValueError(
-                    f"profiles.{profile_id}.scc.{mode}.lr_input references channels outside the SCC configuration: {unknown_channels}."
-                )
-            for channel, value in lr_input.items():
-                if isinstance(value, bool) or not isinstance(value, Integral) or int(value) not in {0, 1}:
-                    raise ValueError(f"profiles.{profile_id}.scc.{mode}.lr_input.{channel} must be integer 0 or 1.")
+            _validate_lr_input_map(lr_input, channels, f"profiles.{profile_id}.scc.{mode}.lr_input")
 
 
 def validate_station_config(catalog: Mapping[str, Any]) -> None:
@@ -111,6 +158,8 @@ def validate_station_config(catalog: Mapping[str, Any]) -> None:
                 _text(radiosonde[key], f"station.radiosonde.{key}")
         if "fallback_to_standard_atmosphere" in radiosonde and not isinstance(radiosonde["fallback_to_standard_atmosphere"], bool):
             raise ValueError("station.radiosonde.fallback_to_standard_atmosphere must be boolean.")
+
+    _validate_scc_defaults(catalog)
 
     corrections = _mapping(catalog.get("channel_corrections"), "channel_corrections")
     if not corrections:
@@ -179,6 +228,42 @@ def _period_mode(period: str) -> str:
     raise ValueError(f"Unknown measurement period {period!r}; expected am, pm, or nt.")
 
 
+def _default_lr_input(catalog: Mapping[str, Any], scc_config: Mapping[str, Any]) -> dict[str, int]:
+    """Resolve station-wide LR_Input defaults for one concrete SCC configuration."""
+    defaults = catalog.get("scc_defaults", {})
+    if not isinstance(defaults, Mapping):
+        return {}
+    lr_default = defaults.get("lr_input", {})
+    if not isinstance(lr_default, Mapping):
+        return {}
+    elastic = lr_default.get("elastic_wavelengths", {})
+    if not isinstance(elastic, Mapping):
+        return {}
+    value = int(lr_default.get("value", 1))
+    channels = [str(name) for name in scc_config.get("channels", {})]
+    wavelengths_present = {
+        wavelength for name in channels if (wavelength := _channel_wavelength_nm(name)) is not None
+    }
+    result: dict[str, int] = {}
+    for raw_elastic, raw_companions in elastic.items():
+        elastic_nm = int(raw_elastic)
+        companions = {int(item) for item in raw_companions}
+        if companions & wavelengths_present:
+            continue
+        for channel_name in channels:
+            if _channel_wavelength_nm(channel_name) == elastic_nm:
+                result[channel_name] = value
+    return result
+
+
+def _resolve_lr_input(catalog: Mapping[str, Any], scc_config: Mapping[str, Any]) -> dict[str, int]:
+    """Return explicit per-configuration LR_Input or the station-wide default."""
+    explicit = scc_config.get("lr_input")
+    if isinstance(explicit, Mapping):
+        return {str(name): int(value) for name, value in explicit.items()}
+    return _default_lr_input(catalog, scc_config)
+
+
 def resolve_station_context(config: Mapping[str, Any], measurement_time: datetime, period: str, available_channels: Sequence[str]) -> dict[str, Any]:
     """Resolve station/SCC metadata without discarding any Licel channels."""
     catalog = config.get("_station_catalog")
@@ -228,7 +313,7 @@ def resolve_station_context(config: Mapping[str, Any], measurement_time: datetim
 
     scc = profile["scc"][mode]
     channel_ids = {str(name): int(value) for name, value in scc["channels"].items()}
-    lr_input = {str(name): int(value) for name, value in scc.get("lr_input", {}).items()}
+    lr_input = _resolve_lr_input(catalog, scc)
     missing = [name for name in channel_ids if name not in available_set]
     scc_channels = [name for name in channel_ids if name in available_set]
     extra = [name for name in available if name not in channel_ids]
