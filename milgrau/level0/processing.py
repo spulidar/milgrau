@@ -18,36 +18,6 @@ from milgrau.io.paths import level0_output_path, level0_scc_output_path, measure
 from milgrau.io.weather import fetch_surface_weather
 from milgrau.level0.netcdf import build_level0_netcdf
 from milgrau.operations import ExecutionResult
-from milgrau.provenance import ProductProvenance, build_product_provenance, write_provenance_manifest
-
-
-def measurement_group_provenance(
-    meas_id: str,
-    group_df: pd.DataFrame,
-    config: Mapping[str, Any],
-) -> ProductProvenance:
-    """Build Level 0 provenance from every measurement and associated dark file."""
-    input_paths = [Path(path) for path in group_df["filepath"].tolist()]
-    provenance_columns = [
-        column
-        for column in (
-            "filepath",
-            "meas_type",
-            "association_method",
-            "dark_current_association_delta_hours",
-        )
-        if column in group_df
-    ]
-    source_records = group_df[provenance_columns].copy()
-    if "filepath" in source_records:
-        source_records["filepath"] = source_records["filepath"].map(lambda value: Path(value).name)
-        source_records = source_records.sort_values("filepath")
-    return build_product_provenance(
-        "level0",
-        input_paths,
-        config,
-        variant={"measurement_id": meas_id, "sources": source_records.to_dict(orient="records")},
-    )
 
 
 def fetch_group_weather(group_df: pd.DataFrame, config: Mapping[str, Any], logger: logging.Logger) -> dict[str, Any]:
@@ -142,13 +112,10 @@ def _write_scc_export(
     weather_data: Mapping[str, Any],
     effective_config: Mapping[str, Any],
     context: Mapping[str, Any],
-    provenance: ProductProvenance,
     logger: logging.Logger,
 ) -> Path | None:
     """Write an SCC-compatible channel subset derived from the full Licel Level 0."""
-    if not context.get("scc_available", False):
-        return None
-    if not context.get("scc_export_ready", False):
+    if not context.get("scc_available", False) or not context.get("scc_export_ready", False):
         return None
 
     scc_channels = [str(channel) for channel in context.get("scc_channels", [])]
@@ -169,7 +136,6 @@ def _write_scc_export(
         config=dict(effective_config),
         logger=logger,
     )
-    write_provenance_manifest(scc_path, provenance)
     logger.info(
         "  -> SCC export generated: %s (%d/%d Licel channels; configuration %s).",
         scc_path.name,
@@ -205,9 +171,6 @@ def process_measurement_group(
                 metadata={"pipeline": "LIBIDS", "save_id": save_id},
             )
 
-        stage = "level0.provenance"
-        provenance = measurement_group_provenance(meas_id, group_df, config)
-
         stage = "level0.parse"
         lidar_data_tensors = parse_licel_group(files_meas, logger)
         if not lidar_data_tensors.get("tensors"):
@@ -241,8 +204,6 @@ def process_measurement_group(
             config=primary_config,
             logger=logger,
         )
-        stage = "level0.provenance.write"
-        write_provenance_manifest(netcdf_path, provenance)
 
         stage = "level0.scc_export"
         scc_path = _write_scc_export(
@@ -254,7 +215,6 @@ def process_measurement_group(
             weather_data=weather_data,
             effective_config=effective_config,
             context=station_context,
-            provenance=provenance,
             logger=logger,
         )
 
