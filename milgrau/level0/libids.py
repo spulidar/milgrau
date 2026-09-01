@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 from typing import Mapping
 
+import numpy as np
 import pandas as pd
 import xarray as xr
 
@@ -24,13 +25,13 @@ def _raw_input_paths(group_df) -> list[Path]:
     return [Path(path) for path in group_df["filepath"].tolist()]
 
 
-def _expected_scc_export(meas_id: str, group_df, config: Mapping, output_path: Path) -> bool:
-    """Return whether the current station profile expects a complete SCC subset."""
+def _resolve_expected_scc_context(meas_id: str, group_df, config: Mapping, output_path: Path) -> dict | None:
+    """Resolve SCC expectations from the full-channel primary Level 0."""
     if not isinstance(config.get("_station_catalog"), Mapping):
-        return False
+        return None
     measurement_rows = group_df[group_df["meas_type"] == "measurements"]
     if measurement_rows.empty:
-        return False
+        return None
     try:
         with xr.open_dataset(output_path) as ds:
             channels = [str(value) for value in ds["channel_string"].values]
@@ -42,8 +43,54 @@ def _expected_scc_export(meas_id: str, group_df, config: Mapping, output_path: P
             available_channels=channels,
         )
     except Exception:
+        return None
+    return context
+
+
+def _expected_scc_export(meas_id: str, group_df, config: Mapping, output_path: Path) -> bool:
+    """Return whether the current station profile expects a complete SCC subset."""
+    context = _resolve_expected_scc_context(meas_id, group_df, config, output_path)
+    return bool(
+        context
+        and context.get("scc_available", False)
+        and context.get("scc_export_ready", False)
+    )
+
+
+def _scc_output_satisfies_context(path: Path, context: Mapping) -> bool:
+    """Validate Level 0 contract plus SCC-specific variables required by context."""
+    if not netcdf_satisfies_contract(path, validate_level0_contract):
         return False
-    return bool(context.get("scc_available", False) and context.get("scc_export_ready", False))
+    try:
+        with xr.open_dataset(path, mask_and_scale=False) as ds:
+            if "channel_ID" not in ds:
+                return False
+            expected_channels = [str(value) for value in context.get("scc_channels", [])]
+            actual_channels = [str(value) for value in ds["channel_string"].values]
+            if actual_channels != expected_channels:
+                return False
+
+            expected_ids = np.asarray(
+                [int(context["channel_ids"][channel]) for channel in expected_channels],
+                dtype=np.int64,
+            )
+            actual_ids = np.asarray(ds["channel_ID"].values, dtype=np.int64)
+            if actual_ids.shape != expected_ids.shape or not np.array_equal(actual_ids, expected_ids):
+                return False
+
+            lr_input = context.get("lr_input", {})
+            if isinstance(lr_input, Mapping) and lr_input:
+                if "LR_Input" not in ds:
+                    return False
+                values = np.ma.asarray(ds["LR_Input"].values)
+                for index, channel in enumerate(actual_channels):
+                    if channel not in lr_input:
+                        continue
+                    if np.ma.is_masked(values[index]) or int(values[index]) != int(lr_input[channel]):
+                        return False
+        return True
+    except Exception:
+        return False
 
 
 def _level0_is_current(meas_id: str, group_df, config: dict, output_path) -> bool:
@@ -59,7 +106,10 @@ def _level0_is_current(meas_id: str, group_df, config: dict, output_path) -> boo
     if not primary_current:
         return False
 
-    if not _expected_scc_export(meas_id, group_df, config, output):
+    context = _resolve_expected_scc_context(meas_id, group_df, config, output)
+    if not context or not (
+        context.get("scc_available", False) and context.get("scc_export_ready", False)
+    ):
         return True
 
     scc_path = level0_scc_output_path(meas_id, config)
@@ -67,7 +117,7 @@ def _level0_is_current(meas_id: str, group_df, config: dict, output_path) -> boo
         scc_path,
         inputs,
         config=config,
-        integrity_check=lambda path: netcdf_satisfies_contract(path, validate_level0_contract),
+        integrity_check=lambda path: _scc_output_satisfies_context(path, context),
     )
 
 
