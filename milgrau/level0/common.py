@@ -1,11 +1,14 @@
-"""Shared helpers for Level 0 processing."""
+"""Shared helpers and constants for Level 0 processing."""
 
 from __future__ import annotations
 
 from statistics import StatisticsError, mode
-from typing import Any, Mapping
+from typing import Any, Final, Mapping
 
 import numpy as np
+
+DEFAULT_LASER_SHOT_TOLERANCE_FRACTION: Final[float] = 2e-3
+LICEL_HEADER_TIME_JITTER_S: Final[float] = 1.0
 
 
 def safe_mode(values: Any) -> float:
