@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from milgrau.io.licel import parse_licel_group
+from milgrau.level0.common import safe_mode
 
 DEFAULT_CHANNEL_ID: Final[int] = 9999
 DEFAULT_VERTICAL_RESOLUTION_M: Final[float] = 7.5
@@ -18,6 +19,8 @@ DEFAULT_BACKGROUND_START_M: Final[float] = 29000.0
 DEFAULT_BACKGROUND_STOP_M: Final[float] = 29999.0
 DEFAULT_LATITUDE_DEGREES: Final[float] = -23.561
 DEFAULT_LONGITUDE_DEGREES: Final[float] = -46.735
+DEFAULT_LASER_SHOT_TOLERANCE_FRACTION: Final[float] = 2e-3
+SCC_MAX_HEADER_TIME_JITTER_S: Final[int] = 1
 RAW_SIGNAL_UNITS: Final[str] = "counts for PC, mV per shot for analog"
 BINARY_DIMENSIONS: Final[tuple[str, str, str]] = ("time", "channels", "points")
 TIME_SCALE_DIMENSIONS: Final[tuple[str, str]] = ("time", "nb_of_time_scales")
@@ -41,7 +44,9 @@ def validate_lidar_tensors(tensors: dict, channels: list[str]) -> tuple[int, int
         if reference_shape is None:
             reference_shape = tensor.shape
         elif tensor.shape != reference_shape:
-            raise ValueError(f"Inconsistent tensor shape for channel {ch_name}: expected {reference_shape}, got {tensor.shape}.")
+            raise ValueError(
+                f"Inconsistent tensor shape for channel {ch_name}: expected {reference_shape}, got {tensor.shape}."
+            )
     num_times, num_points = reference_shape
     return int(num_times), int(num_points)
 
@@ -57,6 +62,11 @@ def _physics_config(config: Mapping[str, Any]) -> Mapping[str, Any]:
     return physics if isinstance(physics, Mapping) else {}
 
 
+def _processing_config(config: Mapping[str, Any]) -> Mapping[str, Any]:
+    processing = config.get("processing", {})
+    return processing if isinstance(processing, Mapping) else {}
+
+
 def _resolved_station(config: Mapping[str, Any]) -> Mapping[str, Any]:
     value = config.get("_resolved_station", {})
     return value if isinstance(value, Mapping) else {}
@@ -67,6 +77,18 @@ def _scc_ready(config: Mapping[str, Any]) -> bool:
     if not resolved:
         return True
     return bool(resolved.get("scc_available", False))
+
+
+def _laser_shot_tolerance_fraction(config: Mapping[str, Any]) -> float:
+    value = float(
+        _processing_config(config).get(
+            "laser_shot_tolerance_fraction",
+            DEFAULT_LASER_SHOT_TOLERANCE_FRACTION,
+        )
+    )
+    if not np.isfinite(value) or value < 0.0:
+        raise ValueError(f"processing.laser_shot_tolerance_fraction must be finite and >= 0; got {value}.")
+    return value
 
 
 def _hardware_map(config: Mapping[str, Any], period: str) -> Mapping[str, Any]:
@@ -91,7 +113,13 @@ def _vertical_resolution_m(config: Mapping[str, Any]) -> float:
     return float(_physics_config(config).get("vertical_resolution_m", DEFAULT_VERTICAL_RESOLUTION_M))
 
 
-def _surface_value(weather_data: Mapping[str, Any], config: Mapping[str, Any], weather_key: str, physics_key: str, default: float) -> float:
+def _surface_value(
+    weather_data: Mapping[str, Any],
+    config: Mapping[str, Any],
+    weather_key: str,
+    physics_key: str,
+    default: float,
+) -> float:
     physics = _physics_config(config)
     return float(weather_data.get(weather_key, physics.get(physics_key, default)))
 
@@ -103,11 +131,17 @@ def _measurement_rows(group_df: pd.DataFrame) -> pd.DataFrame:
     return df_meas.sort_values("start_time_utc").reset_index(drop=True)
 
 
-def _truncate_time_axis(measurement_rows: pd.DataFrame, num_times_tensor: int, save_id: str, logger: logging.Logger) -> tuple[pd.DataFrame, int]:
+def _truncate_time_axis(
+    measurement_rows: pd.DataFrame,
+    num_times_tensor: int,
+    save_id: str,
+    logger: logging.Logger,
+) -> tuple[pd.DataFrame, int]:
     if len(measurement_rows) != num_times_tensor:
         n_copy = min(len(measurement_rows), num_times_tensor)
         logger.warning(
-            f"  -> Time axis mismatch for {save_id}: metadata has {len(measurement_rows)} profiles but tensor has {num_times_tensor}. Truncating to {n_copy}."
+            f"  -> Time axis mismatch for {save_id}: metadata has {len(measurement_rows)} profiles "
+            f"but tensor has {num_times_tensor}. Truncating to {n_copy}."
         )
         measurement_rows = measurement_rows.iloc[:n_copy].reset_index(drop=True)
         return measurement_rows, n_copy
@@ -120,21 +154,153 @@ def _seconds_since(reference_time: pd.Timestamp, values: pd.Series) -> np.ndarra
     return offsets.fillna(-1).astype(np.int32).to_numpy()
 
 
-def _scalar_config_value(config: Mapping[str, Any], weather_data: Mapping[str, Any], *, weather_key: str, physics_key: str, default: float) -> float:
+def _scc_time_axis(
+    rows: pd.DataFrame,
+    reference_time: pd.Timestamp,
+    config: Mapping[str, Any],
+    logger: logging.Logger,
+    *,
+    label: str,
+) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
+    """Return SCC time offsets, normalizing only well-supported 1 s header jitter.
+
+    Licel start/stop timestamps are stored at whole-second resolution. When the
+    resulting profile durations vary by one second, use laser shots and laser
+    repetition rate as the physical consistency check. The start timestamps are
+    always preserved; only stop timestamps are adjusted to the physically
+    supported nominal integration duration.
+    """
+    start_offsets = _seconds_since(reference_time, rows["start_time_utc"])
+    stop_offsets = _seconds_since(reference_time, rows["stop_time"])
+    if not _scc_ready(config) or len(rows) <= 1:
+        return start_offsets, stop_offsets, {}
+
+    raw_durations = stop_offsets.astype(np.int64) - start_offsets.astype(np.int64)
+    if np.any(raw_durations <= 0):
+        raise ValueError(f"{label} SCC time axis contains non-positive profile duration(s): {raw_durations.tolist()}")
+    if np.unique(raw_durations).size == 1:
+        return start_offsets, stop_offsets, {}
+
+    required = {"nshots", "laser_freq"}
+    missing = sorted(required - set(rows.columns))
+    if missing:
+        raise ValueError(
+            f"{label} SCC time resolution is variable ({sorted(set(raw_durations.tolist()))}) but "
+            f"cannot be validated physically because metadata columns are missing: {missing}."
+        )
+
+    shots = pd.to_numeric(rows["nshots"], errors="coerce").to_numpy(dtype=np.float64)
+    rates = pd.to_numeric(rows["laser_freq"], errors="coerce").to_numpy(dtype=np.float64)
+    if not np.all(np.isfinite(shots)) or np.any(shots <= 0.0):
+        raise ValueError(f"{label} SCC time normalization requires positive finite laser-shot counts.")
+    if not np.all(np.isfinite(rates)) or np.any(rates <= 0.0):
+        raise ValueError(f"{label} SCC time normalization requires positive finite laser repetition rates.")
+
+    tolerance_fraction = _laser_shot_tolerance_fraction(config)
+    expected_shots = float(safe_mode(shots))
+    shot_limit = tolerance_fraction * expected_shots
+    shot_deviation = np.abs(shots - expected_shots)
+    shots_inconsistent = (
+        np.any(shot_deviation >= shot_limit)
+        if shot_limit > 0.0
+        else np.any(shot_deviation > 0.0)
+    )
+    if shots_inconsistent:
+        raise ValueError(
+            f"{label} SCC time normalization refused: laser shots are not consistent within "
+            f"{tolerance_fraction:.4%} of nominal {expected_shots:g}."
+        )
+
+    expected_rate = float(safe_mode(rates))
+    if np.any(np.abs(rates - expected_rate) > 1e-9):
+        raise ValueError(
+            f"{label} SCC time normalization refused: laser repetition rate changes within the group "
+            f"({sorted(set(rates.tolist()))})."
+        )
+
+    physical_duration_s = expected_shots / expected_rate
+    nominal_duration_s = int(round(physical_duration_s))
+    if nominal_duration_s <= 0:
+        raise ValueError(f"{label} SCC nominal integration duration is not positive: {physical_duration_s:g} s.")
+
+    physical_rounding_error_s = abs(physical_duration_s - nominal_duration_s)
+    physical_tolerance_s = max(physical_duration_s * tolerance_fraction, 1e-9)
+    if physical_rounding_error_s > physical_tolerance_s:
+        raise ValueError(
+            f"{label} SCC time normalization refused: shots/rate imply {physical_duration_s:.6g} s, "
+            f"which is not within {tolerance_fraction:.4%} of an integer-second time scale."
+        )
+
+    header_adjustments = raw_durations - nominal_duration_s
+    if np.any(np.abs(header_adjustments) > SCC_MAX_HEADER_TIME_JITTER_S):
+        raise ValueError(
+            f"{label} SCC time normalization refused: header durations "
+            f"{sorted(set(raw_durations.tolist()))} differ by more than "
+            f"{SCC_MAX_HEADER_TIME_JITTER_S} s from physically supported nominal "
+            f"{nominal_duration_s} s."
+        )
+
+    corrected_stop_offsets = (start_offsets.astype(np.int64) + nominal_duration_s).astype(np.int32)
+    adjusted_mask = corrected_stop_offsets != stop_offsets
+    adjusted_count = int(np.count_nonzero(adjusted_mask))
+    max_adjustment_s = int(
+        np.max(np.abs(corrected_stop_offsets.astype(np.int64) - stop_offsets.astype(np.int64)))
+    )
+    prefix = "SCC_Background" if label == "Background" else "SCC"
+    attrs: dict[str, Any] = {
+        f"{prefix}_Time_Axis_Normalized": np.int8(1 if adjusted_count else 0),
+        f"{prefix}_Nominal_Time_Resolution_s": np.int32(nominal_duration_s),
+        f"{prefix}_Time_Adjusted_Profile_Count": np.int32(adjusted_count),
+        f"{prefix}_Max_Time_Adjustment_s": np.int32(max_adjustment_s),
+        f"{prefix}_Time_Normalization_Basis": "laser_shots/repetition_rate; <=1 s Licel header quantization",
+    }
+    if adjusted_count:
+        logger.info(
+            "  -> %s SCC time axis normalized to %d s using laser-shot/repetition-rate consistency; "
+            "adjusted %d/%d profiles (max %d s).",
+            label,
+            nominal_duration_s,
+            adjusted_count,
+            len(rows),
+            max_adjustment_s,
+        )
+    return start_offsets, corrected_stop_offsets, attrs
+
+
+def _scalar_config_value(
+    config: Mapping[str, Any],
+    weather_data: Mapping[str, Any],
+    *,
+    weather_key: str,
+    physics_key: str,
+    default: float,
+) -> float:
     return _surface_value(weather_data, config, weather_key, physics_key, default)
 
 
-def _stack_raw_lidar_data(tensors: Mapping[str, np.ndarray], channels: list[str], num_times: int, num_points: int) -> np.ndarray:
+def _stack_raw_lidar_data(
+    tensors: Mapping[str, np.ndarray],
+    channels: list[str],
+    num_times: int,
+    num_points: int,
+) -> np.ndarray:
     stacked_tensor = np.zeros((num_times, len(channels), num_points), dtype=np.float64)
     for index, channel_name in enumerate(channels):
         stacked_tensor[:, index, :] = np.asarray(tensors[channel_name], dtype=np.float64)[:num_times, :]
     return stacked_tensor
 
 
-def _channel_id(channel_name: str, hardware_map: Mapping[str, Any], period: str, logger: logging.Logger) -> int:
+def _channel_id(
+    channel_name: str,
+    hardware_map: Mapping[str, Any],
+    period: str,
+    logger: logging.Logger,
+) -> int:
     system_mode = "night" if period == "nt" else "day"
     if channel_name not in hardware_map:
-        logger.warning(f"  -> Channel {channel_name} missing in config for {system_mode} mode. Using default {DEFAULT_CHANNEL_ID}.")
+        logger.warning(
+            f"  -> Channel {channel_name} missing in config for {system_mode} mode. Using default {DEFAULT_CHANNEL_ID}."
+        )
     return int(hardware_map.get(channel_name, DEFAULT_CHANNEL_ID))
 
 
@@ -152,7 +318,11 @@ def _is_analog_channel(channel_name: str, metadata: Mapping[str, Any]) -> bool:
     return channel_name.upper().endswith(".AN")
 
 
-def _channel_range_resolution_m(lidar_data: Mapping[str, Any], channel_name: str, config: Mapping[str, Any]) -> float:
+def _channel_range_resolution_m(
+    lidar_data: Mapping[str, Any],
+    channel_name: str,
+    config: Mapping[str, Any],
+) -> float:
     metadata = _channel_metadata(lidar_data, channel_name)
     value = metadata.get("bin_width_m", np.nan)
     try:
@@ -183,7 +353,13 @@ def _laser_shot_matrix(lidar_data: Mapping[str, Any], num_times: int, num_channe
     return shots.astype(np.int32)
 
 
-def _create_level0_dimensions(ds: nc.Dataset, *, num_times: int, num_channels: int, num_points: int) -> None:
+def _create_level0_dimensions(
+    ds: nc.Dataset,
+    *,
+    num_times: int,
+    num_channels: int,
+    num_points: int,
+) -> None:
     ds.createDimension("time", num_times)
     ds.createDimension("channels", num_channels)
     ds.createDimension("points", num_points)
@@ -201,7 +377,9 @@ def _create_level0_core_variables(ds: nc.Dataset, *, include_channel_ids: bool =
     raw_lidar_data.units = RAW_SIGNAL_UNITS
     laser_pointing_angle = ds.createVariable("Laser_Pointing_Angle", "f8", ("scan_angles",))
     laser_pointing_angle.units = "degree"
-    laser_pointing_angle_of_profiles = ds.createVariable("Laser_Pointing_Angle_of_Profiles", "i4", TIME_SCALE_DIMENSIONS)
+    laser_pointing_angle_of_profiles = ds.createVariable(
+        "Laser_Pointing_Angle_of_Profiles", "i4", TIME_SCALE_DIMENSIONS
+    )
     laser_shots = ds.createVariable("Laser_Shots", "i4", ("time", "channels"))
     laser_shots.units = "shots"
     molecular_calc = ds.createVariable("Molecular_Calc", "i4")
@@ -236,7 +414,14 @@ def _create_level0_core_variables(ds: nc.Dataset, *, include_channel_ids: bool =
     return variables
 
 
-def _write_channel_metadata(variables: Mapping[str, nc.Variable], channels: list[str], lidar_data: Mapping[str, Any], config: Mapping[str, Any], period: str, logger: logging.Logger) -> None:
+def _write_channel_metadata(
+    variables: Mapping[str, nc.Variable],
+    channels: list[str],
+    lidar_data: Mapping[str, Any],
+    config: Mapping[str, Any],
+    period: str,
+    logger: logging.Logger,
+) -> None:
     hardware_map = _hardware_map(config, period)
     background_start_m, background_stop_m = _background_window_m(config)
     for index, channel_name in enumerate(channels):
@@ -263,7 +448,9 @@ def _write_daq_range(ds: nc.Dataset, channels: list[str], lidar_data: Mapping[st
         except (TypeError, ValueError):
             daq_range_mv = np.nan
         if not np.isfinite(daq_range_mv) or daq_range_mv <= 0.0:
-            raise ValueError(f"Analog channel {channel_name} lacks a positive Licel Discriminator/DAQ range required by acquisition metadata.")
+            raise ValueError(
+                f"Analog channel {channel_name} lacks a positive Licel Discriminator/DAQ range required by acquisition metadata."
+            )
         values[index] = daq_range_mv
     if not analog_count:
         return
@@ -325,9 +512,17 @@ def _dark_current_attributes(group_df: pd.DataFrame) -> dict:
     }
 
 
-def build_level0_global_attributes(save_id: str, lidar_data: dict, group_df: pd.DataFrame, weather_data: dict, config: dict) -> dict:
-    min_start_utc = pd.to_datetime(group_df["start_time_utc"]).min()
-    max_stop_utc = pd.to_datetime(group_df["stop_time"]).max()
+def build_level0_global_attributes(
+    save_id: str,
+    lidar_data: dict,
+    group_df: pd.DataFrame,
+    weather_data: dict,
+    config: dict,
+) -> dict:
+    measurement_rows = _measurement_rows(group_df)
+    timing_rows = measurement_rows if not measurement_rows.empty else group_df
+    min_start_utc = pd.to_datetime(timing_rows["start_time_utc"], utc=True).min()
+    max_stop_utc = pd.to_datetime(timing_rows["stop_time"], utc=True).max()
     source_files = _source_file_names(group_df)
     physics = _physics_config(config)
     resolved = _resolved_station(config)
@@ -335,7 +530,11 @@ def build_level0_global_attributes(save_id: str, lidar_data: dict, group_df: pd.
     attrs = {
         "Measurement_ID": save_id,
         "System": str(resolved.get("station_name", config.get("project", {}).get("station_name", "Lidar"))),
-        "Processing_level": "Level 0: Raw Licel to SCC-compatible NetCDF" if ready else "Level 0: Raw Licel NetCDF (SCC mapping unavailable)",
+        "Processing_level": (
+            "Level 0: Raw Licel to SCC-compatible NetCDF"
+            if ready
+            else "Level 0: Raw Licel NetCDF (SCC mapping unavailable)"
+        ),
         "Pipeline": "MILGRAU",
         "SCC_Ready": np.int8(1 if ready else 0),
         "Latitude_degrees_north": float(physics.get("latitude", DEFAULT_LATITUDE_DEGREES)),
@@ -369,14 +568,25 @@ def _write_dark_current_availability(ds: nc.Dataset, availability: np.ndarray) -
     var[:] = availability.astype(np.int8)
 
 
-def _write_dark_current_time_axes(ds: nc.Dataset, dark_current_rows: pd.DataFrame, num_time_bck: int) -> None:
+def _write_dark_current_time_axes(
+    ds: nc.Dataset,
+    dark_current_rows: pd.DataFrame,
+    num_time_bck: int,
+    config: Mapping[str, Any],
+    logger: logging.Logger,
+) -> None:
     if dark_current_rows.empty:
         return
     rows = dark_current_rows.sort_values("start_time_utc").reset_index(drop=True).iloc[:num_time_bck]
     reference_time = pd.to_datetime(rows["start_time_utc"], utc=True).iloc[0]
-    stop_time = pd.to_datetime(rows["stop_time"], utc=True).max()
-    start_offsets = _seconds_since(reference_time, rows["start_time_utc"])
-    stop_offsets = _seconds_since(reference_time, rows["stop_time"])
+    start_offsets, stop_offsets, normalization_attrs = _scc_time_axis(
+        rows,
+        reference_time,
+        config,
+        logger,
+        label="Background",
+    )
+    stop_time = reference_time + pd.to_timedelta(int(np.max(stop_offsets)), unit="s")
     raw_bck_start = ds.createVariable("Raw_Bck_Start_Time", "i4", BCK_TIME_SCALE_DIMENSIONS)
     raw_bck_stop = ds.createVariable("Raw_Bck_Stop_Time", "i4", BCK_TIME_SCALE_DIMENSIONS)
     raw_bck_start.units = "s"
@@ -386,9 +596,19 @@ def _write_dark_current_time_axes(ds: nc.Dataset, dark_current_rows: pd.DataFram
     ds.setncattr("RawBck_Start_Date", reference_time.strftime("%Y%m%d"))
     ds.setncattr("RawBck_Start_Time_UT", reference_time.strftime("%H%M%S"))
     ds.setncattr("RawBck_Stop_Time_UT", stop_time.strftime("%H%M%S"))
+    if normalization_attrs:
+        ds.setncatts(normalization_attrs)
 
 
-def write_dark_current_profile(ds: nc.Dataset, group_df: pd.DataFrame, channels: list[str], num_channels: int, num_points: int, logger: logging.Logger) -> None:
+def write_dark_current_profile(
+    ds: nc.Dataset,
+    group_df: pd.DataFrame,
+    channels: list[str],
+    num_channels: int,
+    num_points: int,
+    logger: logging.Logger,
+    config: Mapping[str, Any] | None = None,
+) -> None:
     availability = np.zeros(num_channels, dtype=np.int8)
     df_dc = group_df[group_df["meas_type"] == "dark_current"]
     if df_dc.empty:
@@ -409,22 +629,36 @@ def write_dark_current_profile(ds: nc.Dataset, group_df: pd.DataFrame, channels:
     stacked_dc = np.full((num_time_bck, num_channels, num_points), np.nan, dtype=np.float64)
     for i, ch_name in enumerate(channels):
         if ch_name not in dc_data["tensors"]:
-            logger.warning(f"  -> Dark-current data missing for channel {ch_name}. Filling with NaN and flagging unavailable.")
+            logger.warning(
+                f"  -> Dark-current data missing for channel {ch_name}. Filling with NaN and flagging unavailable."
+            )
             continue
         dc_tensor = np.asarray(dc_data["tensors"][ch_name], dtype=np.float64)
         if dc_tensor.ndim != 2 or dc_tensor.shape[1] != num_points:
-            logger.warning(f"  -> Dark-current channel {ch_name} has shape {dc_tensor.shape}; expected (*, {num_points}). Filling with NaN and flagging unavailable.")
+            logger.warning(
+                f"  -> Dark-current channel {ch_name} has shape {dc_tensor.shape}; expected (*, {num_points}). "
+                "Filling with NaN and flagging unavailable."
+            )
             continue
         n_copy = min(num_time_bck, dc_tensor.shape[0])
         stacked_dc[:n_copy, i, :] = dc_tensor[:n_copy, :]
         availability[i] = 1
     bck_prof[:] = stacked_dc
-    _write_dark_current_time_axes(ds, df_dc, num_time_bck)
+    _write_dark_current_time_axes(ds, df_dc, num_time_bck, config or {}, logger)
     _write_dark_current_availability(ds, availability)
     logger.info(f"  -> Successfully injected Dark Current matrix ({num_time_bck} profiles).")
 
 
-def build_level0_netcdf(netcdf_path: str, save_id: str, period: str, lidar_data: dict, group_df: pd.DataFrame, weather_data: dict, config: dict, logger: logging.Logger) -> None:
+def build_level0_netcdf(
+    netcdf_path: str,
+    save_id: str,
+    period: str,
+    lidar_data: dict,
+    group_df: pd.DataFrame,
+    weather_data: dict,
+    config: dict,
+    logger: logging.Logger,
+) -> None:
     """Generate a Level-0 NetCDF from parsed Licel tensors, with optional SCC mapping."""
     try:
         tensors = lidar_data["tensors"]
@@ -437,14 +671,35 @@ def build_level0_netcdf(netcdf_path: str, save_id: str, period: str, lidar_data:
             raise ValueError("No valid time profiles available after tensor/time-axis validation.")
         measurement_start_times = pd.to_datetime(measurement_rows["start_time_utc"], utc=True)
         reference_time = measurement_start_times.iloc[0]
-        start_offsets = _seconds_since(reference_time, measurement_rows["start_time_utc"])
-        stop_offsets = _seconds_since(reference_time, measurement_rows["stop_time"])
+        start_offsets, stop_offsets, normalization_attrs = _scc_time_axis(
+            measurement_rows,
+            reference_time,
+            config,
+            logger,
+            label="Measurement",
+        )
         laser_pointing_angle_deg = float(_physics_config(config).get("laser_pointing_angle_deg", 0.0))
-        pressure_hpa = _scalar_config_value(config, weather_data, weather_key="pressure_hpa", physics_key="default_surface_pressure_hpa", default=940.0)
-        temperature_c = _scalar_config_value(config, weather_data, weather_key="temperature_c", physics_key="default_surface_temp_c", default=25.0)
+        pressure_hpa = _scalar_config_value(
+            config,
+            weather_data,
+            weather_key="pressure_hpa",
+            physics_key="default_surface_pressure_hpa",
+            default=940.0,
+        )
+        temperature_c = _scalar_config_value(
+            config,
+            weather_data,
+            weather_key="temperature_c",
+            physics_key="default_surface_temp_c",
+            default=25.0,
+        )
         laser_shots = _laser_shot_matrix(lidar_data, num_times, num_channels)
         with nc.Dataset(netcdf_path, "w", format="NETCDF4") as ds:
             ds.setncatts(build_level0_global_attributes(save_id, lidar_data, group_df, weather_data, config))
+            if normalization_attrs:
+                ds.setncatts(normalization_attrs)
+                normalized_stop_time = reference_time + pd.to_timedelta(int(np.max(stop_offsets)), unit="s")
+                ds.setncattr("RawData_Stop_Time_UT", normalized_stop_time.strftime("%H%M%S"))
             _create_level0_dimensions(ds, num_times=num_times, num_channels=num_channels, num_points=num_points)
             variables = _create_level0_core_variables(ds, include_channel_ids=_scc_ready(config))
             variables["raw_data_start"][:, 0] = start_offsets
@@ -459,6 +714,14 @@ def build_level0_netcdf(netcdf_path: str, save_id: str, period: str, lidar_data:
             _write_channel_metadata(variables, channels, lidar_data, config, period, logger)
             _write_daq_range(ds, channels, lidar_data)
             _write_lr_input(ds, channels, config)
-            write_dark_current_profile(ds, group_df, channels, num_channels, num_points, logger)
+            write_dark_current_profile(
+                ds,
+                group_df,
+                channels,
+                num_channels,
+                num_points,
+                logger,
+                config=config,
+            )
     except Exception as exc:
         raise RuntimeError(f"Failed to build NetCDF: {exc}") from exc
