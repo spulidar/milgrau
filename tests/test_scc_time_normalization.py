@@ -1,4 +1,4 @@
-"""Tests for SCC time-resolution normalization of Licel whole-second timestamps."""
+"""Tests for SCC time-axis application of upstream acquisition QA."""
 
 from __future__ import annotations
 
@@ -6,32 +6,27 @@ import logging
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from milgrau.level0.netcdf import _scc_time_axis
 
 
-def _rows(*, shots: tuple[int, ...] = (6000, 6000), stops: tuple[int, ...] = (60, 121)) -> pd.DataFrame:
+def _rows(*, stops: tuple[int, ...] = (60, 121), nominal_duration_s: int = 60) -> pd.DataFrame:
     reference = pd.Timestamp("2025-09-14T12:00:00Z")
     starts = (0, 60)
     return pd.DataFrame(
         {
             "start_time_utc": [reference + pd.Timedelta(seconds=value) for value in starts],
             "stop_time": [reference + pd.Timedelta(seconds=value) for value in stops],
-            "nshots": shots,
-            "laser_freq": (100, 100),
+            "qa_nominal_duration_s": (nominal_duration_s, nominal_duration_s),
         }
     )
 
 
 def _scc_config() -> dict:
-    return {
-        "processing": {"laser_shot_tolerance_fraction": 0.002},
-        "_resolved_station": {"scc_available": True},
-    }
+    return {"_resolved_station": {"scc_available": True}}
 
 
-def test_scc_time_axis_normalizes_one_second_header_jitter_when_shots_support_nominal_duration() -> None:
+def test_scc_time_axis_applies_upstream_nominal_duration_without_revalidating_acquisition() -> None:
     rows = _rows()
     reference = pd.to_datetime(rows["start_time_utc"], utc=True).iloc[0]
 
@@ -51,11 +46,13 @@ def test_scc_time_axis_normalizes_one_second_header_jitter_when_shots_support_no
     assert attrs["SCC_Max_Time_Adjustment_s"] == 1
 
 
-def test_scc_time_axis_accepts_shot_variation_below_existing_quality_tolerance() -> None:
-    rows = _rows(shots=(6000, 6010))
+def test_scc_time_axis_does_not_repeat_laser_shot_or_frequency_validation() -> None:
+    rows = _rows()
+    rows["nshots"] = (6000, 9999)
+    rows["laser_freq"] = (100, 50)
     reference = pd.to_datetime(rows["start_time_utc"], utc=True).iloc[0]
 
-    _, stop, attrs = _scc_time_axis(
+    _, stop, _ = _scc_time_axis(
         rows,
         reference,
         _scc_config(),
@@ -64,30 +61,29 @@ def test_scc_time_axis_accepts_shot_variation_below_existing_quality_tolerance()
     )
 
     np.testing.assert_array_equal(stop, np.array([60, 120], dtype=np.int32))
-    assert attrs["SCC_Nominal_Time_Resolution_s"] == 60
 
 
-def test_scc_time_axis_refuses_real_shot_change_beyond_quality_tolerance() -> None:
-    rows = _rows(shots=(6000, 6100))
+def test_scc_time_axis_without_qa_decision_preserves_header_times() -> None:
+    rows = _rows().drop(columns=["qa_nominal_duration_s"])
     reference = pd.to_datetime(rows["start_time_utc"], utc=True).iloc[0]
 
-    with pytest.raises(ValueError, match="laser shots are not consistent"):
-        _scc_time_axis(
-            rows,
-            reference,
-            _scc_config(),
-            logging.getLogger("test"),
-            label="Measurement",
-        )
+    start, stop, attrs = _scc_time_axis(
+        rows,
+        reference,
+        _scc_config(),
+        logging.getLogger("test"),
+        label="Measurement",
+    )
+
+    np.testing.assert_array_equal(start, np.array([0, 60], dtype=np.int32))
+    np.testing.assert_array_equal(stop, np.array([60, 121], dtype=np.int32))
+    assert attrs == {}
 
 
-def test_internal_level0_preserves_original_variable_header_durations() -> None:
+def test_internal_level0_preserves_original_header_durations() -> None:
     rows = _rows()
     reference = pd.to_datetime(rows["start_time_utc"], utc=True).iloc[0]
-    config = {
-        "processing": {"laser_shot_tolerance_fraction": 0.002},
-        "_resolved_station": {"scc_available": False},
-    }
+    config = {"_resolved_station": {"scc_available": False}}
 
     start, stop, attrs = _scc_time_axis(
         rows,
