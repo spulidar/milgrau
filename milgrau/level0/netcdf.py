@@ -11,7 +11,6 @@ import numpy as np
 import pandas as pd
 
 from milgrau.io.licel import parse_licel_group
-from milgrau.level0.common import safe_mode
 
 DEFAULT_CHANNEL_ID: Final[int] = 9999
 DEFAULT_VERTICAL_RESOLUTION_M: Final[float] = 7.5
@@ -19,8 +18,6 @@ DEFAULT_BACKGROUND_START_M: Final[float] = 29000.0
 DEFAULT_BACKGROUND_STOP_M: Final[float] = 29999.0
 DEFAULT_LATITUDE_DEGREES: Final[float] = -23.561
 DEFAULT_LONGITUDE_DEGREES: Final[float] = -46.735
-DEFAULT_LASER_SHOT_TOLERANCE_FRACTION: Final[float] = 2e-3
-SCC_MAX_HEADER_TIME_JITTER_S: Final[int] = 1
 RAW_SIGNAL_UNITS: Final[str] = "counts for PC, mV per shot for analog"
 BINARY_DIMENSIONS: Final[tuple[str, str, str]] = ("time", "channels", "points")
 TIME_SCALE_DIMENSIONS: Final[tuple[str, str]] = ("time", "nb_of_time_scales")
@@ -62,11 +59,6 @@ def _physics_config(config: Mapping[str, Any]) -> Mapping[str, Any]:
     return physics if isinstance(physics, Mapping) else {}
 
 
-def _processing_config(config: Mapping[str, Any]) -> Mapping[str, Any]:
-    processing = config.get("processing", {})
-    return processing if isinstance(processing, Mapping) else {}
-
-
 def _resolved_station(config: Mapping[str, Any]) -> Mapping[str, Any]:
     value = config.get("_resolved_station", {})
     return value if isinstance(value, Mapping) else {}
@@ -77,18 +69,6 @@ def _scc_ready(config: Mapping[str, Any]) -> bool:
     if not resolved:
         return True
     return bool(resolved.get("scc_available", False))
-
-
-def _laser_shot_tolerance_fraction(config: Mapping[str, Any]) -> float:
-    value = float(
-        _processing_config(config).get(
-            "laser_shot_tolerance_fraction",
-            DEFAULT_LASER_SHOT_TOLERANCE_FRACTION,
-        )
-    )
-    if not np.isfinite(value) or value < 0.0:
-        raise ValueError(f"processing.laser_shot_tolerance_fraction must be finite and >= 0; got {value}.")
-    return value
 
 
 def _hardware_map(config: Mapping[str, Any], period: str) -> Mapping[str, Any]:
@@ -162,87 +142,21 @@ def _scc_time_axis(
     *,
     label: str,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
-    """Return SCC time offsets, normalizing only well-supported 1 s header jitter.
+    """Return raw or QA-normalized SCC time offsets without re-validating QA.
 
-    Licel start/stop timestamps are stored at whole-second resolution. When the
-    resulting profile durations vary by one second, use laser shots and laser
-    repetition rate as the physical consistency check. The start timestamps are
-    always preserved; only stop timestamps are adjusted to the physically
-    supported nominal integration duration.
+    Acquisition consistency is decided upstream by the Level-0 QA stage. The
+    writer only applies the accepted ``qa_nominal_duration_s`` to SCC products,
+    correcting whole-second Licel header jitter while leaving the primary
+    full-channel Level 0 untouched.
     """
     start_offsets = _seconds_since(reference_time, rows["start_time_utc"])
     stop_offsets = _seconds_since(reference_time, rows["stop_time"])
-    if not _scc_ready(config) or len(rows) <= 1:
+    if not _scc_ready(config) or len(rows) <= 1 or "qa_nominal_duration_s" not in rows:
         return start_offsets, stop_offsets, {}
 
-    raw_durations = stop_offsets.astype(np.int64) - start_offsets.astype(np.int64)
-    if np.any(raw_durations <= 0):
-        raise ValueError(f"{label} SCC time axis contains non-positive profile duration(s): {raw_durations.tolist()}")
-    if np.unique(raw_durations).size == 1:
-        return start_offsets, stop_offsets, {}
-
-    required = {"nshots", "laser_freq"}
-    missing = sorted(required - set(rows.columns))
-    if missing:
-        raise ValueError(
-            f"{label} SCC time resolution is variable ({sorted(set(raw_durations.tolist()))}) but "
-            f"cannot be validated physically because metadata columns are missing: {missing}."
-        )
-
-    shots = pd.to_numeric(rows["nshots"], errors="coerce").to_numpy(dtype=np.float64)
-    rates = pd.to_numeric(rows["laser_freq"], errors="coerce").to_numpy(dtype=np.float64)
-    if not np.all(np.isfinite(shots)) or np.any(shots <= 0.0):
-        raise ValueError(f"{label} SCC time normalization requires positive finite laser-shot counts.")
-    if not np.all(np.isfinite(rates)) or np.any(rates <= 0.0):
-        raise ValueError(f"{label} SCC time normalization requires positive finite laser repetition rates.")
-
-    tolerance_fraction = _laser_shot_tolerance_fraction(config)
-    expected_shots = float(safe_mode(shots))
-    shot_limit = tolerance_fraction * expected_shots
-    shot_deviation = np.abs(shots - expected_shots)
-    shots_inconsistent = (
-        np.any(shot_deviation >= shot_limit)
-        if shot_limit > 0.0
-        else np.any(shot_deviation > 0.0)
-    )
-    if shots_inconsistent:
-        raise ValueError(
-            f"{label} SCC time normalization refused: laser shots are not consistent within "
-            f"{tolerance_fraction:.4%} of nominal {expected_shots:g}."
-        )
-
-    expected_rate = float(safe_mode(rates))
-    if np.any(np.abs(rates - expected_rate) > 1e-9):
-        raise ValueError(
-            f"{label} SCC time normalization refused: laser repetition rate changes within the group "
-            f"({sorted(set(rates.tolist()))})."
-        )
-
-    physical_duration_s = expected_shots / expected_rate
-    nominal_duration_s = int(round(physical_duration_s))
-    if nominal_duration_s <= 0:
-        raise ValueError(f"{label} SCC nominal integration duration is not positive: {physical_duration_s:g} s.")
-
-    physical_rounding_error_s = abs(physical_duration_s - nominal_duration_s)
-    physical_tolerance_s = max(physical_duration_s * tolerance_fraction, 1e-9)
-    if physical_rounding_error_s > physical_tolerance_s:
-        raise ValueError(
-            f"{label} SCC time normalization refused: shots/rate imply {physical_duration_s:.6g} s, "
-            f"which is not within {tolerance_fraction:.4%} of an integer-second time scale."
-        )
-
-    header_adjustments = raw_durations - nominal_duration_s
-    if np.any(np.abs(header_adjustments) > SCC_MAX_HEADER_TIME_JITTER_S):
-        raise ValueError(
-            f"{label} SCC time normalization refused: header durations "
-            f"{sorted(set(raw_durations.tolist()))} differ by more than "
-            f"{SCC_MAX_HEADER_TIME_JITTER_S} s from physically supported nominal "
-            f"{nominal_duration_s} s."
-        )
-
+    nominal_duration_s = int(round(float(pd.to_numeric(rows["qa_nominal_duration_s"], errors="coerce").iloc[0])))
     corrected_stop_offsets = (start_offsets.astype(np.int64) + nominal_duration_s).astype(np.int32)
-    adjusted_mask = corrected_stop_offsets != stop_offsets
-    adjusted_count = int(np.count_nonzero(adjusted_mask))
+    adjusted_count = int(np.count_nonzero(corrected_stop_offsets != stop_offsets))
     max_adjustment_s = int(
         np.max(np.abs(corrected_stop_offsets.astype(np.int64) - stop_offsets.astype(np.int64)))
     )
@@ -252,12 +166,11 @@ def _scc_time_axis(
         f"{prefix}_Nominal_Time_Resolution_s": np.int32(nominal_duration_s),
         f"{prefix}_Time_Adjusted_Profile_Count": np.int32(adjusted_count),
         f"{prefix}_Max_Time_Adjustment_s": np.int32(max_adjustment_s),
-        f"{prefix}_Time_Normalization_Basis": "laser_shots/repetition_rate; <=1 s Licel header quantization",
+        f"{prefix}_Time_Normalization_Basis": "upstream acquisition QA; Licel whole-second header correction",
     }
     if adjusted_count:
         logger.info(
-            "  -> %s SCC time axis normalized to %d s using laser-shot/repetition-rate consistency; "
-            "adjusted %d/%d profiles (max %d s).",
+            "  -> %s SCC time axis normalized to %d s from upstream QA; adjusted %d/%d profiles (max %d s).",
             label,
             nominal_duration_s,
             adjusted_count,
