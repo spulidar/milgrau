@@ -4,35 +4,90 @@ from __future__ import annotations
 
 import logging
 
+import numpy as np
 import pandas as pd
 
-from milgrau.level0.common import DEFAULT_LASER_SHOT_TOLERANCE_FRACTION, safe_mode
+from milgrau.level0.common import (
+    DEFAULT_LASER_SHOT_TOLERANCE_FRACTION,
+    LICEL_HEADER_TIME_JITTER_S,
+    safe_mode,
+)
 
 
-def _filter_shot_consistency(
+def _screen_acquisition_rows(
     df: pd.DataFrame,
     *,
     tolerance_fraction: float,
-) -> tuple[pd.DataFrame, pd.DataFrame, float | None]:
-    """Split rows by laser-shot consistency around the group's nominal value."""
+) -> tuple[pd.DataFrame, pd.DataFrame, float | None, float | None]:
+    """Apply one acquisition QA rule to one homogeneous measurement class.
+
+    Measurements and dark currents are screened independently. Laser shots and
+    repetition rate define the nominal acquisition duration. Whole-second Licel
+    header durations that differ by at most one second are accepted as timestamp
+    quantization and carry ``qa_nominal_duration_s`` for SCC-only time-axis
+    normalization. Larger timing discrepancies are rejected here, before any
+    NetCDF writer is called.
+    """
     if df.empty:
-        return df.copy(), df.copy(), None
+        return df.copy(), df.copy(), None, None
 
-    numeric_shots = pd.to_numeric(df["nshots"], errors="coerce")
-    positive = numeric_shots[numeric_shots > 0]
-    if positive.empty:
-        return df.iloc[0:0].copy(), df.copy(), None
+    rows = df.copy()
+    shots = pd.to_numeric(rows["nshots"], errors="coerce")
+    rates = pd.to_numeric(rows["laser_freq"], errors="coerce")
+    durations = pd.to_numeric(rows["duration"], errors="coerce")
 
-    expected_shots = safe_mode(positive.values)
-    shot_deviation = abs(numeric_shots - expected_shots)
+    positive_shots = shots[shots > 0]
+    positive_rates = rates[rates > 0]
+    if positive_shots.empty or positive_rates.empty:
+        return rows.iloc[0:0].copy(), rows, None, None
+
+    expected_shots = float(safe_mode(positive_shots.values))
+    expected_rate = float(safe_mode(positive_rates.values))
+
     shot_limit = tolerance_fraction * expected_shots
-    if shot_limit > 0:
-        inconsistent = shot_deviation >= shot_limit
+    shot_deviation = abs(shots - expected_shots)
+    if shot_limit > 0.0:
+        bad_shots = shot_deviation >= shot_limit
     else:
-        inconsistent = shot_deviation > 0
+        bad_shots = shot_deviation > 0.0
 
-    bad_condition = numeric_shots.isna() | (numeric_shots <= 0) | inconsistent
-    return df.loc[~bad_condition].copy(), df.loc[bad_condition].copy(), float(expected_shots)
+    bad_rates = rates.isna() | (rates <= 0) | (abs(rates - expected_rate) > 1e-9)
+
+    physical_duration_s = expected_shots / expected_rate
+    nominal_duration_s = float(round(physical_duration_s))
+    physical_tolerance_s = max(abs(physical_duration_s) * tolerance_fraction, 1e-9)
+    nominal_duration_supported = (
+        nominal_duration_s > 0.0
+        and abs(physical_duration_s - nominal_duration_s) <= physical_tolerance_s
+    )
+
+    bad_duration = durations.isna() | (durations <= 0)
+    if nominal_duration_supported:
+        bad_duration = bad_duration | (abs(durations - nominal_duration_s) > LICEL_HEADER_TIME_JITTER_S)
+    else:
+        # If shots/rate do not support a stable integer-second acquisition,
+        # there is no defensible SCC time scale for these rows.
+        bad_duration = pd.Series(True, index=rows.index)
+
+    bad_condition = (
+        shots.isna()
+        | (shots <= 0)
+        | bad_shots
+        | bad_rates
+        | bad_duration
+    )
+
+    good = rows.loc[~bad_condition].copy()
+    bad = rows.loc[bad_condition].copy()
+    if not good.empty:
+        good["qa_nominal_shots"] = expected_shots
+        good["qa_nominal_laser_freq_hz"] = expected_rate
+        good["qa_nominal_duration_s"] = nominal_duration_s
+        good["qa_header_duration_adjustment_s"] = nominal_duration_s - pd.to_numeric(
+            good["duration"], errors="coerce"
+        )
+
+    return good, bad, expected_shots, nominal_duration_s if nominal_duration_supported else None
 
 
 def filter_laser_shots(
@@ -40,8 +95,8 @@ def filter_laser_shots(
     logger: logging.Logger,
     tolerance_fraction: float = DEFAULT_LASER_SHOT_TOLERANCE_FRACTION,
 ) -> pd.DataFrame:
-    """Evaluate laser-shot consistency for measurements and dark currents."""
-    logger.info("Evaluating laser shots quality and consistency per measurement...")
+    """Apply standardized acquisition QA to measurements and dark currents."""
+    logger.info("Evaluating acquisition quality and consistency per measurement...")
     good_groups = []
 
     for meas_id, group in df_raw.groupby("meas_id"):
@@ -52,11 +107,11 @@ def filter_laser_shots(
                 logger.warning(f"  -> [{meas_id}] No measurement files found after inventory stage.")
                 continue
 
-            good_meas, bad_meas, expected_meas_shots = _filter_shot_consistency(
+            good_meas, bad_meas, expected_meas_shots, expected_meas_duration = _screen_acquisition_rows(
                 df_meas,
                 tolerance_fraction=tolerance_fraction,
             )
-            good_dc, bad_dc, expected_dc_shots = _filter_shot_consistency(
+            good_dc, bad_dc, expected_dc_shots, expected_dc_duration = _screen_acquisition_rows(
                 df_dc,
                 tolerance_fraction=tolerance_fraction,
             )
@@ -64,11 +119,18 @@ def filter_laser_shots(
             total_files = len(group)
             bad_files = len(bad_meas) + len(bad_dc)
             loss_percent = (bad_files / total_files) * 100.0 if total_files > 0 else 0.0
+
             nominal_details = []
             if expected_meas_shots is not None:
-                nominal_details.append(f"measurement nominal={expected_meas_shots:g}")
+                detail = f"measurement nominal={expected_meas_shots:g} shots"
+                if expected_meas_duration is not None:
+                    detail += f"/{expected_meas_duration:g} s"
+                nominal_details.append(detail)
             if expected_dc_shots is not None:
-                nominal_details.append(f"dark-current nominal={expected_dc_shots:g}")
+                detail = f"dark-current nominal={expected_dc_shots:g} shots"
+                if expected_dc_duration is not None:
+                    detail += f"/{expected_dc_duration:g} s"
+                nominal_details.append(detail)
             nominal_suffix = f" ({'; '.join(nominal_details)})" if nominal_details else ""
 
             if bad_files > 0:
