@@ -8,6 +8,7 @@ consumes the canonical atmosphere stored in the Level 1 NetCDF.
 
 from __future__ import annotations
 
+from dataclasses import replace
 import logging
 from typing import Any, Mapping
 
@@ -93,6 +94,33 @@ def build_molecular_model(
     )
 
 
+def _enforce_pc_saturation_characterization(
+    ds_l1: xr.Dataset,
+    inputs: WavelengthBlockInputs,
+) -> WavelengthBlockInputs:
+    """Prevent Level 2 retrieval from treating unknown PC saturation as known-clear.
+
+    A zero ``pc_saturation_mask`` is meaningful only if Level 1 also records that
+    the detector saturation limit is characterized. Old Level 1 products or
+    calibrations marked ``not_characterized`` therefore make the PC source
+    scientifically unavailable for retrieval; an independently valid analog
+    fallback may still be selected by the existing configured policy.
+    """
+    if inputs.photon_channel is None:
+        return inputs
+    characterized = False
+    if "pc_saturation_characterized" in ds_l1:
+        try:
+            characterized = bool(
+                int(ds_l1["pc_saturation_characterized"].sel(channel=inputs.photon_channel).item()) == 1
+            )
+        except Exception:
+            characterized = False
+    if characterized:
+        return inputs
+    return replace(inputs, photon_correction_valid=False)
+
+
 def process_wavelength(
     ds_l1: xr.Dataset,
     wavelength_nm: int,
@@ -103,7 +131,10 @@ def process_wavelength(
     """Process one wavelength using the canonical Level 1 atmosphere contract."""
     inputs = _run_retrieval_stage(
         "selection_and_blocking",
-        lambda: prepare_wavelength_blocks(ds_l1, wavelength_nm, altitude_m, config),
+        lambda: _enforce_pc_saturation_characterization(
+            ds_l1,
+            prepare_wavelength_blocks(ds_l1, wavelength_nm, altitude_m, config),
+        ),
     )
     glued = _run_retrieval_stage(
         "gluing",
