@@ -28,15 +28,15 @@ Make scientific and instrumental decisions explicit and auditable:
 
 ## A. Configuration ownership and schema
 
-- [ ] Replace generic `physics` ownership with stage-oriented processing configuration.
+- [ ] Replace generic `physics` ownership with stage-oriented processing configuration. **Level 1 science controls have moved to `level1`; Level 0/runtime fields remain.**
 - [ ] Keep station/site/instrument metadata in `station.yaml` only.
-- [ ] Stop rebuilding `physics.channels` from station data. **Temporary compatibility view remains while Level 1 consumers are migrated.**
+- [ ] Stop rebuilding `physics.channels` from station data. **Productive Level 1 no longer consumes this view; loader/station compatibility still materializes it.**
 - [ ] Stop rebuilding `hardware.name_to_id` as a compatibility structure.
 - [ ] Remove legacy aliases injected by `normalize_config`.
 - [ ] Remove legacy positional channel correction lists. **The Level 1 consumer now rejects them, but loader compatibility still exists.**
-- [ ] Replace `validate_config_minimum` philosophy with stage-specific strict validation.
+- [ ] Replace `validate_config_minimum` philosophy with stage-specific strict validation. **A strict typed Level 1 resolver now validates LIPANCORA before discovery/processing; legacy global validation remains.**
 - [ ] Validate unknown keys with full paths.
-- [ ] Add typed/resolved configuration objects or equivalent strict accessors so scientific modules do not consume raw config mappings directly.
+- [ ] Add typed/resolved configuration objects or equivalent strict accessors so scientific modules do not consume raw config mappings directly. **Implemented for the current Level 1 recipe/calibration path; other stages remain.**
 
 ## B. `station.yaml`: observational reality
 
@@ -73,13 +73,13 @@ Make scientific and instrumental decisions explicit and auditable:
 - [x] Photon-counting Poisson uncertainty uses observed counts before dark subtraction (SCI-003 completed before this refactor).
 - [x] Canonical atmosphere is materialized in Level 1 with radiosonde -> ERA5 -> USSA76 provenance (completed before this refactor).
 - [x] Missing channel calibration is a Level 1 configuration error; neutral correction constants are no longer substituted.
-- [ ] Remove configurable speed of light; keep exact SI constant in code.
-- [ ] Require Level 1 background window.
-- [ ] Require dead-time numerical clipping denominator policy.
-- [ ] Separate numerical dead-time clipping from detector saturation.
-- [ ] Require explicit PBL reference channel.
-- [ ] Require PBL search interval and smoothing settings.
-- [ ] Remove PBL fallback to first available channel.
+- [x] Remove configurable speed of light; LIPANCORA uses the exact SI value `299792458 m s-1` as a code constant.
+- [x] Require Level 1 background window through `level1.background`.
+- [x] Require dead-time numerical clipping denominator policy through `level1.photon_counting.deadtime_min_denominator`.
+- [x] Separate numerical dead-time clipping from detector saturation; clipping never creates a physical saturation flag.
+- [x] Require explicit PBL reference channel.
+- [x] Require PBL search interval and smoothing settings.
+- [x] Remove productive PBL fallback to first available channel; unavailable configured reference produces no substituted PBL diagnostic.
 - [ ] Move atmospheric source/fallback policy to `config.yaml`.
 - [ ] Make radiosonde temporal-selection policy explicit (synoptic hours / nearest / max delta).
 - [ ] Remove hardcoded radiosonde station ID fallback.
@@ -122,10 +122,11 @@ Make scientific and instrumental decisions explicit and auditable:
 
 ## G. Scientific failure semantics
 
-- [ ] Missing required config -> configuration error before processing starts for every stage. **Implemented for productive Level 2; other stages remain.**
+- [ ] Missing required config -> configuration error before processing starts for every stage. **Implemented for productive Level 1 and Level 2; other stages remain.**
 - [x] Missing channel calibration -> Level 1 channel/product failure, never neutral correction.
 - [x] Unknown PC saturation characterization is represented explicitly as `not_characterized` in station calibration instead of assigning an invented detector limit.
-- [ ] Stop reusing numerical dead-time clipping as a detector saturation proxy.
+- [x] Stop reusing numerical dead-time clipping as a detector saturation proxy.
+- [x] Level 1 persists whether PC saturation is characterized and the rate limit when available; Level 2 does not accept an uncharacterized PC source as scientifically valid retrieval input.
 - [ ] Invalid Rayleigh search -> reference selection failure.
 - [ ] Invalid gluing search -> gluing failure.
 - [ ] Missing external atmosphere follows only the explicitly configured source policy.
@@ -146,16 +147,18 @@ Make scientific and instrumental decisions explicit and auditable:
 
 ## I. Tests / architecture guardrails
 
-- [ ] Rewrite broad config tests for strict schema; remove tests that freeze legacy aliases.
+- [ ] Rewrite broad config tests for strict schema; remove tests that freeze legacy aliases. **Repository expectations now reflect Level 1 ownership; general legacy-schema tests remain until tranche A.**
 - [x] Add station calibration/profile resolution tests across historical eras.
 - [x] Add failure tests for missing channel calibration at the Level 1 processing consumer.
 - [x] Add failure tests for missing LR month/uncertainty.
 - [ ] Add failure tests for invalid gluing/Rayleigh domains. **Config-level gluing interval validation is tested; algorithmic failure tests remain.**
 - [ ] Add failure tests for missing station timezone/coordinates/altitude.
 - [x] Add explicit-policy tests for unavailable saturation characterization.
+- [x] Add Level 1 tests that distinguish numerical dead-time clipping from characterized physical saturation.
+- [x] Add Level 2 boundary tests ensuring missing/uncharacterized PC saturation metadata is not assumed clear.
 - [ ] Add architectural guard against `config.get(..., semantic_literal_default)` outside the config layer.
 - [ ] Add regression test ensuring production config contains no undeclared semantic defaults.
-- [ ] Run full test suite after each coherent implementation batch. **No CI is currently attached to the branch; isolated strict-L2 tests passed 19/19.**
+- [ ] Run full test suite after each coherent implementation batch. **No CI is currently attached to the branch; isolated strict-L2 tests passed 19/19 earlier. A current full snapshot test run could not be executed from this environment.**
 
 ## J. Follow-up FAIR/release work (not part of the strict-config code batch unless touched by necessity)
 
@@ -166,6 +169,10 @@ Make scientific and instrumental decisions explicit and auditable:
 - [ ] Audit NetCDF semantic metadata against current CF conventions.
 - [ ] Add archived releases/DOI workflow and changelog.
 - [ ] External real-data validation against an independent/reference processing chain.
+
+## Suggested improvements recorded but not implemented
+
+- [ ] Consider carrying detector mode explicitly from Level 0 acquisition metadata through the full pipeline instead of relying on canonical channel-name suffixes (`.PC` / `.AN`) outside the resolved station-calibration path. This was identified during the Level 1 tranche and intentionally not implemented without separate review.
 
 ## Implementation log
 
@@ -195,7 +202,7 @@ Make scientific and instrumental decisions explicit and auditable:
 - Removed `fallback_to_standard_atmosphere` from station identity metadata; atmospheric fallback policy still needs to move into the algorithm config in the Level 1 tranche.
 - Added explicit `saturation.status: not_characterized` to every current photon-counting calibration channel because the repository does not contain defensible detector saturation limits.
 - Runtime station context now resolves `calibration_id`, calibration provenance and complete channel calibration data together with `profile_id` and SCC mapping.
-- A temporary `physics.channels` compatibility view remains so Level 1 behavior is not broken before its consumer migration; this is explicitly not considered the target architecture.
+- A temporary `physics.channels` compatibility view remains so non-migrated consumers are not broken; productive Level 1 no longer reads it.
 - Added station tests for calibration resolution, unknown calibration references and saturation characterization semantics.
 - GitHub currently reports no CI/status checks on the branch, so the full repository suite has not been claimed as executed.
 
@@ -205,3 +212,17 @@ Make scientific and instrumental decisions explicit and auditable:
 - Positional correction lists are rejected at the Level 1 consumer; named `deadtime_us`, `bin_shift_bins`, and `background_offset` fields are required.
 - Added focused tests for missing, positional, incomplete, and valid channel calibration access.
 - Loader-level positional compatibility still exists and remains explicitly tracked for removal in the schema/loader tranche.
+
+### 2026-09-09 — Level 1 strict processing recipe and saturation semantics tranche
+
+- Added typed strict `milgrau.level1.config` resolution for background, photon-counting numerical policy, PBL settings and temporal station calibration selection.
+- Moved Level 1 background/PBL/dead-time clipping controls into the explicit `level1` section of `config.yaml`.
+- Removed the configurable speed of light from repository YAML; bin time now uses the exact SI constant in code.
+- Productive LIPANCORA no longer consumes `physics.channels`; it resolves the calibration set associated with the Level 0 station profile/date.
+- Numerical dead-time denominator clipping and physical PC saturation are now distinct masks/diagnostics.
+- `not_characterized` PC calibration produces no invented physical saturation mask; Level 1 records `pc_saturation_characterized=0` and a missing rate limit explicitly.
+- Level 2 treats PC without characterized saturation metadata as unavailable for scientific retrieval, while an independently valid analog fallback remains possible according to the existing policy.
+- PBL uses only the configured reference channel and configured search/smoothing parameters; it does not substitute a first/532 channel when the requested channel is unavailable.
+- Added/updated focused tests for strict Level 1 configuration, calibration resolution, clipping-vs-saturation semantics, PBL no-fallback behavior and the Level 1 -> Level 2 saturation-characterization boundary.
+- The generic loader intentionally does not import the Level 1 validator; LIPANCORA validates before discovery/processing to avoid inverted dependencies/cycles. The old broad schema remains transitional.
+- No full repository test run is claimed: the branch has no CI checks, and this environment could not obtain a runnable branch snapshot.
