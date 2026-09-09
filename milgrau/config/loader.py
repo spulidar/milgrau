@@ -12,7 +12,6 @@ import yaml
 
 from milgrau.config.schema import validate_config_minimum
 from milgrau.config.station import merge_station_defaults, validate_station_config
-from milgrau.level1.config import validate_level1_config
 
 
 def _project_root() -> Path:
@@ -123,9 +122,10 @@ def normalize_config(config: dict[str, Any]) -> dict[str, Any]:
     called. Legacy aliases remain temporarily available outside the new
     stage-specific sections.
 
-    ``level1`` is validated by its strict stage validator and intentionally
-    excluded from the legacy broad-schema validator until that validator is
-    retired in the dedicated schema/loader tranche.
+    ``level1`` is preserved unchanged and intentionally excluded from the legacy
+    broad-schema validator until that validator is retired. Productive LIPANCORA
+    validates this section through ``milgrau.level1.config`` before processing,
+    keeping dependency direction from stage -> config rather than loader -> stage.
     """
     normalized = deepcopy(config)
     _normalize_physics_config(normalized)
@@ -133,11 +133,8 @@ def normalize_config(config: dict[str, Any]) -> dict[str, Any]:
     _normalize_inversion_config(normalized)
 
     legacy_validation = deepcopy(normalized)
-    level1_present = "level1" in legacy_validation
     legacy_validation.pop("level1", None)
     validate_config_minimum(legacy_validation)
-    if level1_present:
-        validate_level1_config(normalized)
     return normalized
 
 
