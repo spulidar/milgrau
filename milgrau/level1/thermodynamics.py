@@ -14,6 +14,7 @@ from milgrau.io.radiosonde import fetch_wyoming_radiosonde
 from milgrau.level1.common import finite_or_fill
 from milgrau.level1.pbl import calculate_pbl_height_gradient
 from milgrau.level1.tropopause import calculate_tropopause_heights
+from milgrau.physics.atmosphere import get_standard_atmosphere
 
 
 def estimate_pbl_timeseries(final_ds: xr.Dataset, z_arr: np.ndarray, config: Mapping[str, Any], logger: logging.Logger) -> xr.Dataset:
@@ -84,97 +85,178 @@ def _profile_metadata(df: pd.DataFrame, source_type: str, fallback_source: str) 
     return metadata
 
 
-def _add_profile_to_level1(
+def _station_altitude_m(config: Mapping[str, Any]) -> float:
+    site = config.get("site", {})
+    if not isinstance(site, Mapping):
+        site = {}
+    physics = config.get("physics", {})
+    if not isinstance(physics, Mapping):
+        physics = {}
+    return float(site.get("station_altitude_m", physics.get("station_altitude_m", 0.0)))
+
+
+def _lidar_altitudes(final_ds: xr.Dataset, config: Mapping[str, Any]) -> tuple[np.ndarray, np.ndarray]:
+    """Return the Level 1 lidar grid as AGL and ASL geometric altitudes."""
+    if "altitude" not in final_ds.coords:
+        raise KeyError("Level 1 dataset lacks the altitude coordinate required for thermodynamics.")
+    altitude_agl_m = np.asarray(final_ds["altitude"].values, dtype=np.float64)
+    if altitude_agl_m.ndim != 1 or altitude_agl_m.size < 2:
+        raise ValueError("Level 1 altitude must be a one-dimensional grid with at least two bins.")
+    if not np.all(np.isfinite(altitude_agl_m)) or not np.all(np.diff(altitude_agl_m) > 0.0):
+        raise ValueError("Level 1 altitude must be finite and strictly increasing.")
+    altitude_asl_m = altitude_agl_m + _station_altitude_m(config)
+    return altitude_agl_m, altitude_asl_m
+
+
+def _write_atmospheric_profile(
     final_ds: xr.Dataset,
-    df_profile: pd.DataFrame,
+    temperature_k: np.ndarray,
+    pressure_hpa: np.ndarray,
     *,
     source_type: str,
     source_name: str,
+    metadata: Mapping[str, Any],
+    standard_fallback_fraction: float,
 ) -> xr.Dataset:
-    """Persist one external thermodynamic profile plus explicit provenance.
+    """Persist the canonical complete thermodynamic profile on the lidar grid."""
+    temperature_k = np.asarray(temperature_k, dtype=np.float64)
+    pressure_hpa = np.asarray(pressure_hpa, dtype=np.float64)
+    altitude_size = final_ds.sizes.get("altitude", 0)
+    if temperature_k.shape != (altitude_size,) or pressure_hpa.shape != (altitude_size,):
+        raise ValueError("Atmospheric temperature/pressure must match the Level 1 altitude grid exactly.")
+    if not np.all(np.isfinite(temperature_k)) or np.any(temperature_k <= 0.0):
+        raise ValueError("Atmospheric temperature must be finite and positive on every Level 1 altitude bin.")
+    if not np.all(np.isfinite(pressure_hpa)) or np.any(pressure_hpa <= 0.0):
+        raise ValueError("Atmospheric pressure must be finite and positive on every Level 1 altitude bin.")
 
-    ``atmospheric_*`` variables are canonical. ``Radiosonde_*`` aliases remain
-    temporarily for the existing Level 2 reader; their metadata explicitly says
-    when the underlying source is ERA5 rather than a physical sounding.
-    """
-    metadata = _profile_metadata(df_profile, source_type, source_name)
-    profile = _clean_profile(df_profile)
-    altitude = profile["height"].to_numpy(dtype=np.float64)
-    temperature_k = profile["temperature"].to_numpy(dtype=np.float64) + 273.15
-    pressure_hpa = profile["pressure"].to_numpy(dtype=np.float64)
-
-    final_ds = final_ds.assign_coords(atmospheric_altitude=("atmospheric_altitude", altitude))
-    final_ds["atmospheric_altitude"].attrs.update(
-        {"units": "m", "long_name": "External thermodynamic profile altitude above mean sea level"}
-    )
-    final_ds["Atmospheric_Temperature_K"] = (("atmospheric_altitude",), temperature_k.astype(np.float32))
-    final_ds["Atmospheric_Pressure_hPa"] = (("atmospheric_altitude",), pressure_hpa.astype(np.float32))
+    final_ds["Atmospheric_Temperature_K"] = (("altitude",), temperature_k.astype(np.float64))
+    final_ds["Atmospheric_Pressure_hPa"] = (("altitude",), pressure_hpa.astype(np.float64))
     final_ds["Atmospheric_Temperature_K"].attrs.update(
-        {"units": "K", "long_name": "External atmospheric air temperature", "source": str(metadata["source"])}
+        {
+            "units": "K",
+            "long_name": "Atmospheric air temperature on the lidar altitude grid",
+            "source": source_name,
+            "vertical_coordinate": "altitude (AGL); source profile interpolation uses station altitude to convert to ASL",
+        }
     )
     final_ds["Atmospheric_Pressure_hPa"].attrs.update(
-        {"units": "hPa", "long_name": "External atmospheric pressure", "source": str(metadata["source"])}
+        {
+            "units": "hPa",
+            "long_name": "Atmospheric pressure on the lidar altitude grid",
+            "source": source_name,
+            "vertical_coordinate": "altitude (AGL); source profile interpolation uses station altitude to convert to ASL",
+        }
     )
 
-    # Backward-compatible aliases consumed by the current Level 2 reader. They
-    # are data aliases only; provenance below remains authoritative.
-    final_ds = final_ds.assign_coords(radiosonde_altitude=("radiosonde_altitude", altitude))
-    final_ds["Radiosonde_Temperature_K"] = (("radiosonde_altitude",), temperature_k.astype(np.float32))
-    final_ds["Radiosonde_Pressure_hPa"] = (("radiosonde_altitude",), pressure_hpa.astype(np.float32))
-    source_label = source_type.upper() if source_type.lower() == "era5" else source_type
-    alias_note = (
-        "Legacy Level 2 thermodynamic compatibility alias. "
-        f"Actual source type is {source_label}; do not infer radiosonde provenance from the variable name."
-    )
-    final_ds["radiosonde_altitude"].attrs.update({"units": "m", "long_name": alias_note})
-    final_ds["Radiosonde_Temperature_K"].attrs.update(
-        {"units": "K", "source": str(metadata["source"]), "compatibility_note": alias_note}
-    )
-    final_ds["Radiosonde_Pressure_hPa"].attrs.update(
-        {"units": "hPa", "source": str(metadata["source"]), "compatibility_note": alias_note}
-    )
-
+    source_datetime = metadata.get("target_datetime_utc", metadata.get("analysis_datetime_utc", ""))
     final_ds.attrs.update(
         {
             "thermodynamic_profile_available": "true",
             "thermodynamic_profile_source_type": str(metadata.get("source_type", source_type)),
             "thermodynamic_profile_source": str(metadata.get("source", source_name)),
-            "thermodynamic_profile_datetime_utc": str(
-                metadata.get("target_datetime_utc", metadata.get("analysis_datetime_utc", ""))
-            ),
+            "thermodynamic_profile_datetime_utc": str(source_datetime),
             "thermodynamic_profile_time_delta_hours": float(metadata.get("time_delta_hours", np.nan)),
             "thermodynamic_profile_station_id": str(metadata.get("station_id", "")),
             "thermodynamic_profile_doi": str(metadata.get("doi", "")),
+            "thermodynamic_profile_standard_fallback_fraction": float(standard_fallback_fraction),
+            "thermodynamic_profile_grid": "Level 1 lidar altitude grid",
+            "thermodynamic_profile_altitude_reference": "AGL",
         }
     )
     return final_ds
 
 
-def _mark_standard_fallback(final_ds: xr.Dataset) -> xr.Dataset:
+def _materialize_external_profile(
+    final_ds: xr.Dataset,
+    df_profile: pd.DataFrame,
+    config: Mapping[str, Any],
+    *,
+    source_type: str,
+    source_name: str,
+) -> xr.Dataset:
+    """Interpolate one external ASL profile onto the lidar grid, with USSA76 only outside coverage."""
+    metadata = _profile_metadata(df_profile, source_type, source_name)
+    profile = _clean_profile(df_profile)
+    _, altitude_asl_m = _lidar_altitudes(final_ds, config)
+    standard_pressure, standard_temperature = get_standard_atmosphere(altitude_asl_m)
+
+    source_altitude_asl_m = profile["height"].to_numpy(dtype=np.float64)
+    source_temperature_k = profile["temperature"].to_numpy(dtype=np.float64) + 273.15
+    source_pressure_hpa = profile["pressure"].to_numpy(dtype=np.float64)
+
+    temperature_k = np.interp(
+        altitude_asl_m,
+        source_altitude_asl_m,
+        source_temperature_k,
+        left=np.nan,
+        right=np.nan,
+    )
+    # Pressure is approximately exponential with altitude; interpolate in log(P)
+    # rather than linearly in pressure.
+    log_pressure = np.interp(
+        altitude_asl_m,
+        source_altitude_asl_m,
+        np.log(source_pressure_hpa),
+        left=np.nan,
+        right=np.nan,
+    )
+    pressure_hpa = np.exp(log_pressure)
+    fallback_mask = ~np.isfinite(temperature_k) | ~np.isfinite(pressure_hpa)
+    temperature_k = np.where(fallback_mask, standard_temperature, temperature_k)
+    pressure_hpa = np.where(fallback_mask, standard_pressure, pressure_hpa)
+    fallback_fraction = float(np.mean(fallback_mask)) if fallback_mask.size else 0.0
+
+    metadata = dict(metadata)
+    metadata["source_profile_min_altitude_asl_m"] = float(source_altitude_asl_m[0])
+    metadata["source_profile_max_altitude_asl_m"] = float(source_altitude_asl_m[-1])
+    final_ds = _write_atmospheric_profile(
+        final_ds,
+        temperature_k,
+        pressure_hpa,
+        source_type=source_type,
+        source_name=source_name,
+        metadata=metadata,
+        standard_fallback_fraction=fallback_fraction,
+    )
     final_ds.attrs.update(
         {
-            "thermodynamic_profile_available": "false",
-            "thermodynamic_profile_source_type": "ussa76",
-            "thermodynamic_profile_source": "US Standard Atmosphere 1976 deferred to Level 2",
-            "thermodynamic_profile_datetime_utc": "",
-            "thermodynamic_profile_time_delta_hours": np.nan,
-            "thermodynamic_profile_station_id": "",
-            "thermodynamic_profile_doi": "",
+            "thermodynamic_source_profile_min_altitude_asl_m": float(source_altitude_asl_m[0]),
+            "thermodynamic_source_profile_max_altitude_asl_m": float(source_altitude_asl_m[-1]),
         }
     )
     return final_ds
+
+
+def _materialize_ussa76(final_ds: xr.Dataset, config: Mapping[str, Any]) -> xr.Dataset:
+    """Materialize USSA76 directly on the Level 1 lidar grid."""
+    _, altitude_asl_m = _lidar_altitudes(final_ds, config)
+    pressure_hpa, temperature_k = get_standard_atmosphere(altitude_asl_m)
+    return _write_atmospheric_profile(
+        final_ds,
+        temperature_k,
+        pressure_hpa,
+        source_type="ussa76",
+        source_name="US Standard Atmosphere 1976",
+        metadata={"source_type": "ussa76", "source": "US Standard Atmosphere 1976"},
+        standard_fallback_fraction=1.0,
+    )
 
 
 def integrate_thermodynamics(final_ds: xr.Dataset, config: Mapping[str, Any], logger: logging.Logger) -> xr.Dataset:
-    """Resolve thermodynamics in priority order: radiosonde -> ERA5 -> USSA76.
+    """Resolve and materialize thermodynamics: radiosonde -> ERA5 -> USSA76.
 
-    Network acquisition is delegated to :mod:`milgrau.io`. Level 1 persists the
-    selected external profile and provenance; if both external sources fail, the
-    deterministic US Standard Atmosphere 1976 fallback is applied later by
-    Level 2 on its exact lidar altitude grid.
+    Every successful Level 1 product receives one complete canonical atmosphere
+    on its own lidar altitude grid. Level 2 consumes that stored profile and does
+    not perform network IO, source selection, interpolation, or fallback logic.
     """
     dt_utc = pd.to_datetime(final_ds.time.values[len(final_ds.time) // 2])
-    station_id = str(config.get("radiosonde", {}).get("station_id", config.get("location", {}).get("station_id", "83779")))
+    radiosonde_cfg = config.get("radiosonde", {})
+    if not isinstance(radiosonde_cfg, Mapping):
+        radiosonde_cfg = {}
+    location_cfg = config.get("location", {})
+    if not isinstance(location_cfg, Mapping):
+        location_cfg = {}
+    station_id = str(radiosonde_cfg.get("station_id", location_cfg.get("station_id", "83779")))
 
     try:
         df_radio = fetch_wyoming_radiosonde(dt_utc, station_id, logger, config=config)
@@ -184,9 +266,10 @@ def integrate_thermodynamics(final_ds: xr.Dataset, config: Mapping[str, Any], lo
 
     if df_radio is not None and not df_radio.empty:
         try:
-            final_ds = _add_profile_to_level1(
+            final_ds = _materialize_external_profile(
                 final_ds,
                 df_radio,
+                config,
                 source_type="radiosonde",
                 source_name="University of Wyoming Upper Air via Siphon",
             )
@@ -201,7 +284,11 @@ def integrate_thermodynamics(final_ds: xr.Dataset, config: Mapping[str, Any], lo
                     "tropopause_lrt_km": lrt,
                 }
             )
-            logger.info(f"  -> Radiosonde profile integrated. CPT: {cpt:.2f} km | LRT: {lrt:.2f} km")
+            logger.info(
+                f"  -> Radiosonde atmosphere materialized on Level 1 grid. "
+                f"USSA76 extension fraction: {100.0 * float(final_ds.attrs['thermodynamic_profile_standard_fallback_fraction']):.1f}% | "
+                f"CPT: {cpt:.2f} km | LRT: {lrt:.2f} km"
+            )
             return final_ds
         except Exception as exc:
             logger.warning(f"  -> Radiosonde profile was unusable after retrieval: {exc}")
@@ -218,8 +305,13 @@ def integrate_thermodynamics(final_ds: xr.Dataset, config: Mapping[str, Any], lo
     era5_cfg = config.get("era5", {})
     if isinstance(era5_cfg, Mapping) and bool(era5_cfg.get("enabled", False)):
         site_cfg = config.get("site", {})
-        latitude = site_cfg.get("latitude", config.get("physics", {}).get("latitude"))
-        longitude = site_cfg.get("longitude", config.get("physics", {}).get("longitude"))
+        if not isinstance(site_cfg, Mapping):
+            site_cfg = {}
+        physics_cfg = config.get("physics", {})
+        if not isinstance(physics_cfg, Mapping):
+            physics_cfg = {}
+        latitude = site_cfg.get("latitude", physics_cfg.get("latitude"))
+        longitude = site_cfg.get("longitude", physics_cfg.get("longitude"))
         if latitude is None or longitude is None:
             logger.warning("  -> ERA5 fallback enabled but site latitude/longitude are unavailable.")
         else:
@@ -236,16 +328,20 @@ def integrate_thermodynamics(final_ds: xr.Dataset, config: Mapping[str, Any], lo
                 df_era5 = None
             if df_era5 is not None and not df_era5.empty:
                 try:
-                    final_ds = _add_profile_to_level1(
+                    final_ds = _materialize_external_profile(
                         final_ds,
                         df_era5,
+                        config,
                         source_type="era5",
                         source_name="Copernicus Climate Change Service ERA5 pressure-level reanalysis",
                     )
-                    logger.info("  -> ERA5 thermodynamic profile integrated into Level 1.")
+                    logger.info(
+                        "  -> ERA5 atmosphere materialized on Level 1 grid. "
+                        f"USSA76 extension fraction: {100.0 * float(final_ds.attrs['thermodynamic_profile_standard_fallback_fraction']):.1f}%"
+                    )
                     return final_ds
                 except Exception as exc:
                     logger.warning(f"  -> ERA5 profile was unusable after retrieval: {exc}")
 
-    logger.warning("  -> External thermodynamics unavailable. Level 2 will use US Standard Atmosphere 1976.")
-    return _mark_standard_fallback(final_ds)
+    logger.warning("  -> External thermodynamics unavailable. Materializing US Standard Atmosphere 1976 in Level 1.")
+    return _materialize_ussa76(final_ds, config)

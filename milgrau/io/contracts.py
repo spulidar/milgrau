@@ -14,9 +14,13 @@ LEVEL0_REQUIRED_VARIABLES: Final[tuple[str, ...]] = (
     "Laser_Pointing_Angle", "Laser_Pointing_Angle_of_Profiles", "Laser_Shots",
     "Molecular_Calc", "id_timescale", "channel_string", "Raw_Lidar_Data",
 )
-LEVEL1_REQUIRED_VARIABLES: Final[tuple[str, ...]] = (
+LEVEL1_SIGNAL_VARIABLES: Final[tuple[str, ...]] = (
     "corrected_signal", "corrected_signal_error", "range_corrected_signal", "range_corrected_signal_error",
 )
+LEVEL1_ATMOSPHERIC_VARIABLES: Final[tuple[str, ...]] = (
+    "Atmospheric_Temperature_K", "Atmospheric_Pressure_hPa",
+)
+LEVEL1_REQUIRED_VARIABLES: Final[tuple[str, ...]] = LEVEL1_SIGNAL_VARIABLES + LEVEL1_ATMOSPHERIC_VARIABLES
 LEVEL2_REQUIRED_VARIABLES: Final[tuple[str, ...]] = (
     "molecular_backscatter", "molecular_extinction", "glued_range_corrected_signal",
     "aerosol_backscatter_mean", "aerosol_extinction_mean", "gluing_attempted_flag",
@@ -123,15 +127,41 @@ def validate_level0_contract(ds: xr.Dataset) -> None:
     _validate_level0_background_contract(ds)
 
 
+def _validate_level1_atmosphere(ds: xr.Dataset) -> None:
+    for name in LEVEL1_ATMOSPHERIC_VARIABLES:
+        _require_exact_dims(ds[name], ("altitude",), f"Level 1 {name}")
+        values = np.asarray(ds[name].values, dtype=np.float64)
+        if values.shape != (ds.sizes.get("altitude", 0),):
+            raise ValueError(f"Level 1 {name} must contain exactly one value per altitude bin.")
+        if not np.all(np.isfinite(values)) or np.any(values <= 0.0):
+            raise ValueError(f"Level 1 {name} must be finite and positive on every altitude bin.")
+
+    source_type = str(ds.attrs.get("thermodynamic_profile_source_type", "")).strip()
+    if source_type not in {"radiosonde", "era5", "ussa76"}:
+        raise ValueError(
+            "Level 1 thermodynamic_profile_source_type must be one of radiosonde, era5, or ussa76."
+        )
+    if str(ds.attrs.get("thermodynamic_profile_available", "")).lower() != "true":
+        raise ValueError("Level 1 canonical atmospheric profile must be materialized and marked available.")
+    try:
+        fallback_fraction = float(ds.attrs["thermodynamic_profile_standard_fallback_fraction"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("Level 1 lacks a valid thermodynamic_profile_standard_fallback_fraction attribute.") from exc
+    if not np.isfinite(fallback_fraction) or not 0.0 <= fallback_fraction <= 1.0:
+        raise ValueError("Level 1 thermodynamic_profile_standard_fallback_fraction must be between 0 and 1.")
+
+
 def validate_level1_contract(ds: xr.Dataset) -> None:
+    """Validate Level 1 signals plus the mandatory materialized atmosphere."""
     _require_variables(ds, LEVEL1_REQUIRED_VARIABLES, "Level 1 file")
     _require_coords(ds, LEVEL1_CORE_DIMS, "Level 1 file")
     reference = ds["range_corrected_signal"].transpose(*LEVEL1_CORE_DIMS)
     reference_shape = reference.shape
-    for name in LEVEL1_REQUIRED_VARIABLES:
+    for name in LEVEL1_SIGNAL_VARIABLES:
         _require_named_dim_set(ds[name], LEVEL1_CORE_DIMS, f"Level 1 {name}")
         if ds[name].transpose(*LEVEL1_CORE_DIMS).shape != reference_shape:
             raise ValueError(f"Level 1 {name} shape does not match range_corrected_signal shape by named dimensions.")
+    _validate_level1_atmosphere(ds)
 
 
 def validate_level2_contract(ds: xr.Dataset) -> None:

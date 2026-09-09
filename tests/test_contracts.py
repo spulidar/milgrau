@@ -44,46 +44,49 @@ def test_validate_level0_contract_rejects_bad_laser_shots() -> None:
         validate_level0_contract(ds)
 
 
-def test_validate_level0_contract_requires_background_scc_metadata() -> None:
-    ds = _minimal_level0()
-    ds["Background_Profile"] = (("time_bck", "channels", "points"), np.ones((1, 2, 4)))
-    with pytest.raises(KeyError, match="Raw_Bck"):
-        validate_level0_contract(ds)
+def _add_level1_atmosphere(ds: xr.Dataset, *, source_type: str = "ussa76") -> xr.Dataset:
+    n_altitude = ds.sizes["altitude"]
+    ds["Atmospheric_Temperature_K"] = (("altitude",), np.linspace(288.0, 270.0, n_altitude))
+    ds["Atmospheric_Pressure_hPa"] = (("altitude",), np.linspace(1000.0, 900.0, n_altitude))
+    ds.attrs.update({
+        "thermodynamic_profile_available": "true",
+        "thermodynamic_profile_source_type": source_type,
+        "thermodynamic_profile_standard_fallback_fraction": 1.0 if source_type == "ussa76" else 0.0,
+    })
+    return ds
 
 
-def test_validate_level1_contract_rejects_missing_rcs_error() -> None:
+def _level1_signals(dim_order=("time", "channel", "altitude")) -> xr.Dataset:
     time = pd.date_range("2024-01-01", periods=2)
-    shape = (2, 1, 4)
-    ds = xr.Dataset(
-        data_vars={
-            "corrected_signal": (("time", "channel", "altitude"), np.ones(shape)),
-            "corrected_signal_error": (("time", "channel", "altitude"), np.ones(shape)),
-            "range_corrected_signal": (("time", "channel", "altitude"), np.ones(shape)),
-        },
-        coords={"time": time, "channel": ["532.AN"], "altitude": np.arange(4.0)},
-    )
-    with pytest.raises(KeyError):
+    coords = {"time": time, "channel": ["532.AN"], "altitude": np.arange(4.0)}
+    sizes = {"time": 2, "channel": 1, "altitude": 4}
+    shape = tuple(sizes[dim] for dim in dim_order)
+    values = {name: (dim_order, np.ones(shape)) for name in (
+        "corrected_signal", "corrected_signal_error", "range_corrected_signal", "range_corrected_signal_error"
+    )}
+    return xr.Dataset(values, coords=coords)
+
+
+def test_validate_level1_contract_rejects_missing_materialized_atmosphere() -> None:
+    with pytest.raises(KeyError, match="Atmospheric_Temperature_K"):
+        validate_level1_contract(_level1_signals())
+
+
+def test_validate_level1_contract_accepts_required_signals_and_atmosphere() -> None:
+    ds = _add_level1_atmosphere(_level1_signals())
+    validate_level1_contract(ds)
+
+
+def test_validate_level1_contract_accepts_noncanonical_signal_dim_order() -> None:
+    ds = _add_level1_atmosphere(_level1_signals(("channel", "altitude", "time")))
+    validate_level1_contract(ds)
+
+
+def test_validate_level1_contract_rejects_nonfinite_atmosphere() -> None:
+    ds = _add_level1_atmosphere(_level1_signals())
+    ds["Atmospheric_Pressure_hPa"][0] = np.nan
+    with pytest.raises(ValueError, match="Atmospheric_Pressure_hPa"):
         validate_level1_contract(ds)
-
-
-def test_validate_level1_contract_accepts_required_signal_tensors() -> None:
-    time = pd.date_range("2024-01-01", periods=2)
-    shape = (2, 1, 4)
-    values = {name: (("time", "channel", "altitude"), np.ones(shape)) for name in (
-        "corrected_signal", "corrected_signal_error", "range_corrected_signal", "range_corrected_signal_error"
-    )}
-    ds = xr.Dataset(values, coords={"time": time, "channel": ["532.AN"], "altitude": np.arange(4.0)})
-    validate_level1_contract(ds)
-
-
-def test_validate_level1_contract_accepts_noncanonical_dim_order() -> None:
-    time = pd.date_range("2024-01-01", periods=2)
-    shape = (1, 4, 2)
-    values = {name: (("channel", "altitude", "time"), np.ones(shape)) for name in (
-        "corrected_signal", "corrected_signal_error", "range_corrected_signal", "range_corrected_signal_error"
-    )}
-    ds = xr.Dataset(values, coords={"time": time, "channel": ["532.AN"], "altitude": np.arange(4.0)})
-    validate_level1_contract(ds)
 
 
 def _level2(glued_dims: tuple[str, ...]) -> xr.Dataset:

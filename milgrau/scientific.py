@@ -11,9 +11,9 @@ FERNALD_IMPLEMENTATION_VERSION: Final[str] = "2"
 FERNALD_SCIENTIFIC_CHANGE: Final[str] = "corrected_backward_molecular_factor_sign"
 
 MOLECULAR_ATMOSPHERE_FALLBACK: Final[str] = "US Standard Atmosphere 1976"
-MOLECULAR_ATMOSPHERE_IMPLEMENTATION_VERSION: Final[str] = "2"
+MOLECULAR_ATMOSPHERE_IMPLEMENTATION_VERSION: Final[str] = "3"
 MOLECULAR_ATMOSPHERE_SCIENTIFIC_CHANGE: Final[str] = (
-    "stratified_ussa76_fallback_with_optional_era5_pressure_levels"
+    "level1_materialized_atmosphere_with_log_pressure_interpolation"
 )
 
 
