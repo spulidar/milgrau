@@ -12,6 +12,8 @@ from collections.abc import Mapping
 
 import numpy as np
 
+from milgrau.level2.config import get_cloud_screening_config
+
 
 def _moving_percentile(values: np.ndarray, window_bins: int, percentile: float) -> np.ndarray:
     """Return a centered moving percentile with NaN-aware edge handling."""
@@ -68,25 +70,27 @@ def detect_anomalous_layer_mask(
     signal: np.ndarray,
     altitude_m: np.ndarray,
     *,
-    min_altitude_m: float = 500.0,
-    max_altitude_m: float = 15000.0,
-    smooth_bins: int = 9,
-    robust_z_threshold: float = 6.0,
-    min_cloud_bins: int = 3,
-    vertical_dilation_bins: int = 2,
+    min_altitude_m: float,
+    max_altitude_m: float,
+    smooth_bins: int,
+    baseline_percentile: float,
+    robust_z_threshold: float,
+    min_cloud_bins: int,
+    vertical_dilation_bins: int,
 ) -> np.ndarray:
     """Detect strong positive anomalous layers in one RCS-like profile.
 
-    The detector compares the profile against a local low-percentile baseline
-    and uses a robust MAD scale. A low-percentile baseline is preferred over a
-    median here because broad positive layers can otherwise become their own
-    local baseline. Only positive residuals inside the configured altitude
-    interval are flagged.
+    Every detector threshold is supplied explicitly by the caller. The detector
+    compares the profile against a configured local low-percentile baseline and
+    uses a robust MAD scale. Only positive residuals inside the configured
+    altitude interval are flagged.
     """
     profile = np.asarray(signal, dtype=np.float64)
     altitude = np.asarray(altitude_m, dtype=np.float64)
     if profile.ndim != 1 or altitude.ndim != 1 or profile.size != altitude.size:
         raise ValueError("signal and altitude_m must be 1D arrays with the same length.")
+    if not 0.0 <= float(baseline_percentile) <= 100.0:
+        raise ValueError("baseline_percentile must be between 0 and 100.")
 
     valid_altitude = (altitude >= float(min_altitude_m)) & (altitude <= float(max_altitude_m)) & np.isfinite(altitude)
     finite_profile = np.isfinite(profile)
@@ -94,7 +98,7 @@ def detect_anomalous_layer_mask(
     if candidate.sum() < max(int(min_cloud_bins), 3):
         return np.zeros(profile.size, dtype=bool)
 
-    baseline = _moving_percentile(profile, smooth_bins, percentile=20.0)
+    baseline = _moving_percentile(profile, smooth_bins, percentile=baseline_percentile)
     residual = profile - baseline
     residual_in_window = residual[candidate]
     residual_in_window = residual_in_window[np.isfinite(residual_in_window)]
@@ -135,15 +139,5 @@ def detect_reference_contamination(
 
 
 def cloud_screening_config(config: Mapping) -> dict[str, float | int | bool]:
-    """Extract cloud-screening configuration with conservative defaults."""
-    cfg = config.get("inversion", {}).get("cloud_screening", {}) if isinstance(config, Mapping) else {}
-    return {
-        "enabled": bool(cfg.get("enabled", False)),
-        "min_altitude_m": float(cfg.get("min_altitude_m", 500.0)),
-        "max_altitude_m": float(cfg.get("max_altitude_m", 15000.0)),
-        "smooth_bins": int(cfg.get("smooth_bins", 9)),
-        "robust_z_threshold": float(cfg.get("robust_z_threshold", 6.0)),
-        "min_cloud_bins": int(cfg.get("min_cloud_bins", 3)),
-        "vertical_dilation_bins": int(cfg.get("vertical_dilation_bins", 2)),
-        "exclude_clouds_from_reference_fit": bool(cfg.get("exclude_clouds_from_reference_fit", True)),
-    }
+    """Return the strict explicit cloud-screening policy for Level 2."""
+    return get_cloud_screening_config(config)
