@@ -8,15 +8,17 @@ import numpy as np
 def calculate_pbl_height_gradient(
     rcs_signal: np.ndarray,
     alt_m: np.ndarray,
-    min_search_m: float = 500.0,
-    max_search_m: float = 4000.0,
-    smooth_bins: int = 15,
+    min_search_m: float,
+    max_search_m: float,
+    smooth_bins: int,
 ) -> float:
     """Estimate PBL height with the strongest negative RCS gradient method.
 
     The smoothing step uses edge padding before convolution. This avoids false
     negative gradients at the search-window boundaries, which can otherwise
     appear when ``np.convolve(..., mode="same")`` implicitly pads with zeros.
+    Productive callers must provide the scientific search and smoothing settings
+    explicitly; this numerical kernel does not invent them.
     """
     rcs_signal = np.asarray(rcs_signal, dtype=np.float64)
     alt_m = np.asarray(alt_m, dtype=np.float64)
@@ -24,9 +26,13 @@ def calculate_pbl_height_gradient(
     if rcs_signal.ndim != 1 or alt_m.ndim != 1 or rcs_signal.size != alt_m.size:
         return np.nan
 
-    smooth_bins = max(int(smooth_bins), 3)
-    if smooth_bins % 2 == 0:
-        smooth_bins += 1
+    smooth_bins = int(smooth_bins)
+    if smooth_bins < 3 or smooth_bins % 2 == 0:
+        raise ValueError("smooth_bins must be an odd integer >= 3.")
+    if not np.isfinite(float(min_search_m)) or not np.isfinite(float(max_search_m)):
+        raise ValueError("PBL search altitudes must be finite.")
+    if float(max_search_m) <= float(min_search_m):
+        raise ValueError("max_search_m must exceed min_search_m.")
 
     valid_idx = np.where(
         (alt_m >= float(min_search_m))
