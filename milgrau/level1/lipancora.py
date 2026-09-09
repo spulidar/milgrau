@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Final, Mapping
 
 import numpy as np
 import pandas as pd
@@ -18,36 +18,32 @@ from milgrau.io.paths import processed_data_root
 from milgrau.operations import ExecutionResult, ExecutionSummary
 from milgrau.level1.common import (
     diagnostic_vector,
-    get_channel_constant,
     incremental_enabled,
     level0_dark_current_available,
     level1_output_path,
+)
+from milgrau.level1.config import (
+    Level1Config,
+    resolve_channel_calibration,
+    resolve_level1_config,
+    validate_level1_config,
 )
 from milgrau.level1.corrections import apply_instrumental_corrections
 from milgrau.level1.diagnostics import finalize_correction_dataset
 from milgrau.level1.ingestion import load_and_prepare_level0
 from milgrau.level1.thermodynamics import estimate_pbl_timeseries, integrate_thermodynamics
 
-DEFAULT_SPEED_OF_LIGHT_M_S = 299792458.0
+SPEED_OF_LIGHT_M_S: Final[float] = 299_792_458.0
 
 
-def _physics_config(config: Mapping[str, Any]) -> Mapping[str, Any]:
-    physics = config.get("physics", {})
-    return physics if isinstance(physics, Mapping) else {}
-
-
-def _speed_of_light_m_s(config: Mapping[str, Any]) -> float:
-    physics = _physics_config(config)
-    return float(physics.get("speed_of_light", physics.get("speed_of_light_m_s", DEFAULT_SPEED_OF_LIGHT_M_S)))
-
-
-def _bin_time_us(z_arr: np.ndarray, config: Mapping[str, Any]) -> float:
+def _bin_time_us(z_arr: np.ndarray) -> float:
+    """Return the two-way range-bin flight time using the exact SI speed of light."""
     if len(z_arr) < 2:
         raise ValueError("Altitude grid must contain at least two bins.")
     dz = float(z_arr[1] - z_arr[0])
     if dz <= 0.0 or not np.isfinite(dz):
         raise ValueError(f"Invalid altitude step: {dz}")
-    return (2.0 * dz / _speed_of_light_m_s(config)) * 1e6
+    return (2.0 * dz / SPEED_OF_LIGHT_M_S) * 1e6
 
 
 def _channel_laser_shots(ds: xr.Dataset, channel_index: int) -> xr.DataArray:
@@ -70,17 +66,19 @@ def _native_channel_grid(ds: xr.Dataset, channel_index: int) -> np.ndarray:
 
 
 def _background_mask(
-    ds: xr.Dataset,
-    channel_index: int,
     channel_name: str,
     z_da: xr.DataArray,
-    logger: logging.Logger,
+    level1_config: Level1Config,
 ) -> xr.DataArray:
-    bg_low = float(ds["Background_Low"].isel(channel=channel_index))
-    bg_high = float(ds["Background_High"].isel(channel=channel_index))
+    """Build the explicitly configured Level 1 background window on one native grid."""
+    bg_low = level1_config.background.start_altitude_m
+    bg_high = level1_config.background.stop_altitude_m
     bg_mask = (z_da >= bg_low) & (z_da <= bg_high)
     if int(bg_mask.sum().values) < 2:
-        logger.warning(f"  -> Channel {channel_name}: background mask has fewer than 2 bins ({bg_low:.1f}-{bg_high:.1f} m).")
+        raise ValueError(
+            f"Channel {channel_name}: configured Level 1 background window "
+            f"{bg_low:.1f}-{bg_high:.1f} m contains fewer than 2 native bins."
+        )
     return bg_mask
 
 
@@ -154,6 +152,8 @@ def _channel_diagnostic_record(ds: xr.Dataset, channel_name: str, diagnostics: M
         "pc_saturation_fraction": diagnostic_vector(diagnostics, "pc_saturation_fraction", ds.time),
         "deadtime_min_denominator_observed": float(diagnostics["deadtime_min_denominator_observed"]),
         "deadtime_min_denominator_allowed": float(diagnostics["deadtime_min_denominator_allowed"]),
+        "pc_saturation_characterized": int(diagnostics["pc_saturation_characterized"]),
+        "pc_saturation_rate_limit_mhz": float(diagnostics["pc_saturation_rate_limit_mhz"]),
         "bin_shift_bins": int(diagnostics["bin_shift_bins"]),
         "bin_shift_invalid_fraction": diagnostic_vector(diagnostics, "bin_shift_invalid_fraction", ds.time),
     }
@@ -167,28 +167,30 @@ def _correct_single_channel(
     channel_name: str,
     shots: xr.DataArray,
     bin_time_us: float,
-    channels_config: Mapping[str, Any],
-    logger: logging.Logger,
+    config: Mapping[str, Any],
+    level1_config: Level1Config,
 ) -> tuple[xr.Dataset, dict[str, Any], bool]:
-    """Apply native-grid corrections, then map one channel onto the common output grid."""
+    """Apply native-grid corrections using the resolved station calibration."""
+    calibration = resolve_channel_calibration(config, ds, channel_name)
     z_da = xr.DataArray(source_z_arr, dims=["range"], coords={"range": source_z_arr}, attrs={"units": "m"})
     sig = ds["Raw_Lidar_Data"].isel(channel=channel_index).rename({"altitude": "range"}).assign_coords(range=source_z_arr)
-    bg_mask = _background_mask(ds, channel_index, channel_name, z_da, logger)
-    deadtime, shift, bg_offset = get_channel_constant(channels_config, channel_name, logger)
-    is_photon = "pc" in channel_name.lower() or "ph" in channel_name.lower()
+    bg_mask = _background_mask(channel_name, z_da, level1_config)
+    is_photon = calibration.detector_mode == "photon_counting"
     dc_prof, dc_err, dark_current_used = _dark_current_profile(ds, channel_index, source_z_arr)
     corrected, corrected_error, rcs, rcs_error, diagnostics = apply_instrumental_corrections(
         sig=sig,
         z_da=z_da,
         shots=shots,
         bin_time_us=bin_time_us,
-        deadtime=deadtime,
-        shift=shift,
-        bg_offset=bg_offset,
+        deadtime=calibration.deadtime_us,
+        shift=calibration.bin_shift_bins,
+        bg_offset=calibration.background_offset,
         is_photon=is_photon,
         bg_mask=bg_mask,
         dc_prof=dc_prof,
         dc_err=dc_err,
+        deadtime_min_denominator=level1_config.photon_counting.deadtime_min_denominator,
+        pc_saturation_max_rate_mhz=calibration.saturation_max_rate_mhz,
         return_diagnostics=True,
     )
     channel_dataset = _channel_result_dataset(channel_name, corrected, corrected_error, rcs, rcs_error, diagnostics, target_z_arr)
@@ -199,9 +201,10 @@ def _correct_single_channel(
 def _processing_metadata(input_file: Path) -> dict[str, str]:
     return {
         "Processing_level": (
-            "Level 1: PC counts->MHz using Laser_Shots(time,channel), DeadTime, PC saturation mask, Dark Current, "
-            "Bin Shift, Background subtraction, native-grid correction and common-grid interpolation, corrected signal, "
-            "Range Corrected Signal, uncertainty propagation, PBL, Radiosonde, Tropopause"
+            "Level 1: PC counts->MHz using Laser_Shots(time,channel), calibrated DeadTime, explicit numerical clipping QA, "
+            "physical PC saturation only when characterized, Dark Current, Bin Shift, configured Background subtraction, "
+            "native-grid correction and common-grid interpolation, corrected signal, Range Corrected Signal, uncertainty "
+            "propagation, PBL, canonical thermodynamic atmosphere, Tropopause"
         ),
         "Pipeline": "MILGRAU/LIPANCORA",
         "Input_Level0_File": input_file.name,
@@ -267,7 +270,7 @@ def _files_requiring_level1(files: list[Path], config: Mapping[str, Any], logger
 
 def apply_all_physical_corrections(ds: xr.Dataset, z_arr: np.ndarray, config: Mapping[str, Any], logger: logging.Logger) -> xr.Dataset:
     """Apply corrections on native channel grids and return one common-grid Level 1 dataset."""
-    channels_config = _physics_config(config).get("channels", {})
+    level1_config = resolve_level1_config(config)
     channel_datasets = []
     status_records = []
     diagnostic_records = []
@@ -275,7 +278,7 @@ def apply_all_physical_corrections(ds: xr.Dataset, z_arr: np.ndarray, config: Ma
     for ch_idx, ch_name in enumerate(ds.channel.values.astype(str)):
         try:
             source_z_arr = _native_channel_grid(ds, ch_idx)
-            bin_time_us = _bin_time_us(source_z_arr, config)
+            bin_time_us = _bin_time_us(source_z_arr)
             shots = _channel_laser_shots(ds, ch_idx)
             if not np.allclose(source_z_arr, z_arr, rtol=0.0, atol=1e-9):
                 logger.info(
@@ -290,8 +293,8 @@ def apply_all_physical_corrections(ds: xr.Dataset, z_arr: np.ndarray, config: Ma
                 channel_name=ch_name,
                 shots=shots,
                 bin_time_us=bin_time_us,
-                channels_config=channels_config,
-                logger=logger,
+                config=config,
+                level1_config=level1_config,
             )
             channel_datasets.append(channel_dataset)
             status_records.append((ch_name, 1, int(dark_current_used)))
@@ -299,6 +302,11 @@ def apply_all_physical_corrections(ds: xr.Dataset, z_arr: np.ndarray, config: Ma
             clip_fraction = float(diagnostic_record["deadtime_clipping_fraction"].max(skipna=True).values)
             if clip_fraction > 0.0:
                 logger.warning(f"  -> Channel {ch_name}: dead-time denominator clipped in up to {100.0 * clip_fraction:.2f}% of bins.")
+            if not bool(diagnostic_record["pc_saturation_characterized"]) and ch_name.upper().endswith(".PC"):
+                logger.warning(
+                    f"  -> Channel {ch_name}: physical saturation is not characterized; "
+                    "the Level 1 product records this explicitly and Level 2 must not treat PC saturation as known."
+                )
             logger.info(f"  -> Channel {ch_name}: corrected successfully.")
         except Exception as exc:
             status_records.append((ch_name, 0, 0))
@@ -317,6 +325,8 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
     stage = "level1.initialize"
     try:
         stem = nc_file.stem
+        stage = "level1.configuration"
+        validate_level1_config(config)
         stage = "level1.output_path"
         save_path = level1_output_path(nc_file, config)
         logger.info(f"[{stem}] Initializing Level 1 processing...")
@@ -358,6 +368,7 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
 
 
 def process_level_1(config: Mapping[str, Any], logger: logging.Logger) -> ExecutionSummary:
+    validate_level1_config(config)
     in_dir = processed_data_root(config)
     files = _discover_level0_files(config)
     if not files:
