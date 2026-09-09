@@ -59,6 +59,72 @@ def test_apply_instrumental_corrections_converts_pc_counts_to_mhz_deterministica
     assert np.allclose(corrected.values, expected_corrected.values)
 
 
+def test_pc_poisson_uncertainty_uses_raw_counts_before_dark_subtraction() -> None:
+    """Shot noise must be sqrt(N), not sqrt(N-D), for observed PC counts."""
+    time = pd.date_range("2024-01-01", periods=1)
+    raw = xr.DataArray(
+        np.full((1, 4), 100.0, dtype=np.float64),
+        dims=("time", "range"),
+        coords={"time": time, "range": np.arange(4)},
+    )
+    dark = xr.DataArray(np.full(4, 40.0, dtype=np.float64), dims=["range"], coords={"range": np.arange(4)})
+    z_da = xr.DataArray((np.arange(4, dtype=np.float64) + 1.0) * 7.5, dims=["range"])
+    bg_mask = xr.DataArray(np.array([False, False, True, True]), dims=["range"])
+
+    _, corrected_error, _, _ = apply_instrumental_corrections(
+        sig=raw,
+        z_da=z_da,
+        shots=10.0,
+        bin_time_us=0.5,
+        deadtime=0.0,
+        shift=0,
+        bg_offset=0.0,
+        is_photon=True,
+        bg_mask=bg_mask,
+        dc_prof=dark,
+    )
+
+    rate_scale = 10.0 * 0.5
+    expected_poisson_mhz = np.sqrt(100.0) / rate_scale
+    biased_dark_subtracted_value = np.sqrt(100.0 - 40.0) / rate_scale
+    assert np.allclose(corrected_error.values, expected_poisson_mhz)
+    assert not np.isclose(float(corrected_error.values[0, 0]), biased_dark_subtracted_value)
+
+
+def test_pc_dark_current_uncertainty_is_independent_quadrature_term() -> None:
+    """Dark-profile uncertainty is added independently to raw-count Poisson noise."""
+    time = pd.date_range("2024-01-01", periods=1)
+    raw = xr.DataArray(
+        np.full((1, 4), 100.0, dtype=np.float64),
+        dims=("time", "range"),
+        coords={"time": time, "range": np.arange(4)},
+    )
+    dark = xr.DataArray(np.full(4, 40.0, dtype=np.float64), dims=["range"], coords={"range": np.arange(4)})
+    dark_error = xr.DataArray(np.full(4, 3.0, dtype=np.float64), dims=["range"], coords={"range": np.arange(4)})
+    z_da = xr.DataArray((np.arange(4, dtype=np.float64) + 1.0) * 7.5, dims=["range"])
+    bg_mask = xr.DataArray(np.array([False, False, True, True]), dims=["range"])
+
+    _, corrected_error, _, _ = apply_instrumental_corrections(
+        sig=raw,
+        z_da=z_da,
+        shots=10.0,
+        bin_time_us=0.5,
+        deadtime=0.0,
+        shift=0,
+        bg_offset=0.0,
+        is_photon=True,
+        bg_mask=bg_mask,
+        dc_prof=dark,
+        dc_err=dark_error,
+    )
+
+    rate_scale = 10.0 * 0.5
+    expected_mhz = np.sqrt(100.0 + 3.0**2) / rate_scale
+    old_biased_mhz = np.sqrt((100.0 - 40.0) + 3.0**2) / rate_scale
+    assert np.allclose(corrected_error.values, expected_mhz)
+    assert not np.isclose(float(corrected_error.values[0, 0]), old_biased_mhz)
+
+
 def test_apply_all_physical_corrections_persists_diagnostics() -> None:
     time = pd.date_range("2024-01-01", periods=2)
     altitude = (np.arange(5, dtype=np.float64) + 0.5) * 7.5
