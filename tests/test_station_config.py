@@ -1,13 +1,20 @@
-"""Tests for compact station.yaml temporal and SCC resolution."""
+"""Tests for station temporal, calibration, and SCC resolution."""
 
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import datetime, timezone
 
 import numpy as np
+import pytest
 
 from milgrau.config.loader import load_config
-from milgrau.config.station import apply_station_context, resolve_station_context, select_lidar_channels
+from milgrau.config.station import (
+    apply_station_context,
+    resolve_station_context,
+    select_lidar_channels,
+    validate_station_config,
+)
 
 
 def _context(config: dict, when: str, period: str, channels: list[str]) -> dict:
@@ -61,12 +68,29 @@ def test_repository_station_catalog_covers_all_scc_eras() -> None:
     }
 
 
+def test_profiles_resolve_named_instrument_calibration() -> None:
+    config = load_config("config.yaml")
+    contexts = [
+        _context(config, "2015-06-01T12:00:00", "pm", ["355.PC"]),
+        _context(config, "2017-10-01T12:00:00", "pm", ["355.PC"]),
+        _context(config, "2019-06-01T12:00:00", "pm", ["355.PC"]),
+        _context(config, "2025-01-01T12:00:00", "pm", ["355.PC"]),
+    ]
+
+    assert {ctx["calibration_id"] for ctx in contexts} == {"spu-channel-corrections-v1"}
+    for ctx in contexts:
+        assert ctx["calibration_provenance"]["source"] == "migrated_from_legacy_global_channel_corrections"
+        assert ctx["channel_calibrations"]["355.PC"]["deadtime_us"] == 0.002
+        assert ctx["channel_calibrations"]["355.PC"]["saturation"] == {"status": "not_characterized"}
+
+
 def test_pre_scc_measurement_uses_legacy_profile_without_scc_mapping() -> None:
     config = load_config("config.yaml")
     channels = ["355.AN", "355.PC", "532.AN", "532.PC", "1064.AN"]
     context = _context(config, "2015-06-01T12:00:00", "pm", channels)
 
     assert context["profile_id"] == "spu-legacy"
+    assert context["calibration_id"] == "spu-channel-corrections-v1"
     assert context["scc_available"] is False
     assert context["scc_export_ready"] is False
     assert context["scc_configuration_id"] is None
@@ -126,7 +150,7 @@ def test_missing_scc_channel_disables_only_scc_export() -> None:
     assert context["scc_available"] is True
 
 
-def test_station_context_applies_profile_altitude_and_flat_channel_map() -> None:
+def test_station_context_applies_profile_altitude_calibration_and_flat_channel_map() -> None:
     config = load_config("config.yaml")
     channels = ["532.AN", "532.PC", "1064.AN", "355.PC", "355.AN"]
     context = _context(config, "2025-01-01T12:00:00", "am", channels)
@@ -141,7 +165,43 @@ def test_station_context_applies_profile_altitude_and_flat_channel_map() -> None
         "355.PC": 4072,
         "355.AN": 4073,
     }
+    assert resolved["physics"]["channels"]["532.PC"] == {
+        "deadtime_us": 0.0035,
+        "bin_shift_bins": -3,
+        "background_offset": 0.0,
+    }
+    assert resolved["_resolved_station"]["calibration_id"] == "spu-channel-corrections-v1"
     assert resolved["_resolved_station"]["lr_input"]["532.AN"] == 1
+
+
+def test_unknown_profile_calibration_is_rejected() -> None:
+    config = load_config("config.yaml")
+    catalog = deepcopy(config["_station_catalog"])
+    catalog["profiles"][0]["calibration_id"] = "does-not-exist"
+
+    with pytest.raises(ValueError, match="unknown calibration"):
+        validate_station_config(catalog)
+
+
+def test_photon_counting_saturation_status_must_be_explicit() -> None:
+    config = load_config("config.yaml")
+    catalog = deepcopy(config["_station_catalog"])
+    del catalog["calibrations"]["spu-channel-corrections-v1"]["channels"]["532.PC"]["saturation"]
+
+    with pytest.raises(ValueError, match="must contain exactly"):
+        validate_station_config(catalog)
+
+
+def test_characterized_saturation_requires_positive_rate() -> None:
+    config = load_config("config.yaml")
+    catalog = deepcopy(config["_station_catalog"])
+    catalog["calibrations"]["spu-channel-corrections-v1"]["channels"]["532.PC"]["saturation"] = {
+        "status": "characterized",
+        "max_rate_mhz": 0.0,
+    }
+
+    with pytest.raises(ValueError, match="max_rate_mhz must be positive"):
+        validate_station_config(catalog)
 
 
 def test_select_lidar_channels_reindexes_laser_shots() -> None:
