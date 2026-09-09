@@ -61,20 +61,29 @@ def test_load_repository_config() -> None:
     assert "directories" in config
     assert "processing" in config
     assert "physics" in config
+    assert "level1" in config
     assert "hardware" in config
     assert config["physics"]["vertical_resolution_m"] > 0
     assert "532.PC" in config["physics"]["channels"]
     assert config["physics"]["channels"]["532.PC"]["bin_shift_bins"] == -3
 
 
-def test_load_repository_config_injects_legacy_aliases() -> None:
-    """Canonical YAML keys should be exposed with compatibility aliases in memory."""
+def test_repository_config_moves_level1_science_out_of_legacy_physics() -> None:
+    """New Level 1 ownership must not be recreated as repository YAML physics aliases."""
     config = load_config("config.yaml")
 
-    assert config["physics"]["speed_of_light"] == config["physics"]["speed_of_light_m_s"]
-    assert config["physics"]["bg_start"] == config["physics"]["background_start_m"]
-    assert config["physics"]["bg_stop"] == config["physics"]["background_stop_m"]
-    assert config["radiosonde"]["fallback_to_standard"] is config["radiosonde"]["fallback_to_standard_atmosphere"]
+    assert "speed_of_light" not in config["physics"]
+    assert "speed_of_light_m_s" not in config["physics"]
+    assert "background_start_m" not in config["physics"]
+    assert "background_stop_m" not in config["physics"]
+    assert "pbl_min_search_m" not in config["physics"]
+    assert "pbl_max_search_m" not in config["physics"]
+    assert config["level1"]["background"] == {
+        "start_altitude_m": 29000.0,
+        "stop_altitude_m": 29999.0,
+    }
+    # Inversion alias compatibility remains intentionally transitional until the
+    # dedicated loader/schema tranche removes it.
     assert config["inversion"]["lidar_ratios"] == config["inversion"]["lidar_ratios_sr"]
 
 
@@ -304,7 +313,8 @@ def test_legacy_and_named_channels_normalize_to_identical_values() -> None:
     normalized_named = normalize_config(named)
 
     assert normalized_legacy["physics"]["channels"] == normalized_named["physics"]["channels"]
-    assert get_channel_constant(legacy["physics"]["channels"], "532.PC", logging.getLogger("test")) == (0.0035, -3, 0.0015)
+    with pytest.raises(TypeError, match="must be a mapping"):
+        get_channel_constant(legacy["physics"]["channels"], "532.PC", logging.getLogger("test"))
     assert get_channel_constant(named["physics"]["channels"], "532.PC", logging.getLogger("test")) == (0.0035, -3, 0.0015)
 
 
