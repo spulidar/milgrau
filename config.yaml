@@ -127,18 +127,10 @@ inversion:
     allow_single_channel_fallback: true
     single_channel_priority: "photon_counting"
 
-  # Cloud screening is an explicit policy. Detector parameters are retained
-  # here even while disabled so enabling it never activates hidden defaults.
+  # Cloud screening is an explicit policy. While disabled, no detector values
+  # are interpreted. Enabling it requires the complete detector configuration.
   cloud_screening:
     enabled: false
-    min_altitude_m: 500.0
-    max_altitude_m: 15000.0
-    smooth_bins: 9
-    baseline_percentile: 20.0
-    robust_z_threshold: 6.0
-    min_cloud_bins: 3
-    vertical_dilation_bins: 2
-    exclude_clouds_from_reference_fit: true
 
   lidar_ratio_std_sr:
     "355": 15.0
