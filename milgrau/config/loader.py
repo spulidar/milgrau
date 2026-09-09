@@ -12,6 +12,7 @@ import yaml
 
 from milgrau.config.schema import validate_config_minimum
 from milgrau.config.station import merge_station_defaults, validate_station_config
+from milgrau.level1.config import validate_level1_config
 
 
 def _project_root() -> Path:
@@ -119,13 +120,24 @@ def normalize_config(config: dict[str, Any]) -> dict[str, Any]:
 
     ``config.yaml`` contains algorithm and processing controls. Station-specific
     fields may already have been merged from station.yaml before this function is
-    called. Legacy aliases are injected only in memory.
+    called. Legacy aliases remain temporarily available outside the new
+    stage-specific sections.
+
+    ``level1`` is validated by its strict stage validator and intentionally
+    excluded from the legacy broad-schema validator until that validator is
+    retired in the dedicated schema/loader tranche.
     """
     normalized = deepcopy(config)
     _normalize_physics_config(normalized)
     _normalize_radiosonde_config(normalized)
     _normalize_inversion_config(normalized)
-    validate_config_minimum(normalized)
+
+    legacy_validation = deepcopy(normalized)
+    level1_present = "level1" in legacy_validation
+    legacy_validation.pop("level1", None)
+    validate_config_minimum(legacy_validation)
+    if level1_present:
+        validate_level1_config(normalized)
     return normalized
 
 
