@@ -18,7 +18,7 @@ Make scientific and instrumental decisions explicit and auditable:
 - [ ] No silent scientific defaults in production paths.
 - [ ] No silent instrumental defaults in production paths.
 - [ ] No station-specific coordinates/timezone/IDs embedded in Python fallbacks.
-- [ ] No neutral channel correction fallback for an unknown channel.
+- [x] No neutral channel correction fallback for an unknown channel in Level 1 processing.
 - [ ] No fake SCC channel IDs.
 - [ ] No algorithmic fallback that silently widens/changes a configured scientific domain.
 - [x] Optional Level 2 cloud-screening behavior must be explicitly enabled/disabled in YAML.
@@ -33,7 +33,7 @@ Make scientific and instrumental decisions explicit and auditable:
 - [ ] Stop rebuilding `physics.channels` from station data. **Temporary compatibility view remains while Level 1 consumers are migrated.**
 - [ ] Stop rebuilding `hardware.name_to_id` as a compatibility structure.
 - [ ] Remove legacy aliases injected by `normalize_config`.
-- [ ] Remove legacy positional channel correction lists.
+- [ ] Remove legacy positional channel correction lists. **The Level 1 consumer now rejects them, but loader compatibility still exists.**
 - [ ] Replace `validate_config_minimum` philosophy with stage-specific strict validation.
 - [ ] Validate unknown keys with full paths.
 - [ ] Add typed/resolved configuration objects or equivalent strict accessors so scientific modules do not consume raw config mappings directly.
@@ -72,6 +72,7 @@ Make scientific and instrumental decisions explicit and auditable:
 
 - [x] Photon-counting Poisson uncertainty uses observed counts before dark subtraction (SCI-003 completed before this refactor).
 - [x] Canonical atmosphere is materialized in Level 1 with radiosonde -> ERA5 -> USSA76 provenance (completed before this refactor).
+- [x] Missing channel calibration is a Level 1 configuration error; neutral correction constants are no longer substituted.
 - [ ] Remove configurable speed of light; keep exact SI constant in code.
 - [ ] Require Level 1 background window.
 - [ ] Require dead-time numerical clipping denominator policy.
@@ -122,7 +123,7 @@ Make scientific and instrumental decisions explicit and auditable:
 ## G. Scientific failure semantics
 
 - [ ] Missing required config -> configuration error before processing starts for every stage. **Implemented for productive Level 2; other stages remain.**
-- [ ] Missing channel calibration -> channel/product failure, never neutral correction.
+- [x] Missing channel calibration -> Level 1 channel/product failure, never neutral correction.
 - [x] Unknown PC saturation characterization is represented explicitly as `not_characterized` in station calibration instead of assigning an invented detector limit.
 - [ ] Stop reusing numerical dead-time clipping as a detector saturation proxy.
 - [ ] Invalid Rayleigh search -> reference selection failure.
@@ -147,7 +148,7 @@ Make scientific and instrumental decisions explicit and auditable:
 
 - [ ] Rewrite broad config tests for strict schema; remove tests that freeze legacy aliases.
 - [x] Add station calibration/profile resolution tests across historical eras.
-- [ ] Add failure tests for missing channel calibration at the processing consumer.
+- [x] Add failure tests for missing channel calibration at the Level 1 processing consumer.
 - [x] Add failure tests for missing LR month/uncertainty.
 - [ ] Add failure tests for invalid gluing/Rayleigh domains. **Config-level gluing interval validation is tested; algorithmic failure tests remain.**
 - [ ] Add failure tests for missing station timezone/coordinates/altitude.
@@ -197,3 +198,10 @@ Make scientific and instrumental decisions explicit and auditable:
 - A temporary `physics.channels` compatibility view remains so Level 1 behavior is not broken before its consumer migration; this is explicitly not considered the target architecture.
 - Added station tests for calibration resolution, unknown calibration references and saturation characterization semantics.
 - GitHub currently reports no CI/status checks on the branch, so the full repository suite has not been claimed as executed.
+
+### 2026-09-09 — Level 1 strict calibration access tranche
+
+- `milgrau.level1.common.get_channel_constant` now raises on missing channel calibration instead of silently applying neutral corrections.
+- Positional correction lists are rejected at the Level 1 consumer; named `deadtime_us`, `bin_shift_bins`, and `background_offset` fields are required.
+- Added focused tests for missing, positional, incomplete, and valid channel calibration access.
+- Loader-level positional compatibility still exists and remains explicitly tracked for removal in the schema/loader tranche.
