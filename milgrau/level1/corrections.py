@@ -91,7 +91,14 @@ def apply_instrumental_corrections(
     pc_saturation_max_rate_mhz: float | None = None,
     return_diagnostics: bool = False,
 ) -> tuple[xr.DataArray, xr.DataArray, xr.DataArray, xr.DataArray] | tuple[xr.DataArray, xr.DataArray, xr.DataArray, xr.DataArray, dict[str, Any]]:
-    """Apply Level 1 corrections, accepting SCC Laser_Shots per profile."""
+    """Apply Level 1 corrections, accepting SCC Laser_Shots per profile.
+
+    For photon-counting channels, the Poisson term is calculated from the
+    observed accumulated counts *before* dark-current subtraction.  The
+    uncertainty of the estimated dark-current profile is treated as an
+    independent term and combined in quadrature after both are converted to
+    MHz.  This avoids the biased ``sqrt(signal - dark)`` approximation.
+    """
     shots_scale = _shot_scale(shots, sig)
     if bin_time_us is None or not np.isfinite(float(bin_time_us)) or float(bin_time_us) <= 0.0:
         raise ValueError(f"Invalid bin_time_us value: {bin_time_us}")
@@ -124,11 +131,18 @@ def apply_instrumental_corrections(
     else:
         sig_mhz = sig_dc / rate_scale
         photon_rate_mhz_max = _safe_nanmax_xarray(sig_mhz)
-        dc_err_mhz = err_dc / rate_scale
-        n_photons = xr.where(sig_dc > 0.0, sig_dc, 0.0)
-        err_raw = np.sqrt(n_photons) / rate_scale
+
+        # Raw-count shot noise belongs to the observed counts N, not to the
+        # dark-subtracted counts N-D.  The estimated dark-current uncertainty
+        # sigma_D is independent, so in rate units:
+        # sigma^2 = N / rate_scale^2 + sigma_D^2 / rate_scale^2.
+        raw_counts = xr.where(sig > 0.0, sig, 0.0)
+        err_poisson_mhz = np.sqrt(raw_counts) / rate_scale
+        err_dark_mhz = err_dc / rate_scale
+        err_raw = err_poisson_mhz
         if dc_prof is not None and dc_err is not None:
-            err_raw = np.sqrt(err_raw**2 + dc_err_mhz**2)
+            err_raw = np.sqrt(err_poisson_mhz**2 + err_dark_mhz**2)
+
         if pc_saturation_max_rate_mhz is not None and np.isfinite(float(pc_saturation_max_rate_mhz)) and float(pc_saturation_max_rate_mhz) > 0.0:
             pc_saturation_rate_limit_mhz = float(pc_saturation_max_rate_mhz)
             pc_saturation_mask = sig_mhz >= pc_saturation_rate_limit_mhz
