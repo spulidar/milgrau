@@ -11,7 +11,7 @@ from typing import Any
 REQUIRED_TOP_LEVEL_SECTIONS = ("directories", "processing", "physics", "hardware")
 
 _KNOWN_KEYS_BY_PATH: dict[tuple[str, ...], set[str]] = {
-    (): {"project", "processing", "directories", "site", "location", "physics", "hardware", "radiosonde", "surface_weather", "visualization", "inversion"},
+    (): {"project", "processing", "directories", "site", "location", "physics", "hardware", "radiosonde", "era5", "surface_weather", "visualization", "inversion"},
     ("project",): {"name", "full_name", "station_name", "institution", "timezone"},
     ("processing",): {
         "incremental", "interactive_qa", "console_level", "file_level", "laser_shot_tolerance_fraction",
@@ -29,6 +29,7 @@ _KNOWN_KEYS_BY_PATH: dict[tuple[str, ...], set[str]] = {
     },
     ("hardware",): {"name_to_id"},
     ("radiosonde",): {"station_id", "station_name", "fallback_to_standard_atmosphere", "fallback_to_standard", "cache_dir"},
+    ("era5",): {"enabled", "cache_dir", "dataset", "pressure_levels_hpa", "grid_deg", "area_half_width_deg"},
     ("surface_weather",): {"provider", "cache_dir", "fallback_to_config_defaults"},
     ("visualization",): {"output_format", "dpi", "altitude_ranges_km", "channels_to_plot", "quicklook", "level2_qa"},
     ("visualization", "quicklook"): {
@@ -324,6 +325,20 @@ def _validate_inversion(config: Mapping[str, Any]) -> None:
         _validate_numeric_leaves(values, f"inversion.{key}", positive=True)
 
 
+def _validate_era5(config: Mapping[str, Any]) -> None:
+    era5 = _optional_mapping(config, "era5")
+    _optional_boolean(era5, "enabled", "era5")
+    for key in ("cache_dir", "dataset"):
+        _optional_string(era5, key, "era5")
+    for key in ("grid_deg", "area_half_width_deg"):
+        _optional_finite_number(era5, key, "era5", positive=True)
+    _positive_number_list(era5, "pressure_levels_hpa", "era5")
+    if "grid_deg" in era5 and float(era5["grid_deg"]) > 5.0:
+        raise ValueError("Configuration era5.grid_deg is unexpectedly coarse; expected <= 5 degrees.")
+    if "area_half_width_deg" in era5 and float(era5["area_half_width_deg"]) > 10.0:
+        raise ValueError("Configuration era5.area_half_width_deg must be <= 10 degrees.")
+
+
 def validate_config_minimum(config: Mapping[str, Any]) -> None:
     """Validate public structure and finite runtime values without activating dormant controls."""
     unknown = find_unknown_config_keys(config)
@@ -403,6 +418,8 @@ def validate_config_minimum(config: Mapping[str, Any]) -> None:
         _optional_string(radiosonde, key, "radiosonde")
     for key in ("fallback_to_standard_atmosphere", "fallback_to_standard"):
         _optional_boolean(radiosonde, key, "radiosonde")
+
+    _validate_era5(config)
 
     surface_weather = _optional_mapping(config, "surface_weather")
     for key in ("provider", "cache_dir"):

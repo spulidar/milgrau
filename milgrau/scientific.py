@@ -10,6 +10,12 @@ ELASTIC_BACKSCATTER_UNCERTAINTY_METHOD: Final[str] = "Monte Carlo"
 FERNALD_IMPLEMENTATION_VERSION: Final[str] = "2"
 FERNALD_SCIENTIFIC_CHANGE: Final[str] = "corrected_backward_molecular_factor_sign"
 
+MOLECULAR_ATMOSPHERE_FALLBACK: Final[str] = "US Standard Atmosphere 1976"
+MOLECULAR_ATMOSPHERE_IMPLEMENTATION_VERSION: Final[str] = "2"
+MOLECULAR_ATMOSPHERE_SCIENTIFIC_CHANGE: Final[str] = (
+    "stratified_ussa76_fallback_with_optional_era5_pressure_levels"
+)
+
 
 def elastic_inversion_algorithm_metadata() -> dict[str, str]:
     """Return the immutable scientific identity used by metadata/provenance."""
@@ -19,4 +25,8 @@ def elastic_inversion_algorithm_metadata() -> dict[str, str]:
         "uncertainty_method": ELASTIC_BACKSCATTER_UNCERTAINTY_METHOD,
         "fernald_implementation_version": FERNALD_IMPLEMENTATION_VERSION,
         "scientific_change": FERNALD_SCIENTIFIC_CHANGE,
+        "fernald_scientific_change": FERNALD_SCIENTIFIC_CHANGE,
+        "molecular_atmosphere_fallback": MOLECULAR_ATMOSPHERE_FALLBACK,
+        "molecular_atmosphere_implementation_version": MOLECULAR_ATMOSPHERE_IMPLEMENTATION_VERSION,
+        "molecular_atmosphere_scientific_change": MOLECULAR_ATMOSPHERE_SCIENTIFIC_CHANGE,
     }

@@ -1,6 +1,7 @@
 """Shared input/output helpers for MILGRAU."""
 
 from milgrau.io.contracts import validate_level0_contract, validate_level1_contract, validate_level2_contract
+from milgrau.io.era5 import fetch_era5_pressure_level_profile
 from milgrau.io.filesystem import ensure_directories, scan_raw_files
 from milgrau.io.licel import parse_licel_group, read_licel_header
 from milgrau.io.logging_utils import setup_logger
@@ -20,6 +21,7 @@ from milgrau.io.weather import fetch_surface_weather
 
 __all__ = [
     "ensure_directories",
+    "fetch_era5_pressure_level_profile",
     "fetch_surface_weather",
     "fetch_wyoming_radiosonde",
     "level0_output_path",
