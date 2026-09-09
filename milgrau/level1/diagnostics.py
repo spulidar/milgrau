@@ -32,10 +32,13 @@ def finalize_correction_dataset(
     final_ds["range_corrected_signal_error"].attrs.update({"long_name": "One-sigma uncertainty of Range Corrected Signal", "units": "a.u. m^2"})
     final_ds["pc_saturation_mask"].attrs.update(
         {
-            "long_name": "Photon-counting saturation/dead-time clipping mask",
-            "description": "1 where the photon-counting signal was flagged as saturated or dead-time clipped after bin-shift alignment; 0 elsewhere. Analog channels are always 0.",
+            "long_name": "Photon-counting physical saturation mask",
+            "description": (
+                "1 only where the photon-counting rate exceeds a characterized detector saturation limit after bin-shift alignment; "
+                "0 elsewhere. A zero mask is not evidence of unsaturated operation when pc_saturation_characterized=0."
+            ),
             "flag_values": "0, 1",
-            "flag_meanings": "valid saturated_or_clipped",
+            "flag_meanings": "not_flagged physically_saturated",
         }
     )
 
@@ -70,6 +73,16 @@ def finalize_correction_dataset(
         dims=["channel"],
         coords={"channel": final_channels},
     ).astype(np.float32)
+    final_ds["pc_saturation_characterized"] = xr.DataArray(
+        [diag_by_channel[ch]["pc_saturation_characterized"] for ch in final_channels],
+        dims=["channel"],
+        coords={"channel": final_channels},
+    ).astype(np.int8)
+    final_ds["pc_saturation_rate_limit_mhz"] = xr.DataArray(
+        [diag_by_channel[ch]["pc_saturation_rate_limit_mhz"] for ch in final_channels],
+        dims=["channel"],
+        coords={"channel": final_channels},
+    ).astype(np.float32)
     final_ds["bin_shift_bins"] = xr.DataArray(
         [diag_by_channel[ch]["bin_shift_bins"] for ch in final_channels],
         dims=["channel"],
@@ -95,8 +108,25 @@ def finalize_correction_dataset(
         coords={"time": final_ds.time, "channel": final_channels},
     ).astype(np.float32)
     final_ds["deadtime_correction_applied"].attrs.update({"flag_values": "0, 1", "flag_meanings": "not_applied applied"})
-    final_ds["deadtime_clipping_fraction"].attrs.update({"units": "1", "description": "Fraction of altitude bins where the non-paralyzable dead-time denominator was clipped."})
-    final_ds["pc_saturation_fraction"].attrs.update({"units": "1", "description": "Fraction of altitude bins where pc_saturation_mask equals 1."})
+    final_ds["deadtime_clipping_fraction"].attrs.update(
+        {"units": "1", "description": "Fraction of altitude bins where the non-paralyzable dead-time denominator was numerically clipped."}
+    )
+    final_ds["pc_saturation_characterized"].attrs.update(
+        {
+            "flag_values": "0, 1",
+            "flag_meanings": "not_characterized characterized",
+            "description": "Whether a traceable physical photon-counting saturation rate is available for this channel calibration.",
+        }
+    )
+    final_ds["pc_saturation_rate_limit_mhz"].attrs.update(
+        {
+            "units": "MHz",
+            "description": "Characterized physical photon-counting saturation rate; NaN when unavailable or not applicable.",
+        }
+    )
+    final_ds["pc_saturation_fraction"].attrs.update(
+        {"units": "1", "description": "Fraction of altitude bins where the characterized physical pc_saturation_mask equals 1."}
+    )
     final_ds["bin_shift_invalid_fraction"].attrs.update({"units": "1", "description": "Fraction of altitude bins introduced by bin-shift alignment and marked as NaN."})
     final_ds["bin_shift_bins"].attrs.update({"units": "bins"})
     return final_ds
