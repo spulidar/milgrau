@@ -10,50 +10,111 @@ station:
   radiosonde:
     station_id: "83779"
     station_name: "SBMT Marte Civ"
-    fallback_to_standard_atmosphere: true
 
-# SCC default for elastic-backscatter retrievals. LR_Input=1 tells ELPP to use
-# the fixed lidar ratio stored in the SCC database. A wavelength is treated as
-# Raman-backscatter-capable when one of its listed companion channels is also
-# present in the selected SCC configuration, so LR_Input is left undefined for
-# that elastic wavelength. A day/night configuration may still define its own
-# lr_input mapping to override this policy completely.
-scc_defaults:
+# SCC policy is station/instrument metadata, not a processing fallback.
+# fixed_value=1 tells ELPP to use the fixed lidar ratio stored in the SCC database.
+# When a Raman companion wavelength is present, LR_Input is left undefined for
+# the elastic wavelength. A concrete day/night SCC configuration may still
+# provide its own explicit lr_input mapping.
+scc_policy:
   lr_input:
-    value: 1
-    elastic_wavelengths:
+    fixed_value: 1
+    raman_companions_nm:
       "355": [387, 408]
       "532": [530]
       "1064": []
 
-channel_corrections:
-  "355.PC": {deadtime_us: 0.0020, bin_shift_bins: -2, background_offset: 0.0005}
-  "355.AN": {deadtime_us: 0.0000, bin_shift_bins: -11, background_offset: 0.0000}
-  "387.PC": {deadtime_us: 0.0000, bin_shift_bins: -2, background_offset: 0.0000}
-  "387.AN": {deadtime_us: 0.0000, bin_shift_bins: 8, background_offset: 0.0000}
-  "408.PC": {deadtime_us: 0.0000, bin_shift_bins: -2, background_offset: 0.0000}
-  "408.AN": {deadtime_us: 0.0000, bin_shift_bins: 8, background_offset: 0.0000}
-  "530.PC": {deadtime_us: 0.0000, bin_shift_bins: -2, background_offset: 0.0000}
-  "530.AN": {deadtime_us: 0.0000, bin_shift_bins: 7, background_offset: 0.0000}
-  "532.PC": {deadtime_us: 0.0035, bin_shift_bins: -3, background_offset: 0.0000}
-  "532.AN": {deadtime_us: 0.0000, bin_shift_bins: -12, background_offset: 0.0000}
-  "1064.PC": {deadtime_us: 0.0000, bin_shift_bins: 0, background_offset: 0.0000}
-  "1064.AN": {deadtime_us: 0.0000, bin_shift_bins: 1, background_offset: 0.0000}
+# Named instrument calibration sets. The historical repository documented only
+# one global correction table, so all current profiles intentionally reference
+# this migrated set. Do not infer distinct historical calibrations without a
+# traceable source. Photon-counting saturation is explicitly not characterized
+# in the current source material rather than being assigned an invented limit.
+calibrations:
+  spu-channel-corrections-v1:
+    provenance:
+      source: "migrated_from_legacy_global_channel_corrections"
+    channels:
+      "355.PC":
+        detector_mode: "photon_counting"
+        deadtime_us: 0.0020
+        bin_shift_bins: -2
+        background_offset: 0.0005
+        saturation: {status: "not_characterized"}
+      "355.AN":
+        detector_mode: "analog"
+        deadtime_us: 0.0000
+        bin_shift_bins: -11
+        background_offset: 0.0000
+      "387.PC":
+        detector_mode: "photon_counting"
+        deadtime_us: 0.0000
+        bin_shift_bins: -2
+        background_offset: 0.0000
+        saturation: {status: "not_characterized"}
+      "387.AN":
+        detector_mode: "analog"
+        deadtime_us: 0.0000
+        bin_shift_bins: 8
+        background_offset: 0.0000
+      "408.PC":
+        detector_mode: "photon_counting"
+        deadtime_us: 0.0000
+        bin_shift_bins: -2
+        background_offset: 0.0000
+        saturation: {status: "not_characterized"}
+      "408.AN":
+        detector_mode: "analog"
+        deadtime_us: 0.0000
+        bin_shift_bins: 8
+        background_offset: 0.0000
+      "530.PC":
+        detector_mode: "photon_counting"
+        deadtime_us: 0.0000
+        bin_shift_bins: -2
+        background_offset: 0.0000
+        saturation: {status: "not_characterized"}
+      "530.AN":
+        detector_mode: "analog"
+        deadtime_us: 0.0000
+        bin_shift_bins: 7
+        background_offset: 0.0000
+      "532.PC":
+        detector_mode: "photon_counting"
+        deadtime_us: 0.0035
+        bin_shift_bins: -3
+        background_offset: 0.0000
+        saturation: {status: "not_characterized"}
+      "532.AN":
+        detector_mode: "analog"
+        deadtime_us: 0.0000
+        bin_shift_bins: -12
+        background_offset: 0.0000
+      "1064.PC":
+        detector_mode: "photon_counting"
+        deadtime_us: 0.0000
+        bin_shift_bins: 0
+        background_offset: 0.0000
+        saturation: {status: "not_characterized"}
+      "1064.AN":
+        detector_mode: "analog"
+        deadtime_us: 0.0000
+        bin_shift_bins: 1
+        background_offset: 0.0000
 
 profiles:
-
   - id: "spu-legacy"
-  # Historical measurements before the first SCC configuration.
-  # These data are processed from the Licel headers and remain usable by
-  # MILGRAU L0/L1/L2, but are not SCC-compatible
+    # Historical measurements before the first SCC configuration. These data
+    # remain usable by MILGRAU L0/L1/L2 but are not SCC-compatible.
     valid_from: "2000-01-01"
     valid_to: "2017-03-07"
+    calibration_id: "spu-channel-corrections-v1"
     site:
       station_altitude_m: 766.0
 
   - id: "spu-apel-2017"
     valid_from: "2017-03-08"
     valid_to: "2018-03-18"
+    calibration_id: "spu-channel-corrections-v1"
     site:
       station_altitude_m: 766.0
     laser:
@@ -97,6 +158,7 @@ profiles:
   - id: "spu-raman-2018"
     valid_from: "2018-03-19"
     valid_to: "2024-09-09"
+    calibration_id: "spu-channel-corrections-v1"
     site:
       station_altitude_m: 766.0
     laser:
@@ -133,6 +195,7 @@ profiles:
   - id: "spu-merionc-2024"
     valid_from: "2024-09-10"
     valid_to: null
+    calibration_id: "spu-channel-corrections-v1"
     site:
       station_altitude_m: 740.0
     laser:
