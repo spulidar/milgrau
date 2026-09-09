@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+import logging
+from typing import Any, Mapping
+
 import numpy as np
+import xarray as xr
+
+from milgrau.level1.config import resolve_level1_config
 
 
 def calculate_pbl_height_gradient(
@@ -66,3 +72,65 @@ def calculate_pbl_height_gradient(
     if not np.isfinite(gradient[min_grad_idx]) or gradient[min_grad_idx] >= 0.0:
         return np.nan
     return float(search_alt[min_grad_idx] / 1000.0)
+
+
+def estimate_pbl_timeseries(
+    final_ds: xr.Dataset,
+    z_arr: np.ndarray,
+    config: Mapping[str, Any],
+    logger: logging.Logger,
+) -> xr.Dataset:
+    """Estimate PBL using the explicitly configured reference channel and settings.
+
+    PBL is a diagnostic: a missing configured channel does not substitute another
+    signal. The diagnostic is omitted with a warning rather than silently changing
+    the scientific method.
+    """
+    pbl = resolve_level1_config(config).pbl
+    channels = set(final_ds.channel.values.astype(str))
+    if pbl.reference_channel not in channels:
+        logger.warning(
+            "  -> PBL diagnostic unavailable: configured reference channel %s is absent; no fallback channel will be used.",
+            pbl.reference_channel,
+        )
+        return final_ds
+    if "channel_correction_success" in final_ds:
+        correction_ok = int(final_ds["channel_correction_success"].sel(channel=pbl.reference_channel).item()) == 1
+        if not correction_ok:
+            logger.warning(
+                "  -> PBL diagnostic unavailable: configured reference channel %s failed Level 1 correction.",
+                pbl.reference_channel,
+            )
+            return final_ds
+
+    rcs_matrix = final_ds["range_corrected_signal"].sel(channel=pbl.reference_channel).values
+    logger.info(
+        "  -> Tracking PBL using %s (%.0f-%.0f m).",
+        pbl.reference_channel,
+        pbl.min_search_altitude_m,
+        pbl.max_search_altitude_m,
+    )
+    pbl_h = [
+        calculate_pbl_height_gradient(
+            rcs_matrix[t, :],
+            z_arr,
+            min_search_m=pbl.min_search_altitude_m,
+            max_search_m=pbl.max_search_altitude_m,
+            smooth_bins=pbl.smooth_bins,
+        )
+        for t in range(rcs_matrix.shape[0])
+    ]
+    final_ds["PBL_Height_km"] = xr.DataArray(
+        pbl_h,
+        dims=["time"],
+        coords={"time": final_ds.time},
+    ).astype(np.float32)
+    final_ds["PBL_Height_km"].attrs = {
+        "units": "km",
+        "method": "Gradient method on smoothed RCS",
+        "reference_channel": pbl.reference_channel,
+        "min_search_m": pbl.min_search_altitude_m,
+        "max_search_m": pbl.max_search_altitude_m,
+        "smooth_bins": pbl.smooth_bins,
+    }
+    return final_ds
