@@ -27,11 +27,7 @@ def _as_1d(values: np.ndarray) -> np.ndarray:
 
 
 def _as_saturation_fraction_1d(values: np.ndarray | None, size: int) -> np.ndarray:
-    """Return a one-dimensional per-bin saturation fraction in [0, 1].
-
-    Boolean masks are accepted for backward compatibility, but block-averaged
-    LEBEAR processing should pass the fraction of profiles saturated at each bin.
-    """
+    """Return a one-dimensional per-bin saturation fraction in [0, 1]."""
     if values is None:
         return np.zeros(size, dtype=np.float64)
     arr = np.asarray(values, dtype=np.float64)
@@ -47,14 +43,7 @@ def _window_length(value: int) -> int:
 
 
 def _modified_regression(analog: np.ndarray, photon: np.ndarray) -> tuple[float, float]:
-    """Return coefficients mapping analog to virtual photon-counting signal.
-
-    Following the Newsom/ARM MERGE approach, the fit is performed with analog as
-    the dependent variable and photon-counting as the independent variable.  This
-    avoids the bias introduced when the fit interval is constrained in photon
-    count-rate space.  The resulting relation is inverted to return
-    ``photon_virtual = slope * analog + intercept``.
-    """
+    """Return coefficients mapping analog to virtual photon-counting signal."""
     valid = np.isfinite(analog) & np.isfinite(photon)
     x = photon[valid]
     y = analog[valid]
@@ -157,13 +146,10 @@ def _select_window(
     max_saturation_fraction: float,
     invalid_saturation_fraction: float,
 ) -> dict[str, float | int | str]:
-    """Search for the best gluing window using residual minimization."""
+    """Search for the best gluing window only inside the supplied search domain."""
     n_bins = analog.size
     start = max(int(min_idx), 0)
     stop = min(int(max_idx), n_bins)
-    if stop - start < window:
-        start = 0
-        stop = n_bins
 
     best: dict[str, float | int | str] = {
         "idx": -1,
@@ -278,13 +264,7 @@ def glue_signals_at_bins(
     slope: float,
     intercept: float = 0.0,
 ) -> np.ndarray:
-    """Glue two 1D signals with a linear fade-in/fade-out transition.
-
-    The analog signal is scaled to the photon-counting scale. Below the gluing
-    region the scaled analog signal is used. Above the gluing region the photon
-    counting signal is used. Inside the region, both detector modes are blended
-    smoothly with linear weights.
-    """
+    """Glue two 1D signals with a linear fade-in/fade-out transition."""
     analog = _as_1d(analog_sig)
     photon = _as_1d(pc_sig)
     if analog.size != photon.size:
@@ -358,12 +338,7 @@ def slide_glue_signals(
     max_saturation_fraction: float = 0.20,
     invalid_saturation_fraction: float = 1.0,
 ) -> tuple[np.ndarray, int, float, float] | tuple[np.ndarray, int, float, float, dict[str, Any]]:
-    """Glue analog and photon-counting signals into one dynamic-range profile.
-
-    Parameters use the historical MILGRAU names for compatibility, but the
-    selection is now residual-based. ``gaussian_threshold`` is accepted for API
-    compatibility and is recorded in diagnostics; it is not used as a criterion.
-    """
+    """Glue analog and photon-counting signals into one dynamic-range profile."""
     analog = _as_1d(analog_sig)
     photon = _as_1d(pc_sig)
     if analog.size != photon.size:
@@ -371,7 +346,17 @@ def slide_glue_signals(
 
     saturation_fraction_profile = _as_saturation_fraction_1d(pc_saturation_mask, analog.size)
     window = _window_length(window_size)
+    search_start = int(search_min_idx)
     search_stop = analog.size if search_max_idx is None else int(search_max_idx)
+    if search_start < 0 or search_stop > analog.size or search_stop <= search_start:
+        raise ValueError(
+            f"Configured gluing search interval [{search_start}, {search_stop}) is outside the signal domain [0, {analog.size})."
+        )
+    if search_stop - search_start < window:
+        raise ValueError(
+            f"Configured gluing search interval [{search_start}, {search_stop}) is narrower than window_size={window}; "
+            "the search domain will not be widened automatically."
+        )
 
     selected = _select_window(
         analog=analog,
@@ -381,7 +366,7 @@ def slide_glue_signals(
         correlation_threshold=float(min_corr),
         intercept_threshold=float(intercept_threshold),
         min_dynamic_range_ratio=float(minmax_threshold),
-        min_idx=int(search_min_idx),
+        min_idx=search_start,
         max_idx=search_stop,
         max_relative_rmse=float(max_relative_rmse),
         max_relative_bias=float(max_relative_bias),
@@ -420,8 +405,8 @@ def slide_glue_signals(
             "split_point": int(split_point),
             "min_bin": int(min_bin),
             "max_bin": int(max_bin),
-            "search_min_idx": int(search_min_idx),
-            "search_max_idx": int(search_stop),
+            "search_min_idx": search_start,
+            "search_max_idx": search_stop,
             "window_size": int(window),
             "gluing_score": float(selected["score"]),
             "selection_mode": str(selected["selection_mode"]),
