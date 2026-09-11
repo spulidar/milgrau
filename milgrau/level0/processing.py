@@ -20,6 +20,7 @@ from milgrau.io.weather import fetch_surface_weather
 from milgrau.level0.config import resolve_level0_config, station_coordinates
 from milgrau.level0.netcdf import build_level0_netcdf
 from milgrau.operations import ExecutionResult
+from milgrau.provenance import write_netcdf_provenance
 
 
 def fetch_group_weather(group_df: pd.DataFrame, config: Mapping[str, Any], logger: logging.Logger) -> dict[str, Any]:
@@ -83,8 +84,9 @@ def _resolve_group_station_config(
             context["scc_configuration_id"],
         )
         station_logger.debug(
-            "mode=%s selected_channels=%d SCC_channels=%d extra_channels=%s missing_SCC_channels=%s",
+            "mode=%s calibration=%s selected_channels=%d SCC_channels=%d extra_channels=%s missing_SCC_channels=%s",
             context["mode"],
+            context["calibration_id"],
             len(context["selected_channels"]),
             len(context.get("scc_channels", [])),
             ",".join(context["extra_channels"]) or "none",
@@ -97,7 +99,11 @@ def _resolve_group_station_config(
             )
     else:
         station_logger.info("profile=%s | SCC=none", context["profile_id"])
-        station_logger.debug("selected_channels=%d", len(context["selected_channels"]))
+        station_logger.debug(
+            "calibration=%s selected_channels=%d",
+            context["calibration_id"],
+            len(context["selected_channels"]),
+        )
     return effective_config, dict(lidar_data), context
 
 
@@ -147,6 +153,7 @@ def _write_scc_export(
         config=dict(effective_config),
         logger=logger,
     )
+    write_netcdf_provenance(scc_path, effective_config)
     scc_logger.info(
         "%s | %d/%d channels | config=%s",
         scc_path.name,
@@ -220,6 +227,14 @@ def process_measurement_group(
             config=primary_config,
             logger=logger,
         )
+        provenance_attrs = write_netcdf_provenance(netcdf_path, primary_config)
+        bind_log_context(logger, stage="provenance").debug(
+            "profile=%s calibration=%s config_sha256=%s station_sha256=%s",
+            provenance_attrs.get("station_profile_id", "-"),
+            provenance_attrs.get("instrument_calibration_id", "-"),
+            provenance_attrs.get("processing_config_sha256", "-"),
+            provenance_attrs.get("station_config_sha256", "-"),
+        )
 
         stage = "level0.scc_export"
         scc_path = _write_scc_export(
@@ -243,6 +258,7 @@ def process_measurement_group(
         resolved_station = effective_config.get("_resolved_station")
         if isinstance(resolved_station, Mapping):
             result_metadata["station_profile"] = resolved_station["profile_id"]
+            result_metadata["instrument_calibration"] = resolved_station["calibration_id"]
             result_metadata["scc_available"] = bool(resolved_station.get("scc_available", False))
             result_metadata["scc_export_ready"] = bool(station_context.get("scc_export_ready", False))
             if resolved_station.get("scc_configuration_id") is not None:
