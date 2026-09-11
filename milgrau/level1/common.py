@@ -13,8 +13,16 @@ from milgrau.io.paths import level1_output_path as canonical_level1_output_path
 
 
 def incremental_enabled(config: Mapping[str, Any]) -> bool:
-    """Return whether incremental processing is enabled."""
-    return bool(config.get("processing", {}).get("incremental", False))
+    """Return the explicitly configured incremental-processing policy."""
+    processing = config.get("processing")
+    if not isinstance(processing, Mapping):
+        raise KeyError("Configuration processing section is required.")
+    if "incremental" not in processing:
+        raise KeyError("Missing required configuration: processing.incremental")
+    value = processing["incremental"]
+    if not isinstance(value, bool):
+        raise ValueError("Configuration processing.incremental must be a boolean.")
+    return value
 
 
 def level1_output_path(nc_file: str | Path, config: Mapping[str, Any]) -> Path:
