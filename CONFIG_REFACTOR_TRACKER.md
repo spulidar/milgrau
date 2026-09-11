@@ -63,7 +63,7 @@ Make scientific and instrumental decisions explicit and auditable:
 - [x] Require laser-shot tolerance through `level0.acquisition_qa.laser_shot_tolerance_fraction`.
 - [x] Make Licel header timestamp jitter threshold explicit through `level0.acquisition_qa.licel_header_time_jitter_s`.
 - [x] Require finite dark-current association maximum through `level0.dark_current.max_association_hours`.
-- [x] Remove productive timezone fallback to `America/Sao_Paulo`; LIBIDS resolves timezone only from station catalog.
+- [x] Remove productive timezone fallback to `America/Sao_Paulo`; LIBIDS resolves timezone only from the station catalog.
 - [x] Remove hardcoded São Paulo latitude/longitude fallbacks from productive weather and Level 0 NetCDF metadata paths.
 - [x] Remove fallback surface temperature 25 C / pressure 940 hPa; missing values remain NaN or fail according to explicit policy.
 - [x] Use explicit missing-surface-weather policy (`nan` or `fail`) through `level0.surface_weather.missing_policy`.
@@ -122,15 +122,15 @@ Make scientific and instrumental decisions explicit and auditable:
 - [x] Remove filesystem raw/processed/log directory fallbacks from production config paths. Standardized cache locations remain code-level IO conventions, not scientific path fallbacks.
 - [x] Remove logging-level fallbacks when a loaded MILGRAU config is used. `processing.console_level` and `processing.file_level` are required and validated.
 - [x] Use concise contextual operator logs with `pipeline`, `save_id`, and `stage`, while retaining detailed diagnostics in the DEBUG audit file. Repository policy is console `INFO`, file `DEBUG`.
-- [x] Require explicit `processing.incremental` boolean in productive L0/L1/L2 runtime helpers rather than silently defaulting to `false`.
-- [ ] Remove visualization output-format/DPI/altitude-range fallbacks.
-- [ ] Ensure `mean_profile_smooth_bins` from YAML is actually used everywhere intended.
-- [ ] Make quicklook gap threshold explicit; no derived 10 min/3x-median fallback unless deliberately defined as an algorithmic mode.
-- [ ] Keep display-only colors/style constants in code unless intentionally exposed as theme configuration.
+- [x] Require explicit `processing.incremental` boolean in productive L0/L1/L2/VIZ runtime helpers rather than silently defaulting to `false`.
+- [x] Remove visualization output-format/DPI/altitude-range fallbacks. Productive visualization now resolves these fields strictly from `visualization`.
+- [x] Ensure `mean_profile_smooth_bins` from YAML is actually used for quicklook side profiles and the global mean RCS profile.
+- [x] Make quicklook gap threshold explicit; no derived 10 min/3x-median fallback remains.
+- [x] Keep display-only colors/style constants in code unless intentionally exposed as theme configuration. Wavelength colors and logo layout remain implementation/display constants; user-facing colormap and missing-data color stay explicit config.
 
 ## G. Scientific failure semantics
 
-- [ ] Missing required config -> configuration error before processing starts for every stage. **Implemented for productive Level 0, Level 1 and Level 2 scientific recipes plus logging/incremental runtime controls; remaining runtime/visualization paths still need audit.**
+- [ ] Missing required config -> configuration error before processing starts for every stage. **Implemented for productive Level 0, Level 1 and Level 2 scientific recipes plus logging/incremental/visualization runtime controls; remaining compatibility/runtime paths still need audit.**
 - [x] Missing Level 1 channel calibration follows only explicit configured policy.
 - [x] Unknown PC saturation characterization is explicit `not_characterized`.
 - [x] Numerical dead-time clipping is not a detector saturation proxy.
@@ -175,6 +175,7 @@ Make scientific and instrumental decisions explicit and auditable:
 - [x] Add Level 0 writer regression tests proving legacy `vertical_resolution_m` cannot replace missing native `BinW` and hidden background literals are not used.
 - [x] Add quarantine tests for dated reason buckets, SHA-256 sidecars, collisions and read-only discovery semantics.
 - [x] Add logging tests for contextual console fields, INFO/DEBUG destination split, explicit levels and handler ownership.
+- [x] Add strict visualization tests for required output/DPI/altitude/gap/smoothing settings and update LIRACOS incremental tests to the stdlib logger contract.
 - [ ] Add architectural guard against `config.get(..., semantic_literal_default)` outside config layer.
 - [ ] Add regression test ensuring production config contains no undeclared semantic defaults.
 - [ ] Run full test suite after each coherent implementation batch. **No CI is currently attached to the branch; isolated strict-L2 tests passed 19/19 earlier. Current full suite remains unverified in this environment.**
@@ -244,4 +245,6 @@ Make scientific and instrumental decisions explicit and auditable:
 - Persisted `calibration_assumed_neutral(channel)` and neutral-channel count in Level 1 products.
 - Removed gluing search-domain widening and arbitrary last-bin Rayleigh reference selection; added algorithm-level failure tests for both.
 - Weather, radiosonde and ERA5 cache/download transport messages are DEBUG; availability/policy failures remain warnings.
+- Added a strict visualization resolver; output format, DPI, altitude ranges, plotted channels, smoothing bins, gap threshold, colormap and missing-data color no longer fall back internally.
+- LIRACOS now uses the same contextual logging style (`VIZ/save_id/stage`) and the configured `mean_profile_smooth_bins` drives both quicklook side profiles and global mean RCS smoothing.
 - Full repository suite is not claimed: the branch still has no CI/status checks and the complete suite has not been executed in this environment.
