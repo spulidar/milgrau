@@ -15,7 +15,7 @@ from milgrau.incremental import output_is_current
 from milgrau.io.contracts import netcdf_satisfies_contract, validate_level1_contract
 from milgrau.io.filesystem import ensure_directories
 from milgrau.io.logging_utils import bind_log_context
-from milgrau.io.paths import processed_data_root, product_save_id
+from milgrau.io.paths import logging_save_id, processed_data_root, product_save_id
 from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary
 from milgrau.level1.common import (
     diagnostic_vector,
@@ -34,6 +34,7 @@ from milgrau.level1.diagnostics import finalize_correction_dataset
 from milgrau.level1.ingestion import load_and_prepare_level0
 from milgrau.level1.pbl import estimate_pbl_timeseries
 from milgrau.level1.thermodynamics import integrate_thermodynamics
+from milgrau.provenance import write_netcdf_provenance
 
 SPEED_OF_LIGHT_M_S: Final[float] = 299_792_458.0
 
@@ -243,7 +244,7 @@ def _files_requiring_level1(
     files_to_process: list[Path] = []
     skipped_results: list[ExecutionResult] = []
     for file_path in files:
-        save_id = product_save_id(file_path)
+        save_id = logging_save_id(file_path)
         output_path = level1_output_path(file_path, config)
         is_current = False
         if incremental and output_path.exists():
@@ -346,7 +347,7 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
     nc_path, config, logger = args
     started_at = time.perf_counter()
     nc_file = Path(nc_path)
-    save_id = product_save_id(nc_file)
+    save_id = logging_save_id(nc_file)
     file_logger = bind_log_context(logger, save_id=save_id)
     save_path: Path | None = None
     stage = "level1.initialize"
@@ -357,6 +358,7 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
         save_path = level1_output_path(nc_file, config)
         stage = "level1.ingestion"
         ds_raw, z_arr = load_and_prepare_level0(nc_file, bind_log_context(file_logger, stage="ingestion"))
+        source_provenance = dict(ds_raw.attrs)
         bind_log_context(file_logger, stage="start").info("%d channels", ds_raw.sizes.get("channel", 0))
         stage = "level1.corrections"
         final_ds = apply_all_physical_corrections(ds_raw, z_arr, config, file_logger)
@@ -372,6 +374,14 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
         stage = "level1.write"
         ensure_directories(save_path.parent)
         final_ds.to_netcdf(save_path, encoding=_level1_encoding(final_ds))
+        provenance_attrs = write_netcdf_provenance(save_path, config, source_attrs=source_provenance)
+        bind_log_context(file_logger, stage="provenance").debug(
+            "profile=%s calibration=%s config_sha256=%s station_sha256=%s",
+            provenance_attrs.get("station_profile_id", "-"),
+            provenance_attrs.get("instrument_calibration_id", "-"),
+            provenance_attrs.get("processing_config_sha256", "-"),
+            provenance_attrs.get("station_config_sha256", "-"),
+        )
         return ExecutionResult.success(
             "level1.complete",
             "Level 1 generated",
@@ -411,7 +421,7 @@ def process_level_1(config: Mapping[str, Any], logger: logging.Logger) -> Execut
     )
     results = list(skipped_results)
     for file_path in files_to_process:
-        save_id = product_save_id(file_path)
+        save_id = logging_save_id(file_path)
         file_logger = bind_log_context(logger, save_id=save_id)
         result = process_single_file((str(file_path), config, file_logger))
         if result.status is ExecutionStatus.SUCCESS:
