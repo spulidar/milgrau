@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from milgrau.io.licel import parse_licel_group
+from milgrau.level0.config import station_pointing_angle_deg_from_zenith
 
 RAW_SIGNAL_UNITS: Final[str] = "counts for PC, mV per shot for analog"
 BINARY_DIMENSIONS: Final[tuple[str, str, str]] = ("time", "channels", "points")
@@ -48,32 +49,22 @@ def _source_file_names(group_df: pd.DataFrame) -> list[str]:
     return sorted(Path(path).name for path in group_df["filepath"].tolist())
 
 
-def _physics_config(config: Mapping[str, Any]) -> Mapping[str, Any]:
-    physics = config.get("physics", {})
-    return physics if isinstance(physics, Mapping) else {}
-
-
 def _resolved_station(config: Mapping[str, Any]) -> Mapping[str, Any]:
-    value = config.get("_resolved_station", {})
-    return value if isinstance(value, Mapping) else {}
+    value = config.get("_resolved_station")
+    if not isinstance(value, Mapping):
+        raise ValueError("Level 0 NetCDF writing requires a resolved station context.")
+    return value
 
 
 def _scc_ready(config: Mapping[str, Any]) -> bool:
-    resolved = _resolved_station(config)
-    if not resolved:
-        return True
-    return bool(resolved.get("scc_available", False))
+    return bool(_resolved_station(config).get("scc_available", False))
 
 
-def _hardware_map(config: Mapping[str, Any], period: str) -> Mapping[str, Any]:
-    name_to_id = config.get("hardware", {}).get("name_to_id", {})
-    if not isinstance(name_to_id, Mapping):
-        return {}
-    if any(isinstance(key, str) and "." in key for key in name_to_id):
-        return name_to_id
-    system_mode = "night" if period == "nt" else "day"
-    selected = name_to_id.get(system_mode, {})
-    return selected if isinstance(selected, Mapping) else {}
+def _hardware_map(config: Mapping[str, Any]) -> Mapping[str, Any]:
+    channel_ids = _resolved_station(config).get("channel_ids")
+    if not isinstance(channel_ids, Mapping):
+        raise ValueError("Resolved station context must provide channel_ids mapping.")
+    return channel_ids
 
 
 def _background_window_m(config: Mapping[str, Any]) -> tuple[float, float]:
@@ -322,7 +313,7 @@ def _write_channel_metadata(
     period: str,
     logger: logging.Logger,
 ) -> None:
-    hardware_map = _hardware_map(config, period)
+    hardware_map = _hardware_map(config) if "channel_ids" in variables else {}
     background_start_m, background_stop_m = _background_window_m(config)
     for index, channel_name in enumerate(channels):
         variables["channel_names"][index] = channel_name
@@ -362,8 +353,7 @@ def _write_daq_range(ds: nc.Dataset, channels: list[str], lidar_data: Mapping[st
 
 def _write_lr_input(ds: nc.Dataset, channels: list[str], config: Mapping[str, Any]) -> None:
     """Write SCC elastic-backscatter lidar-ratio source flags when configured."""
-    resolved = _resolved_station(config)
-    raw = resolved.get("lr_input", {})
+    raw = _resolved_station(config).get("lr_input", {})
     if not isinstance(raw, Mapping) or not raw:
         return
 
@@ -424,12 +414,18 @@ def build_level0_global_attributes(
     min_start_utc = pd.to_datetime(timing_rows["start_time_utc"], utc=True).min()
     max_stop_utc = pd.to_datetime(timing_rows["stop_time"], utc=True).max()
     source_files = _source_file_names(group_df)
-    physics = _physics_config(config)
     resolved = _resolved_station(config)
+    site = resolved.get("site")
+    if not isinstance(site, Mapping):
+        raise ValueError("Resolved station context must provide site metadata.")
+    latitude = float(site["latitude"])
+    longitude = float(site["longitude"])
+    if not np.isfinite(latitude) or not np.isfinite(longitude):
+        raise ValueError("Resolved station latitude/longitude must be finite.")
     ready = _scc_ready(config)
     attrs = {
         "Measurement_ID": save_id,
-        "System": str(resolved.get("station_name", config.get("project", {}).get("station_name", "Lidar"))),
+        "System": str(resolved["station_name"]),
         "Processing_level": (
             "Level 0: Raw Licel to SCC-compatible NetCDF"
             if ready
@@ -437,8 +433,8 @@ def build_level0_global_attributes(
         ),
         "Pipeline": "MILGRAU",
         "SCC_Ready": np.int8(1 if ready else 0),
-        "Latitude_degrees_north": float(physics["latitude"]),
-        "Longitude_degrees_east": float(physics["longitude"]),
+        "Latitude_degrees_north": latitude,
+        "Longitude_degrees_east": longitude,
         "Accumulated_Shots": int(lidar_data.get("shots", 0)),
         "RawData_Start_Date": min_start_utc.strftime("%Y%m%d"),
         "RawData_Start_Time_UT": min_start_utc.strftime("%H%M%S"),
@@ -451,11 +447,10 @@ def build_level0_global_attributes(
         "Source_File_Count": int(len(source_files)),
         "Source_Files": ";".join(source_files),
     }
-    if resolved:
-        attrs["Station_Profile"] = str(resolved.get("profile_id", ""))
-        if ready:
-            attrs["SCC_Configuration_ID"] = int(resolved["scc_configuration_id"])
-            attrs["SCC_Configuration_Name"] = str(resolved["scc_configuration_name"])
+    attrs["Station_Profile"] = str(resolved["profile_id"])
+    if ready:
+        attrs["SCC_Configuration_ID"] = int(resolved["scc_configuration_id"])
+        attrs["SCC_Configuration_Name"] = str(resolved["scc_configuration_name"])
     attrs.update(_dark_current_attributes(group_df))
     return attrs
 
@@ -578,7 +573,7 @@ def build_level0_netcdf(
             logger,
             label="Measurement",
         )
-        laser_pointing_angle_deg = float(_physics_config(config).get("laser_pointing_angle_deg", 0.0))
+        laser_pointing_angle_deg = station_pointing_angle_deg_from_zenith(config)
         pressure_hpa = _surface_value(weather_data, "pressure_hpa")
         temperature_c = _surface_value(weather_data, "temperature_c")
         laser_shots = _laser_shot_matrix(lidar_data, num_times, num_channels)
