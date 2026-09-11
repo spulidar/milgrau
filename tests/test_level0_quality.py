@@ -9,6 +9,9 @@ import pandas as pd
 from milgrau.level0.quality import filter_laser_shots
 
 
+QA = {"tolerance_fraction": 0.002, "header_time_jitter_s": 1.0}
+
+
 def _row(
     *,
     filepath: str,
@@ -38,7 +41,7 @@ def test_dark_current_uses_same_shot_tolerance_as_measurements() -> None:
         ]
     )
 
-    good = filter_laser_shots(df, logging.getLogger("test"), tolerance_fraction=0.002)
+    good = filter_laser_shots(df, logging.getLogger("test"), **QA)
 
     assert set(good["filepath"]) == {"m1", "m2", "d1", "d2"}
     dark = good[good["meas_type"] == "dark_current"]
@@ -53,7 +56,7 @@ def test_one_second_header_jitter_is_accepted_and_marked_for_scc_normalization()
         ]
     )
 
-    good = filter_laser_shots(df, logging.getLogger("test"), tolerance_fraction=0.002)
+    good = filter_laser_shots(df, logging.getLogger("test"), **QA)
 
     assert list(good["filepath"]) == ["m1", "m2"]
     assert list(good["qa_nominal_duration_s"]) == [30.0, 30.0]
@@ -68,7 +71,7 @@ def test_large_header_duration_anomaly_is_rejected_before_writer() -> None:
         ]
     )
 
-    good = filter_laser_shots(df, logging.getLogger("test"), tolerance_fraction=0.002)
+    good = filter_laser_shots(df, logging.getLogger("test"), **QA)
 
     assert list(good["filepath"]) == ["m1"]
 
@@ -83,9 +86,27 @@ def test_measurements_and_dark_currents_get_independent_nominals() -> None:
         ]
     )
 
-    good = filter_laser_shots(df, logging.getLogger("test"), tolerance_fraction=0.002)
+    good = filter_laser_shots(df, logging.getLogger("test"), **QA)
 
     meas = good[good["meas_type"] == "measurements"]
     dark = good[good["meas_type"] == "dark_current"]
     assert set(meas["qa_nominal_duration_s"]) == {30.0}
     assert set(dark["qa_nominal_duration_s"]) == {60.0}
+
+
+def test_header_jitter_tolerance_is_not_hardcoded() -> None:
+    df = pd.DataFrame(
+        [
+            _row(filepath="m1", meas_type="measurements", nshots=3000, duration=30),
+            _row(filepath="m2", meas_type="measurements", nshots=3000, duration=31),
+        ]
+    )
+
+    good = filter_laser_shots(
+        df,
+        logging.getLogger("test"),
+        tolerance_fraction=0.002,
+        header_time_jitter_s=0.5,
+    )
+
+    assert list(good["filepath"]) == ["m1"]
