@@ -23,7 +23,7 @@ Make scientific and instrumental decisions explicit and auditable:
 - [ ] No algorithmic fallback that silently widens/changes a configured scientific domain. **Productive gluing and Rayleigh-reference search domains are now strict; other runtime paths still require audit.**
 - [x] Optional Level 2 cloud-screening behavior must be explicitly enabled/disabled in YAML.
 - [x] Rayleigh molecular lidar ratio remains a versioned physical/method constant in Python rather than a user-editable YAML setting.
-- [x] Produced NetCDF provenance is human-readable: software release, resolved station/calibration IDs, source YAML filenames and exact embedded YAML text propagate through the product chain. Input manifest/LR provenance remain pending.
+- [x] Produced NetCDF provenance is human-readable: software release, resolved station/calibration IDs, source YAML filenames and exact embedded YAML text propagate through the product chain. Level 2 additionally records Monte Carlo seed/iterations and the readable LR source. Input-manifest policy remains pending.
 - [ ] Tests cover every required-key failure and every explicit disabled/unavailable policy.
 
 ## A. Configuration ownership and schema
@@ -72,7 +72,7 @@ Make scientific and instrumental decisions explicit and auditable:
 - [x] Remove global 7.5 m range-resolution fallback completely. `Raw_Data_Range_Resolution` now requires positive finite native Licel `BinW`; `physics.vertical_resolution_m` cannot mask missing acquisition metadata.
 - [x] Remove invented Licel analog ADC/range defaults. Active analog channels require explicit positive `ADCbits` and `Discriminator/DAQ range`; former 12-bit / 0.5-V substitutions are gone.
 - [x] Remove hidden Level 0 SCC background-window literals. `Background_Low/High` are written from the explicit configured background interval rather than internal 29000/29999 m constants.
-- [ ] Make the Level 0 writer consume `station.lidar_geometry.pointing_angle_deg_from_zenith` directly and remove the residual low-level `0.0` fallback. **The authoritative station value is now recorded; consumer migration remains.**
+- [ ] Make the Level 0 writer consume `station.lidar_geometry.pointing_angle_deg_from_zenith` directly and remove the residual low-level `0.0` fallback. **Productive LIBIDS now requires/resolves the station-owned angle when a station catalog is loaded and materializes it into the transitional writer view; only direct low-level compatibility cleanup remains.**
 
 ## D. Level 1 strict configuration
 
@@ -104,7 +104,7 @@ Make scientific and instrumental decisions explicit and auditable:
 - [x] Require minimum aerosol lidar ratio and negative-aerosol policy explicitly.
 - [x] Remove productive aerosol LR 60 sr fallback.
 - [x] Remove productive aerosol LR uncertainty 10 sr fallback.
-- [ ] Require LR values for every requested wavelength/month and associated uncertainty/provenance. **Values + uncertainty are fail-fast for all 12 months. SPU climatology comes authoritatively from `station.yaml`; explicit config LR remains only compatibility fallback when a station has no climatology. Product-level provenance remains.**
+- [x] Require LR values for every requested wavelength/month and associated uncertainty/provenance. **Values + uncertainty are fail-fast for all 12 months. SPU climatology comes authoritatively from `station.yaml`; products now record the readable source path. A paper/DOI may be added later when one exists.**
 - [x] Remove molecular lidar-ratio YAML knob; keep Rayleigh molecular ratio as algorithm constant.
 - [x] Require complete productive gluing configuration.
 - [ ] Remove low-level gluing window/search/threshold defaults. **Productive callers pass strict values; public low-level compatibility defaults remain.**
@@ -156,11 +156,12 @@ Make scientific and instrumental decisions explicit and auditable:
 - [x] Persist resolved station profile ID.
 - [x] Persist resolved instrument calibration ID.
 - [ ] Persist input file hashes or immutable input manifest. **User-facing product provenance should stay readable; decide whether a compact filename/size/time manifest is sufficient before adding hashes.**
-- [ ] Persist random seed and Monte Carlo iteration count for Level 2 retrievals.
+- [x] Persist Level 2 Monte Carlo random seed and iteration count as `monte_carlo_random_seed` and `monte_carlo_iterations`.
 - [x] Persist atmosphere source, source datetime/time delta, fallback fraction, source-priority attempts and resolved station geometry.
 - [x] Persist when a neutral legacy Level 1 channel calibration was assumed, per channel and as a product-level count.
-- [ ] Persist LR source/provenance used by each retrieval. **Current station climatology has descriptive provenance but no paper/DOI yet; do not invent one.**
+- [x] Persist LR source/provenance used by each retrieval as a readable source path (`station.yaml: station.lidar_ratio_climatology` for the current SPU recipe). **No paper/DOI is invented; that reference can be added later when it exists.**
 - [x] Persist an audit sidecar for every explicit quarantined input, including SHA-256 and origin/context metadata. **Hash remains appropriate for quarantine integrity even though product NetCDF provenance is human-readable.**
+- [x] Regenerated products remove legacy public `processing_config_sha256` / `station_config_sha256` attributes so old hash-oriented provenance does not leak forward through xarray inheritance.
 
 ## I. Tests / architecture guardrails
 
@@ -200,7 +201,7 @@ Make scientific and instrumental decisions explicit and auditable:
 ## Suggested improvements recorded but not implemented
 
 - [ ] Consider carrying detector mode explicitly from Level 0 acquisition metadata through full pipeline instead of relying on canonical `.PC` / `.AN` suffixes outside resolved station calibration.
-- [ ] Remove the residual Level 0 pointing-angle compatibility fallback after wiring the authoritative `station.lidar_geometry.pointing_angle_deg_from_zenith` value into the writer.
+- [ ] Remove the residual direct Level 0 writer pointing-angle compatibility fallback now that productive LIBIDS resolves the station-owned angle.
 - [ ] Remove transitional `SUCCESS/RECOVERABLE_FAILURE/FATAL_FAILURE` and legacy `ExitCode` aliases after remaining tests/callers have migrated to `OK/SKIPPED/ERROR`.
 - [ ] Decide whether one invalid Rayleigh block should invalidate the full wavelength or be recorded as a failed block while allowing other valid blocks to continue. Current strict behavior prevents arbitrary reference substitution but is deliberately conservative.
 
@@ -229,20 +230,20 @@ Make scientific and instrumental decisions explicit and auditable:
 
 ### 2026-09-11 — cache, station LR, and strict Licel metadata tranche
 
-- Commit `95ff59ea6052d428e615273dd4935d531c5cc08c`: moved unchanged SPU monthly lidar-ratio climatology and standard deviations from `config.yaml` into `station.yaml` with provenance. Loader materializes a transitional Level 2 view; explicit config LR is accepted only when station climatology is absent.
+- Moved unchanged SPU monthly lidar-ratio climatology and standard deviations from `config.yaml` into `station.yaml` with provenance. Loader materializes a transitional Level 2 view; explicit config LR is accepted only when station climatology is absent.
 - Standardized configured caches to `.cache/radiosonde`, `.cache/era5`, and `.cache/weather`; `.cache/` and `quarantine/` are ignored by Git.
-- Commit `823d354afd3a8cf3748b1dc623053d963ad22c57`: removed fake SCC channel ID and remaining coordinate/surface-value literals from Level 0 writer paths.
-- Commit `a61540c5878b69a3ee39b99df448860926f9079fa`: changed generic IO cache fallbacks from raw-data cache folders to `.cache/weather` and `.cache/radiosonde`.
-- Commit `ccd372a344fdd44d8f9b99df448860926f9079fa`: removed hidden Licel analog defaults of 12 ADC bits / 0.5 V and requires explicit positive active-channel `BinW`.
+- Removed fake SCC channel ID and remaining coordinate/surface-value literals from Level 0 writer paths.
+- Changed generic IO cache fallbacks from raw-data cache folders to `.cache/weather` and `.cache/radiosonde`.
+- Removed hidden Licel analog defaults of 12 ADC bits / 0.5 V and requires explicit positive active-channel `BinW`.
 
 ### 2026-09-11 — Level 0 filesystem/range completion tranche
 
-- Commit `97e49bebf054cc967dba6495a44755350a9823b2`: made Level 0 raw/processed/log directories and raw-discovery policy explicit in the typed resolver; generic raw discovery now consumes explicit values and has no config/default layer of its own.
-- Commit `2ddc301a7472b3708830ea22465ee1298aca6120`: removed the residual Level 0 writer 7.5-m range-resolution fallback and hidden 29000/29999-m background literals. Native Licel `BinW` is mandatory and SCC background metadata is tied to the explicit configured interval.
-- Commit `409f18fd18757c51463f3db3ea69a1c796e71fd1`: added writer regression tests for native range metadata and explicit background ownership.
-- Commit `8c48528848ded74b3878e1b0a0421350fd551613`: implemented dated reason-based quarantine buckets and JSON audit sidecars with SHA-256, origin, size, stage and optional measurement ID; quarantine remains manual/explicit.
-- Commit `0733ea3db4295b4a1a4194665469890c6d5245b6`: added quarantine layout/manifest tests and preserved read-only raw discovery.
-- Level 0 section C is now complete for the tracked strict-config scope. Remaining Level 0-adjacent work belongs to ownership cleanup/provenance/runtime audit (sections A, F, H), not hidden C defaults.
+- Made Level 0 raw/processed/log directories and raw-discovery policy explicit in the typed resolver; generic raw discovery now consumes explicit values and has no config/default layer of its own.
+- Removed the residual Level 0 writer 7.5-m range-resolution fallback and hidden 29000/29999-m background literals. Native Licel `BinW` is mandatory and SCC background metadata is tied to the explicit configured interval.
+- Added writer regression tests for native range metadata and explicit background ownership.
+- Implemented dated reason-based quarantine buckets and JSON audit sidecars with SHA-256, origin, size, stage and optional measurement ID; quarantine remains manual/explicit.
+- Added quarantine layout/manifest tests and preserved read-only raw discovery.
+- Level 0 section C is now complete for the tracked strict-config scope except the explicitly tracked direct-writer pointing compatibility cleanup.
 
 ### 2026-09-11 — contextual logging and strict retrieval-domain audit
 
@@ -270,5 +271,7 @@ Make scientific and instrumental decisions explicit and auditable:
 - Adopted CalVer `2026.9`, synchronized runtime `__version__`, `pyproject.toml`, and `CITATION.cff`.
 - Replaced public NetCDF SHA metadata with human-readable provenance: software name/version, YAML filenames, resolved profile/calibration IDs, plus exact `config.yaml` and `station.yaml` contents embedded as scalar `application/yaml` variables.
 - Kept SHA-256 only where it has an integrity role (for example quarantine sidecars), not as the primary human-facing scientific provenance vocabulary.
-- Recorded the confirmed invariant SPU-Lidar pointing angle (`0.0° from zenith`) in `station.yaml`; direct Level 0 writer consumption/removal of the old low-level fallback remains the next geometry cleanup.
+- Recorded the confirmed invariant SPU-Lidar pointing angle (`0.0° from zenith`) in `station.yaml`; productive LIBIDS now resolves/materializes it before Level 0 writing while direct low-level writer compatibility remains tracked.
+- Level 2 products now persist the exact configured Monte Carlo random seed/iteration count and a readable lidar-ratio source path. No DOI/reference is fabricated; a future publication can extend this provenance naturally.
+- Regenerated products explicitly remove legacy public configuration-hash attributes inherited from old files.
 - Added CLI-surface, CalVer synchronization, simplified-result, and readable-provenance tests. Full repository suite is still not claimed in this environment.
