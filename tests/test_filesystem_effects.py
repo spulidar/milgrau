@@ -110,6 +110,30 @@ def test_discovery_honors_explicit_ignore_dirs_and_quarantine_path(tmp_path: Pat
     assert [candidate.path for candidate in candidates] == [visible]
 
 
+def test_discovery_ignores_legacy_weather_cache_and_json_artifacts(tmp_path: Path) -> None:
+    raw_root = tmp_path / "01-data"
+    raw_root.mkdir()
+    legacy_cache = raw_root / "openmeteo_cache" / "2025" / "07"
+    legacy_cache.mkdir(parents=True)
+    (legacy_cache / "openmeteo.json").write_text("{}", encoding="utf-8")
+    raw_measurement = raw_root / "measurement_001"
+    raw_measurement.write_text("measurement", encoding="utf-8")
+    loose_json = raw_root / "metadata.json"
+    loose_json.write_text("{}", encoding="utf-8")
+
+    candidates = discover_raw_files(
+        raw_root,
+        spurious_extensions=[".zip", ".json"],
+        raw_scan_ignore_dirs=["openmeteo_cache", "wyoming_cache"],
+        quarantine_dir=tmp_path / "quarantine",
+    )
+
+    assert [(candidate.path, candidate.kind) for candidate in candidates] == [
+        (raw_measurement, RawFileKind.MEASUREMENT),
+        (loose_json, RawFileKind.SPURIOUS),
+    ]
+
+
 def test_explicit_quarantine_uses_dated_reason_bucket_and_audit_sidecar(tmp_path: Path) -> None:
     first = tmp_path / "one" / "archive.zip"
     second = tmp_path / "two" / "archive.zip"
@@ -144,7 +168,7 @@ def test_explicit_quarantine_uses_dated_reason_bucket_and_audit_sidecar(tmp_path
     digest = sha256(str(second.absolute()).encode("utf-8")).hexdigest()[:12]
     first_destination = bucket / "archive.zip"
     second_destination = bucket / f"archive_{digest}.zip"
-    assert [result.status for result in summary.results] == [ExecutionStatus.SUCCESS, ExecutionStatus.SUCCESS]
+    assert [result.status for result in summary.results] == [ExecutionStatus.OK, ExecutionStatus.OK]
     assert summary.results[0].output_path == first_destination
     assert summary.results[1].output_path == second_destination
     assert first_destination.read_text(encoding="utf-8") == "first"
@@ -183,7 +207,7 @@ def test_explicit_delete_is_idempotent(tmp_path: Path) -> None:
     deleted = delete_file(target)
     repeated = delete_file(target)
 
-    assert deleted.status is ExecutionStatus.SUCCESS
+    assert deleted.status is ExecutionStatus.OK
     assert repeated.status is ExecutionStatus.SKIPPED
     assert not target.exists()
 
@@ -199,7 +223,7 @@ def test_action_permission_failure_is_structured_and_leaves_file(tmp_path: Path,
 
     result = delete_file(target)
 
-    assert result.status is ExecutionStatus.RECOVERABLE_FAILURE
+    assert result.status is ExecutionStatus.ERROR
     assert isinstance(result.cause, PermissionError)
     assert target.exists()
 
@@ -217,8 +241,8 @@ def test_actions_reject_directories_without_recursive_mutation(tmp_path: Path) -
     )
     delete_result = delete_file(target)
 
-    assert quarantine_result.status is ExecutionStatus.RECOVERABLE_FAILURE
-    assert delete_result.status is ExecutionStatus.RECOVERABLE_FAILURE
+    assert quarantine_result.status is ExecutionStatus.ERROR
+    assert delete_result.status is ExecutionStatus.ERROR
     assert child.read_text(encoding="utf-8") == "keep"
 
 
