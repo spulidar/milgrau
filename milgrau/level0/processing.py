@@ -11,7 +11,7 @@ from typing import Any, Mapping
 import numpy as np
 import pandas as pd
 
-from milgrau.config.station import apply_station_context, resolve_station_context, select_lidar_channels
+from milgrau.config.station import resolve_station_context, select_lidar_channels
 from milgrau.io.filesystem import ensure_directories
 from milgrau.io.licel import parse_licel_group
 from milgrau.io.logging_utils import bind_log_context
@@ -58,7 +58,7 @@ def _resolve_group_station_config(
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     """Resolve station metadata while preserving every valid Licel channel."""
     if not isinstance(config.get("_station_catalog"), Mapping):
-        return dict(config), dict(lidar_data), {}
+        raise KeyError("Level 0 processing requires a loaded station catalog.")
     measurement_rows = group_df[group_df["meas_type"] == "measurements"]
     if measurement_rows.empty:
         raise ValueError("Cannot resolve station profile without measurement rows.")
@@ -69,7 +69,8 @@ def _resolve_group_station_config(
         period=period,
         available_channels=lidar_data.get("channels", []),
     )
-    effective_config = apply_station_context(config, context)
+    effective_config = deepcopy(dict(config))
+    effective_config["_resolved_station"] = deepcopy(dict(context))
     station_logger = bind_log_context(logger, stage="station")
     if context.get("scc_available", False):
         station_logger.info("profile=%s | SCC=%s", context["profile_id"], context["scc_configuration_id"])
