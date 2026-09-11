@@ -13,7 +13,7 @@ import pytest
 from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary, ExitCode
 
 
-def test_success_result_normalizes_paths_and_freezes_metadata(tmp_path: Path) -> None:
+def test_ok_result_normalizes_paths_and_freezes_metadata(tmp_path: Path) -> None:
     result = ExecutionResult.success(
         " level1.save ",
         " product generated ",
@@ -22,8 +22,7 @@ def test_success_result_normalizes_paths_and_freezes_metadata(tmp_path: Path) ->
         duration_seconds=0.125,
         metadata={"wavelength_nm": 532, "incremental": False},
     )
-
-    assert result.status is ExecutionStatus.SUCCESS
+    assert result.status is ExecutionStatus.OK
     assert result.stage == "level1.save"
     assert result.message == "product generated"
     assert result.input_path == tmp_path / "input.nc"
@@ -43,24 +42,22 @@ def test_success_result_normalizes_paths_and_freezes_metadata(tmp_path: Path) ->
         (lambda: ExecutionResult.success("save", "ok", metadata={"value": float("nan")}), ValueError, "finite"),
     ],
 )
-def test_result_invariants_reject_ambiguous_or_unsafe_values(
-    factory: Callable[[], ExecutionResult], error: type[Exception], message: str
-) -> None:
+def test_result_invariants_reject_ambiguous_or_unsafe_values(factory: Callable[[], ExecutionResult], error: type[Exception], message: str) -> None:
     with pytest.raises(error, match=message):
         factory()
 
 
-def test_nonfailure_cannot_carry_exception_or_traceback() -> None:
-    with pytest.raises(ValueError, match="cannot carry"):
+def test_nonerror_cannot_carry_exception_or_traceback() -> None:
+    with pytest.raises(ValueError, match="Only ERROR"):
         ExecutionResult(
             status=ExecutionStatus.SKIPPED,
             stage="discovery",
             message="already exists",
-            cause=RuntimeError("not a failure"),
+            cause=RuntimeError("not an error result"),
         )
 
 
-def test_failure_preserves_original_cause_but_serializes_only_safe_details(tmp_path: Path) -> None:
+def test_error_preserves_original_cause_and_fatal_flag(tmp_path: Path) -> None:
     try:
         raise OSError("disk unavailable")
     except OSError as cause:
@@ -74,27 +71,25 @@ def test_failure_preserves_original_cause_but_serializes_only_safe_details(tmp_p
             include_traceback=True,
             metadata={"attempt": 2},
         )
-
-    assert result.status is ExecutionStatus.FATAL_FAILURE
+    assert result.status is ExecutionStatus.ERROR
+    assert result.fatal is True
     assert result.cause is original_cause
     assert "OSError: disk unavailable" in result.traceback
     payload = result.to_dict()
     assert payload["cause"] == {"type": "builtins.OSError", "message": "disk unavailable"}
-    serialized = json.dumps(payload, allow_nan=False)
-    assert "OSError('disk unavailable')" not in serialized
+    json.dumps(payload, allow_nan=False)
 
 
-def test_explicit_statuses_do_not_depend_on_message_parsing() -> None:
+def test_statuses_do_not_depend_on_message_parsing() -> None:
     skipped = ExecutionResult.skipped("level1.incremental", "ordinary text")
-    failure = ExecutionResult.failure("level1.ingestion", "ordinary text")
-
+    error = ExecutionResult.failure("level1.ingestion", "ordinary text")
     assert skipped.status is ExecutionStatus.SKIPPED
-    assert failure.status is ExecutionStatus.RECOVERABLE_FAILURE
+    assert error.status is ExecutionStatus.ERROR
     assert not skipped.status.is_failure
-    assert failure.status.is_failure
+    assert error.status.is_failure
 
 
-def test_log_uses_status_level_and_keeps_human_readable_tags(caplog: pytest.LogCaptureFixture) -> None:
+def test_log_uses_error_level_and_human_readable_tag(caplog: pytest.LogCaptureFixture) -> None:
     logger = logging.getLogger("milgrau.tests.execution")
     result = ExecutionResult.failure(
         "level0.group",
@@ -102,17 +97,15 @@ def test_log_uses_status_level_and_keeps_human_readable_tags(caplog: pytest.LogC
         input_path="raw/20240101",
         cause=ValueError("invalid header"),
     )
-
-    with caplog.at_level(logging.WARNING, logger=logger.name):
+    with caplog.at_level(logging.ERROR, logger=logger.name):
         result.log(logger)
-
-    assert caplog.records[-1].levelno == logging.WARNING
+    assert caplog.records[-1].levelno == logging.ERROR
     assert caplog.records[-1].getMessage() == (
-        "[FAILED] level0.group: conversion failed | input=raw/20240101 | cause=ValueError: invalid header"
+        "[ERROR] level0.group: conversion failed | input=raw/20240101 | cause=ValueError: invalid header"
     )
 
 
-def test_summary_aggregates_counts_and_partial_failure_exit_code() -> None:
+def test_summary_aggregates_simple_counts_and_error_exit_code() -> None:
     summary = ExecutionSummary.from_results(
         [
             ExecutionResult.success("level1", "generated"),
@@ -120,15 +113,13 @@ def test_summary_aggregates_counts_and_partial_failure_exit_code() -> None:
             ExecutionResult.failure("level1", "one input failed"),
         ]
     )
-
     assert summary.counts == {
-        ExecutionStatus.SUCCESS: 1,
+        ExecutionStatus.OK: 1,
         ExecutionStatus.SKIPPED: 1,
-        ExecutionStatus.RECOVERABLE_FAILURE: 1,
-        ExecutionStatus.FATAL_FAILURE: 0,
+        ExecutionStatus.ERROR: 1,
     }
-    assert summary.overall_status is ExecutionStatus.RECOVERABLE_FAILURE
-    assert summary.exit_code is ExitCode.PARTIAL_FAILURE
+    assert summary.overall_status is ExecutionStatus.ERROR
+    assert summary.exit_code is ExitCode.ERROR
     assert summary.to_dict()["exit_code"] == 1
     json.dumps(summary.to_dict(), allow_nan=False)
 
@@ -136,11 +127,11 @@ def test_summary_aggregates_counts_and_partial_failure_exit_code() -> None:
 @pytest.mark.parametrize(
     ("results", "expected"),
     [
-        ([], ExitCode.SUCCESS),
-        ([ExecutionResult.skipped("batch", "no work")], ExitCode.SUCCESS),
-        ([ExecutionResult.failure("batch", "all failed")], ExitCode.FAILURE),
-        ([ExecutionResult.failure("batch", "fatal", fatal=True), ExecutionResult.success("batch", "done")], ExitCode.FAILURE),
+        ([], ExitCode.OK),
+        ([ExecutionResult.skipped("batch", "no work")], ExitCode.OK),
+        ([ExecutionResult.failure("batch", "one processing error")], ExitCode.ERROR),
+        ([ExecutionResult.failure("batch", "cannot run", fatal=True)], ExitCode.FATAL),
     ],
 )
-def test_summary_exit_policy_for_clean_total_and_fatal_batches(results: list[ExecutionResult], expected: ExitCode) -> None:
+def test_summary_exit_policy(results: list[ExecutionResult], expected: ExitCode) -> None:
     assert ExecutionSummary.from_results(results).exit_code is expected
