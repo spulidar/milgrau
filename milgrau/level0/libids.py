@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 import logging
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -21,6 +22,28 @@ from milgrau.level0.inventory import build_measurement_inventory
 from milgrau.level0.processing import process_measurement_group
 from milgrau.level0.quality import filter_laser_shots
 from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary
+
+
+def _with_station_geometry(config: Mapping) -> dict:
+    """Materialize station-owned pointing geometry into the legacy writer view."""
+    catalog = config.get("_station_catalog")
+    if not isinstance(catalog, Mapping):
+        raise KeyError("No station catalog is loaded; Level 0 pointing geometry is station-owned.")
+    station = catalog.get("station")
+    if not isinstance(station, Mapping):
+        raise KeyError("station is required in the station catalog.")
+    geometry = station.get("lidar_geometry")
+    if not isinstance(geometry, Mapping) or "pointing_angle_deg_from_zenith" not in geometry:
+        raise KeyError("station.lidar_geometry.pointing_angle_deg_from_zenith is required.")
+    angle = float(geometry["pointing_angle_deg_from_zenith"])
+    if not np.isfinite(angle) or angle < 0.0 or angle > 180.0:
+        raise ValueError("station.lidar_geometry.pointing_angle_deg_from_zenith must be finite and within 0..180 degrees.")
+    resolved = deepcopy(dict(config))
+    physics = resolved.setdefault("physics", {})
+    if not isinstance(physics, dict):
+        raise ValueError("Configuration physics compatibility view must be a mapping.")
+    physics["laser_pointing_angle_deg"] = angle
+    return resolved
 
 
 def _raw_input_paths(group_df) -> list[Path]:
@@ -124,6 +147,7 @@ def process_level_0(
 ) -> ExecutionSummary:
     """Run LIBIDS, optionally restricting processing to selected measurement IDs."""
     validate_level0_config(config)
+    config = _with_station_geometry(config)
     level0_config = resolve_level0_config(config)
     pipeline_logger = bind_log_context(logger, pipeline="L0")
     requested = _normalize_requested_measurements(inputs)
