@@ -14,7 +14,7 @@ authors:
   given-names: "Alexandre"
   orcid: "https://orcid.org/0000-0002-8801-7434"
 title: "MILGRAU"
-version: 2026.9
+version: "2026.9"
 doi: 10.5281/zenodo.20330638
 date-released: 2026-09-11
 url: "https://github.com/spulidar/milgrau"
