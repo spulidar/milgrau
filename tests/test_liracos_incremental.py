@@ -126,8 +126,8 @@ def test_global_mean_timestamp_skips_current_plot(tmp_path: Path, monkeypatch) -
     first = liracos.process_single_nc((level1, _config(["532.AN"], incremental=True), tmp_path, logger))
     second = liracos.process_single_nc((level1, _config(["532.AN"], incremental=True), tmp_path, logger))
 
-    assert first.status is ExecutionStatus.SUCCESS
-    assert second.status is ExecutionStatus.SUCCESS
+    assert first.status is ExecutionStatus.OK
+    assert second.status is ExecutionStatus.OK
     assert first.metadata["generated"] == 2
     assert second.metadata["generated"] == 1
     assert second.metadata["skipped"] == 1
