@@ -116,7 +116,7 @@ def fetch_wyoming_radiosonde(
     )
     if target_dt is None:
         logger.warning(
-            "  -> [RADIOSONDE] No configured synoptic sounding lies within %.2f h of the measurement.",
+            "no configured synoptic sounding within %.2f h",
             float(max_time_delta_hours),
         )
         return None
@@ -141,13 +141,14 @@ def fetch_wyoming_radiosonde(
     }
 
     if cache_file.exists():
-        logger.info(f"  -> [RADIOSONDE] Cached sounding found: {cache_filename}. Skipping download.")
+        logger.debug("radiosonde cache hit: %s", cache_filename)
         metadata = {**default_metadata, **_read_metadata(metadata_file)}
         return _attach_metadata(pd.read_csv(cache_file), metadata)
 
-    logger.info(
-        f"  -> [RADIOSONDE] Fetching {target_dt.strftime('%Y-%m-%d %H:%M')}Z "
-        f"for station {station_id} via Siphon..."
+    logger.debug(
+        "radiosonde fetch: %sZ | station=%s",
+        target_dt.strftime("%Y-%m-%d %H:%M"),
+        station_id,
     )
     df_raw = WyomingUpperAir.request_data(target_dt, station_id)
     df = df_raw.drop_duplicates(subset=["height"], keep="first").sort_values("height")
@@ -157,5 +158,5 @@ def fetch_wyoming_radiosonde(
         "download_datetime_utc": datetime.now(timezone.utc).isoformat(),
     }
     metadata_file.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-    logger.info("  -> [OK] Radiosonde data successfully fetched and cached!")
+    logger.debug("radiosonde cached: %s", cache_filename)
     return _attach_metadata(df, metadata)
