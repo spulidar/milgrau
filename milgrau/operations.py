@@ -20,17 +20,11 @@ class ExecutionStatus(StrEnum):
 
     Scientific QA remains in product variables/diagnostics; this enum only says
     whether an operation completed, was intentionally skipped, or errored.
-    Legacy aliases remain temporarily during the architecture migration.
     """
 
     OK = "ok"
     SKIPPED = "skipped"
     ERROR = "error"
-
-    # Transitional aliases for modules/tests not yet migrated.
-    SUCCESS = OK
-    RECOVERABLE_FAILURE = ERROR
-    FATAL_FAILURE = ERROR
 
     @property
     def is_failure(self) -> bool:
@@ -43,11 +37,6 @@ class ExitCode(IntEnum):
     OK = 0
     ERROR = 1
     FATAL = 2
-
-    # Transitional aliases.
-    SUCCESS = OK
-    PARTIAL_FAILURE = ERROR
-    FAILURE = FATAL
 
 
 def _freeze_metadata(metadata: Mapping[str, MetadataValue]) -> Mapping[str, MetadataValue]:
