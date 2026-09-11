@@ -15,6 +15,7 @@ from milgrau.incremental import output_is_current
 from milgrau.io.contracts import netcdf_satisfies_contract, validate_level0_contract
 from milgrau.io.paths import level0_output_path, level0_scc_output_path, measurement_save_id, raw_data_root
 from milgrau.level0.common import incremental_enabled
+from milgrau.level0.config import resolve_level0_config, validate_level0_config
 from milgrau.level0.inventory import build_measurement_inventory
 from milgrau.level0.processing import process_measurement_group
 from milgrau.level0.quality import filter_laser_shots
@@ -123,6 +124,9 @@ def _level0_is_current(meas_id: str, group_df, config: dict, output_path) -> boo
 
 def process_level_0(config: dict, logger: logging.Logger) -> ExecutionSummary:
     """Run LIBIDS Level 0 processing from raw Licel files to NetCDF."""
+    validate_level0_config(config)
+    level0_config = resolve_level0_config(config)
+
     raw_dir = raw_data_root(config)
     df_raw = build_measurement_inventory(str(raw_dir), config, logger)
 
@@ -132,8 +136,12 @@ def process_level_0(config: dict, logger: logging.Logger) -> ExecutionSummary:
             [ExecutionResult.skipped("level0.discovery", "No new data to process", input_path=raw_dir)]
         )
 
-    tolerance_fraction = float(config.get("processing", {}).get("laser_shot_tolerance_fraction", 2e-3))
-    df_good = filter_laser_shots(df_raw, logger, tolerance_fraction=tolerance_fraction)
+    df_good = filter_laser_shots(
+        df_raw,
+        logger,
+        tolerance_fraction=level0_config.acquisition_qa.laser_shot_tolerance_fraction,
+        header_time_jitter_s=level0_config.acquisition_qa.licel_header_time_jitter_s,
+    )
     if df_good.empty:
         logger.warning("=== No data survived quality control. Exiting. ===")
         return ExecutionSummary.from_results(
