@@ -9,12 +9,8 @@ import pandas as pd
 
 from milgrau.io.filesystem import scan_raw_files
 from milgrau.io.licel import read_licel_header
+from milgrau.level0.config import resolve_level0_config, station_timezone
 from milgrau.level0.time import classify_period, get_night_date
-
-
-def _effective_timezone(config: dict) -> str:
-    """Return the site timezone from YAML, with Sao Paulo as fallback."""
-    return config.get("site", {}).get("timezone") or config.get("location", {}).get("timezone") or "America/Sao_Paulo"
 
 
 def _initialize_association_columns(df_raw: pd.DataFrame) -> pd.DataFrame:
@@ -40,7 +36,7 @@ def _reassign_orphan_dark_currents(df_raw: pd.DataFrame, config: dict, logger: l
 
     logger.info(f"   -> Reassigning orphaned Dark Current groups: {orphan_mids} to nearest measurements...")
     valid_df = df_raw[df_raw["meas_id"].isin(valid_mids)].copy()
-    max_hours = config.get("processing", {}).get("dark_current_max_association_hours")
+    max_hours = resolve_level0_config(config).dark_current.max_association_hours
 
     if valid_df.empty:
         logger.warning("   -> No measurement groups available. Dropping orphan dark-current groups from inventory.")
@@ -52,10 +48,10 @@ def _reassign_orphan_dark_currents(df_raw: pd.DataFrame, config: dict, logger: l
         closest_idx = time_diffs.idxmin()
         closest_diff_h = time_diffs.loc[closest_idx].total_seconds() / 3600.0
 
-        if max_hours is not None and closest_diff_h > float(max_hours):
+        if closest_diff_h > max_hours:
             logger.warning(
                 "   -> Orphan dark current not reassigned; nearest measurement "
-                f"is {closest_diff_h:.2f} h away: {row['filepath']}"
+                f"is {closest_diff_h:.2f} h away (configured maximum {max_hours:.2f} h): {row['filepath']}"
             )
             continue
 
@@ -105,10 +101,13 @@ def build_measurement_inventory(
     if df_raw.empty:
         return df_raw
 
-    timezone = _effective_timezone(config)
+    timezone = station_timezone(config)
     df_raw["start_time_utc"] = pd.to_datetime(df_raw["start_time_utc"]).dt.tz_localize("UTC")
     df_raw["start_time_local"] = df_raw["start_time_utc"].dt.tz_convert(timezone)
-    df_raw["meas_id"] = df_raw["start_time_local"].apply(get_night_date).dt.strftime("%Y%m%d") + df_raw["start_time_local"].apply(classify_period)
+    df_raw["meas_id"] = (
+        df_raw["start_time_local"].apply(get_night_date).dt.strftime("%Y%m%d")
+        + df_raw["start_time_local"].apply(classify_period)
+    )
     df_raw = _initialize_association_columns(df_raw)
     df_raw = _reassign_orphan_dark_currents(df_raw, config, logger)
 
