@@ -12,9 +12,6 @@ import pandas as pd
 
 from milgrau.io.licel import parse_licel_group
 
-DEFAULT_VERTICAL_RESOLUTION_M: Final[float] = 7.5
-DEFAULT_BACKGROUND_START_M: Final[float] = 29000.0
-DEFAULT_BACKGROUND_STOP_M: Final[float] = 29999.0
 RAW_SIGNAL_UNITS: Final[str] = "counts for PC, mV per shot for analog"
 BINARY_DIMENSIONS: Final[tuple[str, str, str]] = ("time", "channels", "points")
 TIME_SCALE_DIMENSIONS: Final[tuple[str, str]] = ("time", "nb_of_time_scales")
@@ -80,14 +77,22 @@ def _hardware_map(config: Mapping[str, Any], period: str) -> Mapping[str, Any]:
 
 
 def _background_window_m(config: Mapping[str, Any]) -> tuple[float, float]:
-    physics = _physics_config(config)
-    start = float(physics.get("background_start_m", physics.get("bg_start", DEFAULT_BACKGROUND_START_M)))
-    stop = float(physics.get("background_stop_m", physics.get("bg_stop", DEFAULT_BACKGROUND_STOP_M)))
+    """Return the explicit processing background window used for SCC metadata."""
+    level1 = config.get("level1")
+    if not isinstance(level1, Mapping):
+        raise ValueError("Configuration level1 is required to write SCC background metadata.")
+    background = level1.get("background")
+    if not isinstance(background, Mapping):
+        raise ValueError("Configuration level1.background is required to write SCC background metadata.")
+    if "start_altitude_m" not in background or "stop_altitude_m" not in background:
+        raise ValueError(
+            "Configuration level1.background.start_altitude_m and stop_altitude_m are required for Level 0 SCC metadata."
+        )
+    start = float(background["start_altitude_m"])
+    stop = float(background["stop_altitude_m"])
+    if not np.isfinite(start) or not np.isfinite(stop) or start < 0.0 or stop <= start:
+        raise ValueError("Configuration level1.background must define a finite ordered altitude interval.")
     return start, stop
-
-
-def _vertical_resolution_m(config: Mapping[str, Any]) -> float:
-    return float(_physics_config(config).get("vertical_resolution_m", DEFAULT_VERTICAL_RESOLUTION_M))
 
 
 def _surface_value(weather_data: Mapping[str, Any], weather_key: str) -> float:
@@ -213,17 +218,20 @@ def _is_analog_channel(channel_name: str, metadata: Mapping[str, Any]) -> bool:
 def _channel_range_resolution_m(
     lidar_data: Mapping[str, Any],
     channel_name: str,
-    config: Mapping[str, Any],
 ) -> float:
+    """Return native Licel BinW metadata; no global range-resolution fallback exists."""
     metadata = _channel_metadata(lidar_data, channel_name)
     value = metadata.get("bin_width_m", np.nan)
     try:
         resolution = float(value)
     except (TypeError, ValueError):
         resolution = np.nan
-    if np.isfinite(resolution) and resolution > 0.0:
-        return resolution
-    return _vertical_resolution_m(config)
+    if not np.isfinite(resolution) or resolution <= 0.0:
+        raise ValueError(
+            f"Channel {channel_name} lacks a positive finite Licel bin_width_m; "
+            "range resolution cannot be invented by the Level 0 writer."
+        )
+    return resolution
 
 
 def _laser_shot_matrix(lidar_data: Mapping[str, Any], num_times: int, num_channels: int) -> np.ndarray:
@@ -321,7 +329,7 @@ def _write_channel_metadata(
         if "channel_ids" in variables:
             variables["channel_ids"][index] = _channel_id(channel_name, hardware_map, period, logger)
         variables["id_timescale"][index] = 0
-        variables["range_resolution"][index] = _channel_range_resolution_m(lidar_data, channel_name, config)
+        variables["range_resolution"][index] = _channel_range_resolution_m(lidar_data, channel_name)
         variables["background_low"][index] = background_start_m
         variables["background_high"][index] = background_stop_m
 
