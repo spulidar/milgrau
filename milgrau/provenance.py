@@ -74,18 +74,27 @@ def write_netcdf_provenance(
     config: Mapping[str, Any],
     *,
     source_attrs: Mapping[str, Any] | None = None,
-) -> dict[str, str]:
-    """Persist current config hashes plus inherited/resolved station identity.
+    extra_attrs: Mapping[str, str | int | float] | None = None,
+) -> dict[str, str | int | float]:
+    """Persist current config hashes plus inherited/resolved stage provenance.
 
     Current config/station hashes always describe the recipe files used for the
     product being written. Resolved profile/calibration IDs may come from the
     current station context (Level 0) or be inherited from an upstream product
-    (Level 1/2) when no stage-local station context exists.
+    (Level 1/2) when no stage-local station context exists. Stage-specific values
+    such as a Monte Carlo seed may be supplied explicitly through ``extra_attrs``.
     """
-    attrs = inherited_provenance(source_attrs or {})
+    attrs: dict[str, str | int | float] = inherited_provenance(source_attrs or {})
     attrs.update(configuration_provenance(config))
+    if extra_attrs:
+        for key, value in extra_attrs.items():
+            if not isinstance(key, str) or not key.strip():
+                raise ValueError("NetCDF provenance attribute names must be non-empty strings.")
+            if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+                raise TypeError(f"NetCDF provenance attribute {key!r} must be a string or numeric scalar.")
+            attrs[key.strip()] = value
     if not attrs:
         return {}
-    with nc.Dataset(Path(path), "a") as dataset:
+    with nc.Dataset(str(Path(path)), "a") as dataset:
         dataset.setncatts(attrs)
     return attrs
