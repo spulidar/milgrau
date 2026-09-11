@@ -23,7 +23,7 @@ Make scientific and instrumental decisions explicit and auditable:
 - [ ] No algorithmic fallback that silently widens/changes a configured scientific domain. **Productive gluing and Rayleigh-reference search domains are now strict; other runtime paths still require audit.**
 - [x] Optional Level 2 cloud-screening behavior must be explicitly enabled/disabled in YAML.
 - [x] Rayleigh molecular lidar ratio remains a versioned physical/method constant in Python rather than a user-editable YAML setting.
-- [ ] Each produced NetCDF records the resolved station profile/calibration and processing configuration provenance.
+- [ ] Each produced NetCDF records the resolved station profile/calibration and processing configuration provenance. **Config/station hashes plus resolved profile/calibration IDs now propagate L0 -> L1 -> L2; software/Git/input provenance remains.**
 - [ ] Tests cover every required-key failure and every explicit disabled/unavailable policy.
 
 ## A. Configuration ownership and schema
@@ -52,7 +52,7 @@ Make scientific and instrumental decisions explicit and auditable:
 - [x] Move `background_offset` to instrument calibration.
 - [x] Add explicit PC saturation characterization/status per relevant channel.
 - [ ] Represent legacy ADC/range overrides in station calibration only if real historical Licel files are demonstrated to lack valid header metadata. **No override is currently invented; active analog channels require the header values.**
-- [ ] Persist resolved `station_profile_id` and `instrument_calibration_id` in products. Resolution in runtime context is implemented; NetCDF persistence remains.
+- [x] Persist resolved `station_profile_id` and `instrument_calibration_id` in products. Level 0 writes resolved IDs and Level 1/2 inherit them through the FAIR provenance helper.
 
 ## C. Level 0 strict configuration
 
@@ -144,12 +144,12 @@ Make scientific and instrumental decisions explicit and auditable:
 
 ## H. Provenance / FAIR
 
-- [ ] Persist software version and Git commit in products.
-- [ ] Persist scientific algorithm name/version separately from package version.
-- [ ] Persist processing-config hash.
-- [ ] Persist station-config hash.
-- [ ] Persist resolved station profile ID.
-- [ ] Persist resolved instrument calibration ID.
+- [ ] Persist software version and Git commit in products. **Blocked on release-version ownership (`pyproject.toml` currently says 0.1.0 while `CITATION.cff` says 2.0); no version is invented.**
+- [ ] Persist scientific algorithm name/version separately from package version. **Level 2 already writes versioned Fernald/molecular implementation metadata; extend/version other scientific stages deliberately before checking globally.**
+- [x] Persist processing-config hash. Products now store SHA-256 of the actual `config.yaml` source used by the current stage.
+- [x] Persist station-config hash. Products now store SHA-256 of the actual `station.yaml` source used by the current stage.
+- [x] Persist resolved station profile ID.
+- [x] Persist resolved instrument calibration ID.
 - [ ] Persist input file hashes or immutable input manifest.
 - [ ] Persist random seed for Monte Carlo retrievals.
 - [x] Persist atmosphere source, source datetime/time delta, fallback fraction, source-priority attempts and resolved station geometry.
@@ -176,6 +176,7 @@ Make scientific and instrumental decisions explicit and auditable:
 - [x] Add quarantine tests for dated reason buckets, SHA-256 sidecars, collisions and read-only discovery semantics.
 - [x] Add logging tests for contextual console fields, INFO/DEBUG destination split, explicit levels and handler ownership.
 - [x] Add strict visualization tests for required output/DPI/altitude/gap/smoothing settings and update LIRACOS incremental tests to the stdlib logger contract.
+- [x] Add FAIR provenance tests for exact file SHA-256, current recipe rehashing and inherited station/calibration identity.
 - [ ] Add architectural guard against `config.get(..., semantic_literal_default)` outside config layer.
 - [ ] Add regression test ensuring production config contains no undeclared semantic defaults.
 - [ ] Run full test suite after each coherent implementation batch. **No CI is currently attached to the branch; isolated strict-L2 tests passed 19/19 earlier. Current full suite remains unverified in this environment.**
@@ -248,3 +249,11 @@ Make scientific and instrumental decisions explicit and auditable:
 - Added a strict visualization resolver; output format, DPI, altitude ranges, plotted channels, smoothing bins, gap threshold, colormap and missing-data color no longer fall back internally.
 - LIRACOS now uses the same contextual logging style (`VIZ/save_id/stage`) and the configured `mean_profile_smooth_bins` drives both quicklook side profiles and global mean RCS smoothing.
 - Full repository suite is not claimed: the branch still has no CI/status checks and the complete suite has not been executed in this environment.
+
+### 2026-09-11 — FAIR config/station provenance tranche
+
+- Added reusable `milgrau.provenance` helpers for exact file SHA-256 and controlled NetCDF provenance propagation.
+- Level 0 primary/SCC products now persist the SHA-256 of the active processing/station YAML plus resolved station profile and instrument calibration IDs.
+- Level 1 and Level 2 recompute current YAML hashes and inherit the resolved historical profile/calibration identity from their upstream product.
+- Added provenance tests for exact byte hashing, current-recipe replacement and inherited station/calibration identity.
+- Software package version/Git commit, input manifest, Monte Carlo seed and LR-source provenance remain explicitly pending; no placeholder provenance is invented.
