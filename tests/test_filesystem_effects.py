@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
 
@@ -108,7 +110,7 @@ def test_discovery_honors_explicit_ignore_dirs_and_quarantine_path(tmp_path: Pat
     assert [candidate.path for candidate in candidates] == [visible]
 
 
-def test_explicit_quarantine_is_idempotent_and_collision_destination_is_auditable(tmp_path: Path) -> None:
+def test_explicit_quarantine_uses_dated_reason_bucket_and_audit_sidecar(tmp_path: Path) -> None:
     first = tmp_path / "one" / "archive.zip"
     second = tmp_path / "two" / "archive.zip"
     first.parent.mkdir()
@@ -117,18 +119,61 @@ def test_explicit_quarantine_is_idempotent_and_collision_destination_is_auditabl
     second.write_text("second", encoding="utf-8")
     quarantine_root = tmp_path / "quarantine"
     logger = _ListLogger()
+    when = datetime(2026, 9, 11, 12, 30, tzinfo=timezone.utc)
 
-    summary = quarantine_files([first, second], quarantine_root, logger)
-    repeat = quarantine_files([first, second], quarantine_root, logger)
+    summary = quarantine_files(
+        [first, second],
+        quarantine_root,
+        logger,
+        reason="invalid Licel header",
+        stage="level0.inventory",
+        measurement_id="20260911am",
+        quarantined_at_utc=when,
+    )
+    repeat = quarantine_files(
+        [first, second],
+        quarantine_root,
+        logger,
+        reason="invalid Licel header",
+        stage="level0.inventory",
+        measurement_id="20260911am",
+        quarantined_at_utc=when,
+    )
 
+    bucket = quarantine_root / "2026" / "09" / "11" / "invalid-licel-header"
     digest = sha256(str(second.absolute()).encode("utf-8")).hexdigest()[:12]
+    first_destination = bucket / "archive.zip"
+    second_destination = bucket / f"archive_{digest}.zip"
     assert [result.status for result in summary.results] == [ExecutionStatus.SUCCESS, ExecutionStatus.SUCCESS]
-    assert summary.results[0].output_path == quarantine_root / "archive.zip"
-    assert summary.results[1].output_path == quarantine_root / f"archive_{digest}.zip"
-    assert (quarantine_root / "archive.zip").read_text(encoding="utf-8") == "first"
-    assert (quarantine_root / f"archive_{digest}.zip").read_text(encoding="utf-8") == "second"
+    assert summary.results[0].output_path == first_destination
+    assert summary.results[1].output_path == second_destination
+    assert first_destination.read_text(encoding="utf-8") == "first"
+    assert second_destination.read_text(encoding="utf-8") == "second"
+
+    first_sidecar = json.loads((bucket / "archive.zip.json").read_text(encoding="utf-8"))
+    second_sidecar = json.loads((bucket / f"archive_{digest}.zip.json").read_text(encoding="utf-8"))
+    assert first_sidecar["schema_version"] == 1
+    assert first_sidecar["reason"] == "invalid Licel header"
+    assert first_sidecar["stage"] == "level0.inventory"
+    assert first_sidecar["measurement_id"] == "20260911am"
+    assert first_sidecar["sha256"] == sha256(b"first").hexdigest()
+    assert first_sidecar["size_bytes"] == 5
+    assert second_sidecar["sha256"] == sha256(b"second").hexdigest()
     assert all(result.status is ExecutionStatus.SKIPPED for result in repeat.results)
-    assert any("File quarantined" in message for message in logger.messages)
+    assert any("audit sidecar" in message for message in logger.messages)
+
+
+def test_quarantine_requires_explicit_reason(tmp_path: Path) -> None:
+    target = tmp_path / "archive.zip"
+    target.write_text("archive", encoding="utf-8")
+
+    try:
+        quarantine_file(target, tmp_path / "quarantine", reason="")
+    except ValueError as exc:
+        assert "reason" in str(exc).lower()
+    else:
+        raise AssertionError("Empty quarantine reason should fail.")
+    assert target.exists()
 
 
 def test_explicit_delete_is_idempotent(tmp_path: Path) -> None:
@@ -165,7 +210,11 @@ def test_actions_reject_directories_without_recursive_mutation(tmp_path: Path) -
     child = target / "child"
     child.write_text("keep", encoding="utf-8")
 
-    quarantine_result = quarantine_file(target, tmp_path / "quarantine")
+    quarantine_result = quarantine_file(
+        target,
+        tmp_path / "quarantine",
+        reason="not a regular file",
+    )
     delete_result = delete_file(target)
 
     assert quarantine_result.status is ExecutionStatus.RECOVERABLE_FAILURE
