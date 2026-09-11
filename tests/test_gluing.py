@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from milgrau.level2.gluing import slide_glue_signals
 
@@ -61,6 +62,38 @@ def test_slide_glue_signals_falls_back_when_uncorrelated() -> None:
 
     assert split_point == -1
     assert np.allclose(glued, photon)
+
+
+def test_slide_glue_signals_rejects_search_interval_narrower_than_window() -> None:
+    altitude_m = np.arange(0.0, 1500.0, 7.5)
+    analog = np.linspace(5.0, 1.0, altitude_m.size)
+    photon = 2.0 * analog
+
+    with pytest.raises(ValueError, match="will not be widened automatically"):
+        slide_glue_signals(
+            analog_sig=analog,
+            pc_sig=photon,
+            altitude=altitude_m,
+            window_size=120,
+            search_min_idx=100,
+            search_max_idx=180,
+        )
+
+
+def test_slide_glue_signals_rejects_search_interval_outside_signal_domain() -> None:
+    altitude_m = np.arange(0.0, 1500.0, 7.5)
+    analog = np.linspace(5.0, 1.0, altitude_m.size)
+    photon = 2.0 * analog
+
+    with pytest.raises(ValueError, match="outside the signal domain"):
+        slide_glue_signals(
+            analog_sig=analog,
+            pc_sig=photon,
+            altitude=altitude_m,
+            window_size=40,
+            search_min_idx=100,
+            search_max_idx=500,
+        )
 
 
 def test_slide_glue_signals_ignores_saturated_pc_bins_when_requested() -> None:
