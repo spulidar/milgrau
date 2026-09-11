@@ -122,10 +122,11 @@ def normalize_config(config: dict[str, Any]) -> dict[str, Any]:
     called. Legacy aliases remain temporarily available outside the new
     stage-specific sections.
 
-    ``level1`` is preserved unchanged and intentionally excluded from the legacy
-    broad-schema validator until that validator is retired. Productive LIPANCORA
-    validates this section through ``milgrau.level1.config`` before processing,
-    keeping dependency direction from stage -> config rather than loader -> stage.
+    ``level0`` and ``level1`` are preserved unchanged and intentionally excluded
+    from the legacy broad-schema validator until that validator is retired.
+    Productive LIBIDS/LIPANCORA validate these sections through their own strict
+    stage resolvers before discovery/processing, keeping dependency direction
+    from stage -> config rather than loader -> stage.
     """
     normalized = deepcopy(config)
     _normalize_physics_config(normalized)
@@ -133,6 +134,7 @@ def normalize_config(config: dict[str, Any]) -> dict[str, Any]:
     _normalize_inversion_config(normalized)
 
     legacy_validation = deepcopy(normalized)
+    legacy_validation.pop("level0", None)
     legacy_validation.pop("level1", None)
     validate_config_minimum(legacy_validation)
     return normalized
