@@ -13,6 +13,19 @@ import pytest
 from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary, ExitCode
 
 
+def test_execution_vocabulary_has_no_transitional_aliases() -> None:
+    assert ExecutionStatus.__members__ == {
+        "OK": ExecutionStatus.OK,
+        "SKIPPED": ExecutionStatus.SKIPPED,
+        "ERROR": ExecutionStatus.ERROR,
+    }
+    assert ExitCode.__members__ == {
+        "OK": ExitCode.OK,
+        "ERROR": ExitCode.ERROR,
+        "FATAL": ExitCode.FATAL,
+    }
+
+
 def test_ok_result_normalizes_paths_and_freezes_metadata(tmp_path: Path) -> None:
     result = ExecutionResult.success(
         " level1.save ",
