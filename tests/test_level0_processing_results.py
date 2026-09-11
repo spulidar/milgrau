@@ -47,7 +47,7 @@ def test_measurement_group_preserves_parse_failure_stage_and_cause(tmp_path: Pat
 
     result = processing.process_measurement_group("20240101am", group, _config(tmp_path), _logger())
 
-    assert result.status is ExecutionStatus.RECOVERABLE_FAILURE
+    assert result.status is ExecutionStatus.ERROR
     assert result.stage == "level0.parse"
     assert isinstance(result.cause, OSError)
     assert "invalid Licel header" in result.traceback
@@ -68,10 +68,11 @@ def test_measurement_group_success_keeps_only_level0_file_effect(tmp_path: Path,
         Path(kwargs["netcdf_path"]).write_text("level0", encoding="utf-8")
 
     monkeypatch.setattr(processing, "build_level0_netcdf", fake_build)
+    monkeypatch.setattr(processing, "write_netcdf_provenance", lambda *_args, **_kwargs: {})
 
     result = processing.process_measurement_group("20240101am", group, _config(tmp_path), _logger())
 
-    assert result.status is ExecutionStatus.SUCCESS
+    assert result.status is ExecutionStatus.OK
     assert result.stage == "level0.complete"
     assert result.output_path is not None and result.output_path.exists()
     assert not result.output_path.with_suffix(result.output_path.suffix + ".provenance.json").exists()
