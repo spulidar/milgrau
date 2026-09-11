@@ -16,7 +16,8 @@ from milgrau.level0.netcdf import build_level0_netcdf, validate_lidar_tensors
 
 def _config() -> dict:
     return {
-        "physics": {"latitude": -23.5615, "longitude": -46.7383, "vertical_resolution_m": 7.5, "background_start_m": 29000.0, "background_stop_m": 29999.0},
+        "physics": {"latitude": -23.5615, "longitude": -46.7383, "vertical_resolution_m": 7.5},
+        "level1": {"background": {"start_altitude_m": 29000.0, "stop_altitude_m": 29999.0}},
         "hardware": {"name_to_id": {"day": {"532.AN": 1593, "532.PC": 716}, "night": {"532.AN": 722, "532.PC": 716}}},
     }
 
@@ -52,10 +53,50 @@ def test_build_level0_netcdf_writes_scc_acquisition_metadata(tmp_path: Path) -> 
         validate_level0_contract(ds)
         np.testing.assert_array_equal(ds["Laser_Shots"].values, np.array([[1200, 2400], [1300, 2600]], dtype=np.int32))
         np.testing.assert_allclose(ds["Raw_Data_Range_Resolution"].values, np.array([7.5, 15.0]))
+        np.testing.assert_allclose(ds["Background_Low"].values, np.array([29000.0, 29000.0]))
+        np.testing.assert_allclose(ds["Background_High"].values, np.array([29999.0, 29999.0]))
         assert "DAQ_Range" in ds
         assert float(ds["DAQ_Range"].isel(channels=0).values) == 500.0
         assert float(ds["DAQ_Range"].isel(channels=1).values) > 1e30
         assert ds["DAQ_Range"].attrs["units"] == "mV"
+
+
+def test_build_level0_netcdf_rejects_missing_native_bin_width_even_with_legacy_vertical_resolution(tmp_path: Path) -> None:
+    output_path = tmp_path / "level0_missing_bin_width.nc"
+    lidar_data = _lidar_data()
+    lidar_data["channel_metadata"]["532.PC"].pop("bin_width_m")
+    config = _config()
+    config["physics"]["vertical_resolution_m"] = 7.5
+
+    with pytest.raises(RuntimeError, match="range resolution cannot be invented"):
+        build_level0_netcdf(
+            str(output_path),
+            "20240101sant",
+            "nt",
+            lidar_data,
+            _group_df(tmp_path, False),
+            {"temperature_c": 23.0, "pressure_hpa": 935.0},
+            config,
+            logging.getLogger("test"),
+        )
+
+
+def test_build_level0_netcdf_requires_explicit_background_window(tmp_path: Path) -> None:
+    output_path = tmp_path / "level0_missing_background.nc"
+    config = _config()
+    del config["level1"]
+
+    with pytest.raises(RuntimeError, match="level1.*background"):
+        build_level0_netcdf(
+            str(output_path),
+            "20240101sant",
+            "nt",
+            _lidar_data(),
+            _group_df(tmp_path, False),
+            {"temperature_c": 23.0, "pressure_hpa": 935.0},
+            config,
+            logging.getLogger("test"),
+        )
 
 
 def test_build_level0_netcdf_truncates_time_axis_and_shots(tmp_path: Path) -> None:
