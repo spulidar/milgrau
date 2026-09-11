@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
@@ -14,20 +15,17 @@ from milgrau.viz import liracos
 from milgrau.viz.quicklooks import _insert_time_gap_markers
 
 
-class _ListLogger:
-    """Small logger stub used to capture pipeline messages in tests."""
+class _ListLogger(logging.Logger):
+    """Capture stdlib-compatible logger messages without global configuration."""
 
     def __init__(self) -> None:
+        super().__init__("test.liracos", level=logging.DEBUG)
         self.messages: list[str] = []
+        self.propagate = False
 
-    def info(self, message: str) -> None:
-        self.messages.append(f"INFO: {message}")
-
-    def warning(self, message: str) -> None:
-        self.messages.append(f"WARNING: {message}")
-
-    def error(self, message: str) -> None:
-        self.messages.append(f"ERROR: {message}")
+    def _log(self, level, msg, args, exc_info=None, extra=None, stack_info=False, stacklevel=1):  # noqa: D401
+        rendered = str(msg) % args if args else str(msg)
+        self.messages.append(f"{logging.getLevelName(level)}: {rendered}")
 
 
 def _write_level1(path: Path, channels: list[str]) -> Path:
@@ -58,14 +56,14 @@ def _write_level1(path: Path, channels: list[str]) -> Path:
             "PBL_Height_km": (("time",), np.array([0.7, 0.8, 0.9], dtype=np.float32)),
         },
         coords={"time": time, "channel": channel, "altitude": altitude},
-        attrs={"tropopause_cpt_km": -999.0, "tropopause_lrt_km": -999.0},
+        attrs={"tropopause_cpt_km": np.nan, "tropopause_lrt_km": np.nan},
     )
     ds.to_netcdf(path)
     return path
 
 
 def _config(channels: list[str], incremental: bool = True, config_file: Path | None = None) -> dict:
-    """Return a minimal LIRACOS config."""
+    """Return a complete strict LIRACOS config."""
     config = {
         "processing": {"incremental": incremental},
         "directories": {"processed_data": "02-processed_data"},
@@ -74,7 +72,14 @@ def _config(channels: list[str], incremental: bool = True, config_file: Path | N
             "dpi": 60,
             "altitude_ranges_km": [1.0],
             "channels_to_plot": channels,
-            "quicklook": {"max_time_gap_minutes": 10, "missing_data_color": "lightgray", "colormap": "viridis"},
+            "quicklook": {
+                "show_pbl": True,
+                "show_tropopause": True,
+                "mean_profile_smooth_bins": 20,
+                "max_time_gap_minutes": 10,
+                "missing_data_color": "lightgray",
+                "colormap": "viridis",
+            },
         },
     }
     if config_file is not None:
@@ -127,7 +132,7 @@ def test_global_mean_timestamp_skips_current_plot(tmp_path: Path, monkeypatch) -
     assert second.metadata["generated"] == 1
     assert second.metadata["skipped"] == 1
     assert calls["global"] == 1
-    assert any("Global mean RCS is up to date" in message for message in logger.messages)
+    assert any("up to date: GlobalMeanRCS_20240101sant.png" in message for message in logger.messages)
 
 
 def test_global_mean_regenerates_when_config_file_changes(tmp_path: Path, monkeypatch) -> None:
