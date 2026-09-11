@@ -85,12 +85,12 @@ def _inversion(config: Mapping[str, Any]) -> Mapping[str, Any]:
 
 
 def incremental_enabled(config: Mapping[str, Any]) -> bool:
-    """Return whether incremental processing is enabled.
-
-    Runtime strictness is handled in the runtime/configuration refactor batch;
-    this helper intentionally preserves current behavior until that batch.
-    """
-    return bool(config.get("processing", {}).get("incremental", False))
+    """Return the explicitly configured incremental-processing policy."""
+    processing = _required_mapping(config, "processing", "config")
+    return _boolean(
+        _required_value(processing, "incremental", "processing"),
+        "processing.incremental",
+    )
 
 
 def _parse_wavelengths(config: Mapping[str, Any]) -> list[int]:
@@ -410,6 +410,7 @@ def get_block_average_minutes(config: Mapping[str, Any]) -> int:
 def validate_level2_config(config: Mapping[str, Any]) -> None:
     """Validate every productive Level 2 scientific setting before retrieval starts."""
     wavelengths = _parse_wavelengths(config)
+    incremental_enabled(config)
     get_block_average_minutes(config)
     get_kfs_config(config)
     get_gluing_config(config)
