@@ -42,7 +42,7 @@ def test_console_context_matches_compact_pipeline_style(tmp_path: Path, capsys) 
     logger = setup_logger("TEST_CONTEXT", config=_config(tmp_path))
     try:
         contextual = bind_log_context(logger, pipeline="L1", save_id="20240101sant", stage="atmosphere")
-        contextual.warning("radiosonde | delta=2.0 h | USSA76 extension=14.2%%")
+        contextual.warning("radiosonde | delta=2.0 h | USSA76 extension=14.2%")
         for handler in logger.handlers:
             handler.flush()
 
