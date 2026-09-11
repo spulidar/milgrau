@@ -14,6 +14,7 @@ import pandas as pd
 from milgrau.config.station import apply_station_context, resolve_station_context, select_lidar_channels
 from milgrau.io.filesystem import ensure_directories
 from milgrau.io.licel import parse_licel_group
+from milgrau.io.logging_utils import bind_log_context
 from milgrau.io.paths import level0_output_path, level0_scc_output_path, measurement_save_id
 from milgrau.io.weather import fetch_surface_weather
 from milgrau.level0.config import resolve_level0_config, station_coordinates
@@ -26,8 +27,14 @@ def fetch_group_weather(group_df: pd.DataFrame, config: Mapping[str, Any], logge
     level0 = resolve_level0_config(config)
     lat, lon = station_coordinates(config)
     dt_utc_mean = group_df["start_time_utc"].iloc[len(group_df) // 2].to_pydatetime()
-    weather_data = fetch_surface_weather(dt_utc_mean, lat, lon, logger=logger, config=config)
+    weather_logger = bind_log_context(logger, stage="weather")
+    weather_data = fetch_surface_weather(dt_utc_mean, lat, lon, logger=weather_logger, config=config)
     if weather_data:
+        weather_logger.info(
+            "%.1f C | %.1f hPa",
+            float(weather_data["temperature_c"]),
+            float(weather_data["pressure_hpa"]),
+        )
         return weather_data
 
     if level0.surface_weather.missing_policy == "fail":
@@ -35,9 +42,7 @@ def fetch_group_weather(group_df: pd.DataFrame, config: Mapping[str, Any], logge
             "Surface weather is unavailable and level0.surface_weather.missing_policy='fail'."
         )
 
-    logger.warning(
-        "  -> Weather API/cache failed. Surface meteorological variables will remain NaN by explicit Level 0 policy."
-    )
+    weather_logger.warning("unavailable -> NaN (policy=nan)")
     return {
         "temperature_c": np.nan,
         "pressure_hpa": np.nan,
@@ -69,33 +74,30 @@ def _resolve_group_station_config(
         available_channels=lidar_data.get("channels", []),
     )
     effective_config = apply_station_context(config, context)
+    station_logger = bind_log_context(logger, stage="station")
 
     if context.get("scc_available", False):
-        logger.info(
-            "  -> Station profile %s; SCC configuration %s (%s); preserving all %d Licel channels in the primary Level 0.",
+        station_logger.info(
+            "profile=%s | SCC=%s",
             context["profile_id"],
             context["scc_configuration_id"],
+        )
+        station_logger.debug(
+            "mode=%s selected_channels=%d SCC_channels=%d extra_channels=%s missing_SCC_channels=%s",
             context["mode"],
             len(context["selected_channels"]),
+            len(context.get("scc_channels", [])),
+            ",".join(context["extra_channels"]) or "none",
+            ",".join(context["missing_scc_channels"]) or "none",
         )
-        if context["extra_channels"]:
-            logger.info(
-                "  -> Channels outside SCC configuration %s remain available to MILGRAU and are excluded only from the SCC export: %s",
-                context["scc_configuration_id"],
-                ", ".join(context["extra_channels"]),
-            )
         if context["missing_scc_channels"]:
-            logger.warning(
-                "  -> SCC export disabled for configuration %s because required raw channels are missing: %s",
-                context["scc_configuration_id"],
-                ", ".join(context["missing_scc_channels"]),
+            station_logger.warning(
+                "SCC export disabled | missing=%s",
+                ",".join(context["missing_scc_channels"]),
             )
     else:
-        logger.info(
-            "  -> Station profile %s has no SCC configuration; processing all %d Licel channels for internal MILGRAU use.",
-            context["profile_id"],
-            len(context["selected_channels"]),
-        )
+        station_logger.info("profile=%s | SCC=none", context["profile_id"])
+        station_logger.debug("selected_channels=%d", len(context["selected_channels"]))
     return effective_config, dict(lidar_data), context
 
 
@@ -126,9 +128,10 @@ def _write_scc_export(
     if not context.get("scc_available", False) or not context.get("scc_export_ready", False):
         return None
 
+    scc_logger = bind_log_context(logger, stage="scc")
     scc_channels = [str(channel) for channel in context.get("scc_channels", [])]
     if not scc_channels:
-        logger.warning("  -> SCC mapping is configured but no SCC channels are present; no SCC export written.")
+        scc_logger.warning("mapping configured but no SCC channels present")
         return None
 
     scc_lidar = select_lidar_channels(lidar_data, scc_channels)
@@ -144,8 +147,8 @@ def _write_scc_export(
         config=dict(effective_config),
         logger=logger,
     )
-    logger.info(
-        "  -> SCC export generated: %s (%d/%d Licel channels; configuration %s).",
+    scc_logger.info(
+        "%s | %d/%d channels | config=%s",
         scc_path.name,
         len(scc_channels),
         len(lidar_data.get("channels", [])),
@@ -174,9 +177,9 @@ def process_measurement_group(
         if not files_meas:
             return ExecutionResult.skipped(
                 stage,
-                f"No measurement files found for {save_id}",
+                "No measurement files found",
                 output_path=netcdf_path,
-                metadata={"pipeline": "LIBIDS", "save_id": save_id},
+                metadata={"pipeline": "L0", "save_id": save_id},
             )
 
         stage = "level0.parse"
@@ -184,11 +187,16 @@ def process_measurement_group(
         if not lidar_data_tensors.get("tensors"):
             return ExecutionResult.skipped(
                 stage,
-                f"No valid lidar tensors parsed for {save_id}",
+                "No valid lidar tensors parsed",
                 input_path=files_meas[0],
                 output_path=netcdf_path,
-                metadata={"pipeline": "LIBIDS", "save_id": save_id},
+                metadata={"pipeline": "L0", "save_id": save_id},
             )
+        bind_log_context(logger, stage="parse").debug(
+            "files=%d channels=%d",
+            len(files_meas),
+            len(lidar_data_tensors.get("channels", [])),
+        )
 
         stage = "level0.station"
         period = meas_id[8:]
@@ -227,7 +235,7 @@ def process_measurement_group(
         )
 
         result_metadata = {
-            "pipeline": "LIBIDS",
+            "pipeline": "L0",
             "save_id": save_id,
             "file_count": len(files_meas),
             "level0_channel_count": len(lidar_data_tensors.get("channels", [])),
@@ -244,7 +252,7 @@ def process_measurement_group(
                 result_metadata["scc_channel_count"] = len(station_context.get("scc_channels", []))
         return ExecutionResult.success(
             "level0.complete",
-            f"NetCDF successfully generated for {save_id}",
+            "Level 0 NetCDF generated",
             input_path=files_meas[0],
             output_path=netcdf_path,
             duration_seconds=time.perf_counter() - started_at,
@@ -253,11 +261,11 @@ def process_measurement_group(
     except Exception as exc:
         return ExecutionResult.failure(
             stage,
-            f"Level 0 conversion failed for {save_id}",
+            "Level 0 conversion failed",
             input_path=None if not files_meas else files_meas[0],
             output_path=netcdf_path,
             cause=exc,
             include_traceback=True,
             duration_seconds=time.perf_counter() - started_at,
-            metadata={"pipeline": "LIBIDS", "save_id": save_id},
+            metadata={"pipeline": "L0", "save_id": save_id},
         )
