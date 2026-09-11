@@ -16,23 +16,31 @@ from milgrau.io.filesystem import ensure_directories
 from milgrau.io.licel import parse_licel_group
 from milgrau.io.paths import level0_output_path, level0_scc_output_path, measurement_save_id
 from milgrau.io.weather import fetch_surface_weather
+from milgrau.level0.config import resolve_level0_config, station_coordinates
 from milgrau.level0.netcdf import build_level0_netcdf
 from milgrau.operations import ExecutionResult
 
 
 def fetch_group_weather(group_df: pd.DataFrame, config: Mapping[str, Any], logger: logging.Logger) -> dict[str, Any]:
-    """Fetch surface weather for one measurement group with config fallback."""
-    lat = float(config["physics"].get("latitude", -23.561))
-    lon = float(config["physics"].get("longitude", -46.735))
+    """Fetch surface weather according to the explicit Level 0 missing-data policy."""
+    level0 = resolve_level0_config(config)
+    lat, lon = station_coordinates(config)
     dt_utc_mean = group_df["start_time_utc"].iloc[len(group_df) // 2].to_pydatetime()
     weather_data = fetch_surface_weather(dt_utc_mean, lat, lon, logger=logger, config=config)
     if weather_data:
         return weather_data
 
-    logger.warning("  -> Weather API/cache failed. Using fallback standard surface values.")
+    if level0.surface_weather.missing_policy == "fail":
+        raise RuntimeError(
+            "Surface weather is unavailable and level0.surface_weather.missing_policy='fail'."
+        )
+
+    logger.warning(
+        "  -> Weather API/cache failed. Surface meteorological variables will remain NaN by explicit Level 0 policy."
+    )
     return {
-        "temperature_c": float(config["physics"].get("default_surface_temp_c", 25.0)),
-        "pressure_hpa": float(config["physics"].get("default_surface_pressure_hpa", 940.0)),
+        "temperature_c": np.nan,
+        "pressure_hpa": np.nan,
         "relative_humidity_percent": np.nan,
         "cloud_cover_percent": np.nan,
         "wind_speed_kmh": np.nan,
