@@ -10,7 +10,6 @@ import pytest
 
 from milgrau.config.loader import load_config
 from milgrau.config.station import (
-    apply_station_context,
     resolve_station_context,
     select_lidar_channels,
     validate_station_config,
@@ -150,28 +149,37 @@ def test_missing_scc_channel_disables_only_scc_export() -> None:
     assert context["scc_available"] is True
 
 
-def test_station_context_applies_profile_altitude_calibration_and_flat_channel_map() -> None:
+def test_station_context_is_self_contained_for_productive_consumers() -> None:
     config = load_config("config.yaml")
     channels = ["532.AN", "532.PC", "1064.AN", "355.PC", "355.AN"]
     context = _context(config, "2025-01-01T12:00:00", "am", channels)
-    resolved = apply_station_context(config, context)
 
-    assert resolved["site"]["station_altitude_m"] == 740.0
-    assert resolved["physics"]["station_altitude_m"] == 740.0
-    assert resolved["hardware"]["name_to_id"] == {
+    assert context["site"]["station_altitude_m"] == 740.0
+    assert context["channel_ids"] == {
         "532.AN": 4069,
         "532.PC": 4070,
         "1064.AN": 4071,
         "355.PC": 4072,
         "355.AN": 4073,
     }
-    assert resolved["physics"]["channels"]["532.PC"] == {
+    assert context["channel_calibrations"]["532.PC"] == {
+        "detector_mode": "photon_counting",
         "deadtime_us": 0.0035,
         "bin_shift_bins": -3,
         "background_offset": 0.0,
+        "saturation": {"status": "not_characterized"},
     }
-    assert resolved["_resolved_station"]["calibration_id"] == "spu-channel-corrections-v1"
-    assert resolved["_resolved_station"]["lr_input"]["532.AN"] == 1
+    assert context["calibration_id"] == "spu-channel-corrections-v1"
+    assert context["lr_input"]["532.AN"] == 1
+    assert "hardware" not in config
+    assert "site" not in config
+    assert "channels" not in config["physics"]
+
+
+def test_station_catalog_declares_vertical_pointing_geometry() -> None:
+    config = load_config("config.yaml")
+    geometry = config["_station_catalog"]["station"]["lidar_geometry"]
+    assert geometry == {"pointing_angle_deg_from_zenith": 0.0}
 
 
 def test_unknown_profile_calibration_is_rejected() -> None:
