@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from numbers import Integral, Real
 from typing import Any, Mapping
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -32,6 +33,18 @@ class PblConfig:
     min_search_altitude_m: float
     max_search_altitude_m: float
     smooth_bins: int
+
+
+@dataclass(frozen=True, slots=True)
+class MissingChannelCalibrationConfig:
+    policy: str
+    deadtime_us: float | None
+    bin_shift_bins: int | None
+    background_offset: float | None
+
+    @property
+    def uses_neutral_fallback(self) -> bool:
+        return self.policy == "neutral_with_warning"
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +94,7 @@ class Level1Config:
     background: BackgroundConfig
     photon_counting: PhotonCountingConfig
     pbl: PblConfig
+    missing_channel_calibration: MissingChannelCalibrationConfig
     atmosphere: AtmosphereConfig
 
 
@@ -94,6 +108,7 @@ class ChannelCalibration:
     background_offset: float
     saturation_status: str
     saturation_max_rate_mhz: float | None
+    assumed_neutral: bool = False
 
     @property
     def saturation_characterized(self) -> bool:
@@ -150,6 +165,58 @@ def _integer(value: Any, label: str, *, minimum: int = 0) -> int:
     if converted < minimum:
         raise Level1ConfigurationError(f"Configuration {label} must be at least {minimum}.")
     return converted
+
+
+def _resolve_missing_channel_calibration_config(
+    level1: Mapping[str, Any],
+) -> MissingChannelCalibrationConfig:
+    label = "level1.missing_channel_calibration"
+    section = _mapping(level1.get("missing_channel_calibration"), label)
+    _allowed_keys(
+        section,
+        required={"policy"},
+        allowed={"policy", "neutral_values"},
+        label=label,
+    )
+    policy = _text(section["policy"], f"{label}.policy").lower()
+    if policy not in {"error", "neutral_with_warning"}:
+        raise Level1ConfigurationError(
+            f"Configuration {label}.policy must be 'error' or 'neutral_with_warning'."
+        )
+
+    if policy == "error":
+        if "neutral_values" in section:
+            raise Level1ConfigurationError(
+                f"Configuration {label}.neutral_values must be omitted when policy='error'."
+            )
+        return MissingChannelCalibrationConfig("error", None, None, None)
+
+    neutral = _mapping(section.get("neutral_values"), f"{label}.neutral_values")
+    _exact_keys(
+        neutral,
+        {"deadtime_us", "bin_shift_bins", "background_offset"},
+        f"{label}.neutral_values",
+    )
+    deadtime = _finite(neutral["deadtime_us"], f"{label}.neutral_values.deadtime_us")
+    shift = _integer(
+        neutral["bin_shift_bins"],
+        f"{label}.neutral_values.bin_shift_bins",
+        minimum=-10**9,
+    )
+    background = _finite(
+        neutral["background_offset"],
+        f"{label}.neutral_values.background_offset",
+    )
+    if deadtime != 0.0 or shift != 0 or background != 0.0:
+        raise Level1ConfigurationError(
+            f"Configuration {label}.neutral_values must be exactly zero so the fallback is scientifically transparent."
+        )
+    return MissingChannelCalibrationConfig(
+        "neutral_with_warning",
+        deadtime,
+        shift,
+        background,
+    )
 
 
 def _resolve_radiosonde_config(section: Mapping[str, Any]) -> RadiosondeConfig:
@@ -274,7 +341,11 @@ def _resolve_atmosphere_config(level1: Mapping[str, Any]) -> AtmosphereConfig:
 def resolve_level1_config(config: Mapping[str, Any]) -> Level1Config:
     """Resolve the complete productive LIPANCORA configuration without defaults."""
     level1 = _mapping(config.get("level1"), "level1")
-    _exact_keys(level1, {"background", "photon_counting", "pbl", "atmosphere"}, "level1")
+    _exact_keys(
+        level1,
+        {"background", "photon_counting", "pbl", "missing_channel_calibration", "atmosphere"},
+        "level1",
+    )
 
     background = _mapping(level1["background"], "level1.background")
     _exact_keys(background, {"start_altitude_m", "stop_altitude_m"}, "level1.background")
@@ -318,6 +389,7 @@ def resolve_level1_config(config: Mapping[str, Any]) -> Level1Config:
         background=BackgroundConfig(background_start, background_stop),
         photon_counting=PhotonCountingConfig(minimum_denominator),
         pbl=PblConfig(reference_channel, min_search, max_search, smooth_bins),
+        missing_channel_calibration=_resolve_missing_channel_calibration_config(level1),
         atmosphere=_resolve_atmosphere_config(level1),
     )
 
@@ -394,12 +466,25 @@ def resolve_radiosonde_station(config: Mapping[str, Any]) -> tuple[str, str]:
     )
 
 
+def _fallback_detector_mode(channel_name: str) -> str:
+    upper = str(channel_name).upper()
+    if upper.endswith(".PC"):
+        return "photon_counting"
+    if upper.endswith(".AN"):
+        return "analog"
+    raise Level1ConfigurationError(
+        f"Channel {channel_name!r} lacks calibration and its detector mode cannot be inferred from the canonical .PC/.AN suffix."
+    )
+
+
 def resolve_channel_calibration(
     config: Mapping[str, Any],
     ds: xr.Dataset,
     channel_name: str,
+    *,
+    level1_config: Level1Config | None = None,
 ) -> ChannelCalibration:
-    """Resolve one channel's full instrument calibration for this Level 0 dataset."""
+    """Resolve one channel calibration, applying only an explicitly configured legacy fallback."""
     resolved_station = config.get("_resolved_station")
     if isinstance(resolved_station, Mapping) and isinstance(resolved_station.get("channel_calibrations"), Mapping):
         calibration_id = str(resolved_station.get("calibration_id", "")).strip()
@@ -415,9 +500,35 @@ def resolve_channel_calibration(
         channels = _mapping(calibration.get("channels"), f"_station_catalog.calibrations.{calibration_id}.channels")
 
     if channel_name not in channels:
-        raise Level1ConfigurationError(
-            f"Channel {channel_name} has no calibration in instrument calibration {calibration_id!r}."
+        resolved_level1 = level1_config or resolve_level1_config(config)
+        policy = resolved_level1.missing_channel_calibration
+        if not policy.uses_neutral_fallback:
+            raise Level1ConfigurationError(
+                f"Channel {channel_name} has no calibration in instrument calibration {calibration_id!r}."
+            )
+        detector_mode = _fallback_detector_mode(channel_name)
+        warnings.warn(
+            (
+                f"Channel {channel_name} has no calibration in instrument calibration {calibration_id!r}; "
+                "applying the explicitly configured neutral legacy correction "
+                "(deadtime_us=0, bin_shift_bins=0, background_offset=0). "
+                "This is not a measured calibration."
+            ),
+            RuntimeWarning,
+            stacklevel=2,
         )
+        return ChannelCalibration(
+            calibration_id=calibration_id,
+            channel=str(channel_name),
+            detector_mode=detector_mode,
+            deadtime_us=float(policy.deadtime_us),
+            bin_shift_bins=int(policy.bin_shift_bins),
+            background_offset=float(policy.background_offset),
+            saturation_status="not_characterized" if detector_mode == "photon_counting" else "not_applicable",
+            saturation_max_rate_mhz=None,
+            assumed_neutral=True,
+        )
+
     values = _mapping(channels[channel_name], f"calibration {calibration_id}.{channel_name}")
     detector_mode = str(values.get("detector_mode", "")).strip()
     if detector_mode not in {"analog", "photon_counting"}:
@@ -465,4 +576,5 @@ def resolve_channel_calibration(
         background_offset=background_offset,
         saturation_status=status,
         saturation_max_rate_mhz=max_rate,
+        assumed_neutral=False,
     )
