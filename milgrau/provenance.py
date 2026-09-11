@@ -21,6 +21,7 @@ LEGACY_HASH_ATTRS: tuple[str, ...] = (
     "processing_config_sha256",
     "station_config_sha256",
 )
+YAML_DOCUMENT_DIMENSION = "milgrau_provenance_document"
 
 
 def _source_path(config: Mapping[str, Any], key: str, label: str) -> Path | None:
@@ -65,15 +66,38 @@ def inherited_provenance(source_attrs: Mapping[str, Any]) -> dict[str, str]:
     return result
 
 
+def _yaml_document_variable(dataset: nc.Dataset, name: str) -> nc.Variable:
+    """Return a one-element NC_STRING variable safe for netCDF4-python VLEN writes.
+
+    netCDF4-python requires integer indexing for VLEN strings. A true scalar
+    NC_STRING variable therefore cannot be populated reliably with assignValue()
+    across supported versions. MILGRAU stores each YAML document as a one-element
+    string vector and writes element 0 explicitly.
+    """
+    if YAML_DOCUMENT_DIMENSION not in dataset.dimensions:
+        dataset.createDimension(YAML_DOCUMENT_DIMENSION, 1)
+    elif len(dataset.dimensions[YAML_DOCUMENT_DIMENSION]) != 1:
+        raise ValueError(
+            f"NetCDF dimension {YAML_DOCUMENT_DIMENSION!r} must have length 1 for MILGRAU provenance."
+        )
+
+    if name in dataset.variables:
+        variable = dataset.variables[name]
+        if variable.dimensions != (YAML_DOCUMENT_DIMENSION,):
+            raise ValueError(
+                f"Existing provenance variable {name!r} has incompatible dimensions {variable.dimensions}; "
+                "regenerate the product before writing the current provenance schema."
+            )
+        return variable
+    return dataset.createVariable(name, str, (YAML_DOCUMENT_DIMENSION,))
+
+
 def _write_yaml_variable(dataset: nc.Dataset, name: str, path: Path | None, description: str) -> None:
     if path is None:
         return
     text = path.read_text(encoding="utf-8")
-    if name in dataset.variables:
-        variable = dataset.variables[name]
-    else:
-        variable = dataset.createVariable(name, str)
-    variable.assignValue(text)
+    variable = _yaml_document_variable(dataset, name)
+    variable[0] = text
     variable.setncattr("media_type", "application/yaml")
     variable.setncattr("description", description)
     variable.setncattr("source_filename", path.name)
