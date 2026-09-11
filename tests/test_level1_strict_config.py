@@ -30,6 +30,7 @@ def _level1_recipe() -> dict:
                 "max_search_altitude_m": 4000.0,
                 "smooth_bins": 15,
             },
+            "missing_channel_calibration": {"policy": "error"},
             "atmosphere": {
                 "source_priority": ["ussa76"],
                 "external_profile_outside_coverage": "ussa76",
@@ -46,6 +47,10 @@ def test_repository_level1_recipe_is_explicit_and_speed_of_light_is_not_yaml_con
     assert resolved.background.stop_altitude_m == 29_999.0
     assert resolved.photon_counting.deadtime_min_denominator == 0.05
     assert resolved.pbl.reference_channel == "532.AN"
+    assert resolved.missing_channel_calibration.policy == "neutral_with_warning"
+    assert resolved.missing_channel_calibration.deadtime_us == 0.0
+    assert resolved.missing_channel_calibration.bin_shift_bins == 0
+    assert resolved.missing_channel_calibration.background_offset == 0.0
     assert resolved.atmosphere.source_priority == ("radiosonde", "era5", "ussa76")
     assert resolved.atmosphere.external_profile_outside_coverage == "ussa76"
     assert resolved.atmosphere.radiosonde is not None
@@ -78,6 +83,21 @@ def test_level1_recipe_rejects_unknown_keys_and_even_pbl_smoothing() -> None:
     even["level1"]["pbl"]["smooth_bins"] = 14
     with pytest.raises(Level1ConfigurationError, match="odd"):
         resolve_level1_config(even)
+
+
+def test_neutral_legacy_policy_rejects_nonzero_values() -> None:
+    config = _level1_recipe()
+    config["level1"]["missing_channel_calibration"] = {
+        "policy": "neutral_with_warning",
+        "neutral_values": {
+            "deadtime_us": 0.1,
+            "bin_shift_bins": 0,
+            "background_offset": 0.0,
+        },
+    }
+
+    with pytest.raises(Level1ConfigurationError, match="exactly zero"):
+        resolve_level1_config(config)
 
 
 def test_atmosphere_policy_requires_complete_radiosonde_settings_when_selected() -> None:
@@ -131,15 +151,43 @@ def test_repository_pc_calibration_resolves_not_characterized_without_inventing_
     assert calibration.saturation_status == "not_characterized"
     assert calibration.saturation_max_rate_mhz is None
     assert calibration.saturation_characterized is False
+    assert calibration.assumed_neutral is False
 
 
-def test_channel_calibration_resolution_rejects_unknown_channel() -> None:
+def test_repository_missing_channel_uses_explicit_neutral_policy_with_warning() -> None:
     config = load_config("config.yaml")
     ds = xr.Dataset(coords={"time": pd.date_range("2025-01-01", periods=1)})
     ds.attrs["Station_Profile"] = "spu-merionc-2024"
 
+    with pytest.warns(RuntimeWarning, match="neutral legacy correction"):
+        calibration = resolve_channel_calibration(config, ds, "607.PC")
+
+    assert calibration.detector_mode == "photon_counting"
+    assert calibration.deadtime_us == 0.0
+    assert calibration.bin_shift_bins == 0
+    assert calibration.background_offset == 0.0
+    assert calibration.saturation_status == "not_characterized"
+    assert calibration.saturation_max_rate_mhz is None
+    assert calibration.assumed_neutral is True
+
+
+def test_missing_channel_still_fails_when_policy_is_error() -> None:
+    config = load_config("config.yaml")
+    config["level1"]["missing_channel_calibration"] = {"policy": "error"}
+    ds = xr.Dataset(coords={"time": pd.date_range("2025-01-01", periods=1)})
+    ds.attrs["Station_Profile"] = "spu-merionc-2024"
+
     with pytest.raises(Level1ConfigurationError, match="no calibration"):
-        resolve_channel_calibration(config, ds, "999.PC")
+        resolve_channel_calibration(config, ds, "607.PC")
+
+
+def test_missing_channel_without_canonical_detector_suffix_still_fails() -> None:
+    config = load_config("config.yaml")
+    ds = xr.Dataset(coords={"time": pd.date_range("2025-01-01", periods=1)})
+    ds.attrs["Station_Profile"] = "spu-merionc-2024"
+
+    with pytest.raises(Level1ConfigurationError, match="detector mode cannot be inferred"):
+        resolve_channel_calibration(config, ds, "607.UNKNOWN")
 
 
 def test_station_site_resolution_uses_historical_profile_altitude() -> None:
