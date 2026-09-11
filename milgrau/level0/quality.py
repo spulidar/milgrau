@@ -7,24 +7,21 @@ import logging
 import numpy as np
 import pandas as pd
 
-from milgrau.level0.common import (
-    DEFAULT_LASER_SHOT_TOLERANCE_FRACTION,
-    LICEL_HEADER_TIME_JITTER_S,
-    safe_mode,
-)
+from milgrau.level0.common import safe_mode
 
 
 def _screen_acquisition_rows(
     df: pd.DataFrame,
     *,
     tolerance_fraction: float,
+    header_time_jitter_s: float,
 ) -> tuple[pd.DataFrame, pd.DataFrame, float | None, float | None]:
     """Apply one acquisition QA rule to one homogeneous measurement class.
 
     Measurements and dark currents are screened independently. Laser shots and
     repetition rate define the nominal acquisition duration. Whole-second Licel
-    header durations that differ by at most one second are accepted as timestamp
-    quantization and carry ``qa_nominal_duration_s`` for SCC-only time-axis
+    header durations within the explicitly configured timestamp-jitter tolerance
+    are accepted and carry ``qa_nominal_duration_s`` for SCC-only time-axis
     normalization. Larger timing discrepancies are rejected here, before any
     NetCDF writer is called.
     """
@@ -63,7 +60,7 @@ def _screen_acquisition_rows(
 
     bad_duration = durations.isna() | (durations <= 0)
     if nominal_duration_supported:
-        bad_duration = bad_duration | (abs(durations - nominal_duration_s) > LICEL_HEADER_TIME_JITTER_S)
+        bad_duration = bad_duration | (abs(durations - nominal_duration_s) > header_time_jitter_s)
     else:
         # If shots/rate do not support a stable integer-second acquisition,
         # there is no defensible SCC time scale for these rows.
@@ -93,9 +90,11 @@ def _screen_acquisition_rows(
 def filter_laser_shots(
     df_raw: pd.DataFrame,
     logger: logging.Logger,
-    tolerance_fraction: float = DEFAULT_LASER_SHOT_TOLERANCE_FRACTION,
+    *,
+    tolerance_fraction: float,
+    header_time_jitter_s: float,
 ) -> pd.DataFrame:
-    """Apply standardized acquisition QA to measurements and dark currents."""
+    """Apply explicitly configured acquisition QA to measurements and dark currents."""
     logger.info("Evaluating acquisition quality and consistency per measurement...")
     good_groups = []
 
@@ -110,10 +109,12 @@ def filter_laser_shots(
             good_meas, bad_meas, expected_meas_shots, expected_meas_duration = _screen_acquisition_rows(
                 df_meas,
                 tolerance_fraction=tolerance_fraction,
+                header_time_jitter_s=header_time_jitter_s,
             )
             good_dc, bad_dc, expected_dc_shots, expected_dc_duration = _screen_acquisition_rows(
                 df_dc,
                 tolerance_fraction=tolerance_fraction,
+                header_time_jitter_s=header_time_jitter_s,
             )
 
             total_files = len(group)
