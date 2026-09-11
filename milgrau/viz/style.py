@@ -9,6 +9,8 @@ from typing import Any
 import matplotlib.image as mpimg
 import numpy as np
 
+from milgrau.viz.config import resolve_visualization_config
+
 WAVELENGTH_COLORS: dict[int, str] = {
     355: "rebeccapurple",
     387: "darkblue",
@@ -44,11 +46,9 @@ def channel_color(channel_or_wavelength: str | int | float) -> str:
 
 
 def get_output_settings(config: dict[str, Any]) -> tuple[str, int]:
-    """Extract output format and DPI from visualization configuration."""
-    viz_cfg = config.get("visualization", {}) or {}
-    output_format = str(viz_cfg.get("output_format", "webp")).lstrip(".").lower()
-    dpi = int(viz_cfg.get("dpi", 120))
-    return output_format, dpi
+    """Return explicitly configured output format and DPI."""
+    resolved = resolve_visualization_config(config)
+    return resolved.output_format, resolved.dpi
 
 
 def add_footer_and_logos(fig: Any, root_dir: str | Path) -> None:
