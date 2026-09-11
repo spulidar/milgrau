@@ -1,9 +1,9 @@
 """Molecular/Rayleigh calculations for elastic lidar inversion.
 
 The molecular profile is calculated from pressure and temperature using
-Bucholtz-style Rayleigh scattering.  The returned molecular backscatter is the
-angular volume-scattering coefficient at 180 degrees, while molecular extinction is the total Rayleigh volume
-scattering coefficient.
+Bucholtz-style Rayleigh scattering. The returned molecular backscatter is the
+angular volume-scattering coefficient at 180 degrees, while molecular extinction
+is the total Rayleigh volume scattering coefficient.
 """
 
 from __future__ import annotations
@@ -21,12 +21,7 @@ _STANDARD_TEMPERATURE_K = 288.15
 
 
 def depolarization_factor(wavelength_nm: float | np.ndarray) -> np.ndarray:
-    """Return the wavelength-dependent molecular depolarization factor.
-
-    The tabulated values follow the Bates values used by Bucholtz for standard
-    dry air.  The factor controls both the King correction and the Rayleigh phase
-    function, therefore it directly affects molecular backscatter at 180 degrees.
-    """
+    """Return the wavelength-dependent molecular depolarization factor."""
     wavelength_reference_um = np.concatenate(
         (
             np.arange(0.2, 0.231, 0.005),
@@ -37,42 +32,10 @@ def depolarization_factor(wavelength_nm: float | np.ndarray) -> np.ndarray:
     wavelength_reference_nm = wavelength_reference_um * 1000.0
     depol_reference = np.array(
         [
-            4.545,
-            4.384,
-            4.221,
-            4.113,
-            4.004,
-            3.895,
-            3.785,
-            3.675,
-            3.565,
-            3.455,
-            3.4,
-            3.289,
-            3.233,
-            3.178,
-            3.178,
-            3.122,
-            3.066,
-            3.066,
-            3.01,
-            3.01,
-            3.01,
-            2.955,
-            2.955,
-            2.955,
-            2.899,
-            2.842,
-            2.842,
-            2.786,
-            2.786,
-            2.786,
-            2.786,
-            2.73,
-            2.73,
-            2.73,
-            2.73,
-            2.73,
+            4.545, 4.384, 4.221, 4.113, 4.004, 3.895, 3.785, 3.675, 3.565, 3.455,
+            3.4, 3.289, 3.233, 3.178, 3.178, 3.122, 3.066, 3.066, 3.01, 3.01,
+            3.01, 2.955, 2.955, 2.955, 2.899, 2.842, 2.842, 2.786, 2.786, 2.786,
+            2.786, 2.73, 2.73, 2.73, 2.73, 2.73,
         ],
         dtype=np.float64,
     ) * 1e-2
@@ -147,12 +110,7 @@ def calculate_molecular_profile(
     press_profile: np.ndarray,
     wavelength_nm: float,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Calculate molecular backscatter and extinction profiles.
-
-    Pressure is expected in hPa and temperature in K.  Invalid or non-positive
-    thermodynamic values are masked as NaN to avoid generating artificial
-    molecular structure in the optical inversion.
-    """
+    """Calculate molecular backscatter and extinction profiles."""
     temp_profile = np.asarray(temp_profile, dtype=np.float64)
     press_profile = np.asarray(press_profile, dtype=np.float64)
     wavelength_nm = float(wavelength_nm)
@@ -204,12 +162,7 @@ def linear_rayleigh_calibration_factor(
     reference_center_idx: int,
     reference_window_bins: int,
 ) -> tuple[float, float, float, float, int]:
-    """Fit measured signal as a linear function of molecular signal.
-
-    The slope scales the molecular signal onto the lidar signal.  The intercept
-    is retained as a diagnostic because a large intercept indicates incomplete
-    background correction or contamination in the Rayleigh reference interval.
-    """
+    """Fit measured signal as a linear function of molecular signal."""
     measured = np.asarray(measured_signal, dtype=np.float64)
     simulated = np.asarray(simulated_molecular_signal, dtype=np.float64)
     altitude = np.asarray(altitude_m, dtype=np.float64)
@@ -289,22 +242,37 @@ def find_optimal_reference_altitude(
     window_size: int = 50,
     altitude_units: Literal["auto", "m", "km"] = "auto",
 ) -> int:
-    """Find the best Rayleigh calibration altitude window."""
+    """Find the best Rayleigh calibration altitude window or fail explicitly."""
     rcs = np.asarray(rcs, dtype=np.float64)
     beta_mol = np.asarray(beta_mol, dtype=np.float64)
-    altitude, min_alt, max_alt = _resolve_altitude_search_units(altitude, min_alt, max_alt, altitude_units=altitude_units)
+    altitude, min_alt, max_alt = _resolve_altitude_search_units(
+        altitude,
+        min_alt,
+        max_alt,
+        altitude_units=altitude_units,
+    )
 
     if rcs.ndim != 1 or beta_mol.ndim != 1 or altitude.ndim != 1:
         raise ValueError("rcs, beta_mol and altitude must be 1D arrays.")
     if not (rcs.size == beta_mol.size == altitude.size):
         raise ValueError("rcs, beta_mol and altitude must have the same length.")
+    if not np.isfinite(min_alt) or not np.isfinite(max_alt) or max_alt <= min_alt:
+        raise ValueError("Rayleigh reference bounds must be finite and max_alt must exceed min_alt.")
 
     window_size = max(int(window_size), 3)
     valid_indices = np.where((altitude >= min_alt) & (altitude <= max_alt))[0]
     if len(valid_indices) < window_size:
-        return int(valid_indices[-1]) if len(valid_indices) else int(len(altitude) - 1)
+        raise ValueError(
+            f"Configured Rayleigh interval [{min_alt:g}, {max_alt:g}] contains only {len(valid_indices)} bins, "
+            f"fewer than reference window_size={window_size}."
+        )
 
-    ratio = rcs / beta_mol
+    ratio = np.divide(
+        rcs,
+        beta_mol,
+        out=np.full_like(rcs, np.nan, dtype=np.float64),
+        where=np.isfinite(beta_mol) & (beta_mol > 0.0),
+    )
     best_idx = -1
     min_cost = np.inf
 
@@ -335,6 +303,8 @@ def find_optimal_reference_altitude(
             min_cost = cost
             best_idx = start_idx + (window_size // 2)
 
-    if best_idx == -1:
-        best_idx = int(valid_indices[-1])
+    if best_idx < 0:
+        raise ValueError(
+            f"No valid Rayleigh reference window exists inside the configured interval [{min_alt:g}, {max_alt:g}]."
+        )
     return int(best_idx)
