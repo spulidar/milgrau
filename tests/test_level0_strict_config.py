@@ -48,8 +48,8 @@ def test_repository_level0_recipe_is_explicit() -> None:
     assert resolved.directories.raw_data == "01-data"
     assert resolved.directories.processed_data == "02-processed_data"
     assert resolved.directories.log_dir == "logs"
-    assert resolved.discovery.spurious_extensions == (".dpp", ".zip", ".txt")
-    assert resolved.discovery.raw_scan_ignore_dirs == ()
+    assert resolved.discovery.spurious_extensions == (".dpp", ".zip", ".txt", ".json")
+    assert resolved.discovery.raw_scan_ignore_dirs == ("openmeteo_cache", "wyoming_cache")
     assert resolved.discovery.quarantine_dir == "quarantine"
     assert resolved.acquisition_qa.laser_shot_tolerance_fraction == 0.002
     assert resolved.acquisition_qa.licel_header_time_jitter_s == 1.0
