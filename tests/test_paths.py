@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from milgrau.io.paths import (
     global_mean_rcs_output_path,
     level0_output_path,
@@ -12,6 +14,7 @@ from milgrau.io.paths import (
     log_output_root,
     measurement_product_dir,
     measurement_save_id,
+    product_save_id,
     quicklook_output_path,
     radiosonde_cache_dir,
     raw_data_root,
@@ -28,6 +31,16 @@ def test_measurement_save_id_inserts_sa_marker() -> None:
     """Inventory measurement IDs should map to canonical product save IDs."""
     assert measurement_save_id("20240101nt") == "20240101sant"
     assert measurement_save_id("20240101am") == "20240101saam"
+
+
+def test_product_save_id_is_stable_across_processing_levels() -> None:
+    assert product_save_id("20240101sant.nc") == "20240101sant"
+    assert product_save_id("20240101sant_scc.nc") == "20240101sant"
+    assert product_save_id("20240101sant_level1_rcs.nc") == "20240101sant"
+    assert product_save_id("20240101sant_level2_optical.nc") == "20240101sant"
+    assert product_save_id("20240101sant_0400-0500_level2_optical.nc") == "20240101sant"
+    with pytest.raises(ValueError, match="Unrecognized"):
+        product_save_id("arbitrary.nc.txt")
 
 
 def test_level_product_paths_are_canonical(tmp_path: Path) -> None:
