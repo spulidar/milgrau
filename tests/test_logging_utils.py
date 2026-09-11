@@ -1,4 +1,4 @@
-"""Tests for MILGRAU logger ownership, levels, and reconfiguration."""
+"""Tests for MILGRAU logger ownership, levels, context, and reconfiguration."""
 
 from __future__ import annotations
 
@@ -6,10 +6,12 @@ import io
 import logging
 from pathlib import Path
 
-from milgrau.io.logging_utils import setup_logger
+import pytest
+
+from milgrau.io.logging_utils import bind_log_context, setup_logger
 
 
-def _config(tmp_path: Path, *, console_level: str = "INFO", file_level: str = "INFO") -> dict:
+def _config(tmp_path: Path, *, console_level: str = "INFO", file_level: str = "DEBUG") -> dict:
     return {
         "directories": {"log_dir": str(tmp_path)},
         "processing": {"console_level": console_level, "file_level": file_level},
@@ -34,6 +36,57 @@ def test_debug_messages_reach_console_and_file_when_configured(tmp_path: Path, c
         assert logger.level == logging.DEBUG
     finally:
         _close_handlers(logger)
+
+
+def test_console_context_matches_compact_pipeline_style(tmp_path: Path, capsys) -> None:
+    logger = setup_logger("TEST_CONTEXT", config=_config(tmp_path))
+    try:
+        contextual = bind_log_context(logger, pipeline="L1", save_id="20240101sant", stage="atmosphere")
+        contextual.warning("radiosonde | delta=2.0 h | USSA76 extension=14.2%%")
+        for handler in logger.handlers:
+            handler.flush()
+
+        stderr = capsys.readouterr().err
+        assert "WARN" in stderr
+        assert "L1" in stderr
+        assert "20240101sant" in stderr
+        assert "atmosphere" in stderr
+        assert "radiosonde | delta=2.0 h | USSA76 extension=14.2%" in stderr
+    finally:
+        _close_handlers(logger)
+
+
+def test_info_is_concise_on_console_while_debug_stays_in_audit_file(tmp_path: Path, capsys) -> None:
+    logger = setup_logger("TEST_SPLIT", config=_config(tmp_path, console_level="INFO", file_level="DEBUG"))
+    try:
+        contextual = bind_log_context(logger, pipeline="L2", save_id="20240101sant", stage="355nm")
+        contextual.debug("candidate windows=84 best_rmse=0.012")
+        contextual.info("retrieval complete")
+        for handler in logger.handlers:
+            handler.flush()
+
+        stderr = capsys.readouterr().err
+        log_text = (tmp_path / "test_split.log").read_text(encoding="utf-8")
+        assert "candidate windows" not in stderr
+        assert "retrieval complete" in stderr
+        assert "candidate windows=84" in log_text
+        assert "pipeline=L2" in log_text
+        assert "save_id=20240101sant" in log_text
+    finally:
+        _close_handlers(logger)
+
+
+def test_loaded_config_requires_explicit_logging_levels(tmp_path: Path) -> None:
+    with pytest.raises(KeyError, match="processing.file_level"):
+        setup_logger(
+            "TEST_MISSING_LEVEL",
+            config={"directories": {"log_dir": str(tmp_path)}, "processing": {"console_level": "INFO"}},
+        )
+
+
+def test_invalid_logging_level_fails_instead_of_falling_back(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="processing.console_level"):
+        setup_logger("TEST_INVALID_LEVEL", config=_config(tmp_path, console_level="LOUD"))
 
 
 def test_external_handler_is_preserved_across_setup(tmp_path: Path) -> None:
