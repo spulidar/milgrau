@@ -104,6 +104,21 @@ def measurement_save_id(measurement_id: str) -> str:
     return f"{value[:8]}sa{value[8:]}"
 
 
+def product_save_id(product_path: str | Path) -> str:
+    """Extract the canonical save ID from a MILGRAU Level 0/1/2 product path."""
+    name = Path(product_path).name
+    for suffix in (LEVEL2_SUFFIX, LEVEL1_SUFFIX, LEVEL0_SCC_SUFFIX, LEVEL0_SUFFIX):
+        if name.endswith(suffix):
+            stem = name.removesuffix(suffix)
+            # Tagged Level 2 variants keep the canonical save ID as the first
+            # underscore-delimited token.
+            save_id = stem.split("_", 1)[0]
+            if len(save_id) >= 10 and save_id[8:10] == "sa":
+                return save_id
+            raise ValueError(f"Product name does not contain a canonical save_id: {name!r}")
+    raise ValueError(f"Unrecognized MILGRAU product filename: {name!r}")
+
+
 def measurement_product_dir(
     save_id: str,
     config: Mapping[str, Any],
