@@ -63,6 +63,11 @@ def finalize_correction_dataset(
         dims=["channel"],
         coords={"channel": final_channels},
     ).astype(np.int8)
+    final_ds["calibration_assumed_neutral"] = xr.DataArray(
+        [diag_by_channel[ch].get("calibration_assumed_neutral", 0) for ch in final_channels],
+        dims=["channel"],
+        coords={"channel": final_channels},
+    ).astype(np.int8)
     final_ds["deadtime_min_denominator_observed"] = xr.DataArray(
         [diag_by_channel[ch]["deadtime_min_denominator_observed"] for ch in final_channels],
         dims=["channel"],
@@ -108,6 +113,16 @@ def finalize_correction_dataset(
         coords={"time": final_ds.time, "channel": final_channels},
     ).astype(np.float32)
     final_ds["deadtime_correction_applied"].attrs.update({"flag_values": "0, 1", "flag_meanings": "not_applied applied"})
+    final_ds["calibration_assumed_neutral"].attrs.update(
+        {
+            "flag_values": "0, 1",
+            "flag_meanings": "traceable_calibration neutral_legacy_assumption",
+            "description": (
+                "Whether this channel used the explicit level1.missing_channel_calibration neutral legacy policy "
+                "instead of a traceable station calibration."
+            ),
+        }
+    )
     final_ds["deadtime_clipping_fraction"].attrs.update(
         {"units": "1", "description": "Fraction of altitude bins where the non-paralyzable dead-time denominator was numerically clipped."}
     )
@@ -129,4 +144,5 @@ def finalize_correction_dataset(
     )
     final_ds["bin_shift_invalid_fraction"].attrs.update({"units": "1", "description": "Fraction of altitude bins introduced by bin-shift alignment and marked as NaN."})
     final_ds["bin_shift_bins"].attrs.update({"units": "bins"})
+    final_ds.attrs["neutral_legacy_calibration_channel_count"] = int(final_ds["calibration_assumed_neutral"].sum().item())
     return final_ds
