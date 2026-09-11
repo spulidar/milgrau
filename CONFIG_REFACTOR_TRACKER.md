@@ -20,7 +20,7 @@ Make scientific and instrumental decisions explicit and auditable:
 - [ ] No station-specific coordinates/timezone/IDs embedded in Python fallbacks.
 - [x] No silent neutral channel correction fallback for an unknown channel in Level 1 processing; historical missing calibration follows the explicit `level1.missing_channel_calibration` policy and warns when neutral zeros are selected.
 - [x] No fake SCC channel IDs; the Level 0 writer rejects a missing SCC channel mapping instead of writing `9999`.
-- [ ] No algorithmic fallback that silently widens/changes a configured scientific domain.
+- [ ] No algorithmic fallback that silently widens/changes a configured scientific domain. **Productive gluing and Rayleigh-reference search domains are now strict; other runtime paths still require audit.**
 - [x] Optional Level 2 cloud-screening behavior must be explicitly enabled/disabled in YAML.
 - [x] Rayleigh molecular lidar ratio remains a versioned physical/method constant in Python rather than a user-editable YAML setting.
 - [ ] Each produced NetCDF records the resolved station profile/calibration and processing configuration provenance.
@@ -77,7 +77,7 @@ Make scientific and instrumental decisions explicit and auditable:
 - [x] Photon-counting Poisson uncertainty uses observed counts before dark subtraction.
 - [x] Canonical atmosphere is materialized in Level 1 with source/fallback provenance.
 - [x] Missing channel calibration follows an explicit policy: `error` or `neutral_with_warning`. Repository policy uses exact zero corrections for historical processability and emits a `RuntimeWarning`; PC saturation remains `not_characterized`.
-- [ ] Persist the per-channel fact that a neutral historical calibration was assumed. **The resolver exposes `ChannelCalibration.assumed_neutral`; Level 1 NetCDF persistence remains.**
+- [x] Persist the per-channel fact that a neutral historical calibration was assumed. Level 1 now writes `calibration_assumed_neutral(channel)` plus `neutral_legacy_calibration_channel_count`.
 - [x] Remove configurable speed of light; LIPANCORA uses exact SI `299792458 m s-1`.
 - [x] Require Level 1 background window through `level1.background`.
 - [x] Require dead-time numerical clipping denominator policy through `level1.photon_counting.deadtime_min_denominator`.
@@ -105,22 +105,24 @@ Make scientific and instrumental decisions explicit and auditable:
 - [ ] Require LR values for every requested wavelength/month and associated uncertainty/provenance. **Values + uncertainty are fail-fast for all 12 months. SPU climatology comes authoritatively from `station.yaml`; explicit config LR remains only compatibility fallback when a station has no climatology. Product-level provenance remains.**
 - [x] Remove molecular lidar-ratio YAML knob; keep Rayleigh molecular ratio as algorithm constant.
 - [x] Require complete productive gluing configuration.
-- [ ] Remove low-level gluing window/search/threshold defaults.
-- [ ] Do not widen an invalid configured gluing search interval to whole profile.
+- [ ] Remove low-level gluing window/search/threshold defaults. **Productive callers pass strict values; public low-level compatibility defaults remain.**
+- [x] Do not widen an invalid configured gluing search interval to whole profile. The gluing kernel now rejects out-of-domain or too-narrow configured intervals.
 - [ ] Make gluing selection-score weights explicit or documented versioned algorithm constants.
 - [x] Require complete productive Rayleigh-reference configuration.
-- [ ] Do not select last available bin when no valid Rayleigh window exists.
+- [x] Do not select last available bin when no valid Rayleigh window exists. Reference selection now raises an explicit failure for insufficient or invalid configured search windows.
 - [x] Require explicit cloud-screening enabled/disabled state.
 - [x] Require all cloud-screening parameters when enabled.
 - [x] Make cloud baseline percentile explicit when enabled.
 - [ ] Integrate cloud contamination into reference-window QA.
-- [ ] Remove residual literal fallback access in `_retrieval_impl.py`.
+- [ ] Remove residual literal fallback access in `_retrieval_impl.py`. **The public retrieval boundary overrides canonical atmosphere correctly, but duplicate/dead compatibility implementations remain a maintenance risk.**
 - [ ] Later migration: express public gluing/Rayleigh spatial windows in physical units rather than bins/indices.
 
 ## F. IO/runtime/visualization
 
 - [x] Remove filesystem raw/processed/log directory fallbacks from production config paths. Standardized cache locations remain code-level IO conventions, not scientific path fallbacks.
-- [ ] Remove logging-level fallbacks when a loaded MILGRAU config is used.
+- [x] Remove logging-level fallbacks when a loaded MILGRAU config is used. `processing.console_level` and `processing.file_level` are required and validated.
+- [x] Use concise contextual operator logs with `pipeline`, `save_id`, and `stage`, while retaining detailed diagnostics in the DEBUG audit file. Repository policy is console `INFO`, file `DEBUG`.
+- [x] Require explicit `processing.incremental` boolean in productive L0/L1/L2 runtime helpers rather than silently defaulting to `false`.
 - [ ] Remove visualization output-format/DPI/altitude-range fallbacks.
 - [ ] Ensure `mean_profile_smooth_bins` from YAML is actually used everywhere intended.
 - [ ] Make quicklook gap threshold explicit; no derived 10 min/3x-median fallback unless deliberately defined as an algorithmic mode.
@@ -128,13 +130,13 @@ Make scientific and instrumental decisions explicit and auditable:
 
 ## G. Scientific failure semantics
 
-- [ ] Missing required config -> configuration error before processing starts for every stage. **Implemented for productive Level 0, Level 1 and Level 2; remaining runtime paths still need audit.**
+- [ ] Missing required config -> configuration error before processing starts for every stage. **Implemented for productive Level 0, Level 1 and Level 2 scientific recipes plus logging/incremental runtime controls; remaining runtime/visualization paths still need audit.**
 - [x] Missing Level 1 channel calibration follows only explicit configured policy.
 - [x] Unknown PC saturation characterization is explicit `not_characterized`.
 - [x] Numerical dead-time clipping is not a detector saturation proxy.
 - [x] Level 2 does not accept uncharacterized PC saturation as known-clear input.
-- [ ] Invalid Rayleigh search -> reference selection failure.
-- [ ] Invalid gluing search -> gluing failure.
+- [x] Invalid Rayleigh search -> reference selection failure. No last-bin substitute remains.
+- [x] Invalid gluing search -> gluing failure. The configured domain is never widened automatically; absence of a qualifying overlap may still use the separately configured single-channel fallback policy.
 - [x] Missing external atmosphere follows only explicitly configured source policy.
 - [x] Missing surface weather follows only explicit `nan`/`fail` policy.
 - [x] Missing/invalid active Licel `BinW`, analog ADC bits or DAQ range invalidates that input instead of applying acquisition defaults.
@@ -151,7 +153,7 @@ Make scientific and instrumental decisions explicit and auditable:
 - [ ] Persist input file hashes or immutable input manifest.
 - [ ] Persist random seed for Monte Carlo retrievals.
 - [x] Persist atmosphere source, source datetime/time delta, fallback fraction, source-priority attempts and resolved station geometry.
-- [ ] Persist when a neutral legacy Level 1 channel calibration was assumed.
+- [x] Persist when a neutral legacy Level 1 channel calibration was assumed, per channel and as a product-level count.
 - [ ] Persist LR source/provenance used by each retrieval.
 - [x] Persist an audit sidecar for every explicit quarantined input, including SHA-256 and origin/context metadata.
 
@@ -162,7 +164,7 @@ Make scientific and instrumental decisions explicit and auditable:
 - [x] Add explicit-policy tests for missing Level 1 channel calibration.
 - [x] Add failure tests for missing LR month/uncertainty.
 - [x] Add tests that station LR climatology owns repository values and explicit config LR remains only compatibility fallback.
-- [ ] Add failure tests for invalid gluing/Rayleigh domains. **Config-level gluing validation exists; algorithmic failure tests remain.**
+- [x] Add failure tests for invalid gluing/Rayleigh domains. Algorithm-level tests now prove configured gluing domains are not widened and missing Rayleigh windows fail explicitly.
 - [x] Add failure tests for missing station timezone/coordinates at strict Level 0 accessors.
 - [x] Add explicit-policy tests for unavailable saturation characterization.
 - [x] Add Level 1 clipping-vs-saturation tests.
@@ -172,6 +174,7 @@ Make scientific and instrumental decisions explicit and auditable:
 - [x] Add strict Licel tests for active `BinW`, analog ADC bit depth and discriminator/DAQ range.
 - [x] Add Level 0 writer regression tests proving legacy `vertical_resolution_m` cannot replace missing native `BinW` and hidden background literals are not used.
 - [x] Add quarantine tests for dated reason buckets, SHA-256 sidecars, collisions and read-only discovery semantics.
+- [x] Add logging tests for contextual console fields, INFO/DEBUG destination split, explicit levels and handler ownership.
 - [ ] Add architectural guard against `config.get(..., semantic_literal_default)` outside config layer.
 - [ ] Add regression test ensuring production config contains no undeclared semantic defaults.
 - [ ] Run full test suite after each coherent implementation batch. **No CI is currently attached to the branch; isolated strict-L2 tests passed 19/19 earlier. Current full suite remains unverified in this environment.**
@@ -190,6 +193,7 @@ Make scientific and instrumental decisions explicit and auditable:
 
 - [ ] Consider carrying detector mode explicitly from Level 0 acquisition metadata through full pipeline instead of relying on canonical `.PC` / `.AN` suffixes outside resolved station calibration.
 - [ ] Review laser pointing-angle ownership. The Level 0 writer still treats missing `physics.laser_pointing_angle_deg` as vertical (`0.0 deg`); determine whether this is a valid invariant for SPU-Lidar or should move to temporal station/instrument geometry before removing the fallback.
+- [ ] Decide whether one invalid Rayleigh block should invalidate the full wavelength or be recorded as a failed block while allowing other valid blocks to continue. Current strict behavior prevents arbitrary reference substitution but is deliberately conservative.
 
 ## Implementation log
 
@@ -230,4 +234,14 @@ Make scientific and instrumental decisions explicit and auditable:
 - Commit `8c48528848ded74b3878e1b0a0421350fd551613`: implemented dated reason-based quarantine buckets and JSON audit sidecars with SHA-256, origin, size, stage and optional measurement ID; quarantine remains manual/explicit.
 - Commit `0733ea3db4295b4a1a4194665469890c6d5245b6`: added quarantine layout/manifest tests and preserved read-only raw discovery.
 - Level 0 section C is now complete for the tracked strict-config scope. Remaining Level 0-adjacent work belongs to ownership cleanup/provenance/runtime audit (sections A, F, H), not hidden C defaults.
-- Full repository suite is not claimed: the branch has no CI/status checks and no complete runnable snapshot is available in this environment.
+
+### 2026-09-11 — contextual logging and strict retrieval-domain audit
+
+- Fixed the post-C import regression in `logging_utils` caused by the removed `DEFAULT_LOG_DIR` symbol.
+- Added contextual `pipeline/save_id/stage` logging with compact operator-console formatting and a richer full-date DEBUG audit file. Repository policy is `console_level: INFO`, `file_level: DEBUG`.
+- L0/L1/L2 orchestration now carries canonical save IDs; per-channel/cache/transport details are moving to DEBUG while concise start/QA/station/atmosphere/wavelength/done events remain visible to operators.
+- Removed logging-level and `processing.incremental=false` runtime fallbacks; loaded productive configuration must state these policies explicitly.
+- Persisted `calibration_assumed_neutral(channel)` and neutral-channel count in Level 1 products.
+- Removed gluing search-domain widening and arbitrary last-bin Rayleigh reference selection; added algorithm-level failure tests for both.
+- Weather, radiosonde and ERA5 cache/download transport messages are DEBUG; availability/policy failures remain warnings.
+- Full repository suite is not claimed: the branch still has no CI/status checks and the complete suite has not been executed in this environment.
