@@ -23,13 +23,13 @@ Make scientific and instrumental decisions explicit and auditable:
 - [ ] No algorithmic fallback that silently widens/changes a configured scientific domain. **Productive gluing and Rayleigh-reference search domains are now strict; other runtime paths still require audit.**
 - [x] Optional Level 2 cloud-screening behavior must be explicitly enabled/disabled in YAML.
 - [x] Rayleigh molecular lidar ratio remains a versioned physical/method constant in Python rather than a user-editable YAML setting.
-- [ ] Each produced NetCDF records the resolved station profile/calibration and processing configuration provenance. **Config/station hashes plus resolved profile/calibration IDs now propagate L0 -> L1 -> L2; software/Git/input provenance remains.**
+- [x] Produced NetCDF provenance is human-readable: software release, resolved station/calibration IDs, source YAML filenames and exact embedded YAML text propagate through the product chain. Input manifest/LR provenance remain pending.
 - [ ] Tests cover every required-key failure and every explicit disabled/unavailable policy.
 
 ## A. Configuration ownership and schema
 
 - [ ] Replace generic `physics` ownership with stage-oriented processing configuration. **Level 1 science controls have moved to `level1`; Level 0 acquisition/weather controls have moved to `level0`; legacy schema still requires `physics.vertical_resolution_m` although the productive Level 0 writer no longer consumes it.**
-- [ ] Keep station/site/instrument metadata in `station.yaml` only. **Station-derived LR climatology is now station-owned; runtime compatibility views of site/hardware remain.**
+- [ ] Keep station/site/instrument metadata in `station.yaml` only. **Station-derived LR climatology and vertical pointing geometry are now station-owned; runtime compatibility views of site/hardware remain.**
 - [ ] Stop rebuilding `physics.channels` from station data. **Productive Level 1 no longer consumes this view; loader/station compatibility still materializes it.**
 - [ ] Stop rebuilding `hardware.name_to_id` as a compatibility structure.
 - [ ] Remove legacy aliases injected by `normalize_config`.
@@ -42,6 +42,7 @@ Make scientific and instrumental decisions explicit and auditable:
 
 - [x] Keep station ID/name/institution/timezone/site coordinates in station catalog.
 - [x] Keep radiosonde station identity in station catalog and remove the atmosphere-fallback boolean from station metadata.
+- [x] Record invariant SPU-Lidar vertical geometry in `station.yaml` as `station.lidar_geometry.pointing_angle_deg_from_zenith: 0.0`.
 - [x] Keep station-derived aerosol lidar-ratio climatology and uncertainty in `station.yaml`, with provenance. Repository values were moved without numerical changes.
 - [x] Rename `scc_defaults` to explicit `scc_policy` terminology.
 - [x] Introduce named instrument calibration sets.
@@ -71,6 +72,7 @@ Make scientific and instrumental decisions explicit and auditable:
 - [x] Remove global 7.5 m range-resolution fallback completely. `Raw_Data_Range_Resolution` now requires positive finite native Licel `BinW`; `physics.vertical_resolution_m` cannot mask missing acquisition metadata.
 - [x] Remove invented Licel analog ADC/range defaults. Active analog channels require explicit positive `ADCbits` and `Discriminator/DAQ range`; former 12-bit / 0.5-V substitutions are gone.
 - [x] Remove hidden Level 0 SCC background-window literals. `Background_Low/High` are written from the explicit configured background interval rather than internal 29000/29999 m constants.
+- [ ] Make the Level 0 writer consume `station.lidar_geometry.pointing_angle_deg_from_zenith` directly and remove the residual low-level `0.0` fallback. **The authoritative station value is now recorded; consumer migration remains.**
 
 ## D. Level 1 strict configuration
 
@@ -117,12 +119,15 @@ Make scientific and instrumental decisions explicit and auditable:
 - [ ] Remove residual literal fallback access in `_retrieval_impl.py`. **The public retrieval boundary overrides canonical atmosphere correctly, but duplicate/dead compatibility implementations remain a maintenance risk.**
 - [ ] Later migration: express public gluing/Rayleigh spatial windows in physical units rather than bins/indices.
 
-## F. IO/runtime/visualization
+## F. IO/runtime/visualization/CLI
 
 - [x] Remove filesystem raw/processed/log directory fallbacks from production config paths. Standardized cache locations remain code-level IO conventions, not scientific path fallbacks.
 - [x] Remove logging-level fallbacks when a loaded MILGRAU config is used. `processing.console_level` and `processing.file_level` are required and validated.
 - [x] Use concise contextual operator logs with `pipeline`, `save_id`, and `stage`, while retaining detailed diagnostics in the DEBUG audit file. Repository policy is console `INFO`, file `DEBUG`.
 - [x] Require explicit `processing.incremental` boolean in productive L0/L1/L2/VIZ runtime helpers rather than silently defaulting to `false`.
+- [x] Primary CLIs share the essential operator surface: repeatable `--input`, `--force`, and `--version`; LEBEAR additionally keeps `--time-window`.
+- [x] Simplify generic execution outcomes to `OK`, `SKIPPED`, `ERROR`; scientific quality stays in QA variables/diagnostics rather than software status labels. Transitional enum aliases remain until compatibility cleanup.
+- [x] Shell exit policy is now `0=normal`, `1=processing error(s)`, `2=command could not run/fatal structural error`; console summaries show processed/skipped/errors rather than recoverable/fatal terminology.
 - [x] Remove visualization output-format/DPI/altitude-range fallbacks. Productive visualization now resolves these fields strictly from `visualization`.
 - [x] Ensure `mean_profile_smooth_bins` from YAML is actually used for quicklook side profiles and the global mean RCS profile.
 - [x] Make quicklook gap threshold explicit; no derived 10 min/3x-median fallback remains.
@@ -144,18 +149,18 @@ Make scientific and instrumental decisions explicit and auditable:
 
 ## H. Provenance / FAIR
 
-- [ ] Persist software version and Git commit in products. **Blocked on release-version ownership (`pyproject.toml` currently says 0.1.0 while `CITATION.cff` says 2.0); no version is invented.**
+- [x] Persist software release version in products using human-readable CalVer. **MILGRAU is standardized at `2026.9`; Git commit hashes are deliberately not public NetCDF metadata.**
 - [ ] Persist scientific algorithm name/version separately from package version. **Level 2 already writes versioned Fernald/molecular implementation metadata; extend/version other scientific stages deliberately before checking globally.**
-- [x] Persist processing-config hash. Products now store SHA-256 of the actual `config.yaml` source used by the current stage.
-- [x] Persist station-config hash. Products now store SHA-256 of the actual `station.yaml` source used by the current stage.
+- [x] Embed the exact processing YAML used for a product as scalar NetCDF string variable `processing_configuration_yaml`, with source filename and `application/yaml` metadata.
+- [x] Embed the exact station/instrument YAML used for a product as scalar NetCDF string variable `station_configuration_yaml`, with source filename and `application/yaml` metadata.
 - [x] Persist resolved station profile ID.
 - [x] Persist resolved instrument calibration ID.
-- [ ] Persist input file hashes or immutable input manifest.
-- [ ] Persist random seed for Monte Carlo retrievals.
+- [ ] Persist input file hashes or immutable input manifest. **User-facing product provenance should stay readable; decide whether a compact filename/size/time manifest is sufficient before adding hashes.**
+- [ ] Persist random seed and Monte Carlo iteration count for Level 2 retrievals.
 - [x] Persist atmosphere source, source datetime/time delta, fallback fraction, source-priority attempts and resolved station geometry.
 - [x] Persist when a neutral legacy Level 1 channel calibration was assumed, per channel and as a product-level count.
-- [ ] Persist LR source/provenance used by each retrieval.
-- [x] Persist an audit sidecar for every explicit quarantined input, including SHA-256 and origin/context metadata.
+- [ ] Persist LR source/provenance used by each retrieval. **Current station climatology has descriptive provenance but no paper/DOI yet; do not invent one.**
+- [x] Persist an audit sidecar for every explicit quarantined input, including SHA-256 and origin/context metadata. **Hash remains appropriate for quarantine integrity even though product NetCDF provenance is human-readable.**
 
 ## I. Tests / architecture guardrails
 
@@ -176,7 +181,8 @@ Make scientific and instrumental decisions explicit and auditable:
 - [x] Add quarantine tests for dated reason buckets, SHA-256 sidecars, collisions and read-only discovery semantics.
 - [x] Add logging tests for contextual console fields, INFO/DEBUG destination split, explicit levels and handler ownership.
 - [x] Add strict visualization tests for required output/DPI/altitude/gap/smoothing settings and update LIRACOS incremental tests to the stdlib logger contract.
-- [x] Add FAIR provenance tests for exact file SHA-256, current recipe rehashing and inherited station/calibration identity.
+- [x] Add FAIR provenance tests for human-readable software/station identity and exact embedded YAML content; public SHA assertions were removed.
+- [x] Add common CLI option and CalVer synchronization tests.
 - [ ] Add architectural guard against `config.get(..., semantic_literal_default)` outside config layer.
 - [ ] Add regression test ensuring production config contains no undeclared semantic defaults.
 - [ ] Run full test suite after each coherent implementation batch. **No CI is currently attached to the branch; isolated strict-L2 tests passed 19/19 earlier. Current full suite remains unverified in this environment.**
@@ -184,7 +190,7 @@ Make scientific and instrumental decisions explicit and auditable:
 ## J. Follow-up FAIR/release work
 
 - [ ] Add repository software `LICENSE` after confirming institutional licensing choice.
-- [ ] Unify package version and `CITATION.cff` release version.
+- [x] Unify package version and `CITATION.cff` release version using CalVer `2026.9`, exposed at runtime as `milgrau.__version__`.
 - [ ] Restore/create documentation referenced by README.
 - [ ] Add CI checks and branch protection.
 - [ ] Audit NetCDF semantic metadata against current CF conventions.
@@ -194,7 +200,8 @@ Make scientific and instrumental decisions explicit and auditable:
 ## Suggested improvements recorded but not implemented
 
 - [ ] Consider carrying detector mode explicitly from Level 0 acquisition metadata through full pipeline instead of relying on canonical `.PC` / `.AN` suffixes outside resolved station calibration.
-- [ ] Review laser pointing-angle ownership. The Level 0 writer still treats missing `physics.laser_pointing_angle_deg` as vertical (`0.0 deg`); determine whether this is a valid invariant for SPU-Lidar or should move to temporal station/instrument geometry before removing the fallback.
+- [ ] Remove the residual Level 0 pointing-angle compatibility fallback after wiring the authoritative `station.lidar_geometry.pointing_angle_deg_from_zenith` value into the writer.
+- [ ] Remove transitional `SUCCESS/RECOVERABLE_FAILURE/FATAL_FAILURE` and legacy `ExitCode` aliases after remaining tests/callers have migrated to `OK/SKIPPED/ERROR`.
 - [ ] Decide whether one invalid Rayleigh block should invalidate the full wavelength or be recorded as a failed block while allowing other valid blocks to continue. Current strict behavior prevents arbitrary reference substitution but is deliberately conservative.
 
 ## Implementation log
@@ -225,7 +232,7 @@ Make scientific and instrumental decisions explicit and auditable:
 - Commit `95ff59ea6052d428e615273dd4935d531c5cc08c`: moved unchanged SPU monthly lidar-ratio climatology and standard deviations from `config.yaml` into `station.yaml` with provenance. Loader materializes a transitional Level 2 view; explicit config LR is accepted only when station climatology is absent.
 - Standardized configured caches to `.cache/radiosonde`, `.cache/era5`, and `.cache/weather`; `.cache/` and `quarantine/` are ignored by Git.
 - Commit `823d354afd3a8cf3748b1dc623053d963ad22c57`: removed fake SCC channel ID and remaining coordinate/surface-value literals from Level 0 writer paths.
-- Commit `a61540c5878b69a3ee39b1c531fdac1a33b31289`: changed generic IO cache fallbacks from raw-data cache folders to `.cache/weather` and `.cache/radiosonde`.
+- Commit `a61540c5878b69a3ee39b99df448860926f9079fa`: changed generic IO cache fallbacks from raw-data cache folders to `.cache/weather` and `.cache/radiosonde`.
 - Commit `ccd372a344fdd44d8f9b99df448860926f9079fa`: removed hidden Licel analog defaults of 12 ADC bits / 0.5 V and requires explicit positive active-channel `BinW`.
 
 ### 2026-09-11 — Level 0 filesystem/range completion tranche
@@ -252,8 +259,16 @@ Make scientific and instrumental decisions explicit and auditable:
 
 ### 2026-09-11 — FAIR config/station provenance tranche
 
-- Added reusable `milgrau.provenance` helpers for exact file SHA-256 and controlled NetCDF provenance propagation.
-- Level 0 primary/SCC products now persist the SHA-256 of the active processing/station YAML plus resolved station profile and instrument calibration IDs.
-- Level 1 and Level 2 recompute current YAML hashes and inherit the resolved historical profile/calibration identity from their upstream product.
-- Added provenance tests for exact byte hashing, current-recipe replacement and inherited station/calibration identity.
-- Software package version/Git commit, input manifest, Monte Carlo seed and LR-source provenance remain explicitly pending; no placeholder provenance is invented.
+- Added reusable `milgrau.provenance` helpers and initial configuration/station provenance propagation.
+- Level 0 primary/SCC products persist resolved station profile and instrument calibration IDs; Level 1 and Level 2 inherit that historical identity.
+- Initial hash-oriented provenance was subsequently replaced by the human-readable/YAML-embedded policy below.
+
+### 2026-09-11 — CLI, outcomes, CalVer, and readable FAIR provenance tranche
+
+- Simplified generic operational results to `OK/SKIPPED/ERROR`; fatal is now an error attribute used only to reserve shell exit 2 for commands that cannot run. Console summaries no longer expose recoverable/fatal framework terminology.
+- Added repeatable `--input`, `--force`, and `--version` to LIBIDS, LIPANCORA, LIRACOS and LEBEAR; LEBEAR retains `--time-window`. LIBIDS input selection remains measurement-group based so raw-file selection cannot bypass group/dark-current context.
+- Adopted CalVer `2026.9`, synchronized runtime `__version__`, `pyproject.toml`, and `CITATION.cff`.
+- Replaced public NetCDF SHA metadata with human-readable provenance: software name/version, YAML filenames, resolved profile/calibration IDs, plus exact `config.yaml` and `station.yaml` contents embedded as scalar `application/yaml` variables.
+- Kept SHA-256 only where it has an integrity role (for example quarantine sidecars), not as the primary human-facing scientific provenance vocabulary.
+- Recorded the confirmed invariant SPU-Lidar pointing angle (`0.0° from zenith`) in `station.yaml`; direct Level 0 writer consumption/removal of the old low-level fallback remains the next geometry cleanup.
+- Added CLI-surface, CalVer synchronization, simplified-result, and readable-provenance tests. Full repository suite is still not claimed in this environment.
