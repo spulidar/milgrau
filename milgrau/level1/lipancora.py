@@ -376,11 +376,12 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
         final_ds.to_netcdf(save_path, encoding=_level1_encoding(final_ds))
         provenance_attrs = write_netcdf_provenance(save_path, config, source_attrs=source_provenance)
         bind_log_context(file_logger, stage="provenance").debug(
-            "profile=%s calibration=%s config_sha256=%s station_sha256=%s",
+            "MILGRAU=%s | config=%s | station=%s | profile=%s | calibration=%s",
+            provenance_attrs.get("software_version", "-"),
+            provenance_attrs.get("processing_configuration_file", "-"),
+            provenance_attrs.get("station_configuration_file", "-"),
             provenance_attrs.get("station_profile_id", "-"),
             provenance_attrs.get("instrument_calibration_id", "-"),
-            provenance_attrs.get("processing_config_sha256", "-"),
-            provenance_attrs.get("station_config_sha256", "-"),
         )
         return ExecutionResult.success(
             "level1.complete",
@@ -424,13 +425,13 @@ def process_level_1(config: Mapping[str, Any], logger: logging.Logger) -> Execut
         save_id = logging_save_id(file_path)
         file_logger = bind_log_context(logger, save_id=save_id)
         result = process_single_file((str(file_path), config, file_logger))
-        if result.status is ExecutionStatus.SUCCESS:
+        if result.status is ExecutionStatus.OK:
             duration = 0.0 if result.duration_seconds is None else result.duration_seconds
             channel_count = int(result.metadata.get("channel_count", 0))
             bind_log_context(file_logger, stage="done").info(
                 "%d channels | %s | %.1f s", channel_count, result.output_path.name if result.output_path else "no output", duration
             )
-        elif result.status.is_failure:
+        elif result.status is ExecutionStatus.ERROR:
             bind_log_context(file_logger, stage=result.stage.removeprefix("level1.")).error(
                 "%s | %s", result.message, result.cause or "unknown failure"
             )
