@@ -44,6 +44,17 @@ level1:
     min_search_altitude_m: 500.0
     max_search_altitude_m: 4000.0
     smooth_bins: 15
+
+  # Historical files may contain channels for which no traceable instrument
+  # calibration survives in the repository. This policy keeps those files
+  # processable without pretending that a measured calibration exists.
+  missing_channel_calibration:
+    policy: "neutral_with_warning"
+    neutral_values:
+      deadtime_us: 0.0
+      bin_shift_bins: 0
+      background_offset: 0.0
+
   atmosphere:
     # Source order is scientific policy. Exhaustion without a usable source is
     # a processing failure unless a later source is explicitly listed here.
