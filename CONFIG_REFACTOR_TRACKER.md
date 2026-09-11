@@ -11,14 +11,14 @@ Make scientific and instrumental decisions explicit and auditable:
 - `config.yaml` = processing/scientific recipe.
 - `station.yaml` = observational reality, hardware history, calibration and SCC mapping.
 - Python code = physical constants, equations, file-format invariants and implementation details.
-- Missing required scientific/instrumental configuration must fail early; production code must not invent semantic defaults.
+- Missing required scientific/instrumental configuration must fail early unless an explicit, auditable unavailable/legacy policy is selected; production code must not invent semantic defaults.
 
 ## Global rules
 
 - [ ] No silent scientific defaults in production paths.
 - [ ] No silent instrumental defaults in production paths.
 - [ ] No station-specific coordinates/timezone/IDs embedded in Python fallbacks.
-- [x] No neutral channel correction fallback for an unknown channel in Level 1 processing.
+- [x] No silent neutral channel correction fallback for an unknown channel in Level 1 processing; historical missing calibration follows the explicit `level1.missing_channel_calibration` policy and warns when neutral zeros are selected.
 - [ ] No fake SCC channel IDs.
 - [ ] No algorithmic fallback that silently widens/changes a configured scientific domain.
 - [x] Optional Level 2 cloud-screening behavior must be explicitly enabled/disabled in YAML.
@@ -28,15 +28,15 @@ Make scientific and instrumental decisions explicit and auditable:
 
 ## A. Configuration ownership and schema
 
-- [ ] Replace generic `physics` ownership with stage-oriented processing configuration. **Level 1 science controls have moved to `level1`; Level 0/runtime fields remain.**
+- [ ] Replace generic `physics` ownership with stage-oriented processing configuration. **Level 1 science controls have moved to `level1`; Level 0 acquisition/weather controls have moved to `level0`; the transitional range-resolution field remains in `physics`.**
 - [ ] Keep station/site/instrument metadata in `station.yaml` only.
 - [ ] Stop rebuilding `physics.channels` from station data. **Productive Level 1 no longer consumes this view; loader/station compatibility still materializes it.**
 - [ ] Stop rebuilding `hardware.name_to_id` as a compatibility structure.
 - [ ] Remove legacy aliases injected by `normalize_config`.
 - [ ] Remove legacy positional channel correction lists. **The Level 1 consumer now rejects them, but loader compatibility still exists.**
-- [ ] Replace `validate_config_minimum` philosophy with stage-specific strict validation. **A strict typed Level 1 resolver now validates LIPANCORA before discovery/processing; legacy global validation remains.**
+- [ ] Replace `validate_config_minimum` philosophy with stage-specific strict validation. **Typed strict Level 0 and Level 1 resolvers validate productive LIBIDS/LIPANCORA before discovery/processing; legacy global validation remains.**
 - [ ] Validate unknown keys with full paths.
-- [ ] Add typed/resolved configuration objects or equivalent strict accessors so scientific modules do not consume raw config mappings directly. **Implemented for the current Level 1 recipe/calibration/atmosphere path; other stages remain.**
+- [ ] Add typed/resolved configuration objects or equivalent strict accessors so scientific modules do not consume raw config mappings directly. **Implemented for current Level 0 acquisition/weather policy and Level 1 recipe/calibration/atmosphere paths; other stages remain.**
 
 ## B. `station.yaml`: observational reality
 
@@ -57,13 +57,13 @@ Make scientific and instrumental decisions explicit and auditable:
 
 - [ ] Require raw/processed/log directories; remove path fallbacks.
 - [ ] Require raw discovery spurious extensions / ignore dirs / quarantine path when used.
-- [ ] Require laser-shot tolerance.
-- [ ] Make Licel header timestamp jitter threshold explicit.
-- [ ] Require finite dark-current association maximum or another explicit policy.
-- [ ] Remove timezone fallback to `America/Sao_Paulo`.
-- [ ] Remove hardcoded São Paulo latitude/longitude fallback.
-- [ ] Remove fallback surface temperature 25 C / pressure 940 hPa.
-- [ ] Use explicit missing-surface-weather policy (`nan` or `fail`).
+- [x] Require laser-shot tolerance through `level0.acquisition_qa.laser_shot_tolerance_fraction`.
+- [x] Make Licel header timestamp jitter threshold explicit through `level0.acquisition_qa.licel_header_time_jitter_s`.
+- [x] Require finite dark-current association maximum through `level0.dark_current.max_association_hours`.
+- [x] Remove productive timezone fallback to `America/Sao_Paulo`; LIBIDS resolves timezone only from the station catalog.
+- [ ] Remove hardcoded São Paulo latitude/longitude fallback. **Productive weather retrieval now resolves coordinates only from `station.yaml`; low-level NetCDF-writer literals still need removal.**
+- [ ] Remove fallback surface temperature 25 C / pressure 940 hPa. **Productive weather handling now returns `NaN` or fails according to policy; low-level NetCDF-writer literals still need removal.**
+- [x] Use explicit missing-surface-weather policy (`nan` or `fail`) through `level0.surface_weather.missing_policy`.
 - [ ] Remove `DEFAULT_CHANNEL_ID = 9999`; missing SCC channel ID makes SCC export unavailable/invalid.
 - [ ] Remove global 7.5 m range-resolution fallback; prefer Licel metadata and explicit historical station override only when justified.
 - [ ] Review Licel parser defaults for ADC bits/range and convert them to explicit format invariants or station-profile overrides.
@@ -72,7 +72,8 @@ Make scientific and instrumental decisions explicit and auditable:
 
 - [x] Photon-counting Poisson uncertainty uses observed counts before dark subtraction (SCI-003 completed before this refactor).
 - [x] Canonical atmosphere is materialized in Level 1 with source/fallback provenance.
-- [x] Missing channel calibration is a Level 1 configuration error; neutral correction constants are no longer substituted.
+- [x] Missing channel calibration follows an explicit policy: `error` or `neutral_with_warning`. Repository policy uses exact zero corrections for historical processability and emits a `RuntimeWarning`; PC saturation remains `not_characterized`.
+- [ ] Persist the per-channel fact that a neutral historical calibration was assumed. **The resolver exposes `ChannelCalibration.assumed_neutral`; Level 1 NetCDF persistence remains.**
 - [x] Remove configurable speed of light; LIPANCORA uses the exact SI value `299792458 m s-1` as a code constant.
 - [x] Require Level 1 background window through `level1.background`.
 - [x] Require dead-time numerical clipping denominator policy through `level1.photon_counting.deadtime_min_denominator`.
@@ -123,14 +124,15 @@ Make scientific and instrumental decisions explicit and auditable:
 
 ## G. Scientific failure semantics
 
-- [ ] Missing required config -> configuration error before processing starts for every stage. **Implemented for productive Level 1 and Level 2; other stages remain.**
-- [x] Missing channel calibration -> Level 1 channel/product failure, never neutral correction.
+- [ ] Missing required config -> configuration error before processing starts for every stage. **Implemented for productive Level 0, Level 1 and Level 2; remaining non-stage/runtime paths still need audit.**
+- [x] Missing Level 1 channel calibration follows only the explicit configured policy: fail or warned exact-zero legacy correction.
 - [x] Unknown PC saturation characterization is represented explicitly as `not_characterized` in station calibration instead of assigning an invented detector limit.
 - [x] Stop reusing numerical dead-time clipping as a detector saturation proxy.
 - [x] Level 1 persists whether PC saturation is characterized and the rate limit when available; Level 2 does not accept an uncharacterized PC source as scientifically valid retrieval input.
 - [ ] Invalid Rayleigh search -> reference selection failure.
 - [ ] Invalid gluing search -> gluing failure.
 - [x] Missing external atmosphere follows only the explicitly configured source policy; exhausted policies fail rather than silently selecting USSA76.
+- [x] Missing surface weather follows only the explicit `nan`/`fail` Level 0 policy; productive processing no longer inserts 25 C / 940 hPa.
 - [ ] Optional diagnostic failure must not silently change the scientific algorithm.
 
 ## H. Provenance / FAIR
@@ -144,20 +146,22 @@ Make scientific and instrumental decisions explicit and auditable:
 - [ ] Persist input file hashes or an immutable input manifest.
 - [ ] Persist random seed for Monte Carlo retrievals.
 - [x] Persist atmosphere source, source datetime/time delta, fallback fraction, source-priority attempts and resolved station geometry.
+- [ ] Persist when a neutral legacy Level 1 channel calibration was assumed.
 - [ ] Persist LR source/provenance used by each retrieval.
 
 ## I. Tests / architecture guardrails
 
-- [ ] Rewrite broad config tests for strict schema; remove tests that freeze legacy aliases. **Repository expectations now reflect Level 1 ownership; general legacy-schema tests remain until tranche A.**
+- [ ] Rewrite broad config tests for strict schema; remove tests that freeze legacy aliases. **Repository expectations now reflect stage ownership; general legacy-schema tests remain until tranche A.**
 - [x] Add station calibration/profile resolution tests across historical eras.
-- [x] Add failure tests for missing channel calibration at the Level 1 processing consumer.
+- [x] Add explicit-policy tests for missing Level 1 channel calibration, including warned neutral legacy processing and strict error mode.
 - [x] Add failure tests for missing LR month/uncertainty.
 - [ ] Add failure tests for invalid gluing/Rayleigh domains. **Config-level gluing interval validation is tested; algorithmic failure tests remain.**
-- [ ] Add failure tests for missing station timezone/coordinates/altitude.
+- [x] Add failure tests for missing station timezone/coordinates at strict Level 0 accessors. **Historical altitude coverage is tested in Level 1 atmosphere resolution.**
 - [x] Add explicit-policy tests for unavailable saturation characterization.
 - [x] Add Level 1 tests that distinguish numerical dead-time clipping from characterized physical saturation.
 - [x] Add Level 2 boundary tests ensuring missing/uncharacterized PC saturation metadata is not assumed clear.
 - [x] Add atmosphere-policy tests for source order, omitted sources, policy exhaustion, explicit USSA76 extension, radiosonde temporal selection and strict ERA5 pressure levels.
+- [x] Add Level 0 tests for explicit shot tolerance, timestamp jitter, dark-current association and missing-weather `nan`/`fail` policy.
 - [ ] Add architectural guard against `config.get(..., semantic_literal_default)` outside the config layer.
 - [ ] Add regression test ensuring production config contains no undeclared semantic defaults.
 - [ ] Run full test suite after each coherent implementation batch. **No CI is currently attached to the branch; isolated strict-L2 tests passed 19/19 earlier. A current full snapshot test run could not be executed from this environment.**
@@ -242,3 +246,24 @@ Make scientific and instrumental decisions explicit and auditable:
 - Atmosphere interpolation resolves the historical station profile so the September 2024 altitude transition (766 m -> 740 m) is respected.
 - Added focused tests for radiosonde target-time selection, maximum time delta, strict ERA5 settings, source-order enforcement, omitted-source behavior, exhausted policy failure, station-only radiosonde identity and historical station altitude.
 - No full repository test run is claimed for this tranche because the branch still has no CI and this environment cannot fetch a runnable repository snapshot over the network.
+
+### 2026-09-11 — explicit historical neutral channel-calibration policy
+
+- Historical files may now process channels absent from the traceable calibration set only because `config.yaml` explicitly selects `level1.missing_channel_calibration.policy: neutral_with_warning`.
+- The fallback values are required to be exactly `deadtime_us=0`, `bin_shift_bins=0`, and `background_offset=0`; non-zero values are rejected as not neutral.
+- Each use emits a `RuntimeWarning` stating that the values are not a measured calibration.
+- Detector mode is inferred only from canonical `.PC`/`.AN` channel suffixes in this legacy path; an unknown detector suffix still fails.
+- Photon-counting fallback channels remain `saturation.status=not_characterized` and receive no invented saturation rate.
+- `ChannelCalibration.assumed_neutral` records the runtime state; persistence of that flag into the Level 1 NetCDF remains tracked rather than silently implied.
+- The policy can be changed back to `error` without code changes.
+
+### 2026-09-11 — Level 0 strict acquisition/weather tranche
+
+- Added typed strict `milgrau.level0.config` resolution and validation before LIBIDS discovery/processing.
+- Moved laser-shot tolerance, Licel header timestamp jitter and dark-current association maximum from code/legacy processing keys into explicit `level0` configuration.
+- Inventory timezone is now resolved only from the validated station catalog; the `America/Sao_Paulo` Python fallback was removed from the productive inventory path.
+- Surface-weather coordinates are now resolved only from station metadata; productive weather retrieval no longer falls back to hardcoded São Paulo coordinates.
+- Removed repository-config surface defaults `25 C` and `940 hPa`. Missing surface weather now follows `level0.surface_weather.missing_policy: nan|fail`; repository policy is `nan`.
+- Updated acquisition-QA and inventory tests and added focused strict-Level-0 tests for missing/unknown keys, station metadata, dark-current limits, timestamp jitter and weather policy.
+- Low-level writer cleanup is intentionally still visible in section C: `netcdf.py` retains compatibility literals for coordinates/surface values, fake SCC ID `9999`, and the 7.5 m range-resolution fallback. These are not marked complete until removed/reclassified.
+- No full repository test run is claimed; the branch has no CI checks and this environment still lacks a runnable repository snapshot.
