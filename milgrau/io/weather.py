@@ -78,11 +78,11 @@ def fetch_surface_weather(
             weather = _extract_surface_weather_from_payload(payload, target_time)
             if weather is not None:
                 if logger:
-                    logger.info(f"  -> [OPEN-METEO] Cached surface weather found: {cache_file.name}")
+                    logger.debug("Open-Meteo cache hit: %s", cache_file.name)
                 return weather
         except Exception as exc:
             if logger:
-                logger.warning(f"  -> [OPEN-METEO] Could not read cache {cache_file}: {exc}")
+                logger.warning("Open-Meteo cache unreadable: %s | %s", cache_file, exc)
 
     url = (
         "https://archive-api.open-meteo.com/v1/archive?"
@@ -91,7 +91,7 @@ def fetch_surface_weather(
         "hourly=temperature_2m,surface_pressure,relative_humidity_2m,cloud_cover,wind_speed_10m"
     )
     if logger:
-        logger.info(f"  -> [OPEN-METEO] Fetching surface weather for {target_time}...")
+        logger.debug("Open-Meteo fetch: %s", target_time)
 
     req = urllib.request.Request(url, headers={"User-Agent": "SPU-Lidar"})
     with urllib.request.urlopen(req, timeout=10) as response:
