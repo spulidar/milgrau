@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from milgrau.viz.config import resolve_visualization_config
 from milgrau.viz.style import add_footer_and_logos, channel_color, get_output_settings
 
 RCS_VARIABLE = "range_corrected_signal"
@@ -54,14 +55,14 @@ def safe_error_of_mean(err_da: xr.DataArray) -> xr.DataArray:
     return np.sqrt((err_da**2).sum(dim="time", skipna=True)) / n_profiles
 
 
-def rolling_altitude(da: xr.DataArray, bins: int = 15) -> xr.DataArray:
-    """Apply centered rolling smoothing along altitude when possible."""
+def rolling_altitude(da: xr.DataArray, bins: int) -> xr.DataArray:
+    """Apply centered rolling smoothing along altitude using an explicit bin count."""
     if "altitude" not in da.dims:
         return da
-    try:
-        return da.rolling(altitude=int(bins), min_periods=1, center=True).mean()
-    except Exception:
-        return da
+    bins = int(bins)
+    if bins <= 0:
+        raise ValueError("Smoothing bins must be positive.")
+    return da.rolling(altitude=bins, min_periods=1, center=True).mean()
 
 
 def _save_figure(fig: Any, out_path: str | Path, dpi: int) -> Path:
@@ -74,30 +75,13 @@ def _save_figure(fig: Any, out_path: str | Path, dpi: int) -> Path:
 
 
 def _get_gap_threshold_minutes(config: dict[str, Any], data_slice: xr.DataArray) -> float:
-    """Return the temporal-gap threshold for drawing missing acquisition gaps."""
-    quicklook_cfg = config.get("visualization", {}).get("quicklook", {}) or {}
-    configured = quicklook_cfg.get("max_time_gap_minutes")
-    if configured is not None:
-        return float(configured)
-
-    if "time" not in data_slice.coords or data_slice.sizes.get("time", 0) < 3:
-        return 10.0
-
-    times = pd.to_datetime(data_slice["time"].values)
-    deltas_min = np.diff(times.values).astype("timedelta64[s]").astype(float) / 60.0
-    finite = deltas_min[np.isfinite(deltas_min) & (deltas_min > 0.0)]
-    if finite.size == 0:
-        return 10.0
-    return max(float(np.nanmedian(finite) * 3.0), 5.0)
+    """Return the explicitly configured temporal-gap threshold."""
+    del data_slice
+    return resolve_visualization_config(config).quicklook.max_time_gap_minutes
 
 
 def _insert_time_gap_markers(data_slice: xr.DataArray, config: dict[str, Any]) -> xr.DataArray:
-    """Insert NaN profiles into large temporal gaps so quicklooks show missing data.
-
-    Without this step, pcolormesh-style quicklooks visually stretch the previous
-    and next profiles across long acquisition gaps. NaN marker profiles force the
-    gap to be rendered with the colormap's ``bad`` color.
-    """
+    """Insert NaN profiles into large temporal gaps so quicklooks show missing data."""
     if "time" not in data_slice.dims or "altitude" not in data_slice.dims:
         return data_slice
     if data_slice.sizes.get("time", 0) < 2:
@@ -147,12 +131,10 @@ def _insert_time_gap_markers(data_slice: xr.DataArray, config: dict[str, Any]) -
 
 
 def _quicklook_colormap(config: dict[str, Any]):
-    """Return the colormap used for quicklooks, including missing-data color."""
-    quicklook_cfg = config.get("visualization", {}).get("quicklook", {}) or {}
-    cmap_name = str(quicklook_cfg.get("colormap", "jet"))
-    missing_color = str(quicklook_cfg.get("missing_data_color", "lightgray"))
-    cmap = plt.get_cmap(cmap_name).copy()
-    cmap.set_bad(color=missing_color)
+    """Return the explicitly configured colormap and missing-data color."""
+    quicklook = resolve_visualization_config(config).quicklook
+    cmap = plt.get_cmap(quicklook.colormap).copy()
+    cmap.set_bad(color=quicklook.missing_data_color)
     return cmap
 
 
@@ -167,10 +149,11 @@ def plot_quicklook(
     config: dict[str, Any],
     root_dir: str | Path,
     pbl_da: xr.DataArray | None = None,
-    cpt_km: float = -999.0,
-    lrt_km: float = -999.0,
+    cpt_km: float = np.nan,
+    lrt_km: float = np.nan,
 ) -> Path:
     """Render one Level 1 RCS quicklook and side mean profile."""
+    resolved = resolve_visualization_config(config)
     output_format, dpi = get_output_settings(config)
     date_title, _ = extract_datetime_strings(ds)
     pretty_channel = format_channel_name(channel_name)
@@ -206,8 +189,9 @@ def plot_quicklook(
     ax0.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
 
     ax1 = plt.subplot(gs[1], sharey=ax0)
-    smooth_profile = rolling_altitude(safe_time_mean(data_slice), bins=20)
-    smooth_error = rolling_altitude(safe_error_of_mean(error_slice), bins=20)
+    smooth_bins = resolved.quicklook.mean_profile_smooth_bins
+    smooth_profile = rolling_altitude(safe_time_mean(data_slice), bins=smooth_bins)
+    smooth_error = rolling_altitude(safe_error_of_mean(error_slice), bins=smooth_bins)
     ax1.plot(smooth_profile, smooth_profile.altitude, color=color, linewidth=2)
     ax1.fill_betweenx(
         smooth_profile.altitude,
@@ -231,7 +215,7 @@ def plot_quicklook(
         ax1.set_xlim(min(0.0, p_min) - margin, p_max + margin)
 
     has_legend = False
-    if pbl_da is not None:
+    if resolved.quicklook.show_pbl and pbl_da is not None:
         try:
             mean_pbl = float(pbl_da.mean(skipna=True).values)
             if np.isfinite(mean_pbl) and 0 < mean_pbl <= max_altitude:
@@ -240,12 +224,13 @@ def plot_quicklook(
         except Exception:
             pass
 
-    if np.isfinite(cpt_km) and 0 < cpt_km <= max_altitude:
-        ax1.axhline(cpt_km, color="royalblue", linestyle=":", linewidth=1.8, zorder=5, label=f"CPT ({cpt_km:.1f} km)")
-        has_legend = True
-    if np.isfinite(lrt_km) and 0 < lrt_km <= max_altitude:
-        ax1.axhline(lrt_km, color="forestgreen", linestyle="-.", linewidth=1.8, zorder=5, label=f"LRT ({lrt_km:.1f} km)")
-        has_legend = True
+    if resolved.quicklook.show_tropopause:
+        if np.isfinite(cpt_km) and 0 < cpt_km <= max_altitude:
+            ax1.axhline(cpt_km, color="royalblue", linestyle=":", linewidth=1.8, zorder=5, label=f"CPT ({cpt_km:.1f} km)")
+            has_legend = True
+        if np.isfinite(lrt_km) and 0 < lrt_km <= max_altitude:
+            ax1.axhline(lrt_km, color="forestgreen", linestyle="-.", linewidth=1.8, zorder=5, label=f"LRT ({lrt_km:.1f} km)")
+            has_legend = True
     if has_legend:
         ax1.legend(loc="upper right", framealpha=0.9, fontsize=9, facecolor="white", edgecolor="black")
 
@@ -269,8 +254,10 @@ def plot_global_mean_rcs(
     root_dir: str | Path,
 ) -> Path | None:
     """Render a comparative global mean RCS profile for configured channels."""
+    resolved = resolve_visualization_config(config)
     output_format, dpi = get_output_settings(config)
-    max_altitude = float(max(config.get("visualization", {}).get("altitude_ranges_km", [5, 15, 30])))
+    max_altitude = max(resolved.altitude_ranges_km)
+    smooth_bins = resolved.quicklook.mean_profile_smooth_bins
     date_title, _ = extract_datetime_strings(ds)
 
     if RCS_VARIABLE not in ds or RCS_ERROR_VARIABLE not in ds:
@@ -280,13 +267,8 @@ def plot_global_mean_rcs(
     fig.subplots_adjust(top=0.90, bottom=0.15)
     plotted = False
     available_channels = {str(channel) for channel in ds.channel.values}
-    seen: set[str] = set()
 
-    for channel_name in config.get("visualization", {}).get("channels_to_plot", []) or []:
-        channel_name = str(channel_name)
-        if channel_name in seen:
-            continue
-        seen.add(channel_name)
+    for channel_name in resolved.channels_to_plot:
         if channel_name not in available_channels:
             continue
 
@@ -295,8 +277,8 @@ def plot_global_mean_rcs(
         if rc_sig.size == 0:
             continue
 
-        mean_prof = rolling_altitude(safe_time_mean(rc_sig), bins=50)
-        mean_err = rolling_altitude(safe_error_of_mean(rc_err), bins=50)
+        mean_prof = rolling_altitude(safe_time_mean(rc_sig), bins=smooth_bins)
+        mean_err = rolling_altitude(safe_error_of_mean(rc_err), bins=smooth_bins)
         ax.plot(
             mean_prof,
             mean_prof.altitude,
