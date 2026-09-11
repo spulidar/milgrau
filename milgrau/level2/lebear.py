@@ -7,7 +7,7 @@ import os
 import tempfile
 import time
 from pathlib import Path
-from typing import Mapping, Any
+from typing import Any, Mapping
 
 import numpy as np
 import xarray as xr
@@ -15,8 +15,9 @@ import xarray as xr
 from milgrau.incremental import output_is_current
 from milgrau.io.contracts import netcdf_satisfies_contract, validate_level1_contract, validate_level2_contract
 from milgrau.io.filesystem import ensure_directories
-from milgrau.io.paths import level2_output_path
-from milgrau.operations import ExecutionResult, ExecutionSummary
+from milgrau.io.logging_utils import bind_log_context
+from milgrau.io.paths import level2_output_path, product_save_id
+from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary
 from milgrau.level2.completeness import (
     Level2ProductContract,
     ProductCompleteness,
@@ -117,10 +118,13 @@ def attempt_wavelength(
     logger: logging.Logger,
 ) -> WavelengthAttempt:
     """Isolate one requested wavelength and classify its scientific outcome."""
+    wavelength_logger = bind_log_context(logger, stage=f"{wavelength_nm}nm")
     try:
-        result = process_wavelength(ds_l1, wavelength_nm, altitude_m, config, logger)
+        result = process_wavelength(ds_l1, wavelength_nm, altitude_m, config, wavelength_logger)
     except (MemoryError, SystemError) as exc:
         diagnostic = diagnostic_from_exception(wavelength_nm, exc)
+        wavelength_logger.error("fatal retrieval failure: %s", diagnostic.message)
+        wavelength_logger.debug("fatal wavelength traceback", exc_info=True)
         return WavelengthAttempt.fatal_failure(diagnostic)
     except Exception as exc:
         retrieval_stage = exc.stage if isinstance(exc, RetrievalStageError) else None
@@ -129,13 +133,18 @@ def attempt_wavelength(
             exc,
             retrieval_stage=retrieval_stage,
         )
-        logger.warning(
-            f"  -> {wavelength_nm} nm failed at {diagnostic.stage.name.lower()} "
-            f"({diagnostic.code.name.lower()}): {diagnostic.message}"
+        wavelength_logger.warning(
+            "failed at %s (%s): %s",
+            diagnostic.stage.name.lower(),
+            diagnostic.code.name.lower(),
+            diagnostic.message,
         )
+        wavelength_logger.debug("wavelength failure traceback", exc_info=True)
         return WavelengthAttempt.recoverable_failure(diagnostic)
 
-    if not bool(result.optical.retrieval_success_flag.astype(bool).any()):
+    valid_blocks = int(result.optical.retrieval_success_flag.astype(bool).sum())
+    total_blocks = int(result.optical.retrieval_success_flag.size)
+    if valid_blocks == 0:
         diagnostic = WavelengthFailureDiagnostic(
             wavelength_nm=wavelength_nm,
             stage=WavelengthFailureStage.RETRIEVAL_VALIDATION,
@@ -143,10 +152,9 @@ def attempt_wavelength(
             message="No block produced a valid Rayleigh plus two-sided KFS optical retrieval.",
             cause_summary="retrieval_success_flag contains no successful block",
         )
-        logger.warning(
-            f"  -> {wavelength_nm} nm failed: {diagnostic.code.name.lower()}."
-        )
+        wavelength_logger.warning("no valid retrieval blocks")
         return WavelengthAttempt.recoverable_failure(diagnostic)
+    wavelength_logger.info("retrieval blocks=%d/%d", valid_blocks, total_blocks)
     return WavelengthAttempt.success(result)
 
 
@@ -160,6 +168,8 @@ def process_single_level1_file(
 ) -> ExecutionSummary:
     """Generate one Level 2 product and report optional QA separately."""
     nc_path = Path(nc_file)
+    save_id = product_save_id(nc_path)
+    file_logger = bind_log_context(logger, save_id=save_id)
     started_at = time.perf_counter()
     output_path: Path | None = None
     stage = "level2.ingestion"
@@ -179,13 +189,16 @@ def process_single_level1_file(
             get_molecular_fit_config(config)
             for wavelength in wavelengths:
                 get_lidar_ratio(config, wavelength, ds_l1["time"].values[0])
+            bind_log_context(file_logger, stage="start").info(
+                "wavelengths=%s", ",".join(str(value) for value in wavelengths)
+            )
             altitude_m = np.asarray(ds_l1["altitude"].values, dtype=np.float64)
             if np.nanmax(altitude_m) <= 100.0:
                 altitude_m = altitude_m * 1000.0
             attempts: list[WavelengthAttempt] = []
             stage = "level2.retrieval"
             for wavelength in wavelengths:
-                attempt = attempt_wavelength(ds_l1, wavelength, altitude_m, config, logger)
+                attempt = attempt_wavelength(ds_l1, wavelength, altitude_m, config, file_logger)
                 attempts.append(attempt)
                 if attempt.status is WavelengthAttemptStatus.FATAL_FAILURE:
                     assert attempt.diagnostic is not None
@@ -203,20 +216,16 @@ def process_single_level1_file(
                             f"No requested wavelength produced a usable optical product ({diagnostics}).",
                             input_path=nc_path,
                             duration_seconds=time.perf_counter() - started_at,
-                            metadata={"pipeline": "LEBEAR", **product_contract.execution_metadata()},
+                            metadata={"pipeline": "L2", "save_id": save_id, **product_contract.execution_metadata()},
                         )
                     ]
                 )
             results_by_wavelength = {
                 attempt.wavelength_nm: attempt.result
                 for attempt in attempts
-                if attempt.status is WavelengthAttemptStatus.SUCCESS
-                and attempt.result is not None
+                if attempt.status is WavelengthAttemptStatus.SUCCESS and attempt.result is not None
             }
-            results = [
-                results_by_wavelength[wavelength]
-                for wavelength in product_contract.processed_wavelengths
-            ]
+            results = [results_by_wavelength[wavelength] for wavelength in product_contract.processed_wavelengths]
             stage = "level2.dataset"
             ds_l2 = build_level2_dataset(
                 ds_l1,
@@ -237,50 +246,67 @@ def process_single_level1_file(
             if ds_l2[var].ndim > 0 and ds_l2[var].dtype.kind not in {"O", "S", "U"}
         }
         _write_level2_atomically(ds_l2, output_path, encoding)
+        duration = time.perf_counter() - started_at
         if product_contract.completeness is ProductCompleteness.COMPLETE:
-            logger.info(f"  -> [OK] Complete Level 2 NetCDF generated: {output_path}")
+            bind_log_context(file_logger, stage="done").info(
+                "wavelengths=%d/%d | %s | %.1f s",
+                len(product_contract.processed_wavelengths),
+                len(product_contract.requested_wavelengths),
+                output_path.name,
+                duration,
+            )
             product_results = [
                 ExecutionResult.success(
                     "level2.complete",
-                    f"{nc_path.name} complete Level 2 generated successfully",
+                    "Complete Level 2 generated",
                     input_path=nc_path,
                     output_path=output_path,
-                    duration_seconds=time.perf_counter() - started_at,
-                    metadata={"pipeline": "LEBEAR", **product_contract.execution_metadata()},
+                    duration_seconds=duration,
+                    metadata={"pipeline": "L2", "save_id": save_id, **product_contract.execution_metadata()},
                 )
             ]
         else:
-            logger.warning(f"  -> [PARTIAL] Incomplete Level 2 NetCDF generated: {output_path}")
+            bind_log_context(file_logger, stage="done").warning(
+                "partial wavelengths=%d/%d | failed=%s | %s | %.1f s",
+                len(product_contract.processed_wavelengths),
+                len(product_contract.requested_wavelengths),
+                ",".join(str(value) for value in product_contract.failed_wavelengths),
+                output_path.name,
+                duration,
+            )
             product_results = [
                 ExecutionResult.success(
                     "level2.write",
-                    f"{nc_path.name} partial Level 2 file written atomically",
+                    "Partial Level 2 file written atomically",
                     input_path=nc_path,
                     output_path=output_path,
-                    duration_seconds=time.perf_counter() - started_at,
-                    metadata={"pipeline": "LEBEAR", **product_contract.execution_metadata()},
+                    duration_seconds=duration,
+                    metadata={"pipeline": "L2", "save_id": save_id, **product_contract.execution_metadata()},
                 ),
                 ExecutionResult.failure(
                     "level2.partial",
-                    f"{nc_path.name} Level 2 was written but is incomplete; failed wavelengths: "
+                    "Level 2 was written but is incomplete; failed wavelengths: "
                     f"{', '.join(str(value) for value in product_contract.failed_wavelengths)} nm",
                     input_path=nc_path,
                     output_path=output_path,
-                    duration_seconds=time.perf_counter() - started_at,
-                    metadata={"pipeline": "LEBEAR", **product_contract.execution_metadata()},
+                    duration_seconds=duration,
+                    metadata={"pipeline": "L2", "save_id": save_id, **product_contract.execution_metadata()},
                 ),
             ]
         if level2_qa_enabled(config):
-            qa_result = generate_level2_qa(nc_path, output_path, config, logger)
+            qa_result = generate_level2_qa(nc_path, output_path, config, bind_log_context(file_logger, stage="qa"))
         else:
             qa_result = ExecutionResult.skipped(
                 "level2.qa",
                 "Level 2 QA disabled by configuration",
                 input_path=output_path,
                 output_path=output_path.parent / "level2_qa",
-                metadata={"pipeline": "LEBEAR"},
+                metadata={"pipeline": "L2", "save_id": save_id},
             )
-        qa_result.log(logger)
+        if qa_result.status.is_failure:
+            bind_log_context(file_logger, stage="qa").warning("%s", qa_result.message)
+        else:
+            bind_log_context(file_logger, stage="qa").debug("%s", qa_result.message)
         return ExecutionSummary.from_results([*product_results, qa_result])
     except Exception as exc:
         fatal_stages = {
@@ -292,18 +318,20 @@ def process_single_level1_file(
             "level2.validation.output",
             "level2.write",
         }
+        bind_log_context(file_logger, stage=stage.removeprefix("level2.")).error("processing failed: %s", exc)
+        file_logger.debug("Level 2 failure traceback", exc_info=True)
         return ExecutionSummary.from_results(
             [
                 ExecutionResult.failure(
                     stage,
-                    f"Level 2 processing failed for {nc_path.name}",
+                    "Level 2 processing failed",
                     fatal=isinstance(exc, FatalWavelengthProcessingError) or stage in fatal_stages,
                     input_path=nc_path,
                     output_path=output_path,
                     cause=exc,
                     include_traceback=True,
                     duration_seconds=time.perf_counter() - started_at,
-                    metadata={"pipeline": "LEBEAR"},
+                    metadata={"pipeline": "L2", "save_id": save_id},
                 )
             ]
         )
@@ -313,42 +341,49 @@ def process_level_2(config: Mapping[str, Any], logger: logging.Logger) -> Execut
     """Discover Level 1 files and process them into Level 2 products."""
     files = discover_level1_files(config)
     if not files:
-        logger.warning("No Level 1 files found for LEBEAR processing.")
+        bind_log_context(logger, stage="discovery").warning("no Level 1 files found")
         return ExecutionSummary.from_results(
-            [ExecutionResult.skipped("level2.discovery", "No Level 1 files found")]
+            [ExecutionResult.skipped("level2.discovery", "No Level 1 files found", metadata={"pipeline": "L2"})]
         )
 
     incremental = incremental_enabled(config)
     files_to_process = []
     skipped_results: list[ExecutionResult] = []
     for file_path in files:
+        save_id = product_save_id(file_path)
+        file_logger = bind_log_context(logger, save_id=save_id)
         output_path = level2_output_path(file_path)
         if incremental and level2_output_is_current(file_path, output_path, config):
-            result = ExecutionResult.skipped(
-                "level2.incremental",
-                f"Level 2 is up to date for {file_path.name}",
-                input_path=file_path,
-                output_path=output_path,
+            bind_log_context(file_logger, stage="skip").info("up to date | %s", output_path.name)
+            skipped_results.append(
+                ExecutionResult.skipped(
+                    "level2.incremental",
+                    "Level 2 is up to date",
+                    input_path=file_path,
+                    output_path=output_path,
+                    metadata={"pipeline": "L2", "save_id": save_id},
+                )
             )
-            result.log(logger)
-            skipped_results.append(result)
             if level2_qa_enabled(config):
-                qa_result = generate_level2_qa(file_path, output_path, config, logger)
-                qa_result.log(logger)
+                qa_result = generate_level2_qa(file_path, output_path, config, bind_log_context(file_logger, stage="qa"))
                 skipped_results.append(qa_result)
             continue
         files_to_process.append(file_path)
 
     if not files_to_process:
-        logger.info(f"No Level 1 files require Level 2 processing. Skipped {len(skipped_results)} existing products.")
+        bind_log_context(logger, stage="summary").info("all Level 2 products are current")
         return ExecutionSummary.from_results(skipped_results)
 
-    logger.info(f"Found {len(files_to_process)} Level 1 files for LEBEAR ({len(skipped_results)} skipped).")
+    bind_log_context(logger, stage="queue").info(
+        "%d files to process | %d skipped", len(files_to_process), len(skipped_results)
+    )
     results = list(skipped_results)
     for file_path in files_to_process:
-        file_summary = process_single_level1_file(file_path, config, logger)
-        for result in file_summary.results:
-            if result.stage != "level2.qa":
-                result.log(logger)
+        save_id = product_save_id(file_path)
+        file_summary = process_single_level1_file(
+            file_path,
+            config,
+            bind_log_context(logger, save_id=save_id),
+        )
         results.extend(file_summary.results)
     return ExecutionSummary.from_results(results)
