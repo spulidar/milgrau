@@ -16,8 +16,9 @@ from milgrau.incremental import output_is_current
 from milgrau.io.contracts import netcdf_satisfies_contract, validate_level1_contract, validate_level2_contract
 from milgrau.io.filesystem import ensure_directories
 from milgrau.io.logging_utils import bind_log_context
-from milgrau.io.paths import level2_output_path, product_save_id
+from milgrau.io.paths import level2_output_path, logging_save_id
 from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary
+from milgrau.provenance import write_netcdf_provenance
 from milgrau.level2.completeness import (
     Level2ProductContract,
     ProductCompleteness,
@@ -154,6 +155,9 @@ def attempt_wavelength(
         )
         wavelength_logger.warning("no valid retrieval blocks")
         return WavelengthAttempt.recoverable_failure(diagnostic)
+    fallback_blocks = int(np.asarray(result.gluing.single_channel_fallback_flag_block, dtype=np.int8).sum())
+    if fallback_blocks:
+        wavelength_logger.warning("single-channel fallback used | blocks=%d/%d", fallback_blocks, total_blocks)
     wavelength_logger.info("retrieval blocks=%d/%d", valid_blocks, total_blocks)
     return WavelengthAttempt.success(result)
 
@@ -168,14 +172,16 @@ def process_single_level1_file(
 ) -> ExecutionSummary:
     """Generate one Level 2 product and report optional QA separately."""
     nc_path = Path(nc_file)
-    save_id = product_save_id(nc_path)
+    save_id = logging_save_id(nc_path)
     file_logger = bind_log_context(logger, save_id=save_id)
     started_at = time.perf_counter()
     output_path: Path | None = None
     stage = "level2.ingestion"
+    source_provenance: dict[str, Any] = {}
     try:
         with xr.open_dataset(nc_path) as ds_l1:
             ds_l1.load()
+            source_provenance = dict(ds_l1.attrs)
             stage = "level2.validation.input"
             validate_level1_contract(ds_l1)
             stage = "level2.time_window"
@@ -246,6 +252,14 @@ def process_single_level1_file(
             if ds_l2[var].ndim > 0 and ds_l2[var].dtype.kind not in {"O", "S", "U"}
         }
         _write_level2_atomically(ds_l2, output_path, encoding)
+        provenance_attrs = write_netcdf_provenance(output_path, config, source_attrs=source_provenance)
+        bind_log_context(file_logger, stage="provenance").debug(
+            "profile=%s calibration=%s config_sha256=%s station_sha256=%s",
+            provenance_attrs.get("station_profile_id", "-"),
+            provenance_attrs.get("instrument_calibration_id", "-"),
+            provenance_attrs.get("processing_config_sha256", "-"),
+            provenance_attrs.get("station_config_sha256", "-"),
+        )
         duration = time.perf_counter() - started_at
         if product_contract.completeness is ProductCompleteness.COMPLETE:
             bind_log_context(file_logger, stage="done").info(
@@ -350,7 +364,7 @@ def process_level_2(config: Mapping[str, Any], logger: logging.Logger) -> Execut
     files_to_process = []
     skipped_results: list[ExecutionResult] = []
     for file_path in files:
-        save_id = product_save_id(file_path)
+        save_id = logging_save_id(file_path)
         file_logger = bind_log_context(logger, save_id=save_id)
         output_path = level2_output_path(file_path)
         if incremental and level2_output_is_current(file_path, output_path, config):
@@ -379,7 +393,7 @@ def process_level_2(config: Mapping[str, Any], logger: logging.Logger) -> Execut
     )
     results = list(skipped_results)
     for file_path in files_to_process:
-        save_id = product_save_id(file_path)
+        save_id = logging_save_id(file_path)
         file_summary = process_single_level1_file(
             file_path,
             config,
