@@ -22,6 +22,10 @@ LEGACY_HASH_ATTRS: tuple[str, ...] = (
     "station_config_sha256",
 )
 YAML_DOCUMENT_DIMENSION = "milgrau_provenance_document"
+YAML_DOCUMENT_VARIABLES: tuple[str, str] = (
+    "processing_configuration_yaml",
+    "station_configuration_yaml",
+)
 
 
 def _source_path(config: Mapping[str, Any], key: str, label: str) -> Path | None:
@@ -101,6 +105,31 @@ def _write_yaml_variable(dataset: nc.Dataset, name: str, path: Path | None, desc
     variable.setncattr("media_type", "application/yaml")
     variable.setncattr("description", description)
     variable.setncattr("source_filename", path.name)
+
+
+def netcdf_provenance_is_complete(path: str | Path) -> bool:
+    """Return whether a published NetCDF has the current readable provenance schema."""
+    try:
+        with nc.Dataset(str(Path(path))) as dataset:
+            if str(dataset.getncattr("software_name")).strip() != "MILGRAU":
+                return False
+            if not str(dataset.getncattr("software_version")).strip():
+                return False
+            if YAML_DOCUMENT_DIMENSION not in dataset.dimensions:
+                return False
+            if len(dataset.dimensions[YAML_DOCUMENT_DIMENSION]) != 1:
+                return False
+            for name in YAML_DOCUMENT_VARIABLES:
+                if name not in dataset.variables:
+                    return False
+                variable = dataset.variables[name]
+                if variable.dimensions != (YAML_DOCUMENT_DIMENSION,):
+                    return False
+                if not str(variable[0]).strip():
+                    return False
+        return True
+    except Exception:
+        return False
 
 
 def write_netcdf_provenance(
