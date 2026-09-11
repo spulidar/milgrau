@@ -299,26 +299,27 @@ def fetch_era5_pressure_level_profile(
                         str(cfg["dataset"]), cache_file,
                     )
                 )
-            logger.info(f"  -> [ERA5] Cached pressure-level profile found: {cache_file.name}")
+            logger.debug("ERA5 cache hit: %s", cache_file.name)
             return frame
         except Exception as exc:
-            logger.warning(f"  -> [ERA5] Could not read cached profile {cache_file}: {exc}")
+            logger.warning("ERA5 cache unreadable: %s | %s", cache_file, exc)
 
     try:
         import cdsapi  # type: ignore[import-not-found]
     except ImportError:
         logger.warning(
-            "  -> [ERA5] ERA5 is present in the configured atmosphere source policy but cdsapi is not installed. "
-            "Install MILGRAU with the 'era5' extra and configure ~/.cdsapirc."
+            "ERA5 configured but cdsapi is not installed; install MILGRAU with the 'era5' extra and configure ~/.cdsapirc"
         )
         return None
 
     dataset, request = build_era5_request(analysis_dt, latitude, longitude, cfg)
     temporary_file = cache_file.with_suffix(".part.nc")
     try:
-        logger.info(
-            f"  -> [ERA5] Fetching {analysis_dt.strftime('%Y-%m-%d %H:%M')}Z "
-            f"pressure-level profile near ({latitude:.4f}, {longitude:.4f})..."
+        logger.debug(
+            "ERA5 fetch: %sZ | lat=%.4f lon=%.4f",
+            analysis_dt.strftime("%Y-%m-%d %H:%M"),
+            latitude,
+            longitude,
         )
         client = cdsapi.Client()
         client.retrieve(dataset, request, str(temporary_file))
@@ -331,10 +332,10 @@ def fetch_era5_pressure_level_profile(
         )
         metadata_file.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
         frame.attrs.update(metadata)
-        logger.info("  -> [OK] ERA5 pressure-level profile successfully fetched and cached.")
+        logger.debug("ERA5 cached: %s", cache_file.name)
         return frame
     except Exception as exc:
-        logger.warning(f"  -> [ERA5] Retrieval unavailable under configured source policy: {exc}")
+        logger.warning("ERA5 retrieval unavailable: %s", exc)
         try:
             if temporary_file.exists():
                 temporary_file.unlink()
