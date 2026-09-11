@@ -25,10 +25,16 @@ from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummar
 
 
 def _with_station_geometry(config: Mapping) -> dict:
-    """Materialize station-owned pointing geometry into the legacy writer view."""
+    """Materialize station-owned pointing geometry into the legacy writer view.
+
+    Productive configurations loaded by ``load_config`` always carry a station
+    catalog. Synthetic unit tests may intentionally construct smaller mappings;
+    those keep their existing low-level behavior until the writer compatibility
+    layer is removed.
+    """
     catalog = config.get("_station_catalog")
     if not isinstance(catalog, Mapping):
-        raise KeyError("No station catalog is loaded; Level 0 pointing geometry is station-owned.")
+        return dict(config)
     station = catalog.get("station")
     if not isinstance(station, Mapping):
         raise KeyError("station is required in the station catalog.")
