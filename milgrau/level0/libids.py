@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Sequence
 
 import numpy as np
 import pandas as pd
@@ -61,10 +61,7 @@ def _scc_output_satisfies_context(path: Path, context: Mapping) -> bool:
             actual_channels = [str(value) for value in ds["channel_string"].values]
             if actual_channels != expected_channels:
                 return False
-            expected_ids = np.asarray(
-                [int(context["channel_ids"][channel]) for channel in expected_channels],
-                dtype=np.int64,
-            )
+            expected_ids = np.asarray([int(context["channel_ids"][channel]) for channel in expected_channels], dtype=np.int64)
             actual_ids = np.asarray(ds["channel_ID"].values, dtype=np.int64)
             if actual_ids.shape != expected_ids.shape or not np.array_equal(actual_ids, expected_ids):
                 return False
@@ -82,7 +79,6 @@ def _scc_output_satisfies_context(path: Path, context: Mapping) -> bool:
 
 
 def _level0_is_current(meas_id: str, group_df, config: dict, output_path) -> bool:
-    """Return whether primary and expected SCC Level 0 products are up to date."""
     output = Path(output_path)
     inputs = _raw_input_paths(group_df)
     primary_current = output_is_current(
@@ -105,14 +101,40 @@ def _level0_is_current(meas_id: str, group_df, config: dict, output_path) -> boo
     )
 
 
-def process_level_0(config: dict, logger: logging.Logger) -> ExecutionSummary:
-    """Run LIBIDS Level 0 processing from raw Licel files to NetCDF."""
+def _normalize_requested_measurements(values: Sequence[str] | None) -> set[str] | None:
+    if not values:
+        return None
+    normalized: set[str] = set()
+    for raw in values:
+        value = str(raw).strip()
+        if len(value) == 12 and value[8:10] == "sa":
+            value = value[:8] + value[10:]
+        if len(value) != 10 or value[8:] not in {"am", "pm", "nt"} or not value[:8].isdigit():
+            raise ValueError(f"LIBIDS input must be YYYYMMDDam/pm/nt or YYYYMMDDsaam/sapm/sant; got {raw!r}.")
+        normalized.add(value)
+    return normalized
+
+
+def process_level_0(
+    config: dict,
+    logger: logging.Logger,
+    *,
+    inputs: Sequence[str] | None = None,
+    force: bool = False,
+) -> ExecutionSummary:
+    """Run LIBIDS, optionally restricting processing to selected measurement IDs."""
     validate_level0_config(config)
     level0_config = resolve_level0_config(config)
     pipeline_logger = bind_log_context(logger, pipeline="L0")
+    requested = _normalize_requested_measurements(inputs)
 
     raw_dir = raw_data_root(config)
     df_raw = build_measurement_inventory(str(raw_dir), config, pipeline_logger)
+    if requested is not None and not df_raw.empty:
+        df_raw = df_raw[df_raw["meas_id"].astype(str).isin(requested)].copy()
+        missing = sorted(requested - set(df_raw["meas_id"].astype(str).unique()))
+        if missing:
+            raise FileNotFoundError(f"Requested LIBIDS measurement group(s) not found: {', '.join(missing)}")
     if df_raw.empty:
         bind_log_context(pipeline_logger, stage="discovery").info("no raw measurements found")
         return ExecutionSummary.from_results(
@@ -134,21 +156,13 @@ def process_level_0(config: dict, logger: logging.Logger) -> ExecutionSummary:
     incremental = incremental_enabled(config)
     total_groups = len(df_good["meas_id"].unique())
     results: list[ExecutionResult] = []
-
     for meas_id, group_df in df_good.groupby("meas_id"):
         save_id = measurement_save_id(meas_id)
         group_logger = bind_log_context(pipeline_logger, save_id=save_id)
         netcdf_path = level0_output_path(meas_id, config)
-        if incremental and _level0_is_current(meas_id, group_df, config, netcdf_path):
+        if not force and incremental and _level0_is_current(meas_id, group_df, config, netcdf_path):
             bind_log_context(group_logger, stage="skip").info("up to date | %s", netcdf_path.name)
-            results.append(
-                ExecutionResult.skipped(
-                    "level0.incremental",
-                    "Level 0 is up to date",
-                    output_path=netcdf_path,
-                    metadata={"pipeline": "L0", "save_id": save_id},
-                )
-            )
+            results.append(ExecutionResult.skipped("level0.incremental", "Level 0 is up to date", output_path=netcdf_path, metadata={"pipeline": "L0", "save_id": save_id}))
             continue
 
         measurement_count = int((group_df["meas_type"] == "measurements").sum())
@@ -158,21 +172,12 @@ def process_level_0(config: dict, logger: logging.Logger) -> ExecutionSummary:
             if not isinstance(result, ExecutionResult):
                 raise TypeError(f"process_measurement_group returned {type(result).__name__}; expected ExecutionResult.")
         except Exception as exc:
-            result = ExecutionResult.failure(
-                "level0.group",
-                "unexpected group conversion error",
-                output_path=netcdf_path,
-                cause=exc,
-                include_traceback=True,
-                metadata={"pipeline": "L0", "save_id": save_id},
-            )
-        if result.status is ExecutionStatus.SUCCESS:
+            result = ExecutionResult.failure("level0.group", "unexpected group conversion error", output_path=netcdf_path, cause=exc, include_traceback=True, metadata={"pipeline": "L0", "save_id": save_id})
+        if result.status is ExecutionStatus.OK:
             duration = 0.0 if result.duration_seconds is None else result.duration_seconds
             bind_log_context(group_logger, stage="done").info("%s | %.1f s", netcdf_path.name, duration)
-        elif result.status.is_failure:
-            bind_log_context(group_logger, stage=result.stage.removeprefix("level0.")).error(
-                "%s | %s", result.message, result.cause or "unknown failure"
-            )
+        elif result.status is ExecutionStatus.ERROR:
+            bind_log_context(group_logger, stage=result.stage.removeprefix("level0.")).error("%s | %s", result.message, result.cause or "unknown failure")
             if result.traceback:
                 group_logger.debug("failure traceback\n%s", result.traceback)
         results.append(result)
@@ -180,10 +185,10 @@ def process_level_0(config: dict, logger: logging.Logger) -> ExecutionSummary:
     summary = ExecutionSummary.from_results(results)
     counts = summary.counts
     bind_log_context(pipeline_logger, stage="summary").info(
-        "groups=%d | success=%d | skipped=%d | failed=%d",
+        "groups=%d | processed=%d | skipped=%d | errors=%d",
         total_groups,
-        counts[ExecutionStatus.SUCCESS],
+        counts[ExecutionStatus.OK],
         counts[ExecutionStatus.SKIPPED],
-        counts[ExecutionStatus.RECOVERABLE_FAILURE] + counts[ExecutionStatus.FATAL_FAILURE],
+        counts[ExecutionStatus.ERROR],
     )
     return summary
