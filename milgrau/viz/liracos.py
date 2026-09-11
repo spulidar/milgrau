@@ -18,6 +18,7 @@ from milgrau.io.filesystem import ensure_directories
 from milgrau.io.logging_utils import bind_log_context
 from milgrau.io.paths import (
     global_mean_rcs_output_path,
+    logging_save_id,
     processed_data_root,
     product_save_id,
     quicklook_output_path,
@@ -114,15 +115,17 @@ def process_single_nc(args: tuple[str | Path, dict[str, Any], str | Path, loggin
     """Render all Level 1 quicklooks for one NetCDF file."""
     nc_file_path, config, root_dir, logger = args
     nc_file = Path(nc_file_path)
-    save_id = product_save_id(nc_file)
+    save_id = logging_save_id(nc_file)
     file_logger = bind_log_context(logger, pipeline="VIZ", save_id=save_id)
     root_path = Path(root_dir)
     started_at = time.perf_counter()
     output_folder: Path | None = None
     stage = "visualization.initialize"
     try:
+        file_name_prefix = product_save_id(nc_file)
+        save_id = file_name_prefix
+        file_logger = bind_log_context(logger, pipeline="VIZ", save_id=save_id)
         resolved = resolve_visualization_config(config)
-        file_name_prefix = save_id
         output_folder = nc_file.parent / "quicklooks"
         ensure_directories(output_folder)
         incremental = _incremental_enabled(config)
