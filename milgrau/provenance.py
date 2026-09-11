@@ -6,6 +6,8 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any, Mapping
 
+import netCDF4 as nc
+
 PROVENANCE_ATTRS: tuple[str, ...] = (
     "processing_config_sha256",
     "station_config_sha256",
@@ -65,3 +67,25 @@ def inherited_provenance(source_attrs: Mapping[str, Any]) -> dict[str, str]:
         if value is not None and str(value).strip():
             result[name] = str(value)
     return result
+
+
+def write_netcdf_provenance(
+    path: str | Path,
+    config: Mapping[str, Any],
+    *,
+    source_attrs: Mapping[str, Any] | None = None,
+) -> dict[str, str]:
+    """Persist current config hashes plus inherited/resolved station identity.
+
+    Current config/station hashes always describe the recipe files used for the
+    product being written. Resolved profile/calibration IDs may come from the
+    current station context (Level 0) or be inherited from an upstream product
+    (Level 1/2) when no stage-local station context exists.
+    """
+    attrs = inherited_provenance(source_attrs or {})
+    attrs.update(configuration_provenance(config))
+    if not attrs:
+        return {}
+    with nc.Dataset(Path(path), "a") as dataset:
+        dataset.setncatts(attrs)
+    return attrs
