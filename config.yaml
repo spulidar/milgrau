@@ -11,8 +11,10 @@ project:
 
 processing:
   incremental: true
+  # Operator console: concise stage/save-id progress and actionable warnings.
   console_level: "INFO"
-  file_level: "INFO"
+  # Audit file: retains channel/source/cache/retrieval diagnostics.
+  file_level: "DEBUG"
   spurious_extensions: [".dpp", ".zip", ".txt"]
   # Quarantine is auditable retained evidence, not disposable cache.
   quarantine_dir: "quarantine"
