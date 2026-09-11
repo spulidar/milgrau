@@ -1,4 +1,4 @@
-"""Tests for structured aggregation and ADR-002 exit codes in every CLI."""
+"""Tests for the common MILGRAU CLI outcome and exit-code policy."""
 
 from __future__ import annotations
 
@@ -18,23 +18,26 @@ from milgrau.cli import liracos as liracos_cli
 from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary
 
 
-class _ListLogger:
-    """Capture CLI logs without global logging configuration."""
-
+class _CaptureHandler(logging.Handler):
     def __init__(self) -> None:
-        self.records: list[tuple[str, str]] = []
+        super().__init__()
+        self.messages: list[tuple[int, str]] = []
 
-    def info(self, message: str) -> None:
-        self.records.append(("INFO", message))
-
-    def warning(self, message: str) -> None:
-        self.records.append(("WARNING", message))
-
-    def error(self, message: str) -> None:
-        self.records.append(("ERROR", message))
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append((record.levelno, record.getMessage()))
 
 
-def _partial_summary() -> ExecutionSummary:
+def _logger(name: str) -> tuple[logging.Logger, _CaptureHandler]:
+    logger = logging.getLogger(name)
+    logger.handlers.clear()
+    handler = _CaptureHandler()
+    logger.addHandler(handler)
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
+    return logger, handler
+
+
+def _error_summary() -> ExecutionSummary:
     return ExecutionSummary.from_results(
         [ExecutionResult.success("pipeline", "done"), ExecutionResult.failure("pipeline", "one failed")]
     )
@@ -48,34 +51,60 @@ def _partial_summary() -> ExecutionSummary:
         (liracos_cli, "process_all_level1_files"),
     ],
 )
-def test_pipeline_clis_return_partial_failure_exit_code(monkeypatch, module: object, operation_name: str) -> None:
-    logger = _ListLogger()
-    monkeypatch.setattr(module, "load_config", lambda: {})
+def test_pipeline_clis_return_one_when_processing_contains_errors(monkeypatch, module: object, operation_name: str) -> None:
+    logger, handler = _logger(f"test.cli.{operation_name}")
+    monkeypatch.setattr(sys, "argv", [getattr(module, "__name__", "milgrau")])
+    monkeypatch.setattr(module, "load_config", lambda: {"processing": {"incremental": False}})
     monkeypatch.setattr(module, "setup_logger", lambda *_args, **_kwargs: logger)
-    monkeypatch.setattr(module, operation_name, lambda *_args, **_kwargs: _partial_summary())
+    monkeypatch.setattr(module, operation_name, lambda *_args, **_kwargs: _error_summary())
 
     assert module.main() == 1
-    assert any("exit code 1" in message for _, message in logger.records)
+    assert any("1 processed | 0 skipped | 1 with errors" in message for _, message in handler.messages)
 
 
-def test_lebear_cli_returns_total_failure_exit_code(monkeypatch) -> None:
-    logger = _ListLogger()
-    parser = types.SimpleNamespace(parse_args=lambda: argparse.Namespace(inputs=[], time_window=None))
+def test_lebear_cli_returns_one_when_all_selected_processing_fails(monkeypatch) -> None:
+    logger, handler = _logger("test.cli.lebear.errors")
+    parser = types.SimpleNamespace(
+        parse_args=lambda: argparse.Namespace(inputs=[], time_window=None, force=False)
+    )
     summary = ExecutionSummary.from_results([ExecutionResult.failure("level2", "all failed")])
     monkeypatch.setattr(lebear_cli, "_build_parser", lambda: parser)
-    monkeypatch.setattr(lebear_cli, "load_config", lambda: {})
+    monkeypatch.setattr(lebear_cli, "load_config", lambda: {"processing": {"incremental": False}})
     monkeypatch.setattr(lebear_cli, "setup_logger", lambda *_args, **_kwargs: logger)
     monkeypatch.setattr(lebear_cli, "_process_selected_files", lambda *_args: summary)
 
+    assert lebear_cli.main() == 1
+    assert any("0 processed | 0 skipped | 1 with errors" in message for _, message in handler.messages)
+
+
+def test_lebear_cli_reserves_two_for_command_that_cannot_run(monkeypatch) -> None:
+    logger, handler = _logger("test.cli.lebear.fatal")
+    parser = types.SimpleNamespace(
+        parse_args=lambda: argparse.Namespace(inputs=[], time_window=None, force=False)
+    )
+    monkeypatch.setattr(lebear_cli, "_build_parser", lambda: parser)
+    monkeypatch.setattr(lebear_cli, "load_config", lambda: {"processing": {"incremental": False}})
+    monkeypatch.setattr(lebear_cli, "setup_logger", lambda *_args, **_kwargs: logger)
+
+    def fail_before_processing(*_args):
+        raise RuntimeError("configuration unavailable")
+
+    monkeypatch.setattr(lebear_cli, "_process_selected_files", fail_before_processing)
+
     assert lebear_cli.main() == 2
-    assert any("exit code 2" in message for _, message in logger.records)
+    assert any("cannot run command" in message for _, message in handler.messages)
 
 
 def test_lebear_selected_batch_continues_and_aggregates_mixed_results(tmp_path: Path, monkeypatch) -> None:
-    files = [tmp_path / "first_level1_rcs.nc", tmp_path / "second_level1_rcs.nc"]
-    logger = _ListLogger()
+    files = [
+        tmp_path / "20240101saam_level1_rcs.nc",
+        tmp_path / "20240101sapm_level1_rcs.nc",
+    ]
+    for path in files:
+        path.write_text("synthetic", encoding="utf-8")
+    logger, _handler = _logger("test.cli.lebear.selected")
     calls: list[Path] = []
-    args = argparse.Namespace(inputs=[str(path) for path in files], time_window=None)
+    args = argparse.Namespace(inputs=[str(path) for path in files], time_window=None, force=True)
 
     def fake_process(path, *_args, **_kwargs) -> ExecutionSummary:
         path = Path(path)
@@ -91,10 +120,7 @@ def test_lebear_selected_batch_continues_and_aggregates_mixed_results(tmp_path: 
     summary = lebear_cli._process_selected_files(args, {"processing": {"incremental": False}}, logger)
 
     assert calls == files
-    assert [result.status for result in summary.results] == [
-        ExecutionStatus.RECOVERABLE_FAILURE,
-        ExecutionStatus.SUCCESS,
-    ]
+    assert [result.status for result in summary.results] == [ExecutionStatus.ERROR, ExecutionStatus.OK]
     assert int(summary.exit_code) == 1
 
 
