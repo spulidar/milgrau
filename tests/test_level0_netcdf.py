@@ -16,7 +16,7 @@ from milgrau.level0.netcdf import build_level0_netcdf, validate_lidar_tensors
 
 def _config() -> dict:
     return {
-        "physics": {"latitude": -23.5615, "longitude": -46.7383, "vertical_resolution_m": 7.5, "background_start_m": 29000.0, "background_stop_m": 29999.0, "default_surface_temp_c": 25.0, "default_surface_pressure_hpa": 940.0},
+        "physics": {"latitude": -23.5615, "longitude": -46.7383, "vertical_resolution_m": 7.5, "background_start_m": 29000.0, "background_stop_m": 29999.0},
         "hardware": {"name_to_id": {"day": {"532.AN": 1593, "532.PC": 716}, "night": {"532.AN": 722, "532.PC": 716}}},
     }
 
@@ -68,12 +68,11 @@ def test_build_level0_netcdf_truncates_time_axis_and_shots(tmp_path: Path) -> No
         np.testing.assert_array_equal(ds["Laser_Shots"].values, np.array([[1200, 2400]], dtype=np.int32))
 
 
-def test_build_level0_netcdf_uses_fallback_channel_id_when_missing_from_config(tmp_path: Path) -> None:
-    output_path = tmp_path / "level0_default_channel_id.nc"
+def test_build_level0_netcdf_rejects_missing_scc_channel_id(tmp_path: Path) -> None:
+    output_path = tmp_path / "level0_missing_channel_id.nc"
     config = _config(); config["hardware"]["name_to_id"]["night"] = {"532.AN": 722}
-    build_level0_netcdf(str(output_path), "20240101sant", "nt", _lidar_data(), _group_df(tmp_path, False), {"temperature_c": 23.0, "pressure_hpa": 935.0}, config, logging.getLogger("test"))
-    with xr.open_dataset(output_path) as ds:
-        assert np.array_equal(ds["channel_ID"].values, np.array([722, 9999]))
+    with pytest.raises(RuntimeError, match="no SCC channel ID"):
+        build_level0_netcdf(str(output_path), "20240101sant", "nt", _lidar_data(), _group_df(tmp_path, False), {"temperature_c": 23.0, "pressure_hpa": 935.0}, config, logging.getLogger("test"))
 
 
 def test_build_level0_netcdf_accepts_flat_shared_channel_id_mapping(tmp_path: Path) -> None:
@@ -82,6 +81,16 @@ def test_build_level0_netcdf_accepts_flat_shared_channel_id_mapping(tmp_path: Pa
     build_level0_netcdf(str(output_path), "20240101sant", "pm", _lidar_data(), _group_df(tmp_path, False), {"temperature_c": 23.0, "pressure_hpa": 935.0}, config, logging.getLogger("test"))
     with xr.open_dataset(output_path) as ds:
         assert np.array_equal(ds["channel_ID"].values, np.array([722, 716]))
+
+
+def test_missing_surface_weather_is_persisted_as_nan_without_25_940_fallback(tmp_path: Path) -> None:
+    output_path = tmp_path / "level0_missing_weather.nc"
+    build_level0_netcdf(str(output_path), "20240101sant", "nt", _lidar_data(), _group_df(tmp_path, False), {"temperature_c": np.nan, "pressure_hpa": np.nan}, _config(), logging.getLogger("test"))
+    with xr.open_dataset(output_path) as ds:
+        assert np.isnan(ds.attrs["Temperature_C"])
+        assert np.isnan(ds.attrs["Pressure_hPa"])
+        assert np.isnan(float(ds["Temperature_at_Lidar_Station"].values))
+        assert np.isnan(float(ds["Pressure_at_Lidar_Station"].values))
 
 
 def test_build_level0_netcdf_writes_dark_current_scc_times_and_provenance(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

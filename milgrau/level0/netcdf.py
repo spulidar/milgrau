@@ -12,12 +12,9 @@ import pandas as pd
 
 from milgrau.io.licel import parse_licel_group
 
-DEFAULT_CHANNEL_ID: Final[int] = 9999
 DEFAULT_VERTICAL_RESOLUTION_M: Final[float] = 7.5
 DEFAULT_BACKGROUND_START_M: Final[float] = 29000.0
 DEFAULT_BACKGROUND_STOP_M: Final[float] = 29999.0
-DEFAULT_LATITUDE_DEGREES: Final[float] = -23.561
-DEFAULT_LONGITUDE_DEGREES: Final[float] = -46.735
 RAW_SIGNAL_UNITS: Final[str] = "counts for PC, mV per shot for analog"
 BINARY_DIMENSIONS: Final[tuple[str, str, str]] = ("time", "channels", "points")
 TIME_SCALE_DIMENSIONS: Final[tuple[str, str]] = ("time", "nb_of_time_scales")
@@ -93,15 +90,13 @@ def _vertical_resolution_m(config: Mapping[str, Any]) -> float:
     return float(_physics_config(config).get("vertical_resolution_m", DEFAULT_VERTICAL_RESOLUTION_M))
 
 
-def _surface_value(
-    weather_data: Mapping[str, Any],
-    config: Mapping[str, Any],
-    weather_key: str,
-    physics_key: str,
-    default: float,
-) -> float:
-    physics = _physics_config(config)
-    return float(weather_data.get(weather_key, physics.get(physics_key, default)))
+def _surface_value(weather_data: Mapping[str, Any], weather_key: str) -> float:
+    """Return measured/fetched surface metadata, preserving explicit missingness as NaN."""
+    value = weather_data.get(weather_key, np.nan)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float("nan")
 
 
 def _measurement_rows(group_df: pd.DataFrame) -> pd.DataFrame:
@@ -142,13 +137,7 @@ def _scc_time_axis(
     *,
     label: str,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
-    """Return raw or QA-normalized SCC time offsets without re-validating QA.
-
-    Acquisition consistency is decided upstream by the Level-0 QA stage. The
-    writer only applies the accepted ``qa_nominal_duration_s`` to SCC products,
-    correcting whole-second Licel header jitter while leaving the primary
-    full-channel Level 0 untouched.
-    """
+    """Return raw or QA-normalized SCC time offsets without re-validating QA."""
     start_offsets = _seconds_since(reference_time, rows["start_time_utc"])
     stop_offsets = _seconds_since(reference_time, rows["stop_time"])
     if not _scc_ready(config) or len(rows) <= 1 or "qa_nominal_duration_s" not in rows:
@@ -180,17 +169,6 @@ def _scc_time_axis(
     return start_offsets, corrected_stop_offsets, attrs
 
 
-def _scalar_config_value(
-    config: Mapping[str, Any],
-    weather_data: Mapping[str, Any],
-    *,
-    weather_key: str,
-    physics_key: str,
-    default: float,
-) -> float:
-    return _surface_value(weather_data, config, weather_key, physics_key, default)
-
-
 def _stack_raw_lidar_data(
     tensors: Mapping[str, np.ndarray],
     channels: list[str],
@@ -211,10 +189,11 @@ def _channel_id(
 ) -> int:
     system_mode = "night" if period == "nt" else "day"
     if channel_name not in hardware_map:
-        logger.warning(
-            f"  -> Channel {channel_name} missing in config for {system_mode} mode. Using default {DEFAULT_CHANNEL_ID}."
+        raise ValueError(
+            f"Channel {channel_name} has no SCC channel ID for {system_mode} mode; "
+            "SCC export must be disabled rather than writing a fabricated ID."
         )
-    return int(hardware_map.get(channel_name, DEFAULT_CHANNEL_ID))
+    return int(hardware_map[channel_name])
 
 
 def _channel_metadata(lidar_data: Mapping[str, Any], channel_name: str) -> Mapping[str, Any]:
@@ -450,17 +429,17 @@ def build_level0_global_attributes(
         ),
         "Pipeline": "MILGRAU",
         "SCC_Ready": np.int8(1 if ready else 0),
-        "Latitude_degrees_north": float(physics.get("latitude", DEFAULT_LATITUDE_DEGREES)),
-        "Longitude_degrees_east": float(physics.get("longitude", DEFAULT_LONGITUDE_DEGREES)),
+        "Latitude_degrees_north": float(physics["latitude"]),
+        "Longitude_degrees_east": float(physics["longitude"]),
         "Accumulated_Shots": int(lidar_data.get("shots", 0)),
         "RawData_Start_Date": min_start_utc.strftime("%Y%m%d"),
         "RawData_Start_Time_UT": min_start_utc.strftime("%H%M%S"),
         "RawData_Stop_Time_UT": max_stop_utc.strftime("%H%M%S"),
-        "Temperature_C": _surface_value(weather_data, config, "temperature_c", "default_surface_temp_c", 25.0),
-        "Pressure_hPa": _surface_value(weather_data, config, "pressure_hpa", "default_surface_pressure_hpa", 940.0),
-        "CloudCover_percent": float(weather_data.get("cloud_cover_percent", np.nan)),
-        "RelativeHumidity_percent": float(weather_data.get("relative_humidity_percent", np.nan)),
-        "WindSpeed_kmh": float(weather_data.get("wind_speed_kmh", np.nan)),
+        "Temperature_C": _surface_value(weather_data, "temperature_c"),
+        "Pressure_hPa": _surface_value(weather_data, "pressure_hpa"),
+        "CloudCover_percent": _surface_value(weather_data, "cloud_cover_percent"),
+        "RelativeHumidity_percent": _surface_value(weather_data, "relative_humidity_percent"),
+        "WindSpeed_kmh": _surface_value(weather_data, "wind_speed_kmh"),
         "Source_File_Count": int(len(source_files)),
         "Source_Files": ";".join(source_files),
     }
@@ -592,20 +571,8 @@ def build_level0_netcdf(
             label="Measurement",
         )
         laser_pointing_angle_deg = float(_physics_config(config).get("laser_pointing_angle_deg", 0.0))
-        pressure_hpa = _scalar_config_value(
-            config,
-            weather_data,
-            weather_key="pressure_hpa",
-            physics_key="default_surface_pressure_hpa",
-            default=940.0,
-        )
-        temperature_c = _scalar_config_value(
-            config,
-            weather_data,
-            weather_key="temperature_c",
-            physics_key="default_surface_temp_c",
-            default=25.0,
-        )
+        pressure_hpa = _surface_value(weather_data, "pressure_hpa")
+        temperature_c = _surface_value(weather_data, "temperature_c")
         laser_shots = _laser_shot_matrix(lidar_data, num_times, num_channels)
         with nc.Dataset(netcdf_path, "w", format="NETCDF4") as ds:
             ds.setncatts(build_level0_global_attributes(save_id, lidar_data, group_df, weather_data, config))
