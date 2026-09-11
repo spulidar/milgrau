@@ -1,7 +1,7 @@
 """Canonical path builders for MILGRAU products.
 
 This module centralizes file-name and directory conventions so pipeline stages do
-not need to duplicate product layout logic.  All functions are intentionally
+not need to duplicate product layout logic. All functions are intentionally
 small and side-effect free; directory creation remains the responsibility of the
 calling pipeline.
 """
@@ -13,8 +13,9 @@ from typing import Any, Mapping
 
 DEFAULT_RAW_DATA_DIR = "01-data"
 DEFAULT_LOG_DIR = "logs"
-DEFAULT_SURFACE_WEATHER_CACHE_DIRNAME = "openmeteo_cache"
-DEFAULT_RADIOSONDE_CACHE_DIRNAME = "wyoming_cache"
+DEFAULT_CACHE_DIR = ".cache"
+DEFAULT_SURFACE_WEATHER_CACHE_DIRNAME = "weather"
+DEFAULT_RADIOSONDE_CACHE_DIRNAME = "radiosonde"
 LEVEL0_SUFFIX = ".nc"
 LEVEL0_SCC_SUFFIX = "_scc.nc"
 LEVEL1_SUFFIX = "_level1_rcs.nc"
@@ -60,30 +61,38 @@ def log_output_root(config: Mapping[str, Any], root_dir: str | Path | None = Non
 
 
 def surface_weather_cache_dir(config: Mapping[str, Any] | None = None, root_dir: str | Path | None = None) -> Path:
-    """Return the surface-weather cache directory."""
+    """Return the surface-weather cache directory under the standardized cache tree."""
     if config:
-        cache_dir = config.get("surface_weather", {}).get("cache_dir")
-        if cache_dir:
-            return resolve_project_path(str(cache_dir), root_dir=root_dir)
-        return raw_data_root(config, root_dir=root_dir) / DEFAULT_SURFACE_WEATHER_CACHE_DIRNAME
-    return resolve_project_path(f"{DEFAULT_RAW_DATA_DIR}/{DEFAULT_SURFACE_WEATHER_CACHE_DIRNAME}", root_dir=root_dir)
+        surface_weather = config.get("surface_weather", {})
+        if isinstance(surface_weather, Mapping):
+            cache_dir = surface_weather.get("cache_dir")
+            if cache_dir:
+                return resolve_project_path(str(cache_dir), root_dir=root_dir)
+    return resolve_project_path(
+        f"{DEFAULT_CACHE_DIR}/{DEFAULT_SURFACE_WEATHER_CACHE_DIRNAME}",
+        root_dir=root_dir,
+    )
 
 
 def radiosonde_cache_dir(config: Mapping[str, Any] | None = None, root_dir: str | Path | None = None) -> Path:
-    """Return the radiosonde cache directory."""
+    """Return the radiosonde cache directory under the standardized cache tree."""
     if config:
-        cache_dir = config.get("radiosonde", {}).get("cache_dir")
-        if cache_dir:
-            return resolve_project_path(str(cache_dir), root_dir=root_dir)
-        return raw_data_root(config, root_dir=root_dir) / DEFAULT_RADIOSONDE_CACHE_DIRNAME
-    return resolve_project_path(f"{DEFAULT_RAW_DATA_DIR}/{DEFAULT_RADIOSONDE_CACHE_DIRNAME}", root_dir=root_dir)
+        radiosonde = config.get("radiosonde", {})
+        if isinstance(radiosonde, Mapping):
+            cache_dir = radiosonde.get("cache_dir")
+            if cache_dir:
+                return resolve_project_path(str(cache_dir), root_dir=root_dir)
+    return resolve_project_path(
+        f"{DEFAULT_CACHE_DIR}/{DEFAULT_RADIOSONDE_CACHE_DIRNAME}",
+        root_dir=root_dir,
+    )
 
 
 def measurement_save_id(measurement_id: str) -> str:
     """Return the canonical SCC-style MILGRAU save ID for a measurement group.
 
     Inventory measurement IDs are expected to use the compact form
-    ``YYYYMMDDam``, ``YYYYMMDDpm`` or ``YYYYMMDDnt``.  Product directories and
+    ``YYYYMMDDam``, ``YYYYMMDDpm`` or ``YYYYMMDDnt``. Product directories and
     Level 0 files use ``YYYYMMDDsa<period>``.
     """
     value = str(measurement_id)
