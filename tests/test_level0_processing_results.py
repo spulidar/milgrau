@@ -63,6 +63,11 @@ def test_measurement_group_success_keeps_only_level0_file_effect(tmp_path: Path,
         "parse_licel_group",
         lambda *_args: {"tensors": {"532.AN": [[1.0]]}, "channels": ["532.AN"]},
     )
+    monkeypatch.setattr(
+        processing,
+        "_resolve_group_station_config",
+        lambda _group, _period, lidar, config, _logger: (dict(config), dict(lidar), {}),
+    )
 
     def fake_build(**kwargs) -> None:
         Path(kwargs["netcdf_path"]).write_text("level0", encoding="utf-8")
