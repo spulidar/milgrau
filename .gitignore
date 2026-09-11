@@ -22,6 +22,8 @@ build/
 01-data/
 02-processed_data/
 measurements/
+.cache/
+quarantine/
 
 # ==========================================
 # Logs & Temp Files

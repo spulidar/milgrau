@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import math
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 import warnings
 
 import yaml
@@ -114,6 +115,62 @@ def _normalize_inversion_config(config: dict[str, Any]) -> None:
     _copy_if_missing(molecular_fit, "lidar_ratio_molecular_sr", "lidar_ratio_molecular")
 
 
+def _station_lidar_ratio_climatology(catalog: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    station = catalog.get("station")
+    if not isinstance(station, Mapping):
+        return None
+    value = station.get("lidar_ratio_climatology")
+    if value is None:
+        return None
+    if not isinstance(value, Mapping):
+        raise ValueError("station.lidar_ratio_climatology must be a mapping.")
+    if set(value) != {"provenance", "std_sr", "monthly_sr"}:
+        raise ValueError(
+            "station.lidar_ratio_climatology must contain exactly provenance, std_sr, and monthly_sr."
+        )
+    provenance = value["provenance"]
+    if not isinstance(provenance, Mapping) or not isinstance(provenance.get("source"), str) or not provenance["source"].strip():
+        raise ValueError("station.lidar_ratio_climatology.provenance.source must be a non-empty string.")
+    std = value["std_sr"]
+    monthly = value["monthly_sr"]
+    if not isinstance(std, Mapping) or not std or not isinstance(monthly, Mapping) or not monthly:
+        raise ValueError("station lidar-ratio climatology std_sr and monthly_sr must be non-empty mappings.")
+    for wavelength, raw_std in std.items():
+        if isinstance(raw_std, bool):
+            raise ValueError(f"station lidar-ratio std for {wavelength} must be numeric.")
+        resolved_std = float(raw_std)
+        if not math.isfinite(resolved_std) or resolved_std < 0.0:
+            raise ValueError(f"station lidar-ratio std for {wavelength} must be finite and non-negative.")
+    for wavelength, raw_months in monthly.items():
+        if not isinstance(raw_months, Mapping):
+            raise ValueError(f"station lidar-ratio monthly values for {wavelength} must be a mapping.")
+        for month, raw_value in raw_months.items():
+            if str(month) not in {f"{index:02d}" for index in range(1, 13)} or isinstance(raw_value, bool):
+                raise ValueError(f"Invalid station lidar-ratio entry {wavelength}.{month}.")
+            resolved = float(raw_value)
+            if not math.isfinite(resolved) or resolved <= 0.0:
+                raise ValueError(f"station lidar-ratio value {wavelength}.{month} must be finite and positive.")
+    return value
+
+
+def _apply_station_lidar_ratio_climatology(config: dict[str, Any], catalog: Mapping[str, Any]) -> None:
+    """Materialize station LR climatology into the transitional Level 2 config view.
+
+    station.yaml is authoritative when the climatology exists. If it is absent,
+    explicit inversion.lidar_ratios_sr / lidar_ratio_std_sr values are left
+    untouched as a compatibility fallback. If neither source exists, strict
+    Level 2 validation fails before retrieval.
+    """
+    climatology = _station_lidar_ratio_climatology(catalog)
+    if climatology is None:
+        return
+    inversion = config.setdefault("inversion", {})
+    if not isinstance(inversion, dict):
+        raise ValueError("Configuration inversion must be a mapping.")
+    inversion["lidar_ratios_sr"] = deepcopy(dict(climatology["monthly_sr"]))
+    inversion["lidar_ratio_std_sr"] = deepcopy(dict(climatology["std_sr"]))
+
+
 def normalize_config(config: dict[str, Any]) -> dict[str, Any]:
     """Return a normalized copy of the MILGRAU configuration.
 
@@ -172,6 +229,7 @@ def load_config(
         try:
             validate_station_config(station_catalog)
             config = merge_station_defaults(config, station_catalog)
+            _apply_station_lidar_ratio_climatology(config, station_catalog)
         except Exception as exc:
             raise type(exc)(f"{exc} [station config: {station_path}]") from exc
 

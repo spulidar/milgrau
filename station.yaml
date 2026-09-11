@@ -11,6 +11,56 @@ station:
     station_id: "83779"
     station_name: "SBMT Marte Civ"
 
+  # Monthly aerosol lidar-ratio climatology derived for this station. These are
+  # observational station metadata, not generic algorithm defaults.
+  lidar_ratio_climatology:
+    provenance:
+      source: "SPU-Lidar station climatology migrated from legacy config.yaml"
+    std_sr:
+      "355": 15.0
+      "532": 10.0
+      "1064": 10.0
+    monthly_sr:
+      "355":
+        "01": 75.95
+        "02": 116.08
+        "03": 93.00
+        "04": 96.05
+        "05": 81.16
+        "06": 78.26
+        "07": 78.21
+        "08": 81.14
+        "09": 84.69
+        "10": 84.87
+        "11": 91.06
+        "12": 99.35
+      "532":
+        "01": 58.11
+        "02": 66.06
+        "03": 61.93
+        "04": 69.50
+        "05": 62.07
+        "06": 61.73
+        "07": 58.88
+        "08": 55.05
+        "09": 55.78
+        "10": 57.83
+        "11": 57.11
+        "12": 75.17
+      "1064":
+        "01": 35.94
+        "02": 25.52
+        "03": 35.37
+        "04": 40.76
+        "05": 39.81
+        "06": 43.76
+        "07": 36.92
+        "08": 30.85
+        "09": 29.74
+        "10": 33.44
+        "11": 30.83
+        "12": 41.43
+
 # SCC policy is station/instrument metadata, not a processing fallback.
 # fixed_value=1 tells ELPP to use the fixed lidar ratio stored in the SCC database.
 # When a Raman companion wavelength is present, LR_Input is left undefined for
