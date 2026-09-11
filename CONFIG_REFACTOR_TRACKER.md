@@ -36,7 +36,7 @@ Make scientific and instrumental decisions explicit and auditable:
 - [ ] Remove legacy positional channel correction lists. **The Level 1 consumer now rejects them, but loader compatibility still exists.**
 - [ ] Replace `validate_config_minimum` philosophy with stage-specific strict validation. **A strict typed Level 1 resolver now validates LIPANCORA before discovery/processing; legacy global validation remains.**
 - [ ] Validate unknown keys with full paths.
-- [ ] Add typed/resolved configuration objects or equivalent strict accessors so scientific modules do not consume raw config mappings directly. **Implemented for the current Level 1 recipe/calibration path; other stages remain.**
+- [ ] Add typed/resolved configuration objects or equivalent strict accessors so scientific modules do not consume raw config mappings directly. **Implemented for the current Level 1 recipe/calibration/atmosphere path; other stages remain.**
 
 ## B. `station.yaml`: observational reality
 
@@ -71,7 +71,7 @@ Make scientific and instrumental decisions explicit and auditable:
 ## D. Level 1 strict configuration
 
 - [x] Photon-counting Poisson uncertainty uses observed counts before dark subtraction (SCI-003 completed before this refactor).
-- [x] Canonical atmosphere is materialized in Level 1 with radiosonde -> ERA5 -> USSA76 provenance (completed before this refactor).
+- [x] Canonical atmosphere is materialized in Level 1 with source/fallback provenance.
 - [x] Missing channel calibration is a Level 1 configuration error; neutral correction constants are no longer substituted.
 - [x] Remove configurable speed of light; LIPANCORA uses the exact SI value `299792458 m s-1` as a code constant.
 - [x] Require Level 1 background window through `level1.background`.
@@ -80,11 +80,12 @@ Make scientific and instrumental decisions explicit and auditable:
 - [x] Require explicit PBL reference channel.
 - [x] Require PBL search interval and smoothing settings.
 - [x] Remove productive PBL fallback to first available channel; unavailable configured reference produces no substituted PBL diagnostic.
-- [ ] Move atmospheric source/fallback policy to `config.yaml`.
-- [ ] Make radiosonde temporal-selection policy explicit (synoptic hours / nearest / max delta).
-- [ ] Remove hardcoded radiosonde station ID fallback.
-- [ ] Require complete ERA5 configuration when ERA5 is in the source policy.
-- [ ] Do not replace invalid ERA5 pressure-level config with an internal list.
+- [x] Move atmospheric source/fallback policy to `config.yaml` through `level1.atmosphere.source_priority` and explicit outside-coverage policy.
+- [x] Make radiosonde temporal-selection policy explicit (`synoptic_hours_utc`, `selection`, `max_time_delta_hours`).
+- [x] Remove hardcoded radiosonde station ID fallback; identity is resolved only from `station.yaml`.
+- [x] Require complete ERA5 configuration when ERA5 is in the source policy.
+- [x] Do not replace invalid/missing ERA5 pressure-level configuration with an internal list.
+- [x] Resolve station altitude historically for atmosphere interpolation rather than using one timeless site altitude.
 
 ## E. Level 2 strict configuration
 
@@ -129,7 +130,7 @@ Make scientific and instrumental decisions explicit and auditable:
 - [x] Level 1 persists whether PC saturation is characterized and the rate limit when available; Level 2 does not accept an uncharacterized PC source as scientifically valid retrieval input.
 - [ ] Invalid Rayleigh search -> reference selection failure.
 - [ ] Invalid gluing search -> gluing failure.
-- [ ] Missing external atmosphere follows only the explicitly configured source policy.
+- [x] Missing external atmosphere follows only the explicitly configured source policy; exhausted policies fail rather than silently selecting USSA76.
 - [ ] Optional diagnostic failure must not silently change the scientific algorithm.
 
 ## H. Provenance / FAIR
@@ -142,7 +143,7 @@ Make scientific and instrumental decisions explicit and auditable:
 - [ ] Persist resolved instrument calibration ID.
 - [ ] Persist input file hashes or an immutable input manifest.
 - [ ] Persist random seed for Monte Carlo retrievals.
-- [ ] Persist atmosphere source, source datetime/time delta and fallback fraction.
+- [x] Persist atmosphere source, source datetime/time delta, fallback fraction, source-priority attempts and resolved station geometry.
 - [ ] Persist LR source/provenance used by each retrieval.
 
 ## I. Tests / architecture guardrails
@@ -156,6 +157,7 @@ Make scientific and instrumental decisions explicit and auditable:
 - [x] Add explicit-policy tests for unavailable saturation characterization.
 - [x] Add Level 1 tests that distinguish numerical dead-time clipping from characterized physical saturation.
 - [x] Add Level 2 boundary tests ensuring missing/uncharacterized PC saturation metadata is not assumed clear.
+- [x] Add atmosphere-policy tests for source order, omitted sources, policy exhaustion, explicit USSA76 extension, radiosonde temporal selection and strict ERA5 pressure levels.
 - [ ] Add architectural guard against `config.get(..., semantic_literal_default)` outside the config layer.
 - [ ] Add regression test ensuring production config contains no undeclared semantic defaults.
 - [ ] Run full test suite after each coherent implementation batch. **No CI is currently attached to the branch; isolated strict-L2 tests passed 19/19 earlier. A current full snapshot test run could not be executed from this environment.**
@@ -226,3 +228,17 @@ Make scientific and instrumental decisions explicit and auditable:
 - Added/updated focused tests for strict Level 1 configuration, calibration resolution, clipping-vs-saturation semantics, PBL no-fallback behavior and the Level 1 -> Level 2 saturation-characterization boundary.
 - The generic loader intentionally does not import the Level 1 validator; LIPANCORA validates before discovery/processing to avoid inverted dependencies/cycles. The old broad schema remains transitional.
 - No full repository test run is claimed: the branch has no CI checks, and this environment could not obtain a runnable branch snapshot.
+
+### 2026-09-11 — Level 1 explicit atmosphere policy tranche
+
+- Commit `ae1c07dcc6c50eddc5be5a26b1dc72815d04b60f` introduced the atmosphere-policy code/config/test batch atomically.
+- Added `level1.atmosphere.source_priority` and `external_profile_outside_coverage`; productive source selection now follows only the declared order.
+- Preserved the intended source order as `radiosonde -> era5 -> ussa76`, but made every transition explicit rather than hardcoded.
+- Radiosonde temporal selection is now explicit: configured synoptic UTC hours, `nearest` selection, and a finite maximum time delta.
+- The station radiosonde ID/name are resolved only from `station.yaml`; the former hardcoded `83779` fallback was removed from productive code.
+- ERA5 now receives a complete strict settings object. Missing/invalid pressure levels, grid, area, dataset or cache configuration raise instead of being replaced by internal defaults.
+- External-profile vertical extension is explicit: `ussa76` or `fail`. USSA76 is not selected as a whole-profile fallback unless it appears in `source_priority`.
+- Atmosphere provenance now records configured source priority, sources attempted, resolved station geometry, source time/time delta, source DOI when available and USSA76 extension fraction.
+- Atmosphere interpolation resolves the historical station profile so the September 2024 altitude transition (766 m -> 740 m) is respected.
+- Added focused tests for radiosonde target-time selection, maximum time delta, strict ERA5 settings, source-order enforcement, omitted-source behavior, exhausted policy failure, station-only radiosonde identity and historical station altitude.
+- No full repository test run is claimed for this tranche because the branch still has no CI and this environment cannot fetch a runnable repository snapshot over the network.
