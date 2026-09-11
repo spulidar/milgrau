@@ -14,8 +14,6 @@ from typing import Final, Optional
 import numpy as np
 
 LICEL_DATETIME_PATTERN: Final[str] = r"\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}:\d{2}"
-DEFAULT_ANALOG_ADC_BITS: Final[int] = 12
-DEFAULT_ANALOG_ADC_RANGE_V: Final[float] = 0.5
 BYTES_PER_PAYLOAD_SAMPLE: Final[int] = 4
 CHANNEL_PAYLOAD_SEPARATOR: Final[bytes] = b"\r\n"
 
@@ -95,8 +93,10 @@ def _parse_channel_metadata(line: str, filepath: str) -> dict[str, int | float |
     """Parse one Licel channel header into typed acquisition metadata.
 
     The canonical fields are ``Active AnalogPhoton LaserUsed DataPoints 1 HV
-    BinW Wavelength d1 d2 d3 d4 ADCbits NShots Discriminator ID``.
-    ``Discriminator`` is exposed in mV for the SCC ``DAQ_Range`` variable.
+    BinW Wavelength d1 d2 d3 d4 ADCbits NShots Discriminator ID``. Active
+    channels must carry an explicit positive ``BinW``. Analog channels must also
+    carry explicit positive ADC bit depth and discriminator/DAQ range; MILGRAU
+    never substitutes 12 bits or 0.5 V when those acquisition fields are absent.
     """
     parts = _split_header_parts(line, 8, f"Licel channel header in {filepath}")
     active = int(parts[0])
@@ -106,18 +106,42 @@ def _parse_channel_metadata(line: str, filepath: str) -> dict[str, int | float |
     if num_points <= 0:
         raise ValueError(f"Invalid point count in {filepath}: {num_points}")
 
-    bin_width_m = _finite_float(parts[6], math.nan) if len(parts) > 6 else math.nan
-    if bin_width_m <= 0.0:
+    bin_width_m = _finite_float(parts[6], math.nan)
+    if active != 0 and (not math.isfinite(bin_width_m) or bin_width_m <= 0.0):
+        raise ValueError(f"Active Licel channel in {filepath} lacks a positive finite BinW value.")
+    if not math.isfinite(bin_width_m) or bin_width_m <= 0.0:
         bin_width_m = math.nan
 
-    adc_bits = int(float(parts[12])) if len(parts) > 12 else DEFAULT_ANALOG_ADC_BITS
-    if adc_bits <= 0 and not is_photon_counting:
-        adc_bits = DEFAULT_ANALOG_ADC_BITS
-    number_of_shots = int(float(parts[13])) if len(parts) > 13 else 0
-    discriminator = _finite_float(parts[14], DEFAULT_ANALOG_ADC_RANGE_V) if len(parts) > 14 else DEFAULT_ANALOG_ADC_RANGE_V
-    daq_range_mv = discriminator * 1000.0 if not is_photon_counting else math.nan
-    channel_id = parts[15] if len(parts) > 15 else ""
+    if is_photon_counting:
+        adc_bits = 0
+        discriminator = math.nan
+        if len(parts) > 12:
+            try:
+                adc_bits = int(float(parts[12]))
+            except (TypeError, ValueError):
+                adc_bits = 0
+        number_of_shots = int(float(parts[13])) if len(parts) > 13 else 0
+        daq_range_mv = math.nan
+    else:
+        if len(parts) <= 14:
+            raise ValueError(
+                f"Analog Licel channel in {filepath} lacks required ADCbits/NShots/Discriminator header fields."
+            )
+        try:
+            adc_bits = int(float(parts[12]))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Analog Licel channel in {filepath} has invalid ADC bit depth: {parts[12]!r}") from exc
+        if adc_bits <= 0:
+            raise ValueError(f"Analog Licel channel in {filepath} requires a positive ADC bit depth; got {adc_bits}.")
+        number_of_shots = int(float(parts[13]))
+        discriminator = _finite_float(parts[14], math.nan)
+        if not math.isfinite(discriminator) or discriminator <= 0.0:
+            raise ValueError(
+                f"Analog Licel channel in {filepath} requires a positive finite Discriminator/DAQ range; got {parts[14]!r}."
+            )
+        daq_range_mv = discriminator * 1000.0
 
+    channel_id = parts[15] if len(parts) > 15 else ""
     return {
         "name": _channel_name(parts[7], is_photon_counting),
         "active": active,
