@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 import logging
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -22,34 +21,7 @@ from milgrau.level0.inventory import build_measurement_inventory
 from milgrau.level0.processing import process_measurement_group
 from milgrau.level0.quality import filter_laser_shots
 from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary
-
-
-def _with_station_geometry(config: Mapping) -> dict:
-    """Materialize station-owned pointing geometry into the legacy writer view.
-
-    Productive configurations loaded by ``load_config`` always carry a station
-    catalog. Synthetic unit tests may intentionally construct smaller mappings;
-    those keep their existing low-level behavior until the writer compatibility
-    layer is removed.
-    """
-    catalog = config.get("_station_catalog")
-    if not isinstance(catalog, Mapping):
-        return dict(config)
-    station = catalog.get("station")
-    if not isinstance(station, Mapping):
-        raise KeyError("station is required in the station catalog.")
-    geometry = station.get("lidar_geometry")
-    if not isinstance(geometry, Mapping) or "pointing_angle_deg_from_zenith" not in geometry:
-        raise KeyError("station.lidar_geometry.pointing_angle_deg_from_zenith is required.")
-    angle = float(geometry["pointing_angle_deg_from_zenith"])
-    if not np.isfinite(angle) or angle < 0.0 or angle > 180.0:
-        raise ValueError("station.lidar_geometry.pointing_angle_deg_from_zenith must be finite and within 0..180 degrees.")
-    resolved = deepcopy(dict(config))
-    physics = resolved.setdefault("physics", {})
-    if not isinstance(physics, dict):
-        raise ValueError("Configuration physics compatibility view must be a mapping.")
-    physics["laser_pointing_angle_deg"] = angle
-    return resolved
+from milgrau.provenance import netcdf_provenance_is_complete
 
 
 def _raw_input_paths(group_df) -> list[Path]:
@@ -78,9 +50,13 @@ def _resolve_expected_scc_context(meas_id: str, group_df, config: Mapping, outpu
     return context
 
 
+def _primary_output_satisfies_contract(path: Path) -> bool:
+    return netcdf_satisfies_contract(path, validate_level0_contract) and netcdf_provenance_is_complete(path)
+
+
 def _scc_output_satisfies_context(path: Path, context: Mapping) -> bool:
-    """Validate Level 0 contract plus SCC-specific variables required by context."""
-    if not netcdf_satisfies_contract(path, validate_level0_contract):
+    """Validate Level 0 contract, readable provenance, and SCC-specific variables."""
+    if not _primary_output_satisfies_contract(path):
         return False
     try:
         with xr.open_dataset(path, mask_and_scale=False) as ds:
@@ -114,7 +90,7 @@ def _level0_is_current(meas_id: str, group_df, config: dict, output_path) -> boo
         output,
         inputs,
         config=config,
-        integrity_check=lambda path: netcdf_satisfies_contract(path, validate_level0_contract),
+        integrity_check=_primary_output_satisfies_contract,
     )
     if not primary_current:
         return False
@@ -153,7 +129,6 @@ def process_level_0(
 ) -> ExecutionSummary:
     """Run LIBIDS, optionally restricting processing to selected measurement IDs."""
     validate_level0_config(config)
-    config = _with_station_geometry(config)
     level0_config = resolve_level0_config(config)
     pipeline_logger = bind_log_context(logger, pipeline="L0")
     requested = _normalize_requested_measurements(inputs)
