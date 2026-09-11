@@ -10,6 +10,7 @@ import xarray as xr
 from milgrau.provenance import (
     YAML_DOCUMENT_DIMENSION,
     configuration_provenance,
+    netcdf_provenance_is_complete,
     write_netcdf_provenance,
 )
 from milgrau.version import __version__
@@ -58,11 +59,13 @@ def test_netcdf_provenance_embeds_exact_yaml_with_indexed_vlen_strings(tmp_path:
         "station_config_sha256": "legacy-station-hash",
     }
 
+    assert not netcdf_provenance_is_complete(output)
     written = write_netcdf_provenance(output, config, source_attrs=source_attrs)
 
     assert written["software_version"] == __version__
     assert written["station_profile_id"] == "spu-merionc-2024"
     assert written["instrument_calibration_id"] == "spu-channel-corrections-v1"
+    assert netcdf_provenance_is_complete(output)
     with nc.Dataset(str(output)) as dataset:
         assert dataset.getncattr("software_name") == "MILGRAU"
         assert dataset.getncattr("software_version") == __version__
@@ -89,6 +92,7 @@ def test_netcdf_provenance_is_idempotent_for_current_schema(tmp_path: Path) -> N
     write_netcdf_provenance(output, config)
     write_netcdf_provenance(output, config)
 
+    assert netcdf_provenance_is_complete(output)
     with nc.Dataset(str(output)) as dataset:
         assert dataset.variables["processing_configuration_yaml"][0] == config_path.read_text(encoding="utf-8")
         assert dataset.variables["station_configuration_yaml"][0] == station_path.read_text(encoding="utf-8")
