@@ -7,6 +7,8 @@ station:
     latitude: -23.5607
     longitude: -46.7398
     station_altitude_m: 766.0
+  lidar_geometry:
+    pointing_angle_deg_from_zenith: 0.0
   radiosonde:
     station_id: "83779"
     station_name: "SBMT Marte Civ"
