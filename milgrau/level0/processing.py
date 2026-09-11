@@ -37,12 +37,8 @@ def fetch_group_weather(group_df: pd.DataFrame, config: Mapping[str, Any], logge
             float(weather_data["pressure_hpa"]),
         )
         return weather_data
-
     if level0.surface_weather.missing_policy == "fail":
-        raise RuntimeError(
-            "Surface weather is unavailable and level0.surface_weather.missing_policy='fail'."
-        )
-
+        raise RuntimeError("Surface weather is unavailable and level0.surface_weather.missing_policy='fail'.")
     weather_logger.warning("unavailable -> NaN (policy=nan)")
     return {
         "temperature_c": np.nan,
@@ -63,7 +59,6 @@ def _resolve_group_station_config(
     """Resolve station metadata while preserving every valid Licel channel."""
     if not isinstance(config.get("_station_catalog"), Mapping):
         return dict(config), dict(lidar_data), {}
-
     measurement_rows = group_df[group_df["meas_type"] == "measurements"]
     if measurement_rows.empty:
         raise ValueError("Cannot resolve station profile without measurement rows.")
@@ -76,13 +71,8 @@ def _resolve_group_station_config(
     )
     effective_config = apply_station_context(config, context)
     station_logger = bind_log_context(logger, stage="station")
-
     if context.get("scc_available", False):
-        station_logger.info(
-            "profile=%s | SCC=%s",
-            context["profile_id"],
-            context["scc_configuration_id"],
-        )
+        station_logger.info("profile=%s | SCC=%s", context["profile_id"], context["scc_configuration_id"])
         station_logger.debug(
             "mode=%s calibration=%s selected_channels=%d SCC_channels=%d extra_channels=%s missing_SCC_channels=%s",
             context["mode"],
@@ -93,17 +83,10 @@ def _resolve_group_station_config(
             ",".join(context["missing_scc_channels"]) or "none",
         )
         if context["missing_scc_channels"]:
-            station_logger.warning(
-                "SCC export disabled | missing=%s",
-                ",".join(context["missing_scc_channels"]),
-            )
+            station_logger.warning("SCC export disabled | missing=%s", ",".join(context["missing_scc_channels"]))
     else:
         station_logger.info("profile=%s | SCC=none", context["profile_id"])
-        station_logger.debug(
-            "calibration=%s selected_channels=%d",
-            context["calibration_id"],
-            len(context["selected_channels"]),
-        )
+        station_logger.debug("calibration=%s selected_channels=%d", context["calibration_id"], len(context["selected_channels"]))
     return effective_config, dict(lidar_data), context
 
 
@@ -133,13 +116,11 @@ def _write_scc_export(
     """Write an SCC-compatible channel subset derived from the full Licel Level 0."""
     if not context.get("scc_available", False) or not context.get("scc_export_ready", False):
         return None
-
     scc_logger = bind_log_context(logger, stage="scc")
     scc_channels = [str(channel) for channel in context.get("scc_channels", [])]
     if not scc_channels:
         scc_logger.warning("mapping configured but no SCC channels present")
         return None
-
     scc_lidar = select_lidar_channels(lidar_data, scc_channels)
     scc_path = level0_scc_output_path(meas_id, effective_config)
     ensure_directories(scc_path.parent)
@@ -175,7 +156,6 @@ def process_measurement_group(
     save_id = measurement_save_id(meas_id)
     netcdf_path = level0_output_path(meas_id, config)
     out_dir = netcdf_path.parent
-
     stage = "level0.measurements"
     files_meas: list[str] = []
     try:
@@ -188,7 +168,6 @@ def process_measurement_group(
                 output_path=netcdf_path,
                 metadata={"pipeline": "L0", "save_id": save_id},
             )
-
         stage = "level0.parse"
         lidar_data_tensors = parse_licel_group(files_meas, logger)
         if not lidar_data_tensors.get("tensors"):
@@ -200,20 +179,15 @@ def process_measurement_group(
                 metadata={"pipeline": "L0", "save_id": save_id},
             )
         bind_log_context(logger, stage="parse").debug(
-            "files=%d channels=%d",
-            len(files_meas),
-            len(lidar_data_tensors.get("channels", [])),
+            "files=%d channels=%d", len(files_meas), len(lidar_data_tensors.get("channels", []))
         )
-
         stage = "level0.station"
         period = meas_id[8:]
         effective_config, lidar_data_tensors, station_context = _resolve_group_station_config(
             group_df, period, lidar_data_tensors, config, logger
         )
-
         stage = "level0.weather"
         weather_data = fetch_group_weather(group_df, effective_config, logger)
-
         stage = "level0.write"
         ensure_directories(out_dir)
         primary_config = _internal_level0_config(effective_config)
@@ -229,13 +203,13 @@ def process_measurement_group(
         )
         provenance_attrs = write_netcdf_provenance(netcdf_path, primary_config)
         bind_log_context(logger, stage="provenance").debug(
-            "profile=%s calibration=%s config_sha256=%s station_sha256=%s",
+            "MILGRAU=%s | config=%s | station=%s | profile=%s | calibration=%s",
+            provenance_attrs.get("software_version", "-"),
+            provenance_attrs.get("processing_configuration_file", "-"),
+            provenance_attrs.get("station_configuration_file", "-"),
             provenance_attrs.get("station_profile_id", "-"),
             provenance_attrs.get("instrument_calibration_id", "-"),
-            provenance_attrs.get("processing_config_sha256", "-"),
-            provenance_attrs.get("station_config_sha256", "-"),
         )
-
         stage = "level0.scc_export"
         scc_path = _write_scc_export(
             meas_id=meas_id,
@@ -248,7 +222,6 @@ def process_measurement_group(
             context=station_context,
             logger=logger,
         )
-
         result_metadata = {
             "pipeline": "L0",
             "save_id": save_id,
