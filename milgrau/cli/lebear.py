@@ -10,8 +10,8 @@ from typing import Sequence
 
 from milgrau.cli.common import finish_cli, run_guarded
 from milgrau.config.loader import load_config
-from milgrau.io.paths import LEVEL1_SUFFIX, level2_output_path, measurement_product_dir
-from milgrau.io.logging_utils import setup_logger
+from milgrau.io.logging_utils import bind_log_context, setup_logger
+from milgrau.io.paths import LEVEL1_SUFFIX, level2_output_path, measurement_product_dir, product_save_id
 from milgrau.level2.lebear import level2_output_is_current, process_single_level1_file
 from milgrau.level2.discovery import discover_level1_files
 from milgrau.level2.qa import generate_level2_qa, level2_qa_enabled
@@ -19,8 +19,13 @@ from milgrau.operations import ExecutionResult, ExecutionSummary
 
 
 def _incremental_enabled(config: dict) -> bool:
-    """Return whether incremental processing is enabled."""
-    return bool(config.get("processing", {}).get("incremental", False))
+    """Return whether incremental processing is explicitly enabled."""
+    processing = config.get("processing")
+    if not isinstance(processing, dict) or "incremental" not in processing:
+        raise KeyError("Missing required configuration: processing.incremental")
+    if not isinstance(processing["incremental"], bool):
+        raise ValueError("Configuration processing.incremental must be a boolean.")
+    return processing["incremental"]
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -108,9 +113,9 @@ def _process_selected_files(args: argparse.Namespace, config: dict, logger: logg
     """Process CLI-selected Level 1 files and aggregate structured results."""
     files = _expand_level1_inputs(args.inputs, config)
     if not files:
-        logger.warning("No Level 1 files found for LEBEAR processing.")
+        bind_log_context(logger, stage="discovery").warning("no Level 1 files found")
         return ExecutionSummary.from_results(
-            [ExecutionResult.skipped("level2.discovery", "No Level 1 files found")]
+            [ExecutionResult.skipped("level2.discovery", "No Level 1 files found", metadata={"pipeline": "L2"})]
         )
 
     incremental = _incremental_enabled(config)
@@ -120,6 +125,8 @@ def _process_selected_files(args: argparse.Namespace, config: dict, logger: logg
     if args.time_window is not None:
         output_tag = _format_time_window_tag(args.time_window[0], args.time_window[1])
     for file_path in files:
+        save_id = product_save_id(file_path)
+        file_logger = bind_log_context(logger, save_id=save_id)
         output_path = level2_output_path(file_path, variant_tag=output_tag)
         if incremental and level2_output_is_current(
             file_path,
@@ -129,39 +136,42 @@ def _process_selected_files(args: argparse.Namespace, config: dict, logger: logg
             stop_utc=args.time_window[1] if args.time_window else None,
             output_tag=output_tag,
         ):
+            bind_log_context(file_logger, stage="skip").info("up to date | %s", output_path.name)
             result = ExecutionResult.skipped(
                 "level2.incremental",
-                f"Level 2 provenance is current for {file_path.name}",
+                "Level 2 provenance is current",
                 input_path=file_path,
                 output_path=output_path,
+                metadata={"pipeline": "L2", "save_id": save_id},
             )
-            result.log(logger)
             skipped_results.append(result)
             if level2_qa_enabled(config):
-                qa_result = generate_level2_qa(file_path, output_path, config, logger)
-                qa_result.log(logger)
+                qa_result = generate_level2_qa(file_path, output_path, config, file_logger)
                 skipped_results.append(qa_result)
             continue
         files_to_process.append(file_path)
 
     if not files_to_process:
-        logger.info(f"No Level 1 files require Level 2 processing. Skipped {len(skipped_results)} existing products.")
+        bind_log_context(logger, stage="summary").info("all selected Level 2 products are current")
         return ExecutionSummary.from_results(skipped_results)
 
-    logger.info(f"Found {len(files_to_process)} Level 1 files to process ({len(skipped_results)} skipped).")
+    bind_log_context(logger, stage="queue").info(
+        "%d files to process | %d skipped",
+        len(files_to_process),
+        len(skipped_results),
+    )
     results = list(skipped_results)
     for file_path in files_to_process:
+        save_id = product_save_id(file_path)
+        file_logger = bind_log_context(logger, save_id=save_id)
         file_summary = process_single_level1_file(
             file_path,
             config,
-            logger,
+            file_logger,
             start_utc=args.time_window[0] if args.time_window else None,
             stop_utc=args.time_window[1] if args.time_window else None,
             output_tag=output_tag,
         )
-        for result in file_summary.results:
-            if result.stage != "level2.qa":
-                result.log(logger)
         results.extend(file_summary.results)
     return ExecutionSummary.from_results(results)
 
@@ -172,8 +182,8 @@ def main() -> int:
     args = parser.parse_args()
 
     config = load_config()
-    logger = setup_logger("LEBEAR", config=config)
-    logger.info("=== Starting MILGRAU LEBEAR processing (Level 2) ===")
+    logger = bind_log_context(setup_logger("LEBEAR", config=config), pipeline="L2")
+    bind_log_context(logger, stage="start").info("LEBEAR Level 2")
 
     summary = run_guarded(
         "cli.lebear",
