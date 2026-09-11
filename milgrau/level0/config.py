@@ -14,6 +14,20 @@ class Level0ConfigurationError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class DirectoriesConfig:
+    raw_data: str
+    processed_data: str
+    log_dir: str
+
+
+@dataclass(frozen=True, slots=True)
+class RawDiscoveryConfig:
+    spurious_extensions: tuple[str, ...]
+    raw_scan_ignore_dirs: tuple[str, ...]
+    quarantine_dir: str
+
+
+@dataclass(frozen=True, slots=True)
 class AcquisitionQaConfig:
     laser_shot_tolerance_fraction: float
     licel_header_time_jitter_s: float
@@ -31,6 +45,8 @@ class SurfaceWeatherPolicy:
 
 @dataclass(frozen=True, slots=True)
 class Level0Config:
+    directories: DirectoriesConfig
+    discovery: RawDiscoveryConfig
     acquisition_qa: AcquisitionQaConfig
     dark_current: DarkCurrentConfig
     surface_weather: SurfaceWeatherPolicy
@@ -65,8 +81,91 @@ def _finite(value: Any, label: str, *, positive: bool = False, nonnegative: bool
     return number
 
 
+def _text(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise Level0ConfigurationError(f"Configuration {label} must be a non-empty string.")
+    return value.strip()
+
+
+def _string_list(value: Any, label: str, *, allow_empty: bool) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise Level0ConfigurationError(f"Configuration {label} must be a list of strings.")
+    if not allow_empty and not value:
+        raise Level0ConfigurationError(f"Configuration {label} must not be empty.")
+    result: list[str] = []
+    for index, item in enumerate(value):
+        text = _text(item, f"{label}[{index}]")
+        if text in result:
+            raise Level0ConfigurationError(f"Configuration {label} contains duplicate value {text!r}.")
+        result.append(text)
+    return tuple(result)
+
+
+def _resolve_directories(config: Mapping[str, Any]) -> DirectoriesConfig:
+    directories = _mapping(config.get("directories"), "directories")
+    required = {"raw_data", "processed_data", "log_dir"}
+    missing = sorted(required - set(directories))
+    if missing:
+        raise Level0ConfigurationError(
+            "Missing required Level 0 directories: " + ", ".join(f"directories.{key}" for key in missing)
+        )
+    return DirectoriesConfig(
+        raw_data=_text(directories["raw_data"], "directories.raw_data"),
+        processed_data=_text(directories["processed_data"], "directories.processed_data"),
+        log_dir=_text(directories["log_dir"], "directories.log_dir"),
+    )
+
+
+def _resolve_discovery(config: Mapping[str, Any]) -> RawDiscoveryConfig:
+    processing = _mapping(config.get("processing"), "processing")
+    required = {"spurious_extensions", "raw_scan_ignore_dirs", "quarantine_dir"}
+    missing = sorted(required - set(processing))
+    if missing:
+        raise Level0ConfigurationError(
+            "Missing required raw-discovery configuration: "
+            + ", ".join(f"processing.{key}" for key in missing)
+        )
+
+    extensions = _string_list(
+        processing["spurious_extensions"],
+        "processing.spurious_extensions",
+        allow_empty=True,
+    )
+    normalized_extensions: list[str] = []
+    for extension in extensions:
+        normalized = extension.lower()
+        if not normalized.startswith(".") or normalized == ".":
+            raise Level0ConfigurationError(
+                "Configuration processing.spurious_extensions entries must be file suffixes beginning with '.'."
+            )
+        if normalized in normalized_extensions:
+            raise Level0ConfigurationError(
+                f"Configuration processing.spurious_extensions contains duplicate suffix {normalized!r}."
+            )
+        normalized_extensions.append(normalized)
+
+    ignored = _string_list(
+        processing["raw_scan_ignore_dirs"],
+        "processing.raw_scan_ignore_dirs",
+        allow_empty=True,
+    )
+    if any("/" in name or "\\" in name for name in ignored):
+        raise Level0ConfigurationError(
+            "Configuration processing.raw_scan_ignore_dirs entries must be directory basenames, not paths."
+        )
+
+    return RawDiscoveryConfig(
+        spurious_extensions=tuple(normalized_extensions),
+        raw_scan_ignore_dirs=ignored,
+        quarantine_dir=_text(processing["quarantine_dir"], "processing.quarantine_dir"),
+    )
+
+
 def resolve_level0_config(config: Mapping[str, Any]) -> Level0Config:
     """Resolve the complete productive LIBIDS policy without semantic defaults."""
+    directories = _resolve_directories(config)
+    discovery = _resolve_discovery(config)
+
     level0 = _mapping(config.get("level0"), "level0")
     _exact_keys(level0, {"acquisition_qa", "dark_current", "surface_weather"}, "level0")
 
@@ -108,6 +207,8 @@ def resolve_level0_config(config: Mapping[str, Any]) -> Level0Config:
         )
 
     return Level0Config(
+        directories=directories,
+        discovery=discovery,
         acquisition_qa=AcquisitionQaConfig(shot_tolerance, header_jitter),
         dark_current=DarkCurrentConfig(max_association_hours),
         surface_weather=SurfaceWeatherPolicy(policy.strip().lower()),

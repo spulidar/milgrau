@@ -74,8 +74,16 @@ def build_measurement_inventory(
     and preserve dark-current association metadata for NetCDF provenance.
     """
     logger.info("Building raw data inventory...")
+    level0_config = resolve_level0_config(config)
+    discovery = level0_config.discovery
 
-    file_paths, file_types = scan_raw_files(raw_dir, logger=logger, config=config)
+    file_paths, file_types = scan_raw_files(
+        raw_dir,
+        spurious_extensions=discovery.spurious_extensions,
+        quarantine_dir=discovery.quarantine_dir,
+        raw_scan_ignore_dirs=discovery.raw_scan_ignore_dirs,
+        logger=logger,
+    )
     if not file_paths:
         return pd.DataFrame()
 

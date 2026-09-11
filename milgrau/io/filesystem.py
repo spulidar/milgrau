@@ -10,9 +10,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Optional
 
-from milgrau.io.paths import radiosonde_cache_dir, surface_weather_cache_dir
 from milgrau.operations import ExecutionResult, ExecutionSummary
 
 
@@ -39,19 +38,6 @@ def ensure_directories(*directories: str | Path) -> None:
         Path(directory).mkdir(parents=True, exist_ok=True)
 
 
-def _config_section(config: Mapping[str, Any] | None, key: str) -> Mapping[str, Any]:
-    """Return one configuration section or an empty mapping."""
-    if not config:
-        return {}
-    section = config.get(key, {})
-    return section if isinstance(section, Mapping) else {}
-
-
-def _processing_option(config: Mapping[str, Any] | None, key: str, default):
-    """Return an optional processing setting from config."""
-    return _config_section(config, "processing").get(key, default)
-
-
 def _quarantine_destination(path: Path, quarantine_root: Path) -> Path:
     """Return an auditable collision-safe destination for one source path."""
     destination = quarantine_root / path.name
@@ -66,7 +52,11 @@ def _quarantine_destination(path: Path, quarantine_root: Path) -> Path:
     return destination
 
 
-def quarantine_file(path: str | Path, quarantine_root: str | Path, logger: Optional[logging.Logger] = None) -> ExecutionResult:
+def quarantine_file(
+    path: str | Path,
+    quarantine_root: str | Path,
+    logger: Optional[logging.Logger] = None,
+) -> ExecutionResult:
     """Explicitly move one file to quarantine; repeated calls are safe skips."""
     source = Path(path)
     quarantine = Path(quarantine_root)
@@ -134,7 +124,9 @@ def delete_file(path: str | Path, logger: Optional[logging.Logger] = None) -> Ex
 
 
 def quarantine_files(
-    paths: Iterable[str | Path], quarantine_root: str | Path, logger: Optional[logging.Logger] = None
+    paths: Iterable[str | Path],
+    quarantine_root: str | Path,
+    logger: Optional[logging.Logger] = None,
 ) -> ExecutionSummary:
     """Explicitly quarantine a finite collection of files."""
     return ExecutionSummary.from_results(quarantine_file(path, quarantine_root, logger) for path in paths)
@@ -145,18 +137,10 @@ def delete_files(paths: Iterable[str | Path], logger: Optional[logging.Logger] =
     return ExecutionSummary.from_results(delete_file(path, logger) for path in paths)
 
 
-def _ignored_raw_scan_dirs(config: Mapping[str, Any] | None, quarantine_dir: Path) -> set[str]:
-    """Return directory basenames that should not be scanned as raw Licel data."""
-    ignored = {
-        "_quarantine",
-        ".git",
-        "__pycache__",
-        surface_weather_cache_dir(config).name,
-        radiosonde_cache_dir(config).name,
-    }
-    if config:
-        ignored.update(str(name) for name in _processing_option(config, "raw_scan_ignore_dirs", []))
-        ignored.add(quarantine_dir.name)
+def _ignored_raw_scan_dirs(raw_scan_ignore_dirs: Iterable[str], quarantine_dir: Path) -> set[str]:
+    """Return directory basenames excluded from a raw Licel tree walk."""
+    ignored = {".git", "__pycache__", quarantine_dir.name}
+    ignored.update(str(name) for name in raw_scan_ignore_dirs)
     return ignored
 
 
@@ -165,46 +149,55 @@ def classify_raw_file(path: str | Path, spurious_extensions: Iterable[str]) -> R
     candidate = Path(path)
     normalized_extensions = {str(extension).lower() for extension in spurious_extensions}
     if candidate.suffix.lower() in normalized_extensions:
-        return RawFileCandidate(candidate, RawFileKind.SPURIOUS, f"extension {candidate.suffix.lower()} is configured as spurious")
+        return RawFileCandidate(
+            candidate,
+            RawFileKind.SPURIOUS,
+            f"extension {candidate.suffix.lower()} is configured as spurious",
+        )
     if "dark" in str(candidate).lower():
         return RawFileCandidate(candidate, RawFileKind.DARK_CURRENT, "path contains dark-current marker")
     return RawFileCandidate(candidate, RawFileKind.MEASUREMENT, "candidate measurement file")
 
 
 def discover_raw_files(
-    datadir_name: str,
+    datadir_name: str | Path,
+    *,
+    spurious_extensions: Iterable[str],
+    quarantine_dir: str | Path,
+    raw_scan_ignore_dirs: Iterable[str],
     logger: Optional[logging.Logger] = None,
-    config: Mapping[str, Any] | None = None,
 ) -> tuple[RawFileCandidate, ...]:
-    """Discover and classify raw-tree files without moving or deleting anything."""
+    """Discover/classify a raw tree using only explicitly supplied policy."""
     candidates: list[RawFileCandidate] = []
-
     raw_root = Path(datadir_name)
+    quarantine = Path(quarantine_dir)
+
     if not raw_root.exists():
         if logger:
-            logger.error(f"Raw data directory not found: {datadir_name}")
+            logger.error(f"Raw data directory not found: {raw_root}")
         return ()
 
-    spurious_extensions = tuple(
-        ext.lower()
-        for ext in _processing_option(config, "spurious_extensions", [".dat", ".dpp", ".zip"])
-    )
-    quarantine_dir = Path(_processing_option(config, "quarantine_dir", str(raw_root / "_quarantine")))
-    ignored_dirs = _ignored_raw_scan_dirs(config, quarantine_dir)
+    ignored_dirs = _ignored_raw_scan_dirs(raw_scan_ignore_dirs, quarantine)
+    try:
+        quarantine_resolved = quarantine.resolve()
+    except Exception:
+        quarantine_resolved = None
 
     for dirpath, dirnames, files in os.walk(raw_root):
         dirnames.sort()
         files.sort()
-
-        try:
-            quarantine_resolved = quarantine_dir.resolve()
-            dirnames[:] = [
-                dirname
-                for dirname in dirnames
-                if dirname not in ignored_dirs and Path(dirpath, dirname).resolve() != quarantine_resolved
-            ]
-        except Exception:
-            dirnames[:] = [dirname for dirname in dirnames if dirname not in ignored_dirs]
+        retained_dirs: list[str] = []
+        for dirname in dirnames:
+            if dirname in ignored_dirs:
+                continue
+            if quarantine_resolved is not None:
+                try:
+                    if Path(dirpath, dirname).resolve() == quarantine_resolved:
+                        continue
+                except Exception:
+                    pass
+            retained_dirs.append(dirname)
+        dirnames[:] = retained_dirs
 
         for file_name in files:
             full_path = Path(dirpath) / file_name
@@ -217,14 +210,22 @@ def discover_raw_files(
 
 
 def scan_raw_files(
-    datadir_name: str,
+    datadir_name: str | Path,
+    *,
+    spurious_extensions: Iterable[str],
+    quarantine_dir: str | Path,
+    raw_scan_ignore_dirs: Iterable[str],
     logger: Optional[logging.Logger] = None,
-    config: Mapping[str, Any] | None = None,
 ) -> tuple[list[str], list[str]]:
     """Return Licel candidates from a strictly read-only raw-data scan."""
-    candidates = discover_raw_files(datadir_name, logger=logger, config=config)
+    candidates = discover_raw_files(
+        datadir_name,
+        spurious_extensions=spurious_extensions,
+        quarantine_dir=quarantine_dir,
+        raw_scan_ignore_dirs=raw_scan_ignore_dirs,
+        logger=logger,
+    )
     licel_candidates = [candidate for candidate in candidates if candidate.kind is not RawFileKind.SPURIOUS]
     filepath = [str(candidate.path) for candidate in licel_candidates]
     meas_type = [candidate.kind.value for candidate in licel_candidates]
-
     return filepath, meas_type

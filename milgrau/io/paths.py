@@ -11,8 +11,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping
 
-DEFAULT_RAW_DATA_DIR = "01-data"
-DEFAULT_LOG_DIR = "logs"
 DEFAULT_CACHE_DIR = ".cache"
 DEFAULT_SURFACE_WEATHER_CACHE_DIRNAME = "weather"
 DEFAULT_RADIOSONDE_CACHE_DIRNAME = "radiosonde"
@@ -36,28 +34,33 @@ def resolve_project_path(path_value: str | Path, root_dir: str | Path | None = N
 def _configured_directory(
     config: Mapping[str, Any],
     key: str,
-    default: str,
     root_dir: str | Path | None = None,
 ) -> Path:
-    """Return one configured directory with a stable fallback default."""
-    directories = config.get("directories", {})
-    value = directories.get(key, default)
-    return resolve_project_path(str(value), root_dir=root_dir)
+    """Return one explicitly configured directory; never invent a production path."""
+    directories = config.get("directories")
+    if not isinstance(directories, Mapping):
+        raise KeyError("Configuration directories section is required.")
+    if key not in directories:
+        raise KeyError(f"Configuration directories.{key} is required.")
+    value = directories[key]
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"Configuration directories.{key} must be a non-empty string.")
+    return resolve_project_path(value.strip(), root_dir=root_dir)
 
 
 def raw_data_root(config: Mapping[str, Any], root_dir: str | Path | None = None) -> Path:
-    """Return the configured raw-data root directory."""
-    return _configured_directory(config, "raw_data", DEFAULT_RAW_DATA_DIR, root_dir=root_dir)
+    """Return the explicitly configured raw-data root directory."""
+    return _configured_directory(config, "raw_data", root_dir=root_dir)
 
 
 def processed_data_root(config: Mapping[str, Any], root_dir: str | Path | None = None) -> Path:
-    """Return the configured processed-data root directory."""
-    return _configured_directory(config, "processed_data", "02-processed_data", root_dir=root_dir)
+    """Return the explicitly configured processed-data root directory."""
+    return _configured_directory(config, "processed_data", root_dir=root_dir)
 
 
 def log_output_root(config: Mapping[str, Any], root_dir: str | Path | None = None) -> Path:
-    """Return the configured log output directory."""
-    return _configured_directory(config, "log_dir", DEFAULT_LOG_DIR, root_dir=root_dir)
+    """Return the explicitly configured log output directory."""
+    return _configured_directory(config, "log_dir", root_dir=root_dir)
 
 
 def surface_weather_cache_dir(config: Mapping[str, Any] | None = None, root_dir: str | Path | None = None) -> Path:
