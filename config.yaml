@@ -13,8 +13,6 @@ processing:
   incremental: true
   console_level: "INFO"
   file_level: "INFO"
-  laser_shot_tolerance_fraction: 0.002
-  dark_current_max_association_hours: 12.0
   spurious_extensions: [".dpp", ".zip", ".txt"]
   quarantine_dir: "01-data/_quarantine"
   raw_scan_ignore_dirs: ["openmeteo_cache", "wyoming_cache"]
@@ -24,12 +22,23 @@ directories:
   processed_data: "02-processed_data"
   log_dir: "logs"
 
-# Transitional Level 0/runtime fields. Stage-specific ownership is being moved
-# out of this generic section tranche by tranche.
+# Productive LIBIDS Level 0 processing policy. These values are required
+# explicitly before discovery/processing; code must not invent replacements.
+level0:
+  acquisition_qa:
+    laser_shot_tolerance_fraction: 0.002
+    licel_header_time_jitter_s: 1.0
+  dark_current:
+    max_association_hours: 12.0
+  surface_weather:
+    # Missing weather is preserved as missing rather than replaced by an
+    # invented temperature/pressure pair. Use "fail" for a strict run.
+    missing_policy: "nan"
+
+# Transitional Level 0/runtime field. Native Licel channel metadata takes
+# precedence; removal/reclassification of this field remains tracked.
 physics:
   vertical_resolution_m: 7.5
-  default_surface_temp_c: 25.0
-  default_surface_pressure_hpa: 940.0
 
 # Productive LIPANCORA scientific/instrument-processing recipe. These values are
 # required explicitly; Level 1 code must not provide semantic defaults.
