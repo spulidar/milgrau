@@ -1,4 +1,5 @@
 """Station metadata, temporal profile resolution, calibration, and SCC mapping."""
+
 from __future__ import annotations
 
 from copy import deepcopy
@@ -120,16 +121,10 @@ def _validate_calibrations(catalog: Mapping[str, Any]) -> None:
                 raise ValueError(f"calibrations.{calibration_id}.channels.{channel}.bin_shift_bins must be an integer.")
             _number(values["background_offset"], f"calibrations.{calibration_id}.channels.{channel}.background_offset")
             if mode == "photon_counting":
-                _validate_saturation(channel, _mapping(values["saturation"], f"calibrations.{calibration_id}.channels.{channel}.saturation"))
-
-
-def _validate_lr_input_map(lr_input: Mapping[str, Any], channels: Mapping[str, Any], label: str) -> None:
-    unknown_channels = sorted(set(lr_input) - set(channels))
-    if unknown_channels:
-        raise ValueError(f"{label} references channels outside the SCC configuration: {unknown_channels}.")
-    for channel, value in lr_input.items():
-        if isinstance(value, bool) or not isinstance(value, Integral) or int(value) not in {0, 1}:
-            raise ValueError(f"{label}.{channel} must be integer 0 or 1.")
+                _validate_saturation(
+                    channel,
+                    _mapping(values["saturation"], f"calibrations.{calibration_id}.channels.{channel}.saturation"),
+                )
 
 
 def _validate_scc_policy(catalog: Mapping[str, Any]) -> None:
@@ -179,32 +174,48 @@ def _validate_scc(profile_id: str, scc: Mapping[str, Any]) -> None:
             if resolved in ids:
                 raise ValueError(f"profiles.{profile_id}.scc.{mode} duplicates SCC channel ID {resolved}.")
             ids.add(resolved)
-        if "lr_input" in config:
-            _validate_lr_input_map(
-                _mapping(config["lr_input"], f"profiles.{profile_id}.scc.{mode}.lr_input"),
-                channels,
-                f"profiles.{profile_id}.scc.{mode}.lr_input",
-            )
 
 
 def validate_station_config(catalog: Mapping[str, Any]) -> None:
-    """Validate station metadata, calibrations, temporal profiles, and SCC policy."""
+    """Validate station metadata, geometry, calibrations, temporal profiles, and SCC policy."""
     allowed_root = {"station", "scc_policy", "calibrations", "profiles"}
     unknown_root = sorted(set(catalog) - allowed_root)
     if unknown_root:
         raise ValueError(f"Unknown station catalog key(s): {unknown_root}")
 
     station = _mapping(catalog.get("station"), "station")
+    required_station = {"id", "name", "institution", "timezone", "site", "radiosonde", "lidar_geometry"}
+    optional_station = {"lidar_ratio_climatology"}
+    missing_station = sorted(required_station - set(station))
+    unknown_station = sorted(set(station) - required_station - optional_station)
+    if missing_station or unknown_station:
+        raise ValueError(
+            f"station keys invalid; missing={missing_station}, unknown={unknown_station}."
+        )
     for key in ("id", "name", "institution", "timezone"):
-        _text(station.get(key), f"station.{key}")
-    site = _mapping(station.get("site"), "station.site")
-    lat = _number(site.get("latitude"), "station.site.latitude")
-    lon = _number(site.get("longitude"), "station.site.longitude")
-    _number(site.get("station_altitude_m"), "station.site.station_altitude_m")
+        _text(station[key], f"station.{key}")
+
+    site = _mapping(station["site"], "station.site")
+    required_site = {"latitude", "longitude", "station_altitude_m"}
+    if set(site) != required_site:
+        raise ValueError(f"station.site must contain exactly {sorted(required_site)}.")
+    lat = _number(site["latitude"], "station.site.latitude")
+    lon = _number(site["longitude"], "station.site.longitude")
+    _number(site["station_altitude_m"], "station.site.station_altitude_m")
     if not -90 <= lat <= 90 or not -180 <= lon <= 180:
         raise ValueError("Station latitude/longitude are outside valid bounds.")
 
-    radiosonde = _mapping(station.get("radiosonde"), "station.radiosonde")
+    geometry = _mapping(station["lidar_geometry"], "station.lidar_geometry")
+    if set(geometry) != {"pointing_angle_deg_from_zenith"}:
+        raise ValueError("station.lidar_geometry must contain exactly pointing_angle_deg_from_zenith.")
+    pointing = _number(
+        geometry["pointing_angle_deg_from_zenith"],
+        "station.lidar_geometry.pointing_angle_deg_from_zenith",
+    )
+    if not 0.0 <= pointing <= 180.0:
+        raise ValueError("station.lidar_geometry.pointing_angle_deg_from_zenith must be within 0..180 degrees.")
+
+    radiosonde = _mapping(station["radiosonde"], "station.radiosonde")
     if set(radiosonde) != {"station_id", "station_name"}:
         raise ValueError("station.radiosonde must contain exactly station_id and station_name.")
     _text(radiosonde["station_id"], "station.radiosonde.station_id")
@@ -240,57 +251,6 @@ def validate_station_config(catalog: Mapping[str, Any]) -> None:
     for left, right in zip(intervals, intervals[1:]):
         if left[1] is None or right[0] <= left[1]:
             raise ValueError(f"Station profile validity overlaps: {left[2]} and {right[2]}.")
-
-
-def _legacy_correction_mapping(calibration: Mapping[str, Any]) -> dict[str, dict[str, float | int]]:
-    """Build the temporary legacy correction view consumed by current Level 1 code."""
-    result: dict[str, dict[str, float | int]] = {}
-    for channel, values in calibration["channels"].items():
-        result[str(channel)] = {
-            "deadtime_us": float(values["deadtime_us"]),
-            "bin_shift_bins": int(values["bin_shift_bins"]),
-            "background_offset": float(values["background_offset"]),
-        }
-    return result
-
-
-def merge_station_defaults(config: Mapping[str, Any], catalog: Mapping[str, Any]) -> dict[str, Any]:
-    """Merge station metadata plus a temporary compatibility calibration view.
-
-    Profile-specific calibration is resolved again in :func:`apply_station_context`.
-    The legacy `physics.channels` view remains only until current Level 1 consumers
-    are migrated to the resolved station context.
-    """
-    validate_station_config(catalog)
-    merged = deepcopy(dict(config))
-    station = catalog["station"]
-    project = merged.setdefault("project", {})
-    project.setdefault("station_name", station["name"])
-    project.setdefault("institution", station["institution"])
-    project.setdefault("timezone", station["timezone"])
-    site = merged.setdefault("site", {})
-    for key, value in station["site"].items():
-        site.setdefault(key, value)
-    site.setdefault("timezone", station["timezone"])
-    radiosonde = merged.setdefault("radiosonde", {})
-    for key, value in station["radiosonde"].items():
-        radiosonde.setdefault(key, value)
-
-    referenced = {str(profile["calibration_id"]) for profile in catalog["profiles"]}
-    if len(referenced) == 1:
-        calibration_id = next(iter(referenced))
-        merged.setdefault("physics", {})["channels"] = _legacy_correction_mapping(catalog["calibrations"][calibration_id])
-
-    profile_maps: dict[str, Any] = {}
-    for profile in catalog["profiles"]:
-        if "scc" not in profile:
-            profile_maps[profile["id"]] = {}
-        else:
-            profile_maps[profile["id"]] = {
-                mode: deepcopy(profile["scc"][mode]["channels"]) for mode in ("day", "night")
-            }
-    merged["hardware"] = {"name_to_id": {"profiles": profile_maps}}
-    return merged
 
 
 def _period_mode(period: str) -> str:
@@ -406,22 +366,6 @@ def resolve_station_context(
         "missing_scc_channels": missing,
         "extra_channels": extra,
     }
-
-
-def apply_station_context(config: Mapping[str, Any], context: Mapping[str, Any]) -> dict[str, Any]:
-    """Return a group-specific config with resolved station/calibration metadata applied."""
-    resolved = deepcopy(dict(config))
-    resolved["hardware"] = {"name_to_id": deepcopy(dict(context.get("channel_ids", {})))}
-    site = resolved.setdefault("site", {})
-    site.update(deepcopy(dict(context["site"])))
-    physics = resolved.setdefault("physics", {})
-    for key in ("latitude", "longitude", "station_altitude_m"):
-        if key in site:
-            physics[key] = site[key]
-    calibration = {"channels": context["channel_calibrations"]}
-    physics["channels"] = _legacy_correction_mapping(calibration)
-    resolved["_resolved_station"] = deepcopy(dict(context))
-    return resolved
 
 
 def select_lidar_channels(lidar_data: Mapping[str, Any], selected_channels: Sequence[str]) -> dict[str, Any]:
