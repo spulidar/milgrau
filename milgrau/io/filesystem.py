@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import re
 import shutil
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import StrEnum
 from hashlib import sha256
 from pathlib import Path
@@ -38,28 +41,84 @@ def ensure_directories(*directories: str | Path) -> None:
         Path(directory).mkdir(parents=True, exist_ok=True)
 
 
-def _quarantine_destination(path: Path, quarantine_root: Path) -> Path:
-    """Return an auditable collision-safe destination for one source path."""
-    destination = quarantine_root / path.name
+def _file_sha256(path: Path) -> str:
+    digest = sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _reason_slug(reason: str) -> str:
+    text = str(reason).strip().lower()
+    if not text:
+        raise ValueError("Quarantine reason must be a non-empty string.")
+    slug = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
+    return slug or "unspecified"
+
+
+def _as_utc_datetime(value: datetime | None) -> datetime:
+    if value is None:
+        return datetime.now(timezone.utc)
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _quarantine_bucket(quarantine_root: Path, when_utc: datetime, reason: str) -> Path:
+    """Return YYYY/MM/DD/reason retained-evidence bucket."""
+    return (
+        quarantine_root
+        / when_utc.strftime("%Y")
+        / when_utc.strftime("%m")
+        / when_utc.strftime("%d")
+        / _reason_slug(reason)
+    )
+
+
+def _quarantine_destination(path: Path, quarantine_bucket: Path) -> Path:
+    """Return a collision-safe destination preserving the original filename."""
+    destination = quarantine_bucket / path.name
     if not destination.exists():
         return destination
     source_digest = sha256(str(path.absolute()).encode("utf-8")).hexdigest()[:12]
-    destination = quarantine_root / f"{path.stem}_{source_digest}{path.suffix}"
+    destination = quarantine_bucket / f"{path.stem}_{source_digest}{path.suffix}"
     collision_index = 1
     while destination.exists():
-        destination = quarantine_root / f"{path.stem}_{source_digest}_{collision_index}{path.suffix}"
+        destination = quarantine_bucket / f"{path.stem}_{source_digest}_{collision_index}{path.suffix}"
         collision_index += 1
     return destination
+
+
+def _quarantine_sidecar_path(destination: Path) -> Path:
+    return destination.with_name(f"{destination.name}.json")
 
 
 def quarantine_file(
     path: str | Path,
     quarantine_root: str | Path,
     logger: Optional[logging.Logger] = None,
+    *,
+    reason: str,
+    stage: str = "filesystem",
+    measurement_id: str | None = None,
+    quarantined_at_utc: datetime | None = None,
 ) -> ExecutionResult:
-    """Explicitly move one file to quarantine; repeated calls are safe skips."""
+    """Explicitly move one file into an auditable retained-evidence quarantine.
+
+    Quarantine is never triggered by raw discovery. The caller must supply a
+    reason. Each retained file receives a JSON sidecar with origin, timestamp,
+    content hash, size, stage, and optional measurement identifier.
+    """
     source = Path(path)
     quarantine = Path(quarantine_root)
+    reason_text = str(reason).strip()
+    stage_text = str(stage).strip()
+    if not reason_text:
+        raise ValueError("Quarantine reason must be a non-empty string.")
+    if not stage_text:
+        raise ValueError("Quarantine stage must be a non-empty string.")
+
     if not source.exists():
         result = ExecutionResult.skipped("filesystem.quarantine", "Source file is already absent", input_path=source)
     elif not source.is_file():
@@ -70,20 +129,47 @@ def quarantine_file(
             cause=IsADirectoryError(source),
         )
     else:
-        destination = _quarantine_destination(source, quarantine)
+        when_utc = _as_utc_datetime(quarantined_at_utc)
+        bucket = _quarantine_bucket(quarantine, when_utc, reason_text)
+        destination = _quarantine_destination(source, bucket)
+        sidecar = _quarantine_sidecar_path(destination)
         try:
-            ensure_directories(quarantine)
+            source_hash = _file_sha256(source)
+            source_size = int(source.stat().st_size)
+            original_path = str(source.absolute())
+            ensure_directories(bucket)
             shutil.move(str(source), str(destination))
+            metadata = {
+                "schema_version": 1,
+                "quarantined_at_utc": when_utc.isoformat(),
+                "reason": reason_text,
+                "reason_slug": _reason_slug(reason_text),
+                "stage": stage_text,
+                "original_path": original_path,
+                "source_filename": source.name,
+                "quarantined_filename": destination.name,
+                "sha256": source_hash,
+                "size_bytes": source_size,
+                "measurement_id": measurement_id,
+            }
+            sidecar.write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")
             result = ExecutionResult.success(
                 "filesystem.quarantine",
-                "File quarantined",
+                "File quarantined with audit sidecar",
                 input_path=source,
                 output_path=destination,
+                metadata={
+                    "reason": reason_text,
+                    "stage": stage_text,
+                    "sha256": source_hash,
+                    "sidecar": str(sidecar),
+                    "measurement_id": measurement_id,
+                },
             )
         except Exception as exc:
             result = ExecutionResult.failure(
                 "filesystem.quarantine",
-                "Could not quarantine file",
+                "Could not quarantine file with audit metadata",
                 input_path=source,
                 output_path=destination,
                 cause=exc,
@@ -127,9 +213,25 @@ def quarantine_files(
     paths: Iterable[str | Path],
     quarantine_root: str | Path,
     logger: Optional[logging.Logger] = None,
+    *,
+    reason: str,
+    stage: str = "filesystem",
+    measurement_id: str | None = None,
+    quarantined_at_utc: datetime | None = None,
 ) -> ExecutionSummary:
-    """Explicitly quarantine a finite collection of files."""
-    return ExecutionSummary.from_results(quarantine_file(path, quarantine_root, logger) for path in paths)
+    """Explicitly quarantine a finite collection under one audit context."""
+    return ExecutionSummary.from_results(
+        quarantine_file(
+            path,
+            quarantine_root,
+            logger,
+            reason=reason,
+            stage=stage,
+            measurement_id=measurement_id,
+            quarantined_at_utc=quarantined_at_utc,
+        )
+        for path in paths
+    )
 
 
 def delete_files(paths: Iterable[str | Path], logger: Optional[logging.Logger] = None) -> ExecutionSummary:
