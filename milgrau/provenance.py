@@ -17,6 +17,10 @@ PROVENANCE_ATTRS: tuple[str, ...] = (
     "station_profile_id",
     "instrument_calibration_id",
 )
+LEGACY_HASH_ATTRS: tuple[str, ...] = (
+    "processing_config_sha256",
+    "station_config_sha256",
+)
 
 
 def _source_path(config: Mapping[str, Any], key: str, label: str) -> Path | None:
@@ -87,6 +91,8 @@ def write_netcdf_provenance(
     SHA hashes and Git commit identifiers are deliberately not exposed in the
     scientific product. Reproducibility is provided by the release version,
     resolved station/calibration IDs, and exact YAML text used for processing.
+    Legacy SHA attributes inherited from older products are removed when a file
+    is regenerated under this provenance policy.
     """
     attrs: dict[str, str | int | float] = inherited_provenance(source_attrs or {})
     attrs.update(configuration_provenance(config))
@@ -101,6 +107,9 @@ def write_netcdf_provenance(
     config_path = _source_path(config, "_config_file", "processing configuration")
     station_path = _source_path(config, "_station_config_path", "station configuration")
     with nc.Dataset(str(Path(path)), "a") as dataset:
+        for legacy_name in LEGACY_HASH_ATTRS:
+            if legacy_name in dataset.ncattrs():
+                dataset.delncattr(legacy_name)
         if attrs:
             dataset.setncatts(attrs)
         _write_yaml_variable(
