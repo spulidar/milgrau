@@ -1,9 +1,8 @@
 """ERA5 upper-air retrieval and caching for MILGRAU.
 
-Network access belongs in the IO layer. This module retrieves the minimum ERA5
-pressure-level fields needed by the molecular atmosphere (temperature and
-geopotential), standardizes them to a simple vertical profile, and records
-provenance alongside the cached NetCDF file.
+All scientific/processing settings are supplied explicitly by the Level 1
+atmosphere policy. This module contains only IO behavior, physical constants and
+file-format handling; it does not invent semantic configuration defaults.
 """
 
 from __future__ import annotations
@@ -20,15 +19,12 @@ import xarray as xr
 
 from milgrau.io.paths import resolve_project_path
 
-ERA5_PRESSURE_LEVELS_HPA = (
-    1000, 975, 950, 925, 900, 875, 850, 825, 800, 775, 750, 700, 650, 600, 550,
-    500, 450, 400, 350, 300, 250, 225, 200, 175, 150, 125, 100, 70, 50, 30, 20,
-    10, 7, 5, 3, 2, 1,
-)
-ERA5_DATASET = "reanalysis-era5-pressure-levels"
 ERA5_DOI = "10.24381/cds.bd0915c6"
 _STANDARD_GRAVITY_M_S2 = 9.80665
 _EARTH_RADIUS_M = 6_356_766.0
+_REQUIRED_ERA5_KEYS = {
+    "cache_dir", "dataset", "pressure_levels_hpa", "grid_deg", "area_half_width_deg"
+}
 
 
 def _as_utc_datetime(value: datetime | pd.Timestamp) -> datetime:
@@ -50,29 +46,53 @@ def nearest_era5_analysis_hour(measurement_dt_utc: datetime | pd.Timestamp) -> d
     return rounded
 
 
-def era5_config(config: Mapping[str, Any] | None) -> dict[str, Any]:
-    """Return normalized ERA5 IO settings with conservative defaults."""
-    section = config.get("era5", {}) if isinstance(config, Mapping) else {}
-    if not isinstance(section, Mapping):
-        section = {}
-    levels = section.get("pressure_levels_hpa", ERA5_PRESSURE_LEVELS_HPA)
-    normalized_levels: list[int] = []
-    for level in levels:
-        try:
-            value = int(level)
-        except (TypeError, ValueError):
-            continue
-        if value > 0 and value not in normalized_levels:
-            normalized_levels.append(value)
-    if not normalized_levels:
-        normalized_levels = list(ERA5_PRESSURE_LEVELS_HPA)
+def era5_config(settings: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate and normalize complete ERA5 IO settings without defaults."""
+    if not isinstance(settings, Mapping):
+        raise TypeError("ERA5 settings must be a mapping.")
+    missing = sorted(_REQUIRED_ERA5_KEYS - set(settings))
+    unknown = sorted(set(settings) - _REQUIRED_ERA5_KEYS)
+    if missing or unknown:
+        raise KeyError(f"ERA5 settings must contain exactly {sorted(_REQUIRED_ERA5_KEYS)}; missing={missing}, unknown={unknown}.")
+
+    cache_dir = settings["cache_dir"]
+    dataset = settings["dataset"]
+    if not isinstance(cache_dir, str) or not cache_dir.strip():
+        raise ValueError("ERA5 cache_dir must be a non-empty string.")
+    if not isinstance(dataset, str) or not dataset.strip():
+        raise ValueError("ERA5 dataset must be a non-empty string.")
+
+    raw_levels = settings["pressure_levels_hpa"]
+    if not isinstance(raw_levels, (list, tuple)) or not raw_levels:
+        raise ValueError("ERA5 pressure_levels_hpa must be a non-empty list.")
+    levels: list[int] = []
+    for index, raw in enumerate(raw_levels):
+        if isinstance(raw, bool) or not isinstance(raw, (int, np.integer)):
+            raise ValueError(f"ERA5 pressure_levels_hpa[{index}] must be an integer.")
+        value = int(raw)
+        if value <= 0:
+            raise ValueError(f"ERA5 pressure_levels_hpa[{index}] must be positive.")
+        if value in levels:
+            raise ValueError(f"ERA5 pressure_levels_hpa contains duplicate level {value}.")
+        levels.append(value)
+
+    grid = float(settings["grid_deg"])
+    half_width = float(settings["area_half_width_deg"])
+    if not np.isfinite(grid) or grid <= 0.0:
+        raise ValueError("ERA5 grid_deg must be positive and finite.")
+    if not np.isfinite(half_width) or half_width <= 0.0:
+        raise ValueError("ERA5 area_half_width_deg must be positive and finite.")
+    if grid > 5.0:
+        raise ValueError("ERA5 grid_deg must be <= 5 degrees.")
+    if half_width > 10.0:
+        raise ValueError("ERA5 area_half_width_deg must be <= 10 degrees.")
+
     return {
-        "enabled": bool(section.get("enabled", False)),
-        "cache_dir": str(section.get("cache_dir", ".cache/milgrau/era5")),
-        "dataset": str(section.get("dataset", ERA5_DATASET)),
-        "pressure_levels_hpa": normalized_levels,
-        "grid_deg": float(section.get("grid_deg", 0.25)),
-        "area_half_width_deg": float(section.get("area_half_width_deg", 0.25)),
+        "cache_dir": cache_dir.strip(),
+        "dataset": dataset.strip(),
+        "pressure_levels_hpa": levels,
+        "grid_deg": grid,
+        "area_half_width_deg": half_width,
     }
 
 
@@ -80,12 +100,12 @@ def build_era5_request(
     analysis_dt_utc: datetime,
     latitude: float,
     longitude: float,
-    config: Mapping[str, Any] | None = None,
+    settings: Mapping[str, Any],
 ) -> tuple[str, dict[str, Any]]:
     """Build the CDS API request for one small ERA5 pressure-level column."""
-    cfg = era5_config(config)
-    half_width = max(float(cfg["area_half_width_deg"]), 0.0)
-    grid = max(float(cfg["grid_deg"]), 0.01)
+    cfg = era5_config(settings)
+    half_width = float(cfg["area_half_width_deg"])
+    grid = float(cfg["grid_deg"])
     north = min(float(latitude) + half_width, 90.0)
     south = max(float(latitude) - half_width, -90.0)
     west = max(float(longitude) - half_width, -180.0)
@@ -110,10 +130,10 @@ def _cache_paths(
     measurement_dt_utc: datetime,
     latitude: float,
     longitude: float,
-    config: Mapping[str, Any] | None,
+    settings: Mapping[str, Any],
     root_dir: str | Path | None,
 ) -> tuple[Path, Path]:
-    cfg = era5_config(config)
+    cfg = era5_config(settings)
     cache_root = resolve_project_path(cfg["cache_dir"], root_dir=root_dir)
     analysis_dt = nearest_era5_analysis_hour(measurement_dt_utc)
     cache_dir = cache_root / analysis_dt.strftime("%Y") / analysis_dt.strftime("%m")
@@ -140,7 +160,6 @@ def _variable_name(ds: xr.Dataset, candidates: tuple[str, ...]) -> str:
 
 
 def _select_site_column(data: xr.DataArray, latitude: float, longitude: float) -> xr.DataArray:
-    """Select the nearest horizontal ERA5 grid point and collapse singleton axes."""
     result = data
     if "latitude" in result.coords:
         result = result.sel(latitude=float(latitude), method="nearest")
@@ -154,7 +173,6 @@ def _select_site_column(data: xr.DataArray, latitude: float, longitude: float) -
 
 
 def _reduce_to_pressure_axis(data: xr.DataArray, pressure_coord: str) -> xr.DataArray:
-    """Select the first sample along any remaining non-pressure dimensions."""
     result = data
     for dim in tuple(result.dims):
         if dim != pressure_coord:
@@ -165,7 +183,6 @@ def _reduce_to_pressure_axis(data: xr.DataArray, pressure_coord: str) -> xr.Data
 
 
 def _geopotential_height_to_geometric_altitude(height_m: np.ndarray) -> np.ndarray:
-    """Convert geopotential height to geometric altitude above mean sea level."""
     height = np.asarray(height_m, dtype=np.float64)
     denominator = _EARTH_RADIUS_M - height
     return np.divide(
@@ -176,11 +193,7 @@ def _geopotential_height_to_geometric_altitude(height_m: np.ndarray) -> np.ndarr
     )
 
 
-def era5_profile_from_dataset(
-    ds: xr.Dataset,
-    latitude: float,
-    longitude: float,
-) -> pd.DataFrame:
+def era5_profile_from_dataset(ds: xr.Dataset, latitude: float, longitude: float) -> pd.DataFrame:
     """Standardize one ERA5 NetCDF payload to height/temperature/pressure columns."""
     pressure_coord = _coordinate_name(ds, ("pressure_level", "level"))
     temperature_name = _variable_name(ds, ("t", "temperature"))
@@ -218,11 +231,7 @@ def era5_profile_from_dataset(
             "pressure": pressure[valid],
         }
     )
-    return (
-        frame.drop_duplicates(subset=["height"], keep="first")
-        .sort_values("height")
-        .reset_index(drop=True)
-    )
+    return frame.drop_duplicates(subset=["height"], keep="first").sort_values("height").reset_index(drop=True)
 
 
 def _metadata_for_profile(
@@ -266,23 +275,15 @@ def fetch_era5_pressure_level_profile(
     longitude: float,
     logger: logging.Logger,
     *,
-    config: Mapping[str, Any] | None = None,
+    settings: Mapping[str, Any],
     root_dir: str | Path | None = None,
 ) -> Optional[pd.DataFrame]:
-    """Fetch/cached ERA5 pressure-level temperature and geopotential profile.
-
-    The function returns ``None`` whenever ERA5 is disabled, credentials/client
-    are unavailable, or retrieval/parsing fails. That behavior is intentional:
-    the caller can then continue to the deterministic USSA76 fallback.
-    """
-    cfg = era5_config(config)
-    if not cfg["enabled"]:
-        return None
-
+    """Fetch/cache one ERA5 pressure-level profile using explicit settings."""
+    cfg = era5_config(settings)
     measurement_dt = _as_utc_datetime(measurement_dt_utc)
     analysis_dt = nearest_era5_analysis_hour(measurement_dt)
     cache_file, metadata_file = _cache_paths(
-        measurement_dt, latitude, longitude, config, root_dir
+        measurement_dt, latitude, longitude, cfg, root_dir
     )
 
     if cache_file.exists():
@@ -307,12 +308,12 @@ def fetch_era5_pressure_level_profile(
         import cdsapi  # type: ignore[import-not-found]
     except ImportError:
         logger.warning(
-            "  -> [ERA5] ERA5 fallback is enabled but cdsapi is not installed. "
+            "  -> [ERA5] ERA5 is present in the configured atmosphere source policy but cdsapi is not installed. "
             "Install MILGRAU with the 'era5' extra and configure ~/.cdsapirc."
         )
         return None
 
-    dataset, request = build_era5_request(analysis_dt, latitude, longitude, config)
+    dataset, request = build_era5_request(analysis_dt, latitude, longitude, cfg)
     temporary_file = cache_file.with_suffix(".part.nc")
     try:
         logger.info(
@@ -333,7 +334,7 @@ def fetch_era5_pressure_level_profile(
         logger.info("  -> [OK] ERA5 pressure-level profile successfully fetched and cached.")
         return frame
     except Exception as exc:
-        logger.warning(f"  -> [ERA5] Retrieval unavailable; continuing to standard atmosphere: {exc}")
+        logger.warning(f"  -> [ERA5] Retrieval unavailable under configured source policy: {exc}")
         try:
             if temporary_file.exists():
                 temporary_file.unlink()

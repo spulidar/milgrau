@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 import logging
 from datetime import datetime, timezone
 
@@ -10,15 +11,40 @@ import pandas as pd
 import pytest
 import xarray as xr
 
+from milgrau.config.loader import load_config
 from milgrau.io.era5 import (
     build_era5_request,
+    era5_config,
     era5_profile_from_dataset,
     fetch_era5_pressure_level_profile,
     nearest_era5_analysis_hour,
 )
+from milgrau.io.radiosonde import select_radiosonde_target_datetime
 from milgrau.level1.thermodynamics import integrate_thermodynamics
 from milgrau.level2.retrieval import build_thermodynamic_profile
 from milgrau.physics.atmosphere import get_standard_atmosphere
+
+
+def _era5_settings() -> dict:
+    return {
+        "cache_dir": ".cache/test-era5",
+        "dataset": "reanalysis-era5-pressure-levels",
+        "pressure_levels_hpa": [1000, 500, 100],
+        "grid_deg": 0.25,
+        "area_half_width_deg": 0.25,
+    }
+
+
+def _config_with_priority(*sources: str, extension: str = "ussa76") -> dict:
+    config = deepcopy(load_config("config.yaml"))
+    atmosphere = config["level1"]["atmosphere"]
+    atmosphere["source_priority"] = list(sources)
+    atmosphere["external_profile_outside_coverage"] = extension
+    if "radiosonde" not in sources:
+        atmosphere.pop("radiosonde", None)
+    if "era5" not in sources:
+        atmosphere.pop("era5", None)
+    return config
 
 
 def test_ussa76_fallback_uses_stratified_layers() -> None:
@@ -37,6 +63,28 @@ def test_ussa76_rejects_silent_extrapolation_above_supported_domain() -> None:
         get_standard_atmosphere(np.array([0.0, 100_000.0]))
 
 
+def test_radiosonde_nearest_selection_uses_explicit_synoptic_hours() -> None:
+    measurement = datetime(2024, 1, 1, 8, 0, tzinfo=timezone.utc)
+    target = select_radiosonde_target_datetime(
+        measurement,
+        synoptic_hours_utc=[0, 12],
+        selection="nearest",
+        max_time_delta_hours=6.0,
+    )
+    assert target == datetime(2024, 1, 1, 12, 0, tzinfo=timezone.utc)
+
+
+def test_radiosonde_selection_respects_explicit_maximum_time_delta() -> None:
+    measurement = datetime(2024, 1, 1, 12, 0, tzinfo=timezone.utc)
+    target = select_radiosonde_target_datetime(
+        measurement,
+        synoptic_hours_utc=[0],
+        selection="nearest",
+        max_time_delta_hours=6.0,
+    )
+    assert target is None
+
+
 def test_era5_nearest_analysis_hour_rounds_at_half_hour() -> None:
     before = datetime(2024, 1, 1, 10, 29, tzinfo=timezone.utc)
     after = datetime(2024, 1, 1, 10, 30, tzinfo=timezone.utc)
@@ -50,13 +98,25 @@ def test_era5_request_contains_only_molecular_atmosphere_fields() -> None:
         analysis,
         -23.56,
         -46.73,
-        config={"era5": {"enabled": True, "pressure_levels_hpa": [1000, 500, 100]}},
+        _era5_settings(),
     )
     assert dataset == "reanalysis-era5-pressure-levels"
     assert request["variable"] == ["temperature", "geopotential"]
     assert request["pressure_level"] == ["1000", "500", "100"]
     assert request["data_format"] == "netcdf"
     assert request["download_format"] == "unarchived"
+
+
+def test_era5_configuration_does_not_replace_invalid_pressure_levels_with_defaults() -> None:
+    settings = _era5_settings()
+    settings["pressure_levels_hpa"] = ["bad"]
+    with pytest.raises(ValueError, match="pressure_levels_hpa"):
+        era5_config(settings)
+
+    settings = _era5_settings()
+    del settings["pressure_levels_hpa"]
+    with pytest.raises(KeyError, match="pressure_levels_hpa"):
+        era5_config(settings)
 
 
 def test_era5_dataset_is_standardized_to_geometric_height_temperature_pressure() -> None:
@@ -84,15 +144,20 @@ def test_era5_dataset_is_standardized_to_geometric_height_temperature_pressure()
     assert profile["height"].iloc[-1] > geopotential_height[-1]
 
 
-def test_era5_disabled_never_requires_cdsapi(tmp_path) -> None:
-    result = fetch_era5_pressure_level_profile(
-        datetime(2024, 6, 10, 12, tzinfo=timezone.utc),
-        -23.56,
-        -46.73,
-        logging.getLogger("test-era5-disabled"),
-        config={"era5": {"enabled": False, "cache_dir": str(tmp_path)}},
-    )
-    assert result is None
+def test_era5_fetch_rejects_incomplete_settings_before_network_access(tmp_path) -> None:
+    with pytest.raises(KeyError, match="pressure_levels_hpa"):
+        fetch_era5_pressure_level_profile(
+            datetime(2024, 6, 10, 12, tzinfo=timezone.utc),
+            -23.56,
+            -46.73,
+            logging.getLogger("test-era5-strict"),
+            settings={
+                "cache_dir": str(tmp_path),
+                "dataset": "reanalysis-era5-pressure-levels",
+                "grid_deg": 0.25,
+                "area_half_width_deg": 0.25,
+            },
+        )
 
 
 def _level1_shell() -> xr.Dataset:
@@ -125,41 +190,85 @@ def _profile(source_type: str) -> pd.DataFrame:
     return frame
 
 
+def test_level1_reads_radiosonde_station_identity_only_from_station_catalog(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_radio(_dt, station_id, _logger, **kwargs):
+        captured["station_id"] = station_id
+        captured.update(kwargs)
+        return _profile("radiosonde")
+
+    monkeypatch.setattr("milgrau.level1.thermodynamics.fetch_wyoming_radiosonde", fake_radio)
+    config = _config_with_priority("radiosonde")
+    result = integrate_thermodynamics(_level1_shell(), config, logging.getLogger("test-radio-id"))
+
+    assert captured["station_id"] == "83779"
+    assert captured["selection"] == "nearest"
+    assert captured["synoptic_hours_utc"] == [0, 12]
+    assert result.attrs["thermodynamic_profile_source_type"] == "radiosonde"
+
+
 def test_level1_uses_era5_only_after_radiosonde_failure(monkeypatch) -> None:
     monkeypatch.setattr("milgrau.level1.thermodynamics.fetch_wyoming_radiosonde", lambda *args, **kwargs: None)
-    monkeypatch.setattr("milgrau.level1.thermodynamics.fetch_era5_pressure_level_profile", lambda *args, **kwargs: _profile("era5"))
-    config = {
-        "site": {"latitude": -23.56, "longitude": -46.73, "station_altitude_m": 760.0},
-        "era5": {"enabled": True},
-        "radiosonde": {"station_id": "83779"},
-    }
+    monkeypatch.setattr(
+        "milgrau.level1.thermodynamics.fetch_era5_pressure_level_profile",
+        lambda *args, **kwargs: _profile("era5"),
+    )
+    config = _config_with_priority("radiosonde", "era5", "ussa76")
     result = integrate_thermodynamics(_level1_shell(), config, logging.getLogger("test-era5"))
+
     assert result.attrs["radiosonde_available"] == "false"
     assert result.attrs["thermodynamic_profile_source_type"] == "era5"
     assert result.attrs["thermodynamic_profile_doi"] == "test-doi"
     assert result.attrs["thermodynamic_profile_available"] == "true"
+    assert result.attrs["thermodynamic_source_attempts"] == "radiosonde,era5"
     assert 0.0 < float(result.attrs["thermodynamic_profile_standard_fallback_fraction"]) < 1.0
     assert result["Atmospheric_Temperature_K"].dims == ("altitude",)
     assert result["Atmospheric_Pressure_hPa"].dims == ("altitude",)
-    assert "Radiosonde_Temperature_K" not in result
-    assert "Radiosonde_Pressure_hPa" not in result
-    assert "radiosonde_altitude" not in result.coords
 
 
-def test_level1_materializes_ussa76_when_external_profiles_are_unavailable(monkeypatch) -> None:
+def test_level1_does_not_call_era5_when_source_policy_omits_it(monkeypatch) -> None:
     monkeypatch.setattr("milgrau.level1.thermodynamics.fetch_wyoming_radiosonde", lambda *args, **kwargs: None)
-    monkeypatch.setattr("milgrau.level1.thermodynamics.fetch_era5_pressure_level_profile", lambda *args, **kwargs: None)
-    config = {
-        "site": {"latitude": -23.56, "longitude": -46.73, "station_altitude_m": 760.0},
-        "era5": {"enabled": True},
-        "radiosonde": {"station_id": "83779"},
-    }
+
+    def forbidden_era5(*args, **kwargs):
+        raise AssertionError("ERA5 must not be called when absent from source_priority")
+
+    monkeypatch.setattr("milgrau.level1.thermodynamics.fetch_era5_pressure_level_profile", forbidden_era5)
+    config = _config_with_priority("radiosonde", "ussa76")
+    result = integrate_thermodynamics(_level1_shell(), config, logging.getLogger("test-policy"))
+    assert result.attrs["thermodynamic_profile_source_type"] == "ussa76"
+    assert result.attrs["thermodynamic_source_attempts"] == "radiosonde,ussa76"
+
+
+def test_level1_materializes_ussa76_only_when_explicitly_listed(monkeypatch) -> None:
+    monkeypatch.setattr("milgrau.level1.thermodynamics.fetch_wyoming_radiosonde", lambda *args, **kwargs: None)
+    config = _config_with_priority("radiosonde", "ussa76")
     result = integrate_thermodynamics(_level1_shell(), config, logging.getLogger("test-ussa76"))
+
     assert result.attrs["thermodynamic_profile_source_type"] == "ussa76"
     assert result.attrs["thermodynamic_profile_available"] == "true"
     assert float(result.attrs["thermodynamic_profile_standard_fallback_fraction"]) == 1.0
     assert np.all(np.isfinite(result["Atmospheric_Temperature_K"].values))
     assert np.all(np.isfinite(result["Atmospheric_Pressure_hPa"].values))
+
+
+def test_level1_fails_when_configured_atmosphere_sources_are_exhausted(monkeypatch) -> None:
+    monkeypatch.setattr("milgrau.level1.thermodynamics.fetch_wyoming_radiosonde", lambda *args, **kwargs: None)
+    config = _config_with_priority("radiosonde")
+
+    with pytest.raises(RuntimeError, match="source policy was exhausted"):
+        integrate_thermodynamics(_level1_shell(), config, logging.getLogger("test-exhausted"))
+
+
+def test_level1_external_profile_extension_can_be_configured_to_fail(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "milgrau.level1.thermodynamics.fetch_wyoming_radiosonde",
+        lambda *args, **kwargs: _profile("radiosonde"),
+    )
+    config = _config_with_priority("radiosonde", extension="fail")
+
+    with pytest.raises(RuntimeError, match="source policy was exhausted"):
+        integrate_thermodynamics(_level1_shell(), config, logging.getLogger("test-extension-fail"))
 
 
 def test_level2_reads_only_materialized_level1_atmosphere() -> None:
