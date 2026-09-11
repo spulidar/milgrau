@@ -125,12 +125,7 @@ def _resolve_discovery(config: Mapping[str, Any]) -> RawDiscoveryConfig:
             "Missing required raw-discovery configuration: "
             + ", ".join(f"processing.{key}" for key in missing)
         )
-
-    extensions = _string_list(
-        processing["spurious_extensions"],
-        "processing.spurious_extensions",
-        allow_empty=True,
-    )
+    extensions = _string_list(processing["spurious_extensions"], "processing.spurious_extensions", allow_empty=True)
     normalized_extensions: list[str] = []
     for extension in extensions:
         normalized = extension.lower()
@@ -143,17 +138,11 @@ def _resolve_discovery(config: Mapping[str, Any]) -> RawDiscoveryConfig:
                 f"Configuration processing.spurious_extensions contains duplicate suffix {normalized!r}."
             )
         normalized_extensions.append(normalized)
-
-    ignored = _string_list(
-        processing["raw_scan_ignore_dirs"],
-        "processing.raw_scan_ignore_dirs",
-        allow_empty=True,
-    )
+    ignored = _string_list(processing["raw_scan_ignore_dirs"], "processing.raw_scan_ignore_dirs", allow_empty=True)
     if any("/" in name or "\\" in name for name in ignored):
         raise Level0ConfigurationError(
             "Configuration processing.raw_scan_ignore_dirs entries must be directory basenames, not paths."
         )
-
     return RawDiscoveryConfig(
         spurious_extensions=tuple(normalized_extensions),
         raw_scan_ignore_dirs=ignored,
@@ -165,16 +154,10 @@ def resolve_level0_config(config: Mapping[str, Any]) -> Level0Config:
     """Resolve the complete productive LIBIDS policy without semantic defaults."""
     directories = _resolve_directories(config)
     discovery = _resolve_discovery(config)
-
     level0 = _mapping(config.get("level0"), "level0")
     _exact_keys(level0, {"acquisition_qa", "dark_current", "surface_weather"}, "level0")
-
     acquisition = _mapping(level0["acquisition_qa"], "level0.acquisition_qa")
-    _exact_keys(
-        acquisition,
-        {"laser_shot_tolerance_fraction", "licel_header_time_jitter_s"},
-        "level0.acquisition_qa",
-    )
+    _exact_keys(acquisition, {"laser_shot_tolerance_fraction", "licel_header_time_jitter_s"}, "level0.acquisition_qa")
     shot_tolerance = _finite(
         acquisition["laser_shot_tolerance_fraction"],
         "level0.acquisition_qa.laser_shot_tolerance_fraction",
@@ -189,7 +172,6 @@ def resolve_level0_config(config: Mapping[str, Any]) -> Level0Config:
         "level0.acquisition_qa.licel_header_time_jitter_s",
         nonnegative=True,
     )
-
     dark_current = _mapping(level0["dark_current"], "level0.dark_current")
     _exact_keys(dark_current, {"max_association_hours"}, "level0.dark_current")
     max_association_hours = _finite(
@@ -197,15 +179,11 @@ def resolve_level0_config(config: Mapping[str, Any]) -> Level0Config:
         "level0.dark_current.max_association_hours",
         nonnegative=True,
     )
-
     weather = _mapping(level0["surface_weather"], "level0.surface_weather")
     _exact_keys(weather, {"missing_policy"}, "level0.surface_weather")
     policy = weather["missing_policy"]
     if not isinstance(policy, str) or policy.strip().lower() not in {"nan", "fail"}:
-        raise Level0ConfigurationError(
-            "Configuration level0.surface_weather.missing_policy must be 'nan' or 'fail'."
-        )
-
+        raise Level0ConfigurationError("Configuration level0.surface_weather.missing_policy must be 'nan' or 'fail'.")
     return Level0Config(
         directories=directories,
         discovery=discovery,
@@ -216,8 +194,11 @@ def resolve_level0_config(config: Mapping[str, Any]) -> Level0Config:
 
 
 def validate_level0_config(config: Mapping[str, Any]) -> None:
-    """Validate the productive Level 0 recipe before discovery/processing."""
+    """Validate productive Level 0 processing plus required station geometry before discovery."""
     resolve_level0_config(config)
+    station_timezone(config)
+    station_coordinates(config)
+    station_pointing_angle_deg_from_zenith(config)
 
 
 def _station_catalog_station(config: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -226,7 +207,6 @@ def _station_catalog_station(config: Mapping[str, Any]) -> Mapping[str, Any]:
 
 
 def station_timezone(config: Mapping[str, Any]) -> str:
-    """Resolve station timezone only from the validated station catalog."""
     station = _station_catalog_station(config)
     timezone = station.get("timezone")
     if not isinstance(timezone, str) or not timezone.strip():
@@ -235,7 +215,6 @@ def station_timezone(config: Mapping[str, Any]) -> str:
 
 
 def station_coordinates(config: Mapping[str, Any]) -> tuple[float, float]:
-    """Resolve station latitude/longitude only from the validated station catalog."""
     station = _station_catalog_station(config)
     site = _mapping(station.get("site"), "_station_catalog.station.site")
     latitude = _finite(site.get("latitude"), "station.site.latitude")
@@ -246,7 +225,6 @@ def station_coordinates(config: Mapping[str, Any]) -> tuple[float, float]:
 
 
 def station_pointing_angle_deg_from_zenith(config: Mapping[str, Any]) -> float:
-    """Resolve invariant lidar pointing geometry only from the station catalog."""
     station = _station_catalog_station(config)
     geometry = _mapping(station.get("lidar_geometry"), "_station_catalog.station.lidar_geometry")
     angle = _finite(
