@@ -220,10 +220,14 @@ def validate_level0_config(config: Mapping[str, Any]) -> None:
     resolve_level0_config(config)
 
 
+def _station_catalog_station(config: Mapping[str, Any]) -> Mapping[str, Any]:
+    catalog = _mapping(config.get("_station_catalog"), "_station_catalog")
+    return _mapping(catalog.get("station"), "_station_catalog.station")
+
+
 def station_timezone(config: Mapping[str, Any]) -> str:
     """Resolve station timezone only from the validated station catalog."""
-    catalog = _mapping(config.get("_station_catalog"), "_station_catalog")
-    station = _mapping(catalog.get("station"), "_station_catalog.station")
+    station = _station_catalog_station(config)
     timezone = station.get("timezone")
     if not isinstance(timezone, str) or not timezone.strip():
         raise Level0ConfigurationError("station.timezone must be a non-empty string.")
@@ -232,11 +236,25 @@ def station_timezone(config: Mapping[str, Any]) -> str:
 
 def station_coordinates(config: Mapping[str, Any]) -> tuple[float, float]:
     """Resolve station latitude/longitude only from the validated station catalog."""
-    catalog = _mapping(config.get("_station_catalog"), "_station_catalog")
-    station = _mapping(catalog.get("station"), "_station_catalog.station")
+    station = _station_catalog_station(config)
     site = _mapping(station.get("site"), "_station_catalog.station.site")
     latitude = _finite(site.get("latitude"), "station.site.latitude")
     longitude = _finite(site.get("longitude"), "station.site.longitude")
     if not -90.0 <= latitude <= 90.0 or not -180.0 <= longitude <= 180.0:
         raise Level0ConfigurationError("Station latitude/longitude are outside valid bounds.")
     return latitude, longitude
+
+
+def station_pointing_angle_deg_from_zenith(config: Mapping[str, Any]) -> float:
+    """Resolve invariant lidar pointing geometry only from the station catalog."""
+    station = _station_catalog_station(config)
+    geometry = _mapping(station.get("lidar_geometry"), "_station_catalog.station.lidar_geometry")
+    angle = _finite(
+        geometry.get("pointing_angle_deg_from_zenith"),
+        "station.lidar_geometry.pointing_angle_deg_from_zenith",
+    )
+    if not 0.0 <= angle <= 180.0:
+        raise Level0ConfigurationError(
+            "station.lidar_geometry.pointing_angle_deg_from_zenith must be within 0..180 degrees."
+        )
+    return angle
