@@ -1,11 +1,14 @@
-"""Retrieval-input support QA shared by the public Level 2 boundary.
+"""Retrieval-input QA for an automatic Rayleigh-reference search.
 
-The legacy monolithic retrieval implementation historically required every
-positive-altitude bin to be finite and positive. Level 1 bin shifts deliberately
-create invalid edge bins, while the KFS inversion already treats invalid edge
-bins as the end of an oriented branch. This module aligns the pre-inversion QA
-with that behavior without allowing internal holes or an invalid Rayleigh
-reference interval.
+The Level 2 molecular-fit altitude bounds define a *search interval*, not a
+requirement that every bin across that full interval be positive. Background-
+subtracted lidar signals may legitimately become non-positive in the far-range
+noise tail. Productive QA therefore asks whether at least one configured
+Rayleigh-sized window inside the search interval contains enough scientifically
+usable samples. The downstream Rayleigh selector then evaluates molecular shape
+(slope/variance) and chooses the best reference window.
+
+No signal values are filled, clipped, extrapolated or interpolated here.
 """
 
 from __future__ import annotations
@@ -17,12 +20,17 @@ import numpy as np
 from milgrau.level2.contracts import RetrievalInputInvalidReason
 
 
-def _invalid_gap_reason(
+def _invalid_window_reason(
     values: np.ndarray,
     errors: np.ndarray,
     mask: np.ndarray,
+    saturation: np.ndarray | None,
 ) -> RetrievalInputInvalidReason:
-    """Return the first scientific reason for an invalid internal span."""
+    """Return the dominant scientific reason a candidate window is unusable."""
+    if saturation is not None and np.any(
+        mask & (~np.isfinite(saturation) | (saturation > 0.0))
+    ):
+        return RetrievalInputInvalidReason.PHOTON_COUNTING_SATURATED
     if np.any(mask & ~np.isfinite(values)):
         return RetrievalInputInvalidReason.NONFINITE_SIGNAL
     if np.any(mask & np.isfinite(values) & (values <= 0.0)):
@@ -42,25 +50,32 @@ def evaluate_retrieval_input_supported_domain(
     saturation_fraction: np.ndarray | None = None,
     require_saturation_diagnostic: bool = False,
 ) -> tuple[bool, RetrievalInputInvalidReason, float]:
-    """Validate the contiguous physical support used by Rayleigh/KFS retrieval.
+    """Require at least one viable Rayleigh-sized window inside the search band.
 
-    The accepted domain is the one contiguous run of finite positive signal and
-    finite non-negative uncertainty that contains the complete configured
-    Rayleigh-reference interval. Invalid bins before or after that run are edge
-    bins and may remain NaN/non-positive, as expected after Level 1 bin shifts
-    or when an oriented KFS branch reaches the end of measurable support.
+    ``ref_alt_min_m``/``ref_alt_max_m`` are search bounds. ``ref_window_bins`` is
+    the tested window width and ``min_valid_fraction`` is the minimum fraction
+    of finite positive samples with finite non-negative uncertainty. Saturation
+    diagnostics, when required, participate in the same candidate-window mask.
 
-    A second valid run separated by an invalid bin is not treated as another
-    edge: it proves an internal hole and the candidate is rejected. No values
-    are filled, extrapolated or interpolated by this QA.
+    This pre-QA intentionally does not impose a hard SNR threshold. SNR is
+    exposed as a diagnostic while the instrument-specific threshold remains to
+    be characterized. Molecular-shape acceptance is performed downstream.
     """
     values = np.asarray(signal, dtype=np.float64)
     errors = np.asarray(signal_error, dtype=np.float64)
     altitude = np.asarray(altitude_m, dtype=np.float64)
     if values.shape != altitude.shape or errors.shape != altitude.shape:
-        raise ValueError("Signal, uncertainty, and altitude must have identical one-dimensional shapes.")
-    if altitude.ndim != 1 or not np.isfinite(altitude).all() or not np.all(np.diff(altitude) > 0.0):
-        raise ValueError("Retrieval altitude must be a finite, strictly increasing one-dimensional grid.")
+        raise ValueError(
+            "Signal, uncertainty, and altitude must have identical one-dimensional shapes."
+        )
+    if (
+        altitude.ndim != 1
+        or not np.isfinite(altitude).all()
+        or not np.all(np.diff(altitude) > 0.0)
+    ):
+        raise ValueError(
+            "Retrieval altitude must be a finite, strictly increasing one-dimensional grid."
+        )
     if not correction_valid:
         return (
             False,
@@ -70,60 +85,87 @@ def evaluate_retrieval_input_supported_domain(
 
     ref_alt_min_m = float(fit_config["ref_alt_min_m"])
     ref_alt_max_m = float(fit_config["ref_alt_max_m"])
-    positive_altitude = altitude > 0.0
-    reference = (altitude >= ref_alt_min_m) & (altitude <= ref_alt_max_m)
-    if positive_altitude.sum() < 3 or reference.sum() < 3:
-        return False, RetrievalInputInvalidReason.INSUFFICIENT_VERTICAL_COVERAGE, np.nan
+    window_size = int(fit_config["ref_window_bins"])
+    min_valid_fraction = float(fit_config["min_valid_fraction"])
+    if window_size < 3:
+        raise ValueError("Rayleigh reference window must contain at least three bins.")
+    if not 0.0 <= min_valid_fraction <= 1.0:
+        raise ValueError("Rayleigh minimum valid fraction must be between 0 and 1.")
 
-    finite_signal = np.isfinite(values)
-    positive_signal = finite_signal & (values > 0.0)
-    valid_error = np.isfinite(errors) & (errors >= 0.0)
-    usable = positive_altitude & positive_signal & valid_error
-
-    reference_indices = np.flatnonzero(reference)
-    reference_span = np.zeros_like(reference, dtype=bool)
-    reference_span[reference_indices[0] : reference_indices[-1] + 1] = True
-    if not np.all(usable[reference_span]):
-        return False, _invalid_gap_reason(values, errors, reference_span & ~usable), np.nan
-
-    start = int(reference_indices[0])
-    stop = int(reference_indices[-1])
-    while start > 0 and usable[start - 1]:
-        start -= 1
-    while stop + 1 < altitude.size and usable[stop + 1]:
-        stop += 1
-
-    support = np.zeros_like(positive_altitude, dtype=bool)
-    support[start : stop + 1] = True
-    support &= positive_altitude
-
-    # Any usable island outside the Rayleigh-anchored run means an invalid bin
-    # lies between otherwise usable samples. That is an internal hole, not an
-    # edge condition that may be silently cropped.
-    if np.any(usable & ~support):
-        usable_indices = np.flatnonzero(usable)
-        full_span = np.zeros_like(positive_altitude, dtype=bool)
-        full_span[usable_indices[0] : usable_indices[-1] + 1] = True
-        internal_gap = full_span & positive_altitude & ~usable
-        return False, _invalid_gap_reason(values, errors, internal_gap), np.nan
-
-    if (
-        support.sum() < 3
-        or float(altitude[support][0]) > ref_alt_min_m
-        or float(altitude[support][-1]) < ref_alt_max_m
-    ):
-        return False, RetrievalInputInvalidReason.INSUFFICIENT_VERTICAL_COVERAGE, np.nan
+    search = (
+        (altitude > 0.0)
+        & (altitude >= ref_alt_min_m)
+        & (altitude <= ref_alt_max_m)
+    )
+    search_indices = np.flatnonzero(search)
+    if search_indices.size < window_size:
+        return (
+            False,
+            RetrievalInputInvalidReason.INSUFFICIENT_VERTICAL_COVERAGE,
+            np.nan,
+        )
 
     if require_saturation_diagnostic and saturation_fraction is None:
-        return False, RetrievalInputInvalidReason.SATURATION_DIAGNOSTIC_MISSING, np.nan
+        return (
+            False,
+            RetrievalInputInvalidReason.SATURATION_DIAGNOSTIC_MISSING,
+            np.nan,
+        )
+    saturation: np.ndarray | None = None
     if saturation_fraction is not None:
         saturation = np.asarray(saturation_fraction, dtype=np.float64)
         if saturation.shape != altitude.shape:
-            raise ValueError("Photon-counting saturation diagnostics must match the altitude grid.")
-        if np.any(~np.isfinite(saturation[support])) or np.any(saturation[support] > 0.0):
-            return False, RetrievalInputInvalidReason.PHOTON_COUNTING_SATURATED, np.nan
+            raise ValueError(
+                "Photon-counting saturation diagnostics must match the altitude grid."
+            )
 
-    snr_bins = support & (errors > 0.0)
+    usable = (
+        (altitude > 0.0)
+        & np.isfinite(values)
+        & (values > 0.0)
+        & np.isfinite(errors)
+        & (errors >= 0.0)
+    )
+    if saturation is not None:
+        usable &= np.isfinite(saturation) & (saturation <= 0.0)
+
+    best_fraction = -1.0
+    best_start = -1
+    best_stop = -1
+    last_search_index = int(search_indices[-1])
+    for offset in range(search_indices.size - window_size + 1):
+        start = int(search_indices[offset])
+        stop = start + window_size
+        if stop - 1 > last_search_index:
+            continue
+        window = np.zeros_like(search, dtype=bool)
+        window[start:stop] = True
+        if not np.all(search[window]):
+            continue
+        valid_fraction = float(np.mean(usable[window]))
+        if valid_fraction > best_fraction:
+            best_fraction = valid_fraction
+            best_start = start
+            best_stop = stop
+
+    if best_start < 0:
+        return (
+            False,
+            RetrievalInputInvalidReason.INSUFFICIENT_VERTICAL_COVERAGE,
+            np.nan,
+        )
+
+    best_window = np.zeros_like(search, dtype=bool)
+    best_window[best_start:best_stop] = True
+    if best_fraction < min_valid_fraction:
+        invalid = best_window & ~usable
+        return (
+            False,
+            _invalid_window_reason(values, errors, invalid, saturation),
+            np.nan,
+        )
+
+    snr_bins = best_window & usable & (errors > 0.0)
     if not snr_bins.any():
         return False, RetrievalInputInvalidReason.SNR_UNAVAILABLE, np.nan
     snr_median = float(np.nanmedian(np.abs(values[snr_bins]) / errors[snr_bins]))
