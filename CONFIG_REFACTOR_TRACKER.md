@@ -91,7 +91,7 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - [x] `cdsapi` optional dependency baseline is `>=0.7.7`; credentials remain outside repository/config provenance.
 - [x] Atmosphere transport failures remain visible but concise on console; full exception/traceback stays in DEBUG audit log.
 - [x] PBL INFO log reports computed mean height + valid profile count; search bounds/settings moved to DEBUG.
-- [x] CPT/LRT INFO log reports computed radiosonde diagnostic height; if not available, operator log says `unavailable` explicitly. ERA5/USSA76 do not silently become a new tropopause method.
+- [x] CPT/LRT reuse the same thermal tropopause kernel for radiosonde and ERA5 profiles; USSA76 remains explicitly unavailable as a tropopause source. Product attrs record `tropopause_source_type`.
 
 ## E. Level 2 strict configuration
 
@@ -149,6 +149,7 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - [ ] Decide and implement readable immutable input manifest; do not add cryptic public hashes without a concrete integrity need.
 - [x] Persist Level 2 MC random seed/iterations.
 - [x] Persist atmosphere source, datetime/time delta, fallback fraction, source-priority attempts, and resolved station geometry.
+- [x] Persist tropopause source type (`radiosonde`, `era5`, or unavailable) alongside CPT/LRT values.
 - [x] Persist neutral legacy Level 1 calibration fact.
 - [x] Persist readable LR source; do not invent paper/DOI before one exists.
 - [x] Quarantine sidecars retain SHA-256 because integrity verification is appropriate there.
@@ -172,6 +173,7 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - [x] CLI option, CalVer, simplified operational-result/exit-code tests.
 - [x] PBL regression verifies operator INFO reports computed mean/coverage while search settings stay DEBUG.
 - [x] ERA5 regression pins Client to CDS even when environment points to ADS and verifies multiline transport errors collapse to one warning line.
+- [x] ERA5 tropopause regression verifies Level 1 reuses the existing CPT/LRT kernel rather than introducing a second implementation.
 - [ ] Add architectural static guard against `config.get(..., semantic_literal_default)` outside config layer.
 - [ ] Add repository-wide regression asserting productive config paths contain no undeclared semantic defaults.
 - [ ] Full test suite after each coherent batch. No CI/status checks are attached to this branch and the full suite cannot be claimed green from this environment.
@@ -226,5 +228,5 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - Removed loader-created station/site/hardware compatibility views and old execution-status aliases; migrated broad orchestration/config tests to current contracts.
 - Routed ERA5 explicitly to the Climate Data Store API so an ADS-configured machine cannot request ERA5 from the wrong service; raised optional `cdsapi` baseline to 0.7.7 and added endpoint regression tests.
 - Unified console/audit rows, removed legacy arrows and multiline console breakage, deduplicated repeated calibration/saturation warnings only on console, and removed duplicate LIBIDS summary output.
-- Changed PBL operator logging from search-window chatter to computed mean height + valid count. CPT/LRT now report actual radiosonde-derived values or explicit unavailability; no new ERA5 tropopause method was introduced.
+- Changed PBL operator logging from search-window chatter to computed mean height + valid count. CPT/LRT now reuse the same thermal kernel for radiosonde and ERA5; USSA76 remains explicitly unavailable as a tropopause source.
 - Full repository suite is still not claimed: this branch has no CI/status checks and this environment cannot execute the complete project test matrix.
