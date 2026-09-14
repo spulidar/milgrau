@@ -26,6 +26,15 @@ def test_core_package_imports() -> None:
     assert "viz" in milgrau.__all__
 
 
+def test_level2_package_import_does_not_patch_legacy_scientific_functions() -> None:
+    """Importing Level 2 must not replace functions inside the legacy module."""
+    import milgrau.level2
+    import milgrau.level2._retrieval_impl as impl
+
+    assert impl._evaluate_retrieval_input.__module__ == "milgrau.level2._retrieval_impl"
+    assert impl.retrieve_optical_blocks.__module__ == "milgrau.level2._retrieval_impl"
+
+
 def test_pipeline_entrypoints_import() -> None:
     """Command-line entrypoint modules should import cleanly."""
     import milgrau.cli.explorer
