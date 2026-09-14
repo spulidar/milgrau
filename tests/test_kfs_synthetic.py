@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from milgrau.level2.atmosphere import get_standard_atmosphere
 from milgrau.level2.kfs import kfs_inversion_monte_carlo
 from milgrau.level2.molecular import calculate_molecular_profile, find_optimal_reference_altitude
+from milgrau.physics.atmosphere import get_standard_atmosphere
 
 
 def test_kfs_returns_near_zero_aerosol_for_molecular_signal() -> None:
@@ -42,6 +42,7 @@ def test_kfs_returns_near_zero_aerosol_for_molecular_signal() -> None:
         min_lidar_ratio=10.0,
         allow_negative_aerosol=False,
         seed=123,
+        mode="backward",
     )
 
     valid = np.isfinite(beta_mean[:ref_idx])
@@ -72,6 +73,7 @@ def test_kfs_is_reproducible_with_seed() -> None:
         beta_ref_relative_std=0.02,
         seed=99,
         altitude_units="m",
+        mode="backward",
     )
     result_b = kfs_inversion_monte_carlo(
         rcs=rcs,
@@ -84,6 +86,7 @@ def test_kfs_is_reproducible_with_seed() -> None:
         beta_ref_relative_std=0.02,
         seed=99,
         altitude_units="m",
+        mode="backward",
     )
 
     for array_a, array_b in zip(result_a, result_b):
