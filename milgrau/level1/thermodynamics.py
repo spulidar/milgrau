@@ -10,6 +10,7 @@ import pandas as pd
 import xarray as xr
 
 from milgrau.io.era5 import fetch_era5_pressure_level_profile
+from milgrau.io.logging_utils import bind_log_context
 from milgrau.io.radiosonde import fetch_wyoming_radiosonde
 from milgrau.level1.common import finite_or_fill
 from milgrau.level1.config import (
@@ -216,6 +217,24 @@ def _record_policy(final_ds: xr.Dataset, policy: AtmosphereConfig, attempts: lis
     )
 
 
+def _compact_error(exc: BaseException) -> str:
+    lines = [line.strip() for line in str(exc).splitlines() if line.strip()]
+    return lines[0] if lines else type(exc).__name__
+
+
+def _log_tropopause(logger: logging.Logger, cpt_km: float, lrt_km: float, *, source: str) -> None:
+    cpt_logger = bind_log_context(logger, stage="cpt")
+    lrt_logger = bind_log_context(logger, stage="lrt")
+    if np.isfinite(cpt_km) and cpt_km > 0.0:
+        cpt_logger.info("%.2f km", cpt_km)
+    else:
+        cpt_logger.warning("unavailable | source=%s", source)
+    if np.isfinite(lrt_km) and lrt_km > 0.0:
+        lrt_logger.info("%.2f km", lrt_km)
+    else:
+        lrt_logger.warning("unavailable | source=%s", source)
+
+
 def integrate_thermodynamics(final_ds: xr.Dataset, config: Mapping[str, Any], logger: logging.Logger) -> xr.Dataset:
     """Materialize atmosphere by following only the configured Level 1 source policy."""
     level1_cfg = resolve_level1_config(config)
@@ -252,7 +271,8 @@ def integrate_thermodynamics(final_ds: xr.Dataset, config: Mapping[str, Any], lo
                     **policy.radiosonde.as_io_mapping(),
                 )
             except Exception as exc:
-                logger.warning(f"  -> Radiosonde retrieval failed under configured policy: {exc}")
+                logger.warning("radiosonde unavailable | %s", _compact_error(exc))
+                logger.debug("radiosonde retrieval failure", exc_info=True)
                 df_radio = None
             if df_radio is None or df_radio.empty:
                 continue
@@ -277,12 +297,14 @@ def integrate_thermodynamics(final_ds: xr.Dataset, config: Mapping[str, Any], lo
                 )
                 _record_policy(result, policy, attempts)
                 logger.info(
-                    "  -> Radiosonde atmosphere materialized on Level 1 grid; USSA76 extension fraction %.1f%%.",
+                    "radiosonde | USSA76 extension %.1f%%",
                     100.0 * float(result.attrs["thermodynamic_profile_standard_fallback_fraction"]),
                 )
+                _log_tropopause(logger, float(cpt), float(lrt), source="radiosonde")
                 return result
             except Exception as exc:
-                logger.warning(f"  -> Radiosonde profile unusable under configured policy: {exc}")
+                logger.warning("radiosonde profile unusable | %s", _compact_error(exc))
+                logger.debug("radiosonde profile failure", exc_info=True)
                 continue
 
         if source == "era5":
@@ -297,7 +319,8 @@ def integrate_thermodynamics(final_ds: xr.Dataset, config: Mapping[str, Any], lo
                     settings=policy.era5.as_io_mapping(),
                 )
             except Exception as exc:
-                logger.warning(f"  -> ERA5 retrieval failed under configured policy: {exc}")
+                logger.warning("ERA5 unavailable | %s", _compact_error(exc))
+                logger.debug("ERA5 source failure", exc_info=True)
                 df_era5 = None
             if df_era5 is None or df_era5.empty:
                 continue
@@ -312,18 +335,21 @@ def integrate_thermodynamics(final_ds: xr.Dataset, config: Mapping[str, Any], lo
                 )
                 _record_policy(result, policy, attempts)
                 logger.info(
-                    "  -> ERA5 atmosphere materialized on Level 1 grid; USSA76 extension fraction %.1f%%.",
+                    "ERA5 | USSA76 extension %.1f%%",
                     100.0 * float(result.attrs["thermodynamic_profile_standard_fallback_fraction"]),
                 )
+                _log_tropopause(logger, np.nan, np.nan, source="ERA5 (radiosonde diagnostic only)")
                 return result
             except Exception as exc:
-                logger.warning(f"  -> ERA5 profile unusable under configured policy: {exc}")
+                logger.warning("ERA5 profile unusable | %s", _compact_error(exc))
+                logger.debug("ERA5 profile failure", exc_info=True)
                 continue
 
         if source == "ussa76":
             result = _materialize_ussa76(final_ds, station_altitude_m=station_altitude_m)
             _record_policy(result, policy, attempts)
-            logger.warning("  -> Materialized US Standard Atmosphere 1976 according to configured source priority.")
+            logger.warning("USSA76 | fallback from configured source priority")
+            _log_tropopause(logger, np.nan, np.nan, source="USSA76 (radiosonde diagnostic only)")
             return result
 
         raise RuntimeError(f"Unsupported atmosphere source after validation: {source!r}.")
