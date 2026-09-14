@@ -41,11 +41,6 @@ level0:
     # invented temperature/pressure pair. Use "fail" for a strict run.
     missing_policy: "nan"
 
-# Transitional Level 0/runtime field. Native Licel channel metadata takes
-# precedence; removal/reclassification of this field remains tracked.
-physics:
-  vertical_resolution_m: 7.5
-
 # Productive LIPANCORA scientific/instrument-processing recipe. These values are
 # required explicitly; Level 1 code must not provide semantic defaults.
 level1:
@@ -153,13 +148,12 @@ inversion:
 
   # The altitude limits are SEARCH bounds for an automatic Rayleigh-like
   # reference window, not a requirement that the complete 5-25 km interval be
-  # positive. 133 bins correspond to ~1.0 km on the current 7.5 m common grid,
-  # consistent with the order of window widths used by SCC/Polly-style methods.
-  # Migration from bins to an explicit physical window width remains tracked.
+  # positive. The reference-window width is expressed physically and converted
+  # to an odd number of bins on the actual Level 1 altitude grid at runtime.
   molecular_fit:
     ref_alt_min_m: 5000.0
     ref_alt_max_m: 25000.0
-    ref_window_bins: 133
+    ref_window_m: 1000.0
     max_relative_slope: 0.25
     max_relative_variance: 0.50
     min_valid_fraction: 0.50
