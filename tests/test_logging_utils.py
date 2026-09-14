@@ -70,8 +70,28 @@ def test_info_is_concise_on_console_while_debug_stays_in_audit_file(tmp_path: Pa
         assert "candidate windows" not in stderr
         assert "retrieval complete" in stderr
         assert "candidate windows=84" in log_text
-        assert "pipeline=L2" in log_text
-        assert "save_id=20240101sant" in log_text
+        assert "L2" in log_text
+        assert "20240101sant" in log_text
+        assert "355nm" in log_text
+        assert "pipeline=" not in log_text
+        assert "save_id=" not in log_text
+        assert "stage=" not in log_text
+    finally:
+        _close_handlers(logger)
+
+
+def test_legacy_arrows_and_multiline_external_errors_render_as_one_clean_row(tmp_path: Path, capsys) -> None:
+    logger = setup_logger("TEST_CLEAN_ROW", config=_config(tmp_path))
+    try:
+        contextual = bind_log_context(logger, pipeline="L1", save_id="20240101sant", stage="atmosphere")
+        contextual.warning("  -> ERA5 unavailable\nprocess not found\ndataset not found")
+        for handler in logger.handlers:
+            handler.flush()
+
+        stderr = capsys.readouterr().err
+        assert "->" not in stderr
+        assert "ERA5 unavailable | process not found | dataset not found" in stderr
+        assert stderr.count("\n") == 1
     finally:
         _close_handlers(logger)
 
