@@ -60,19 +60,21 @@ def load_and_prepare_level0(nc_path: str | Path, logger: logging.Logger) -> tupl
         z_arr = _common_level1_altitude_grid(ds.sizes["points"], dz_values)
         if not np.allclose(dz_values, dz_values[0], rtol=0.0, atol=1e-6):
             logger.warning(
-                "  -> Level 0 channels use different native range resolutions "
-                f"({', '.join(f'{value:.6f}' for value in dz_values)} m). "
-                f"Corrections will run on each native grid and outputs will be interpolated to {np.min(dz_values):.6f} m."
+                "mixed native range resolution | %s m | common grid %.6f m",
+                ", ".join(f"{value:.6f}" for value in dz_values),
+                float(np.min(dz_values)),
             )
         channel_strings = ds["channel_string"].values.astype(str)
         ds = ds.rename({"points": "altitude", "channels": "channel"})
         ds = ds.assign_coords(altitude=z_arr, channel=channel_strings)
         ds["altitude"].attrs.update({"units": "m", "long_name": "Altitude above station (range-bin centers)"})
         logger.info(
-            f"  -> Level 0 ingestion successful: {ds.sizes.get('time', 0)} profiles, "
-            f"{ds.sizes.get('channel', 0)} channels, {ds.sizes.get('altitude', 0)} bins."
+            "%d profiles | %d channels | %d bins",
+            ds.sizes.get("time", 0),
+            ds.sizes.get("channel", 0),
+            ds.sizes.get("altitude", 0),
         )
         return ds, z_arr
     except Exception as exc:
-        logger.error(f"  -> Failed to ingest Level 0 file {nc_path}: {exc}")
+        logger.error("failed | %s | %s", Path(nc_path).name, exc)
         raise
