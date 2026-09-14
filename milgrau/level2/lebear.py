@@ -19,6 +19,7 @@ from milgrau.io.logging_utils import bind_log_context
 from milgrau.io.paths import level2_output_path, logging_save_id
 from milgrau.operations import ExecutionResult, ExecutionSummary
 from milgrau.provenance import write_netcdf_provenance
+from milgrau.scientific import elastic_inversion_algorithm_metadata
 from milgrau.level2.completeness import (
     Level2ProductContract,
     ProductCompleteness,
@@ -65,6 +66,8 @@ def level2_output_is_current(
     if not output.is_file():
         return False
     requested = list(canonical_wavelengths(get_wavelengths_to_process(config)))
+    expected_kfs_mode = get_kfs_mode(config)
+    expected_algorithm_metadata = elastic_inversion_algorithm_metadata()
     try:
         with xr.open_dataset(output) as ds:
             validate_level2_contract(ds)
@@ -75,6 +78,10 @@ def level2_output_is_current(
                 or "processed_wavelengths" not in ds
                 or "failed_wavelengths" not in ds
             ):
+                return False
+            if str(ds.attrs.get("KFS_Mode", "")).strip().lower() != expected_kfs_mode:
+                return False
+            if any(str(ds.attrs.get(key, "")) != str(value) for key, value in expected_algorithm_metadata.items()):
                 return False
             requested_written = [int(value) for value in np.asarray(ds["requested_wavelengths"].values).tolist()]
             processed_written = [int(value) for value in np.asarray(ds["processed_wavelengths"].values).tolist()]
@@ -159,7 +166,7 @@ def attempt_wavelength(
             wavelength_nm=wavelength_nm,
             stage=WavelengthFailureStage.RETRIEVAL_VALIDATION,
             code=WavelengthFailureCode.NO_VALID_RETRIEVAL_BLOCK,
-            message="No block produced a valid Rayleigh plus two-sided KFS optical retrieval.",
+            message="No block produced a valid Rayleigh plus backward KFS optical retrieval.",
             cause_summary="retrieval_success_flag contains no successful block",
         )
         wavelength_logger.warning("no valid retrieval blocks")
