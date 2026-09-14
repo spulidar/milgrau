@@ -14,6 +14,7 @@ from milgrau.level2.config import (
     get_lidar_ratio,
     get_molecular_fit_config,
     get_wavelengths_to_process,
+    kfs_mode_description,
     validate_level2_config,
 )
 
@@ -82,6 +83,14 @@ def test_productive_kfs_rejects_two_sided_mode() -> None:
     config["inversion"]["kfs_mode"] = "two_sided"
     with pytest.raises(Level2ConfigurationError, match="backward"):
         validate_level2_config(config)
+
+
+def test_productive_kfs_metadata_describes_backward_mode() -> None:
+    description = kfs_mode_description("backward")
+    assert "Backward Klett--Fernald" in description
+    assert "forward branch" in description
+    with pytest.raises(ValueError, match="backward"):
+        kfs_mode_description("two_sided")
 
 
 def test_level2_requires_explicit_incremental_runtime_policy() -> None:
