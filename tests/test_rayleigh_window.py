@@ -25,3 +25,10 @@ def test_rayleigh_window_rejects_nonuniform_altitude_grid() -> None:
 
     with pytest.raises(ValueError, match="uniform"):
         rayleigh_window_bins(altitude_m, 1000.0)
+
+
+def test_rayleigh_window_does_not_silently_widen_too_narrow_width() -> None:
+    altitude_m = np.arange(0.0, 1000.0, 100.0)
+
+    with pytest.raises(ValueError, match="fewer than three bins"):
+        rayleigh_window_bins(altitude_m, 150.0)
