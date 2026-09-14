@@ -136,6 +136,11 @@ def make_backward_retrieve_optical_blocks(
         optical, valid_block = _reaggregate_backward_optical_products(
             optical, rayleigh, kfs
         )
+        kfs = replace(
+            kfs,
+            backward_valid_flag=int(valid_block.any()),
+            forward_valid_flag=0,
+        )
         n_blocks = int(np.asarray(optical.retrieval_success_flag).size)
         if valid_block.any():
             logger.info(
