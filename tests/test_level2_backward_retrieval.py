@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from milgrau.level2.backward_retrieval import _reaggregate_backward_optical_products
+from milgrau.level2.optical_retrieval import _reaggregate_backward_optical_products
 from milgrau.level2.contracts import KfsDiagnostics, OpticalProducts, RayleighDiagnostics
 
 
