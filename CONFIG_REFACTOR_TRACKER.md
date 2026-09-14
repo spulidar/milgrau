@@ -30,13 +30,13 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 
 ## A. Configuration ownership and schema
 
-- [ ] Remove the remaining generic `physics` section completely. `physics.vertical_resolution_m` remains in repository config for historical/schema cleanup but is no longer a productive L0 range-resolution fallback.
+- [x] Remove the generic `physics` section completely. The final `physics.vertical_resolution_m` repository residue is gone; productive acquisition/range geometry comes from actual Licel/station contracts.
 - [x] Keep station/site/instrument identity in `station.yaml`; productive loader no longer duplicates station metadata into `site`, `radiosonde`, `physics.channels`, or `hardware.name_to_id` compatibility views.
 - [x] Stop rebuilding `physics.channels` from station data.
 - [x] Stop rebuilding `hardware.name_to_id` from station data.
 - [x] `normalize_config` no longer injects legacy aliases.
 - [x] Productive Level 1 rejects legacy positional channel-correction lists and consumes named station calibration.
-- [ ] Fully retire legacy global/minimum-schema validation philosophy in favor of stage-specific strict validation. Productive L0/L1/L2 use strict resolvers; continue auditing auxiliary paths.
+- [x] Retire the legacy global/minimum-schema validator in favor of stage-specific strict validation; obsolete `milgrau/config/schema.py` has been removed.
 - [ ] Validate unknown keys with full paths across every stage. L0/L1/station sections already have strong exact-key validation in key areas.
 - [ ] Extend typed/resolved configuration objects or equivalent strict accessors to every scientific/runtime stage. L0/L1 and current L2 recipe access are substantially migrated.
 - [x] Loader performs only file parsing, station-catalog validation, source-path recording, and the intentional station-LR → Level-2 recipe materialization.
@@ -104,8 +104,8 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - [x] A numerically successful AN/PC gluing result that fails retrieval-input QA can retry configured single-channel candidates blockwise instead of suppressing a valid AN fallback.
 - [x] Rayleigh altitude bounds are a search interval: pre-QA requires at least one Rayleigh-sized viable window and no longer requires the complete 5–25 km band to remain finite/positive.
 - [x] Productive elastic aerosol inversion uses a high-reference backward Klett–Fernald branch; forward/two-sided branches remain research diagnostics and are not a productive success requirement.
-- [x] SPU productive Rayleigh window is 133 bins (~1.0 km on the current 7.5 m common grid), replacing the former ~5 km window while retaining the broad 5–25 km automatic search interval.
-- [ ] Replace bin-defined Rayleigh width with an explicit physical-width setting (`ref_window_m`) so the scientific window is grid-independent.
+- [x] SPU productive Rayleigh width is explicitly `ref_window_m: 1000.0`; it resolves to 133 bins on the current 7.5 m common grid, preserving the validated ~1 km window while making the scientific width grid-independent.
+- [x] Rayleigh reference-window width is expressed in physical units and converted from the actual uniform Level 1 altitude grid before numerical fitting/QA.
 - [ ] Remove remaining low-level/public gluing defaults retained for compatibility.
 - [x] Invalid gluing search domains fail; they are never widened to the full profile.
 - [ ] Document/version gluing selection-score weights as explicit algorithm constants.
@@ -113,7 +113,7 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - [x] Cloud-screening enabled/disabled state and all enabled parameters are explicit.
 - [ ] Integrate a validated cloud/layer mask into reference-window QA; the current preliminary detector remains disabled rather than being promoted without validation.
 - [ ] Remove duplicate/dead compatibility implementations in `_retrieval_impl.py`; public strict boundary is canonical but maintenance debt remains.
-- [ ] Later migration: expose gluing/Rayleigh spatial windows in physical units rather than bins/indices.
+- [ ] Later migration: expose gluing spatial windows/search bounds in physical units rather than bins/indices.
 
 ## F. IO / runtime / visualization / CLI / logging
 
@@ -128,6 +128,7 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - [x] Repeated calibration/saturation warnings are deduplicated on console only; the DEBUG audit file retains every per-product occurrence.
 - [x] Scientific-result stages favor outcomes over method chatter: PBL/CPT/LRT values are operator-visible, while search/transport detail remains DEBUG.
 - [x] L0 uses explicit operator stages for parse/station/weather/write/SCC rather than falling back to anonymous `-` context in productive group processing.
+- [x] Incremental reuse of published NetCDF products requires current readable MILGRAU provenance in addition to timestamps and product-contract integrity; this policy is centralized for L0/L1/L2.
 - [x] Visualization output format/DPI/altitude ranges/channels/smoothing/gap threshold/colormap/missing-data color are strict config.
 - [x] Configured quicklook smoothing drives side/global profiles; no hidden gap fallback.
 - [x] Display-only style constants remain code constants unless intentionally promoted to theme configuration.
@@ -162,6 +163,7 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - [x] Persist readable LR source; do not invent paper/DOI before one exists.
 - [x] Quarantine sidecars retain SHA-256 because integrity verification is appropriate there.
 - [x] Regenerated products remove legacy public `processing_config_sha256` / `station_config_sha256` attrs.
+- [x] Incremental NetCDF reuse rejects products missing the current readable provenance schema, forcing regeneration instead of silently carrying legacy/incomplete FAIR metadata forward.
 - [ ] If the provisional PC guard survives beyond the temporary characterization phase, persist/version its assurance policy and threshold explicitly rather than relying only on package version and audit log.
 
 ## I. Tests / architecture guardrails
@@ -188,6 +190,8 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - [x] PBL regression verifies operator INFO reports computed mean/coverage while search settings stay DEBUG.
 - [x] ERA5 regression pins Client to CDS even when environment points to ADS and verifies multiline transport errors collapse to one warning line.
 - [x] ERA5 tropopause regression verifies Level 1 reuses the existing CPT/LRT kernel rather than introducing a second implementation.
+- [x] Physical Rayleigh-window regression proves `1000 m` resolves to 133 bins on the current 7.5 m grid and adapts to other uniform vertical grids.
+- [x] Incremental regression proves NetCDF reuse requires current readable provenance even when timestamp and structural integrity checks otherwise pass.
 - [ ] Add architectural static guard against `config.get(..., semantic_literal_default)` outside config layer.
 - [ ] Add repository-wide regression asserting productive config paths contain no undeclared semantic defaults.
 - [ ] Full test suite after each coherent batch. No CI/status checks are attached to this branch and the full suite cannot be claimed green from this environment.
@@ -206,11 +210,9 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 
 - [ ] Characterize physical PC saturation for the operational SPU detector settings (AN/PC overlap and preferably controlled optical attenuation), then replace the Level 2 corrected-rate proxy with a raw-rate Level 1 mask and traceable `max_rate_mhz` calibration.
 - [ ] Move the productive backward-KFS policy from the temporary Level 2 package-init adapter into the canonical `config.py`/decomposed retrieval implementation, removing the historical two-sided text path.
-- [ ] Replace `molecular_fit.ref_window_bins` with a physical-width setting such as `ref_window_m` and convert it on the actual lidar grid.
 - [ ] Remove the temporary Level 2 package-init retrieval-QA/aggregation shims when `_retrieval_impl.py` is decomposed; keep Rayleigh-search QA and backward aggregation as explicit retrieval components.
 - [ ] Validate an operational cloud/layer mask against SPU data before allowing it to exclude Rayleigh-reference windows.
 - [ ] Characterize MILGRAU propagated-error SNR against SPU data before adopting a hard Rayleigh-window SNR threshold; do not copy PollyNET's threshold by analogy alone.
-- [ ] Remove remaining generic `physics.vertical_resolution_m` config/schema residue.
 - [ ] Remove low-level Level 2 compatibility defaults and duplicate `_retrieval_impl.py` paths.
 - [ ] Version/document gluing scoring constants.
 - [ ] Decide readable input manifest policy.
@@ -290,3 +292,13 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - Added the FAIR-readable backward-KFS description to the same Level 2 scientific-policy boundary used for the productive mode and installed it before dataset assembly.
 - Added a strict-config regression proving `backward` metadata is accepted and the obsolete two-sided descriptor is rejected.
 - No retrieval equations, Rayleigh selection thresholds, or detector assumptions changed in this micro-fix; it only removes a contradictory post-retrieval metadata gate.
+
+### 2026-09-14 — schema retirement, incremental FAIR guard and physical Rayleigh width
+
+- Removed the obsolete global `milgrau/config/schema.py` validator and the final top-level `physics.vertical_resolution_m` configuration residue; stage-specific strict resolvers remain the productive configuration authority.
+- Centralized incremental FAIR integrity: every published `.nc` output now requires the current embedded MILGRAU provenance schema before timestamp/contract-based reuse, so incomplete L1/L2 products are regenerated just like incomplete L0 products.
+- Replaced productive `inversion.molecular_fit.ref_window_bins` with `ref_window_m: 1000.0` and convert that width on the actual uniform Level 1 altitude grid at runtime.
+- Preserved the current SPU Rayleigh method numerically: 1000 m on the 7.5 m common grid resolves to 133 bins, while coarser/finer grids retain approximately the same physical window instead of a fixed bin count.
+- Added regressions for physical-width conversion, rejection of the legacy public `ref_window_bins` recipe, removal of the `physics` section, and provenance-gated NetCDF incremental reuse.
+- No Rayleigh QA thresholds, search bounds, calibration equation, KFS equation, lidar-ratio assumption, or detector policy changed in this tranche.
+- The full repository suite is still not claimed because this branch has no attached CI/status checks and the complete dependency/test matrix cannot be executed here.
