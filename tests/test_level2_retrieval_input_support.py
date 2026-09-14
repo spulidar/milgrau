@@ -14,7 +14,7 @@ def _fit_config() -> dict[str, float | int]:
     return {
         "ref_alt_min_m": 200.0,
         "ref_alt_max_m": 700.0,
-        "ref_window_bins": 3,
+        "ref_window_m": 300.0,
         "min_valid_fraction": 2.0 / 3.0,
     }
 
