@@ -22,6 +22,7 @@ import milgrau.level2._retrieval_impl as _impl
 from milgrau.level2._retrieval_impl import _run_retrieval_stage
 from milgrau.level2.config import get_kfs_mode, get_lidar_ratio, get_molecular_fit_config
 from milgrau.level2.molecular import calculate_molecular_profile, calculate_simulated_molecular_signal
+from milgrau.level2.rayleigh_window import rayleigh_window_bins
 
 
 # Temporary operational policy for legacy SPU photon-counting channels whose
@@ -90,6 +91,8 @@ def build_molecular_model(
         positive_altitudes[0] if positive_altitudes.size else 1.0,
     )
     lidar_ratio, lidar_ratio_std = get_lidar_ratio(config, wavelength_nm, ds_l1["time"].values[0])
+    fit_config = get_molecular_fit_config(config)
+    fit_config["ref_window_bins"] = rayleigh_window_bins(altitude_m, fit_config["ref_window_m"])
     return MolecularModel(
         source=source,
         backscatter=backscatter,
@@ -97,7 +100,7 @@ def build_molecular_model(
         transmission=transmission,
         simulated_signal=simulated_signal,
         simulated_range_corrected_signal=simulated_signal * safe_altitude**2,
-        fit_config=get_molecular_fit_config(config),
+        fit_config=fit_config,
         lidar_ratio_assumed_sr=lidar_ratio,
         lidar_ratio_std_sr=lidar_ratio_std,
         kfs_mode=get_kfs_mode(config),
