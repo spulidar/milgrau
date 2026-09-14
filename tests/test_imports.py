@@ -8,7 +8,7 @@ import sys
 
 
 def test_core_package_imports() -> None:
-    """The main MILGRAU subpackages should import without side effects."""
+    """The root package stays light while explicit subpackages import cleanly."""
     import milgrau
     import milgrau.cli
     import milgrau.config
@@ -16,15 +16,11 @@ def test_core_package_imports() -> None:
     import milgrau.level0
     import milgrau.level1
     import milgrau.level2
+    import milgrau.physics
     import milgrau.viz
 
-    assert "cli" in milgrau.__all__
-    assert "config" in milgrau.__all__
-    assert "io" in milgrau.__all__
-    assert "level0" in milgrau.__all__
-    assert "level1" in milgrau.__all__
-    assert "level2" in milgrau.__all__
-    assert "viz" in milgrau.__all__
+    assert milgrau.__all__ == ["__version__"]
+    assert isinstance(milgrau.__version__, str)
 
 
 def test_level2_productive_orchestration_has_no_legacy_module_dependency() -> None:
