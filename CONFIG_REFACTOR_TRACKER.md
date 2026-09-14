@@ -102,13 +102,16 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - [x] Productive gluing configuration is complete and strict.
 - [x] Uncharacterized PC channels may participate only through the temporary 10% dead-time-occupancy guard when Level 1 correction succeeded and a traceable positive station dead-time is available; physical saturation remains `not_characterized`.
 - [x] A numerically successful AN/PC gluing result that fails retrieval-input QA can retry configured single-channel candidates blockwise instead of suppressing a valid AN fallback.
-- [x] Retrieval-input QA uses one contiguous Rayleigh-anchored finite-positive support with valid uncertainty; intentional Level 1 bin-shift/nonpositive edge bins may remain invalid, while disjoint valid islands and internal gaps still fail.
+- [x] Rayleigh altitude bounds are a search interval: pre-QA requires at least one Rayleigh-sized viable window and no longer requires the complete 5–25 km band to remain finite/positive.
+- [x] Productive elastic aerosol inversion uses a high-reference backward Klett–Fernald branch; forward/two-sided branches remain research diagnostics and are not a productive success requirement.
+- [x] SPU productive Rayleigh window is 133 bins (~1.0 km on the current 7.5 m common grid), replacing the former ~5 km window while retaining the broad 5–25 km automatic search interval.
+- [ ] Replace bin-defined Rayleigh width with an explicit physical-width setting (`ref_window_m`) so the scientific window is grid-independent.
 - [ ] Remove remaining low-level/public gluing defaults retained for compatibility.
 - [x] Invalid gluing search domains fail; they are never widened to the full profile.
 - [ ] Document/version gluing selection-score weights as explicit algorithm constants.
 - [x] Productive Rayleigh-reference config is complete and strict; no arbitrary last-bin reference.
 - [x] Cloud-screening enabled/disabled state and all enabled parameters are explicit.
-- [ ] Integrate cloud contamination into reference-window QA.
+- [ ] Integrate a validated cloud/layer mask into reference-window QA; the current preliminary detector remains disabled rather than being promoted without validation.
 - [ ] Remove duplicate/dead compatibility implementations in `_retrieval_impl.py`; public strict boundary is canonical but maintenance debt remains.
 - [ ] Later migration: expose gluing/Rayleigh spatial windows in physical units rather than bins/indices.
 
@@ -136,7 +139,8 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - [x] Unknown PC saturation remains explicit `not_characterized`.
 - [x] Numerical dead-time clipping is not treated as physical detector saturation.
 - [x] Level 2 does not accept uncharacterized PC saturation as known-clear input; temporary guarded operation remains distinguishable from a characterized detector limit.
-- [x] Invalid edge bins are never filled or interpolated by retrieval-input QA: Level 2 may stop outside one contiguous Rayleigh-anchored support, while internal holes and invalid Rayleigh bins remain scientific failures.
+- [x] Background-subtracted NaN/non-positive far-range samples are not filled or clipped and do not invalidate the complete molecular search band when another configured Rayleigh window remains viable.
+- [x] Backward KFS still fails a block when invalid samples interrupt the physically sampled branch below the selected reference; outer bins outside the requested branch remain NaN.
 - [x] Invalid Rayleigh/gluing search domains fail rather than substitute scientific domains.
 - [x] Missing external atmosphere follows only configured source priority; reaching USSA76 after external-source failure is an explicit configured fallback, not an execution error.
 - [x] Missing surface weather follows only explicit `nan|fail` policy.
@@ -170,7 +174,9 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - [x] Missing station timezone/coordinates/geometry strict-accessor tests.
 - [x] Saturation characterization and clipping-vs-saturation tests.
 - [x] Provisional PC dead-time guard and post-gluing single-channel fallback regression tests.
-- [x] Contiguous retrieval-support regressions cover bin-shift edge NaNs, nonpositive edge truncation, internal gaps, Rayleigh-window invalidity, PC saturation outside support, and KFS edge-NaN preservation.
+- [x] Rayleigh-search regressions cover bin-shift edge NaNs, non-positive samples elsewhere in the search band, absence of any viable window, PC saturation inside/outside candidate windows, and backward KFS with an invalid upper tail.
+- [x] Backward aggregation regression proves a valid backward branch produces the optical product without requiring an unrequested forward branch.
+- [x] Strict Level 2 config regression pins productive `kfs_mode: backward` and rejects `two_sided` as a productive contract.
 - [x] Strict Licel BinW/ADC/DAQ tests.
 - [x] Level 0 writer tests prove native range/background ownership and readable provenance.
 - [x] Quarantine layout/sidecar/collision/read-only discovery tests.
@@ -198,7 +204,11 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 ## Current high-value technical debt
 
 - [ ] Characterize physical PC saturation for the operational SPU detector settings (AN/PC overlap and preferably controlled optical attenuation), then replace the Level 2 corrected-rate proxy with a raw-rate Level 1 mask and traceable `max_rate_mhz` calibration.
-- [ ] Remove the temporary Level 2 package-init retrieval-QA shim when `_retrieval_impl.py` is decomposed; keep the contiguous supported-domain evaluator as an explicit retrieval component.
+- [ ] Move the productive backward-KFS policy from the temporary Level 2 package-init adapter into the canonical `config.py`/decomposed retrieval implementation, removing the historical two-sided text path.
+- [ ] Replace `molecular_fit.ref_window_bins` with a physical-width setting such as `ref_window_m` and convert it on the actual lidar grid.
+- [ ] Remove the temporary Level 2 package-init retrieval-QA/aggregation shims when `_retrieval_impl.py` is decomposed; keep Rayleigh-search QA and backward aggregation as explicit retrieval components.
+- [ ] Validate an operational cloud/layer mask against SPU data before allowing it to exclude Rayleigh-reference windows.
+- [ ] Characterize MILGRAU propagated-error SNR against SPU data before adopting a hard Rayleigh-window SNR threshold; do not copy PollyNET's threshold by analogy alone.
 - [ ] Remove remaining generic `physics.vertical_resolution_m` config/schema residue.
 - [ ] Remove low-level Level 2 compatibility defaults and duplicate `_retrieval_impl.py` paths.
 - [ ] Version/document gluing scoring constants.
@@ -259,3 +269,16 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - Added regressions for edge NaNs, non-positive edge truncation, internal gaps, invalid Rayleigh support, saturation outside support, package integration, and KFS preservation of NaN edge bins.
 - The supported-domain evaluator is installed through a small package-init compatibility shim while `_retrieval_impl.py` remains monolithic; removing that shim is tracked with the broader Level 2 decomposition debt.
 - Targeted new Python files pass syntax validation in this environment; the full repository suite is still not claimed because this branch has no attached CI/status checks and the complete dependency/test matrix cannot be executed here.
+
+### 2026-09-14 — SCC/LPP-informed Rayleigh reference and backward KFS
+
+- Re-reviewed the elastic retrieval against EARLINET SCC/ELDA, the LPP SPU configuration/implementation, and the automated PollyNET Rayleigh-fit approach.
+- Changed the productive elastic aerosol contract from two-sided to high-reference backward Klett–Fernald. The numerical forward branch remains available for research, but forward validity no longer suppresses a scientifically valid backward product.
+- Reinterpreted `ref_alt_min_m`/`ref_alt_max_m` correctly as automatic Rayleigh-window search bounds. Background-subtracted non-positive samples elsewhere in 5–25 km no longer reject the full block when another configured window remains viable; no values are clipped, filled, or interpolated.
+- Reduced the SPU Rayleigh window from 667 bins (~5 km) to 133 bins (~1 km on the current 7.5 m common grid), consistent in scale with SCC/Polly-style moving reference windows while retaining the broad 5–25 km search for site/season flexibility.
+- Kept the final molecular calibration constrained through the origin because Level 1 already removes background; the free intercept remains diagnostic. Kept `aerosol_ref_fraction: 0.0` (`R_ref = 1`) as the explicit pure-molecular boundary assumption, consistent with the current LPP SPU configuration.
+- Did not copy PollyNET's hard SNR threshold into MILGRAU: propagated-error/SNR behavior must first be characterized for SPU. SNR remains diagnostic only.
+- Did not enable the preliminary MILGRAU cloud detector. Cloud/layer exclusion is scientifically desirable, as in SCC/LPP/Polly workflows, but requires validation on SPU before becoming a productive gate.
+- Added operator-visible aggregate Rayleigh diagnostics (selected altitude/window, valid fraction, slope, variance, backward-valid block count), backward-only optical aggregation, and regression tests for the new search-window and branch semantics.
+- Productive policy is currently installed at the Level 2 boundary while `_retrieval_impl.py` and the historical `config.py` mode text remain monolithic compatibility debt; moving the rule into the canonical decomposed config/retrieval implementation is explicitly tracked.
+- Targeted new/modified Python files were syntax-validated during preparation; the full repository suite is still not claimed because this branch has no attached CI/status checks and the complete dependency/test matrix cannot be executed here.
