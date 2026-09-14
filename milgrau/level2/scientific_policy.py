@@ -36,3 +36,17 @@ def get_kfs_mode_backward(config: Mapping[str, Any]) -> str:
             "products, but are not the productive aerosol contract."
         )
     return "backward"
+
+
+def kfs_mode_description_backward(mode: str) -> str:
+    """Return FAIR-readable metadata for the productive backward KFS mode."""
+    normalized = str(mode).strip().lower()
+    if normalized != "backward":
+        raise ValueError(
+            "The productive Level 2 integration mode must be 'backward'."
+        )
+    return (
+        "Backward Klett--Fernald integration from one high-altitude molecular "
+        "reference toward lower altitudes; an unrequested forward branch above "
+        "the reference is not required for the productive aerosol retrieval."
+    )
