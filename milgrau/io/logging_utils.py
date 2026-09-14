@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -19,6 +20,15 @@ _LEVEL_LABELS = {
 }
 
 
+def _clean_log_message(message: str) -> str:
+    """Normalize legacy presentation noise without changing diagnostic content."""
+    text = str(message).strip()
+    text = re.sub(r"^(?:[-=]>\s*)+", "", text)
+    text = re.sub(r"^->\s*", "", text)
+    text = " | ".join(part.strip() for part in text.splitlines() if part.strip())
+    return text
+
+
 class MilgrauLoggerAdapter(logging.LoggerAdapter):
     """Logger adapter that carries pipeline/save-id/stage context through calls."""
 
@@ -32,14 +42,23 @@ class MilgrauLoggerAdapter(logging.LoggerAdapter):
 
 
 class _ContextFormatter(logging.Formatter):
-    """Formatter that makes missing context explicit instead of raising formatting errors."""
+    """Formatter that makes missing context explicit and keeps each event on one row."""
 
     def format(self, record: logging.LogRecord) -> str:
         for key, default in _CONTEXT_DEFAULTS.items():
             value = getattr(record, key, None)
             setattr(record, key, default if value is None or str(value).strip() == "" else str(value))
         record.levelshort = _LEVEL_LABELS.get(record.levelno, record.levelname)
-        return super().format(record)
+
+        original_msg = record.msg
+        original_args = record.args
+        try:
+            record.msg = _clean_log_message(record.getMessage())
+            record.args = ()
+            return super().format(record)
+        finally:
+            record.msg = original_msg
+            record.args = original_args
 
 
 def bind_log_context(
@@ -129,14 +148,9 @@ def setup_logger(
             logger.removeHandler(handler)
             handler.close()
 
-    console_formatter = _ContextFormatter(
-        "%(asctime)s %(levelshort)-5s %(pipeline)-3s %(save_id)-12s %(stage)-11s %(message)s",
-        datefmt="%H:%M:%S",
-    )
-    file_formatter = _ContextFormatter(
-        "%(asctime)s %(levelname)-8s %(name)s pipeline=%(pipeline)s save_id=%(save_id)s stage=%(stage)s %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    row_format = "%(asctime)s %(levelshort)-5s %(pipeline)-3s %(save_id)-12s %(stage)-11s %(message)s"
+    console_formatter = _ContextFormatter(row_format, datefmt="%H:%M:%S")
+    file_formatter = _ContextFormatter(row_format, datefmt="%Y-%m-%d %H:%M:%S")
 
     file_handler = logging.FileHandler(log_path, encoding="utf-8")
     setattr(file_handler, _MILGRAU_HANDLER_MARKER, True)
