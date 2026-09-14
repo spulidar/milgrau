@@ -46,6 +46,8 @@ def _inputs() -> WavelengthBlockInputs:
         molecular_fit_config={
             "ref_alt_min_m": 100.0,
             "ref_alt_max_m": 300.0,
+            "ref_window_bins": 3,
+            "min_valid_fraction": 1.0,
         },
         analog_block=analog,
         analog_error_block=np.full_like(analog, 0.1),
