@@ -100,6 +100,8 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - [x] LR values/uncertainty are required for every requested wavelength/month; SPU climatology is authoritative in `station.yaml` and product records readable source path.
 - [x] Molecular lidar ratio is a versioned algorithm constant rather than YAML knob.
 - [x] Productive gluing configuration is complete and strict.
+- [x] Uncharacterized PC channels may participate only through the temporary 10% dead-time-occupancy guard when Level 1 correction succeeded and a traceable positive station dead-time is available; physical saturation remains `not_characterized`.
+- [x] A numerically successful AN/PC gluing result that fails retrieval-input QA can retry configured single-channel candidates blockwise instead of suppressing a valid AN fallback.
 - [ ] Remove remaining low-level/public gluing defaults retained for compatibility.
 - [x] Invalid gluing search domains fail; they are never widened to the full profile.
 - [ ] Document/version gluing selection-score weights as explicit algorithm constants.
@@ -132,7 +134,7 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - [x] Missing Level 1 channel calibration follows only explicit configured policy.
 - [x] Unknown PC saturation remains explicit `not_characterized`.
 - [x] Numerical dead-time clipping is not treated as physical detector saturation.
-- [x] Level 2 does not accept uncharacterized PC saturation as known-clear input.
+- [x] Level 2 does not accept uncharacterized PC saturation as known-clear input; temporary guarded operation remains distinguishable from a characterized detector limit.
 - [x] Invalid Rayleigh/gluing search domains fail rather than substitute scientific domains.
 - [x] Missing external atmosphere follows only configured source priority; reaching USSA76 after external-source failure is an explicit configured fallback, not an execution error.
 - [x] Missing surface weather follows only explicit `nan|fail` policy.
@@ -154,6 +156,7 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - [x] Persist readable LR source; do not invent paper/DOI before one exists.
 - [x] Quarantine sidecars retain SHA-256 because integrity verification is appropriate there.
 - [x] Regenerated products remove legacy public `processing_config_sha256` / `station_config_sha256` attrs.
+- [ ] If the provisional PC guard survives beyond the temporary characterization phase, persist/version its assurance policy and threshold explicitly rather than relying only on package version and audit log.
 
 ## I. Tests / architecture guardrails
 
@@ -164,6 +167,7 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - [x] Invalid gluing/Rayleigh-domain tests.
 - [x] Missing station timezone/coordinates/geometry strict-accessor tests.
 - [x] Saturation characterization and clipping-vs-saturation tests.
+- [x] Provisional PC dead-time guard and post-gluing single-channel fallback regression tests.
 - [x] Strict Licel BinW/ADC/DAQ tests.
 - [x] Level 0 writer tests prove native range/background ownership and readable provenance.
 - [x] Quarantine layout/sidecar/collision/read-only discovery tests.
@@ -190,6 +194,7 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 
 ## Current high-value technical debt
 
+- [ ] Characterize physical PC saturation for the operational SPU detector settings (AN/PC overlap and preferably controlled optical attenuation), then replace the Level 2 corrected-rate proxy with a raw-rate Level 1 mask and traceable `max_rate_mhz` calibration.
 - [ ] Remove remaining generic `physics.vertical_resolution_m` config/schema residue.
 - [ ] Remove low-level Level 2 compatibility defaults and duplicate `_retrieval_impl.py` paths.
 - [ ] Version/document gluing scoring constants.
@@ -230,3 +235,13 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - Unified console/audit rows, removed legacy arrows and multiline console breakage, deduplicated repeated calibration/saturation warnings only on console, and removed duplicate LIBIDS summary output.
 - Changed PBL operator logging from search-window chatter to computed mean height + valid count. CPT/LRT now reuse the same thermal kernel for radiosonde and ERA5; USSA76 remains explicitly unavailable as a tropopause source.
 - Full repository suite is still not claimed: this branch has no CI/status checks and this environment cannot execute the complete project test matrix.
+
+### 2026-09-14 — provisional PC guard and Level 2 fallback recovery
+
+- Kept SPU photon-counting physical saturation explicitly `not_characterized`; no detector `max_rate_mhz` was invented.
+- Added a temporary 10% dead-time-occupancy guard for uncharacterized PC channels when Level 1 correction succeeded and traceable positive station dead-time is available. The current implementation derives an observed-rate proxy by inverting the non-paralyzable correction on the Level 1 corrected block, so it is an operational guard rather than detector characterization.
+- Preserved the existing gluing behavior that ignores PC saturation masks in bins supplied by the analog source, allowing guarded PC use only where PC contributes to the glued profile.
+- Added post-gluing retrieval-input recovery: if numerical gluing succeeds but scientific input QA rejects the result, configured single-channel candidates are evaluated blockwise and a valid AN/PC fallback can replace the rejected glued block.
+- Added retrieval-input rejection summaries and dedicated regression tests for guarded PC use and analog fallback.
+- Physical saturation characterization remains high-priority technical debt: move the guard to raw observed PC rate in Level 1 and determine a traceable limit from AN/PC linearity and preferably controlled optical attenuation before declaring `status: characterized`.
+- Targeted modified files compile in this environment; the full repository suite is still not claimed because this branch has no attached CI/status checks and the complete dependency/test matrix cannot be executed here.
