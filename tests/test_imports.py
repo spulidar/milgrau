@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import subprocess
 import sys
@@ -10,14 +11,18 @@ import sys
 def test_core_package_imports() -> None:
     """The root package stays light while explicit subpackages import cleanly."""
     import milgrau
-    import milgrau.cli
-    import milgrau.config
-    import milgrau.io
-    import milgrau.level0
-    import milgrau.level1
-    import milgrau.level2
-    import milgrau.physics
-    import milgrau.viz
+
+    for module_name in (
+        "milgrau.cli",
+        "milgrau.config",
+        "milgrau.io",
+        "milgrau.level0",
+        "milgrau.level1",
+        "milgrau.level2",
+        "milgrau.physics",
+        "milgrau.viz",
+    ):
+        assert importlib.import_module(module_name) is not None
 
     assert milgrau.__all__ == ["__version__"]
     assert isinstance(milgrau.__version__, str)
@@ -56,17 +61,15 @@ def test_level2_public_cloud_screening_api_uses_existing_symbols() -> None:
 
 def test_pipeline_entrypoints_import() -> None:
     """Command-line entrypoint modules should import cleanly."""
-    import milgrau.cli.explorer
-    import milgrau.cli.lebear
-    import milgrau.cli.libids
-    import milgrau.cli.lipancora
-    import milgrau.cli.liracos
+    modules = [
+        importlib.import_module("milgrau.cli.explorer"),
+        importlib.import_module("milgrau.cli.lebear"),
+        importlib.import_module("milgrau.cli.libids"),
+        importlib.import_module("milgrau.cli.lipancora"),
+        importlib.import_module("milgrau.cli.liracos"),
+    ]
 
-    assert callable(milgrau.cli.explorer.main)
-    assert callable(milgrau.cli.libids.main)
-    assert callable(milgrau.cli.lipancora.main)
-    assert callable(milgrau.cli.liracos.main)
-    assert callable(milgrau.cli.lebear.main)
+    assert all(callable(module.main) for module in modules)
 
 
 def test_level2_core_import_does_not_require_matplotlib() -> None:
