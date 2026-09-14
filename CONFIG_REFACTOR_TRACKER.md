@@ -38,7 +38,7 @@ MILGRAU should be scientifically defensible, FAIR, concise and easy to audit. Go
 - [x] Unknown physical PC saturation remains `not_characterized`; the 10% dead-time occupancy guard is explicitly provisional.
 - [x] Rayleigh bounds are search bounds; invalid far-range samples are not fabricated.
 - [x] Productive Rayleigh width is physical (`ref_window_m`) and grid-independent.
-- [x] Real case `20251107sapm` reached 5/5 valid Rayleigh/backward-KFS blocks at 355 and 532 nm.
+- [x] Real case `20251107sapm` reached 5/5 valid Rayleigh/backward-KFS blocks at 355 and 532 nm before and after P1 lot 2 orchestration cleanup.
 - [x] Published NetCDF reuse requires current readable provenance, not timestamps alone.
 - [x] README describes the current L0→L1→L2 scientific flow and productive backward KFS baseline.
 
@@ -60,7 +60,10 @@ MILGRAU should be scientifically defensible, FAIR, concise and easy to audit. Go
 - [x] `backward_retrieval.py` was removed after its only scientific responsibility moved into the canonical optical-retrieval path.
 - [x] `scientific_policy.py` was removed after P0 made backward policy canonical in `level2/config.py`.
 - [x] `retrieval.py` no longer uses `from ..._retrieval_impl import *`; productive dependencies are explicit.
-- [x] Regressions now detect import-time patching and point supported-domain/backward aggregation tests at canonical modules.
+- [x] Regressions detect import-time patching and point supported-domain/backward aggregation tests at canonical modules.
+- [x] Package-init public API was corrected after a real-run import regression exposed stale invented cloud-screening re-exports; regression now pins the actual public cloud symbols.
+- [x] Real `20251107sapm` post-P1 run reproduced 100% gluing, Rayleigh references 5749 m (355) / 5816 m (532), and 5/5 backward-KFS blocks at both wavelengths.
+- [x] Level 2 QA block standard-error calculation now skips unsupported all-NaN altitude columns instead of asking NumPy to reduce them; unsupported bins remain NaN without `Degrees of freedom <= 0 for slice` warnings.
 - [ ] `_retrieval_impl.py` still contains duplicate legacy gluing/input-QA/optical-retrieval/atmosphere paths and semantic defaults. These are no longer productive, but must be deleted/decomposed in P1 lot 3.
 - [ ] Shared retrieval dataclasses/helpers still live in `_retrieval_impl.py`; move them to cohesive modules while deleting the legacy implementations rather than creating another adapter layer.
 - [ ] `milgrau/level2/atmosphere.py` compatibility path remains to be audited after legacy atmosphere removal.
@@ -81,7 +84,7 @@ MILGRAU should be scientifically defensible, FAIR, concise and easy to audit. Go
 
 ### P1 — remove import-order behavior and duplicate compatibility paths
 
-**Lot 2: implemented. Lot 3 is now the highest-priority work.**
+**Lot 2: implemented and validated on `20251107sapm`. Lot 3 is now the highest-priority work.**
 
 - [x] Remove scientific monkey patches from `milgrau/level2/__init__.py`.
 - [x] Direct-wire supported-domain retrieval-input QA.
@@ -89,6 +92,9 @@ MILGRAU should be scientifically defensible, FAIR, concise and easy to audit. Go
 - [x] Retire `backward_retrieval.py`.
 - [x] Retire superseded `scientific_policy.py`.
 - [x] Replace wildcard `_retrieval_impl` import/export with explicit symbols.
+- [x] Preserve the pre-lot public Level 2 API surface rather than inventing package re-exports during cleanup.
+- [x] Confirm real-data equivalence for the current baseline diagnostics on `20251107sapm`.
+- [x] Keep QA sparse-support statistics warning-free without fabricating unsupported values.
 - [ ] Decompose `_retrieval_impl.py` by responsibility and delete the duplicate legacy implementations now bypassed by productive code.
 - [ ] Move shared dataclasses/state validation/helpers out of `_retrieval_impl.py` only where they have a clear cohesive owner.
 - [ ] Remove legacy `_retrieval_impl.build_thermodynamic_profile()` after proving the canonical Level 1-atmosphere boundary is the only productive consumer.
@@ -197,6 +203,7 @@ Do not implement ensemble/cascade retrieval until P0 is complete and P1 duplicat
 - [x] Main CLIs share `--input`, `--force`, `--version`; LEBEAR additionally has `--time-window`.
 - [x] Operational result/exit-code model is compact and contextual logs separate INFO outcomes from DEBUG detail.
 - [x] Level 2 QA no longer creates the redundant product-status TXT.
+- [x] Level 2 QA block SEM treats unsupported/single-sample altitude bins as NaN without NumPy empty-slice warnings.
 - [ ] Audit QA helpers for actual use; remove display-only legacy helpers without consumers.
 
 ### F. Failure semantics / FAIR
@@ -219,9 +226,10 @@ Do not implement ensemble/cascade retrieval until P0 is complete and P1 duplicat
 - [x] P0 regressions pin config/scientific metadata/generated L2 product to backward mode and reject stale two-sided metadata.
 - [x] P0 regression ensures QA does not emit `QA_L2_Product_Status_*.txt`.
 - [x] P1 regressions are committed to prove legacy `_retrieval_impl` functions are not monkey-patched and canonical signal selection uses supported-domain QA directly.
-- [x] P1 backward-aggregation regression now targets `optical_retrieval.py`, not the removed adapter.
-- [x] Real case `20251107sapm` has been manually observed reaching 5/5 Rayleigh/backward-KFS blocks at 355/532 nm on the pre-P1 numerical baseline.
-- [ ] Re-run `20251107sapm` after P1 lot 2 to confirm numerical/diagnostic equivalence through the new direct orchestration.
+- [x] P1 backward-aggregation regression targets `optical_retrieval.py`, not the removed adapter.
+- [x] Package import regression pins actual cloud-screening exports and rejects the stale invented names that broke the first post-P1 real run.
+- [x] Sparse QA-statistics regression proves all-NaN/one-sample altitude bins stay NaN without RuntimeWarning.
+- [x] Real `20251107sapm` post-P1 lot-2 run confirmed numerical/diagnostic baseline equivalence: 355 nm reference 5749 m [5254, 6244], 532 nm reference 5816 m [5321, 6311], both 100% valid Rayleigh and 5/5 backward KFS blocks.
 - [ ] Add synthetic support/top tests before implementing high-column retrieval.
 - [ ] Add static semantic-default/dead-code guardrails under P2.
 - [ ] Add CI/full pytest enforcement. **Until then, do not claim the complete suite is green.**
@@ -273,6 +281,7 @@ Acceptance gate: vertical support is testable/measurable before introducing a co
 ### L2. QA/output cleanup
 
 - [x] Remove redundant QA product-status TXT.
+- [x] Sparse unsupported upper-altitude columns no longer emit misleading numerical RuntimeWarnings during QA uncertainty calculation.
 - [ ] Mark optical support/top explicitly in KFS and scattering-ratio QA after support variables enter the schema.
 - [ ] Plot selected/accepted reference windows and never visually present unsupported signal diagnostics as aerosol retrieval.
 
@@ -389,7 +398,7 @@ Use this for every refactor batch.
 ## Recommended implementation batches
 
 1. [x] **P0 lot 1 — backward identity + stale-output guard + QA TXT removal + regressions + support semantics.**
-2. [x] **P1 lot 2 — remove Level 2 monkey patches, direct-wire supported-domain QA/backward aggregation, remove wildcard productive import and retire adapters.**
+2. [x] **P1 lot 2 — remove Level 2 monkey patches, direct-wire supported-domain QA/backward aggregation, remove wildcard productive import and retire adapters; real-data baseline validated.**
 3. [ ] **P1 lot 3 — decompose/delete duplicate `_retrieval_impl.py` paths, legacy atmosphere/input-QA and semantic defaults; move shared types/helpers to cohesive owners.**
 4. [ ] **P2 — repository symbol-use/dead-code/default audit, static analysis and CI.**
 5. [ ] **P3 — Level 2 schema aliases/units/flags/method version + focused docs.**
@@ -441,7 +450,9 @@ P4 physical PC/SNR/cloud evidence tasks may proceed in parallel.
 - Added `level2/optical_retrieval.py` as the canonical productive Rayleigh/backward-KFS aggregation boundary.
 - Replaced `retrieval.py` wildcard monolith exposure with explicit dependencies and direct canonical orchestration.
 - Removed `backward_retrieval.py` and `scientific_policy.py` after their responsibilities became canonical elsewhere.
-- Added/updated regressions so legacy `_retrieval_impl` functions remain unpatched and tests target the direct productive QA/backward aggregation paths.
-- This lot intentionally did **not** change NetCDF schema, Fernald equations, LR/MC settings, Rayleigh thresholds, gluing thresholds or PC guard policy.
+- Corrected an import-only regression discovered by the first real rerun: `level2/__init__.py` now preserves the actual pre-lot public cloud-screening API rather than exporting nonexistent names.
+- Real rerun `20251107sapm` then reproduced 355 nm reference 5749 m [5254, 6244] and 532 nm reference 5816 m [5321, 6311], with 100% Rayleigh-valid windows and 5/5 backward KFS blocks for each wavelength.
+- The successful rerun exposed a diagnostic-only NumPy warning from block SEM above the backward support top. `_block_standard_error()` now reduces only altitude columns with at least two finite valid blocks, leaving unsupported/single-sample bins NaN without warnings; focused regression added.
+- This lot did **not** change NetCDF schema, Fernald equations, LR/MC settings, Rayleigh thresholds, gluing thresholds or PC guard policy.
 - `_retrieval_impl.py` still contains bypassed duplicate legacy implementations and defaults; P1 lot 3 must remove them before P1 is considered complete.
-- Full repository suite is **not claimed**; the immediate manual acceptance check is to re-run `20251107sapm` and confirm the same 5/5 backward retrieval behavior on both wavelengths.
+- Full repository suite is **not claimed**; the real-data baseline is validated, but no CI/status checks are attached to the branch.
