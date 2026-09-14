@@ -10,11 +10,13 @@ import xarray as xr
 
 from milgrau.level2.contracts import RetrievalInputInvalidReason, SignalSource
 from milgrau.level2.retrieval import (
+    _apply_provisional_pc_deadtime_guard,
+    _enforce_pc_saturation_characterization,
+)
+from milgrau.level2.signal_selection import (
     BlockGluingResult,
     WavelengthBlockInputs,
-    _apply_provisional_pc_deadtime_guard,
     _apply_single_channel_fallback_after_input_qa,
-    _enforce_pc_saturation_characterization,
 )
 
 
