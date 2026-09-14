@@ -10,6 +10,7 @@ from milgrau.level2.config import (
     get_cloud_screening_config,
     get_gluing_config,
     get_kfs_config,
+    get_kfs_mode,
     get_lidar_ratio,
     get_molecular_fit_config,
     get_wavelengths_to_process,
@@ -23,7 +24,7 @@ def _complete_level2_config() -> dict:
         "inversion": {
             "wavelengths_to_process": [532],
             "block_average_minutes": 20,
-            "kfs_mode": "two_sided",
+            "kfs_mode": "backward",
             "monte_carlo_iterations": 300,
             "random_seed": 143,
             "beta_ref_relative_std": 0.10,
@@ -33,7 +34,7 @@ def _complete_level2_config() -> dict:
             "molecular_fit": {
                 "ref_alt_min_m": 5000.0,
                 "ref_alt_max_m": 25000.0,
-                "ref_window_bins": 667,
+                "ref_window_bins": 133,
                 "max_relative_slope": 0.25,
                 "max_relative_variance": 0.50,
                 "min_valid_fraction": 0.50,
@@ -68,11 +69,19 @@ def test_complete_level2_config_validates_and_extracts_values() -> None:
     validate_level2_config(config)
     assert get_wavelengths_to_process(config) == [532]
     assert get_block_average_minutes(config) == 20
+    assert get_kfs_mode(config) == "backward"
     assert get_kfs_config(config)["random_seed"] == 143
     assert get_gluing_config(config)["gaussian_threshold"] == 0.10
-    assert get_molecular_fit_config(config)["ref_window_bins"] == 667
+    assert get_molecular_fit_config(config)["ref_window_bins"] == 133
     assert get_cloud_screening_config(config) == {"enabled": False}
     assert get_lidar_ratio(config, 532, "2026-09-09T00:00:00") == (69.0, 10.0)
+
+
+def test_productive_kfs_rejects_two_sided_mode() -> None:
+    config = _complete_level2_config()
+    config["inversion"]["kfs_mode"] = "two_sided"
+    with pytest.raises(Level2ConfigurationError, match="backward"):
+        validate_level2_config(config)
 
 
 def test_level2_requires_explicit_incremental_runtime_policy() -> None:
