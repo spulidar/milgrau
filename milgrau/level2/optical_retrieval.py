@@ -1,42 +1,238 @@
-"""Canonical productive Rayleigh/Klett--Fernald block retrieval.
-
-The productive elastic aerosol contract is backward Klett--Fernald.  Forward
-and two-sided numerical kernels remain available for research, but productive
-block success depends only on valid retrieval input, Rayleigh QA, and the
-backward branch.  This module owns that aggregation directly; no package import
-may replace it at runtime.
-"""
+"""Canonical productive Rayleigh and backward Klett--Fernald retrieval."""
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 import logging
 from typing import Any, Mapping
 
 import numpy as np
 
-from milgrau.level2._retrieval_impl import (
-    BlockGluingResult,
-    MolecularModel,
-    WavelengthBlockInputs,
-    build_kfs_branch,
-    evaluate_rayleigh_reference,
-    origin_rayleigh_calibration_factor,
-    run_kfs_profile,
-    safe_ratio,
-    valid_block_error,
-    valid_block_mean,
-)
+from milgrau.level2.block_average import valid_block_error, valid_block_mean
+from milgrau.level2.config import get_kfs_config
 from milgrau.level2.contracts import (
     KfsDiagnostics,
     MolecularProfiles,
     OpticalProducts,
     RayleighDiagnostics,
 )
+from milgrau.level2.kfs import kfs_inversion_monte_carlo
 from milgrau.level2.molecular import (
     find_optimal_reference_altitude,
     linear_rayleigh_calibration_factor,
 )
+from milgrau.level2.signal_selection import BlockGluingResult, WavelengthBlockInputs
+
+KFS_BRANCH_BACKWARD_BELOW_REFERENCE = 1
+KFS_BRANCH_REFERENCE_BIN = 2
+KFS_BRANCH_FORWARD_ABOVE_REFERENCE = 3
+
+
+@dataclass(frozen=True, slots=True)
+class MolecularModel:
+    """Molecular atmosphere and explicit retrieval assumptions for one wavelength."""
+
+    source: str
+    backscatter: np.ndarray
+    extinction: np.ndarray
+    transmission: np.ndarray
+    simulated_signal: np.ndarray
+    simulated_range_corrected_signal: np.ndarray
+    fit_config: dict[str, Any]
+    lidar_ratio_assumed_sr: float
+    lidar_ratio_std_sr: float
+    kfs_mode: str
+
+
+def build_kfs_branch(
+    altitude_m: np.ndarray,
+    reference_index: int,
+    mode: str,
+) -> np.ndarray:
+    """Build diagnostic branch flags around the inversion boundary bin."""
+    altitude = np.asarray(altitude_m, dtype=np.float64)
+    reference_index = int(reference_index)
+    if altitude.ndim != 1 or reference_index < 0 or reference_index >= altitude.size:
+        raise ValueError(
+            "reference_index must identify one bin on the 1D altitude grid."
+        )
+    normalized_mode = str(mode).strip().lower()
+    if normalized_mode not in {"backward", "forward", "two_sided"}:
+        raise ValueError("mode must be 'backward', 'forward', or 'two_sided'.")
+
+    branch = np.zeros(altitude.size, dtype=np.int8)
+    finite = np.isfinite(altitude)
+    indices = np.arange(altitude.size)
+    if normalized_mode in {"backward", "two_sided"}:
+        branch[finite & (indices < reference_index)] = (
+            KFS_BRANCH_BACKWARD_BELOW_REFERENCE
+        )
+    if finite[reference_index]:
+        branch[reference_index] = KFS_BRANCH_REFERENCE_BIN
+    if normalized_mode in {"forward", "two_sided"}:
+        branch[finite & (indices > reference_index)] = (
+            KFS_BRANCH_FORWARD_ABOVE_REFERENCE
+        )
+    return branch
+
+
+def evaluate_rayleigh_reference(
+    measured_signal: np.ndarray,
+    simulated_molecular_signal: np.ndarray,
+    altitude_m: np.ndarray,
+    reference_center_idx: int,
+    reference_window_bins: int,
+    fit_config: Mapping[str, Any],
+    calibration_factor: float,
+) -> dict[str, float | int]:
+    """Evaluate the selected Rayleigh window against explicit configured limits."""
+    measured = np.asarray(measured_signal, dtype=np.float64)
+    simulated = np.asarray(simulated_molecular_signal, dtype=np.float64)
+    altitude = np.asarray(altitude_m, dtype=np.float64)
+    center = int(reference_center_idx)
+    half_window = max(int(reference_window_bins) // 2, 1)
+    start = max(center - half_window, 0)
+    stop = min(center + half_window + 1, measured.size)
+    ratio = measured[start:stop] / simulated[start:stop]
+    window_altitude = altitude[start:stop]
+    valid = (
+        np.isfinite(ratio)
+        & np.isfinite(window_altitude)
+        & (ratio > 0.0)
+    )
+    valid_count = int(valid.sum())
+    window_size = max(int(stop - start), 1)
+    valid_fraction = float(valid_count / window_size)
+
+    relative_variance = np.inf
+    relative_slope = np.inf
+    if valid_count >= 3:
+        valid_ratio = ratio[valid]
+        valid_altitude = window_altitude[valid]
+        mean_ratio = float(np.nanmean(valid_ratio))
+        if np.isfinite(mean_ratio) and mean_ratio > 0.0:
+            relative_variance = float(
+                np.nanvar(valid_ratio) / (mean_ratio**2)
+            )
+            slope, _ = np.polyfit(valid_altitude, valid_ratio, 1)
+            altitude_span = float(
+                np.nanmax(valid_altitude) - np.nanmin(valid_altitude)
+            )
+            relative_slope = float(
+                abs(slope) * max(altitude_span, 1.0) / mean_ratio
+            )
+
+    max_relative_slope = float(fit_config["max_relative_slope"])
+    max_relative_variance = float(fit_config["max_relative_variance"])
+    min_valid_fraction = float(fit_config["min_valid_fraction"])
+    success = (
+        np.isfinite(calibration_factor)
+        and calibration_factor > 0.0
+        and valid_fraction >= min_valid_fraction
+        and np.isfinite(relative_variance)
+        and relative_variance <= max_relative_variance
+        and np.isfinite(relative_slope)
+        and relative_slope <= max_relative_slope
+    )
+    return {
+        "success_flag": int(success),
+        "relative_slope": float(relative_slope),
+        "relative_variance": float(relative_variance),
+        "valid_fraction": float(valid_fraction),
+        "max_relative_slope": max_relative_slope,
+        "max_relative_variance": max_relative_variance,
+        "min_valid_fraction": min_valid_fraction,
+    }
+
+
+def origin_rayleigh_calibration_factor(
+    measured_signal: np.ndarray,
+    simulated_molecular_signal: np.ndarray,
+    altitude_m: np.ndarray,
+    reference_center_idx: int,
+    reference_window_bins: int,
+) -> tuple[float, float, float, int]:
+    """Return a multiplicative Rayleigh calibration constrained through the origin."""
+    measured = np.asarray(measured_signal, dtype=np.float64)
+    simulated = np.asarray(simulated_molecular_signal, dtype=np.float64)
+    altitude = np.asarray(altitude_m, dtype=np.float64)
+    center = int(reference_center_idx)
+    half_window = max(int(reference_window_bins) // 2, 1)
+    start = max(center - half_window, 0)
+    stop = min(center + half_window + 1, measured.size)
+    x = simulated[start:stop]
+    y = measured[start:stop]
+    valid = np.isfinite(x) & np.isfinite(y) & (x > 0.0) & (y > 0.0)
+    if valid.sum() < 2:
+        return (
+            np.nan,
+            float(altitude[start]),
+            float(altitude[stop - 1]),
+            int(valid.sum()),
+        )
+    denominator = float(np.nansum(x[valid] ** 2))
+    if not np.isfinite(denominator) or denominator <= 0.0:
+        return (
+            np.nan,
+            float(altitude[start]),
+            float(altitude[stop - 1]),
+            int(valid.sum()),
+        )
+    factor = float(np.nansum(x[valid] * y[valid]) / denominator)
+    return (
+        factor,
+        float(altitude[start]),
+        float(altitude[stop - 1]),
+        int(valid.sum()),
+    )
+
+
+def safe_ratio(numerator: np.ndarray, denominator: np.ndarray) -> np.ndarray:
+    """Return numerator/denominator only on finite positive denominator support."""
+    numerator_arr = np.asarray(numerator, dtype=np.float64)
+    denominator_arr = np.asarray(denominator, dtype=np.float64)
+    return np.divide(
+        numerator_arr,
+        denominator_arr,
+        out=np.full_like(numerator_arr, np.nan, dtype=np.float64),
+        where=(
+            np.isfinite(numerator_arr)
+            & np.isfinite(denominator_arr)
+            & (denominator_arr > 0.0)
+        ),
+    )
+
+
+def run_kfs_profile(
+    rcs: np.ndarray,
+    rcs_error: np.ndarray,
+    altitude_m: np.ndarray,
+    beta_mol: np.ndarray,
+    ref_idx: int,
+    lr_base: float,
+    lr_std: float,
+    config: Mapping[str, Any],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
+    """Run one KFS Monte Carlo profile from the strict resolved Level 2 config."""
+    kfs_cfg = get_kfs_config(config)
+    return kfs_inversion_monte_carlo(
+        rcs=rcs,
+        altitude=altitude_m,
+        beta_mol=beta_mol,
+        lr_base=lr_base,
+        lr_std=lr_std,
+        ref_idx=ref_idx,
+        n_iterations=int(kfs_cfg["monte_carlo_iterations"]),
+        rcs_error=rcs_error,
+        beta_ref_relative_std=float(kfs_cfg["beta_ref_relative_std"]),
+        aerosol_ref_fraction=float(kfs_cfg["aerosol_ref_fraction"]),
+        altitude_units="m",
+        min_lidar_ratio=float(kfs_cfg["min_lidar_ratio_sr"]),
+        allow_negative_aerosol=bool(kfs_cfg["allow_negative_aerosol"]),
+        seed=int(kfs_cfg["random_seed"]),
+        return_diagnostics=True,
+        mode=str(kfs_cfg["kfs_mode"]),
+    )
 
 
 def _reaggregate_backward_optical_products(
@@ -95,13 +291,19 @@ def retrieve_optical_blocks(
     reference_valid_fraction = np.full(n_block, np.nan, dtype=np.float64)
     calibration_factor = np.full(n_block, np.nan, dtype=np.float64)
     calibration_intercept = np.full(n_block, np.nan, dtype=np.float64)
-    scaled_molecular_rcs = np.full((n_block, n_altitude), np.nan, dtype=np.float64)
+    scaled_molecular_rcs = np.full(
+        (n_block, n_altitude), np.nan, dtype=np.float64
+    )
     scattering_ratio = np.full((n_block, n_altitude), np.nan, dtype=np.float64)
-    aerosol_backscatter = np.full((n_block, n_altitude), np.nan, dtype=np.float64)
+    aerosol_backscatter = np.full(
+        (n_block, n_altitude), np.nan, dtype=np.float64
+    )
     aerosol_backscatter_error = np.full(
         (n_block, n_altitude), np.nan, dtype=np.float64
     )
-    aerosol_extinction = np.full((n_block, n_altitude), np.nan, dtype=np.float64)
+    aerosol_extinction = np.full(
+        (n_block, n_altitude), np.nan, dtype=np.float64
+    )
     aerosol_extinction_error = np.full(
         (n_block, n_altitude), np.nan, dtype=np.float64
     )
@@ -122,12 +324,14 @@ def retrieve_optical_blocks(
             window_size=fit_config["ref_window_bins"],
             altitude_units="m",
         )
-        factor, ref_start_m, ref_stop_m, valid_bins = origin_rayleigh_calibration_factor(
-            measured_signal=glued.range_corrected_signal[block_index, :],
-            simulated_molecular_signal=molecular.simulated_range_corrected_signal,
-            altitude_m=altitude_m,
-            reference_center_idx=reference_index,
-            reference_window_bins=fit_config["ref_window_bins"],
+        factor, ref_start_m, ref_stop_m, valid_bins = (
+            origin_rayleigh_calibration_factor(
+                measured_signal=glued.range_corrected_signal[block_index, :],
+                simulated_molecular_signal=molecular.simulated_range_corrected_signal,
+                altitude_m=altitude_m,
+                reference_center_idx=reference_index,
+                reference_window_bins=fit_config["ref_window_bins"],
+            )
         )
         _, intercept_diagnostic, _, _, _ = linear_rayleigh_calibration_factor(
             measured_signal=glued.range_corrected_signal[block_index, :],
@@ -162,23 +366,23 @@ def retrieve_optical_blocks(
             scaled_molecular_rcs[block_index, :],
         )
         kfs_branch[block_index, :] = build_kfs_branch(
-            altitude_m,
-            reference_index,
-            molecular.kfs_mode,
+            altitude_m, reference_index, molecular.kfs_mode
         )
         if int(qa["success_flag"]) != 1:
             continue
 
         rayleigh_success[block_index] = 1
-        beta_mean, beta_std, alpha_mean, alpha_std, kfs_diagnostic = run_kfs_profile(
-            glued.range_corrected_signal[block_index, :],
-            glued.range_corrected_signal_error[block_index, :],
-            altitude_m,
-            molecular.backscatter,
-            reference_index,
-            molecular.lidar_ratio_assumed_sr,
-            molecular.lidar_ratio_std_sr,
-            config,
+        beta_mean, beta_std, alpha_mean, alpha_std, kfs_diagnostic = (
+            run_kfs_profile(
+                glued.range_corrected_signal[block_index, :],
+                glued.range_corrected_signal_error[block_index, :],
+                altitude_m,
+                molecular.backscatter,
+                reference_index,
+                molecular.lidar_ratio_assumed_sr,
+                molecular.lidar_ratio_std_sr,
+                config,
+            )
         )
         aerosol_backscatter[block_index, :] = beta_mean
         aerosol_backscatter_error[block_index, :] = beta_std
@@ -196,7 +400,9 @@ def retrieve_optical_blocks(
         & (rayleigh_success == 1)
     )
     if rayleigh_valid_block.any():
-        aggregate_factor = float(np.nanmedian(calibration_factor[rayleigh_valid_block]))
+        aggregate_factor = float(
+            np.nanmedian(calibration_factor[rayleigh_valid_block])
+        )
         aggregate_intercept = float(
             np.nanmedian(calibration_intercept[rayleigh_valid_block])
         )
@@ -244,7 +450,9 @@ def retrieve_optical_blocks(
         aggregate_relative_slope = np.nan
         aggregate_relative_variance = np.nan
         aggregate_valid_fraction = np.nan
-        aggregate_scaled_molecular = np.full(n_altitude, np.nan, dtype=np.float64)
+        aggregate_scaled_molecular = np.full(
+            n_altitude, np.nan, dtype=np.float64
+        )
         aggregate_kfs_branch = np.zeros(n_altitude, dtype=np.int8)
         aggregate_rayleigh_success = 0
 
@@ -304,9 +512,7 @@ def retrieve_optical_blocks(
         branch_block=kfs_branch,
     )
     optical_products, valid_block = _reaggregate_backward_optical_products(
-        preliminary_optical,
-        rayleigh_diagnostics,
-        preliminary_kfs,
+        preliminary_optical, rayleigh_diagnostics, preliminary_kfs
     )
     kfs_diagnostics = replace(
         preliminary_kfs,
