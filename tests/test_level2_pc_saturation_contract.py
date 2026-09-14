@@ -5,7 +5,8 @@ from __future__ import annotations
 import numpy as np
 import xarray as xr
 
-from milgrau.level2.retrieval import WavelengthBlockInputs, _enforce_pc_saturation_characterization
+from milgrau.level2.retrieval import _enforce_pc_saturation_characterization
+from milgrau.level2.signal_selection import WavelengthBlockInputs
 
 
 def _inputs() -> WavelengthBlockInputs:
