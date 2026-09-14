@@ -35,6 +35,23 @@ def test_level2_package_import_does_not_patch_legacy_scientific_functions() -> N
     assert impl.retrieve_optical_blocks.__module__ == "milgrau.level2._retrieval_impl"
 
 
+def test_level2_public_cloud_screening_api_uses_existing_symbols() -> None:
+    """Package re-exports must refer to the real cloud-screening API."""
+    import milgrau.level2 as level2
+
+    expected = {
+        "cloud_screening_config",
+        "detect_anomalous_layer_mask",
+        "detect_reference_contamination",
+    }
+    assert expected <= set(level2.__all__)
+    for name in expected:
+        assert callable(getattr(level2, name))
+
+    assert "detect_cloud_layers" not in level2.__all__
+    assert "mask_cloud_layers" not in level2.__all__
+
+
 def test_pipeline_entrypoints_import() -> None:
     """Command-line entrypoint modules should import cleanly."""
     import milgrau.cli.explorer
