@@ -35,7 +35,7 @@ def _complete_level2_config() -> dict:
             "molecular_fit": {
                 "ref_alt_min_m": 5000.0,
                 "ref_alt_max_m": 25000.0,
-                "ref_window_bins": 133,
+                "ref_window_m": 1000.0,
                 "max_relative_slope": 0.25,
                 "max_relative_variance": 0.50,
                 "min_valid_fraction": 0.50,
@@ -73,7 +73,7 @@ def test_complete_level2_config_validates_and_extracts_values() -> None:
     assert get_kfs_mode(config) == "backward"
     assert get_kfs_config(config)["random_seed"] == 143
     assert get_gluing_config(config)["gaussian_threshold"] == 0.10
-    assert get_molecular_fit_config(config)["ref_window_bins"] == 133
+    assert get_molecular_fit_config(config)["ref_window_m"] == 1000.0
     assert get_cloud_screening_config(config) == {"enabled": False}
     assert get_lidar_ratio(config, 532, "2026-09-09T00:00:00") == (69.0, 10.0)
 
@@ -179,6 +179,14 @@ def test_molecular_rayleigh_lidar_ratio_is_not_a_required_yaml_setting() -> None
     molecular = get_molecular_fit_config(config)
     assert "lidar_ratio_molecular_sr" not in molecular
     assert "lidar_ratio_molecular" not in molecular
+
+
+def test_legacy_rayleigh_window_bins_is_not_accepted_as_public_recipe() -> None:
+    config = _complete_level2_config()
+    del config["inversion"]["molecular_fit"]["ref_window_m"]
+    config["inversion"]["molecular_fit"]["ref_window_bins"] = 133
+    with pytest.raises(Level2ConfigurationError, match="ref_window_m"):
+        get_molecular_fit_config(config)
 
 
 def test_level2_rejects_boolean_numeric_values() -> None:
