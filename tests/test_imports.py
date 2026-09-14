@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import sys
 
@@ -26,13 +27,18 @@ def test_core_package_imports() -> None:
     assert "viz" in milgrau.__all__
 
 
-def test_level2_package_import_does_not_patch_legacy_scientific_functions() -> None:
-    """Importing Level 2 must not replace functions inside the legacy module."""
-    import milgrau.level2
-    import milgrau.level2._retrieval_impl as impl
+def test_level2_productive_orchestration_has_no_legacy_module_dependency() -> None:
+    """Canonical retrieval functions must come from their cohesive owner modules."""
+    import milgrau.level2.optical_retrieval as optical_retrieval
+    import milgrau.level2.retrieval as retrieval
+    import milgrau.level2.signal_selection as signal_selection
 
-    assert impl._evaluate_retrieval_input.__module__ == "milgrau.level2._retrieval_impl"
-    assert impl.retrieve_optical_blocks.__module__ == "milgrau.level2._retrieval_impl"
+    assert importlib.util.find_spec("milgrau.level2._retrieval_impl") is None
+    assert importlib.util.find_spec("milgrau.level2.atmosphere") is None
+    assert retrieval.prepare_wavelength_blocks is signal_selection.prepare_wavelength_blocks
+    assert retrieval.glue_signal_blocks is signal_selection.glue_signal_blocks
+    assert retrieval.evaluate_rayleigh_reference is optical_retrieval.evaluate_rayleigh_reference
+    assert retrieval.retrieve_optical_blocks is optical_retrieval.retrieve_optical_blocks
 
 
 def test_level2_public_cloud_screening_api_uses_existing_symbols() -> None:
