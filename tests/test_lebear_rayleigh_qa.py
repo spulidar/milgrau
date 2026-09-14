@@ -119,7 +119,7 @@ def _config(tmp_path: Path) -> dict:
         "inversion": {
             "wavelengths_to_process": [532],
             "block_average_minutes": 15,
-            "kfs_mode": "two_sided",
+            "kfs_mode": "backward",
             "monte_carlo_iterations": 5,
             "random_seed": 123,
             "beta_ref_relative_std": 0.10,
