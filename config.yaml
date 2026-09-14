@@ -128,7 +128,11 @@ visualization:
 inversion:
   wavelengths_to_process: [355, 532]
   block_average_minutes: 20
-  kfs_mode: "two_sided"
+  # Primary elastic aerosol product: high-reference backward Klett-Fernald.
+  # Forward/two-sided branches remain research diagnostics, not the productive
+  # success criterion, because the far-range signal above the reference is the
+  # least stable part of a background-subtracted elastic profile.
+  kfs_mode: "backward"
   products:
     save_glued_signal: true
     save_molecular_profile: true
@@ -141,16 +145,21 @@ inversion:
   monte_carlo_iterations: 300
   random_seed: 143
   beta_ref_relative_std: 0.10
+  # Pure-molecular boundary assumption (R_ref = 1). Keep this explicit until an
+  # ancillary constraint justifies non-zero aerosol at the selected reference.
   aerosol_ref_fraction: 0.0
   min_lidar_ratio_sr: 10.0
   allow_negative_aerosol: false
 
-  # Rayleigh molecular lidar ratio is a versioned algorithm/physics constant in
-  # milgrau.level2.constants and is intentionally not user-configurable.
+  # The altitude limits are SEARCH bounds for an automatic Rayleigh-like
+  # reference window, not a requirement that the complete 5-25 km interval be
+  # positive. 133 bins correspond to ~1.0 km on the current 7.5 m common grid,
+  # consistent with the order of window widths used by SCC/Polly-style methods.
+  # Migration from bins to an explicit physical window width remains tracked.
   molecular_fit:
     ref_alt_min_m: 5000.0
     ref_alt_max_m: 25000.0
-    ref_window_bins: 667
+    ref_window_bins: 133
     max_relative_slope: 0.25
     max_relative_variance: 0.50
     min_valid_fraction: 0.50
