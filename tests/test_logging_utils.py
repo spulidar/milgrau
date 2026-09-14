@@ -96,6 +96,25 @@ def test_legacy_arrows_and_multiline_external_errors_render_as_one_clean_row(tmp
         _close_handlers(logger)
 
 
+def test_repeated_calibration_warning_is_deduplicated_only_on_console(tmp_path: Path, capsys) -> None:
+    logger = setup_logger("TEST_DEDUP", config=_config(tmp_path, console_level="INFO", file_level="DEBUG"))
+    try:
+        message = "uncharacterized PC: 355.PC, 532.PC"
+        bind_log_context(logger, pipeline="L1", save_id="20240101sant", stage="saturation").warning(message)
+        bind_log_context(logger, pipeline="L1", save_id="20240102sant", stage="saturation").warning(message)
+        for handler in logger.handlers:
+            handler.flush()
+
+        stderr = capsys.readouterr().err
+        log_text = (tmp_path / "test_dedup.log").read_text(encoding="utf-8")
+        assert stderr.count(message) == 1
+        assert log_text.count(message) == 2
+        assert "20240101sant" in log_text
+        assert "20240102sant" in log_text
+    finally:
+        _close_handlers(logger)
+
+
 def test_loaded_config_requires_explicit_logging_levels(tmp_path: Path) -> None:
     with pytest.raises(KeyError, match="processing.file_level"):
         setup_logger(
