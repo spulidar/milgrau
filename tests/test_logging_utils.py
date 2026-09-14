@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import logging
+import re
 from pathlib import Path
 
 import pytest
@@ -76,6 +77,7 @@ def test_info_is_concise_on_console_while_debug_stays_in_audit_file(tmp_path: Pa
         assert "pipeline=" not in log_text
         assert "save_id=" not in log_text
         assert "stage=" not in log_text
+        assert re.match(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}", log_text)
     finally:
         _close_handlers(logger)
 
@@ -96,19 +98,46 @@ def test_legacy_arrows_and_multiline_external_errors_render_as_one_clean_row(tmp
         _close_handlers(logger)
 
 
+def test_legacy_processing_phrasing_is_normalized_at_presentation_boundary(tmp_path: Path, capsys) -> None:
+    logger = setup_logger("TEST_PHRASES", config=_config(tmp_path))
+    try:
+        contextual = bind_log_context(logger, pipeline="L0", save_id="20240101sant", stage="write")
+        contextual.info("    -> Parsing 21 raw binary files...")
+        contextual.info("  -> Successfully injected Dark Current matrix (21 profiles).")
+        contextual.info(
+            "  -> Measurement SCC time axis normalized to 30 s from upstream QA; adjusted 7/21 profiles (max 1 s)."
+        )
+        bind_log_context(logger, pipeline="L1", save_id="20240101sant", stage="deadtime").warning(
+            "clipped: 532.PC(0.85%)"
+        )
+        for handler in logger.handlers:
+            handler.flush()
+
+        stderr = capsys.readouterr().err
+        assert "21 raw files" in stderr
+        assert "dark current | 21 profiles" in stderr
+        assert "measurement 30 s | 7/21 adjusted | max 1 s" in stderr
+        assert "532.PC | 0.85% clipped" in stderr
+        assert "Successfully injected" not in stderr
+        assert "raw binary files" not in stderr
+    finally:
+        _close_handlers(logger)
+
+
 def test_repeated_calibration_warning_is_deduplicated_only_on_console(tmp_path: Path, capsys) -> None:
     logger = setup_logger("TEST_DEDUP", config=_config(tmp_path, console_level="INFO", file_level="DEBUG"))
     try:
-        message = "uncharacterized PC: 355.PC, 532.PC"
-        bind_log_context(logger, pipeline="L1", save_id="20240101sant", stage="saturation").warning(message)
-        bind_log_context(logger, pipeline="L1", save_id="20240102sant", stage="saturation").warning(message)
+        source_message = "uncharacterized PC: 355.PC, 532.PC"
+        rendered_message = "uncharacterized PC | 355.PC, 532.PC"
+        bind_log_context(logger, pipeline="L1", save_id="20240101sant", stage="saturation").warning(source_message)
+        bind_log_context(logger, pipeline="L1", save_id="20240102sant", stage="saturation").warning(source_message)
         for handler in logger.handlers:
             handler.flush()
 
         stderr = capsys.readouterr().err
         log_text = (tmp_path / "test_dedup.log").read_text(encoding="utf-8")
-        assert stderr.count(message) == 1
-        assert log_text.count(message) == 2
+        assert stderr.count(rendered_message) == 1
+        assert log_text.count(rendered_message) == 2
         assert "20240101sant" in log_text
         assert "20240102sant" in log_text
     finally:
