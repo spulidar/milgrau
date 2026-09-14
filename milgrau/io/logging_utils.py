@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -18,6 +19,7 @@ _LEVEL_LABELS = {
     logging.ERROR: "ERROR",
     logging.CRITICAL: "FATAL",
 }
+_ISO_OFFSET_DATEFMT = "__MILGRAU_ISO_OFFSET__"
 
 
 def _clean_log_message(message: str) -> str:
@@ -51,7 +53,11 @@ def _clean_log_message(message: str) -> str:
 
     clipped_match = re.fullmatch(r"clipped:\s*(.+)", text, flags=re.IGNORECASE)
     if clipped_match:
-        return f"{clipped_match.group(1)} | clipped"
+        payload = clipped_match.group(1).strip()
+        single = re.fullmatch(r"([^,()\s]+)\(([0-9.]+%)\)", payload)
+        if single:
+            return f"{single.group(1)} | {single.group(2)} clipped"
+        return f"{payload} | clipped"
 
     neutral_match = re.fullmatch(r"neutral assumed:\s*(.+)", text, flags=re.IGNORECASE)
     if neutral_match:
@@ -79,6 +85,11 @@ class MilgrauLoggerAdapter(logging.LoggerAdapter):
 class _ContextFormatter(logging.Formatter):
     """Formatter that makes missing context explicit and keeps each event on one row."""
 
+    def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:  # noqa: N802
+        if datefmt == _ISO_OFFSET_DATEFMT:
+            return datetime.fromtimestamp(record.created).astimezone().isoformat(timespec="seconds")
+        return super().formatTime(record, datefmt)
+
     def format(self, record: logging.LogRecord) -> str:
         for key, default in _CONTEXT_DEFAULTS.items():
             value = getattr(record, key, None)
@@ -97,7 +108,7 @@ class _ContextFormatter(logging.Formatter):
 
 
 class _ConsoleDedupFilter(logging.Filter):
-    """Keep station/calibration warnings readable without hiding them from the audit file."""
+    """Keep calibration warnings readable without hiding them from the audit file."""
 
     _DEDUP_STAGES = {"calibration", "saturation"}
 
@@ -209,7 +220,7 @@ def setup_logger(
 
     row_format = "%(asctime)s %(levelshort)-5s %(pipeline)-3s %(save_id)-12s %(stage)-11s %(message)s"
     console_formatter = _ContextFormatter(row_format, datefmt="%H:%M:%S")
-    file_formatter = _ContextFormatter(row_format, datefmt="%Y-%m-%dT%H:%M:%S%z")
+    file_formatter = _ContextFormatter(row_format, datefmt=_ISO_OFFSET_DATEFMT)
 
     file_handler = logging.FileHandler(log_path, encoding="utf-8")
     setattr(file_handler, _MILGRAU_HANDLER_MARKER, True)
