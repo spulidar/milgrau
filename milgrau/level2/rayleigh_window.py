@@ -20,4 +20,9 @@ def rayleigh_window_bins(altitude_m: np.ndarray, width_m: float) -> int:
     step_m = float(np.median(spacing))
     if not np.allclose(spacing, step_m, rtol=1e-6, atol=1e-9):
         raise ValueError("Rayleigh reference-window conversion requires a uniform altitude grid.")
-    return max(3, int(round(width / step_m)))
+    bins = int(round(width / step_m))
+    if bins < 3:
+        raise ValueError(
+            f"Rayleigh reference-window width {width:g} m resolves to fewer than three bins on a {step_m:g} m grid."
+        )
+    return bins
