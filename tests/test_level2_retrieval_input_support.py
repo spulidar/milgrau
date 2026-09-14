@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numpy as np
 
-import milgrau.level2._retrieval_impl as _impl
 import milgrau.level2.signal_selection as signal_selection
 from milgrau.level2.contracts import RetrievalInputInvalidReason
 from milgrau.level2.kfs import fernald_inversion
@@ -34,13 +33,11 @@ def _evaluate(
     )
 
 
-def test_productive_signal_selection_uses_supported_domain_qa_without_patching_legacy_impl() -> None:
+def test_productive_signal_selection_uses_supported_domain_qa_directly() -> None:
     assert (
         signal_selection.evaluate_retrieval_input_supported_domain
         is evaluate_retrieval_input_supported_domain
     )
-    assert _impl._evaluate_retrieval_input is not evaluate_retrieval_input_supported_domain
-    assert _impl._evaluate_retrieval_input.__module__ == "milgrau.level2._retrieval_impl"
 
 
 def test_bin_shift_style_edge_nans_are_allowed() -> None:
