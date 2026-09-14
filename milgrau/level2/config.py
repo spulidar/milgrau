@@ -245,7 +245,7 @@ def get_molecular_fit_config(config: Mapping[str, Any]) -> dict[str, Any]:
     required = {
         "ref_alt_min_m",
         "ref_alt_max_m",
-        "ref_window_bins",
+        "ref_window_m",
         "max_relative_slope",
         "max_relative_variance",
         "min_valid_fraction",
@@ -265,7 +265,7 @@ def get_molecular_fit_config(config: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "ref_alt_min_m": ref_alt_min_m,
         "ref_alt_max_m": ref_alt_max_m,
-        "ref_window_bins": _integer(fit_cfg["ref_window_bins"], "inversion.molecular_fit.ref_window_bins", minimum=3),
+        "ref_window_m": _positive_number(fit_cfg["ref_window_m"], "inversion.molecular_fit.ref_window_m"),
         "max_relative_slope": _nonnegative_number(
             fit_cfg["max_relative_slope"], "inversion.molecular_fit.max_relative_slope"
         ),
