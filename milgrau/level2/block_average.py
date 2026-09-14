@@ -14,19 +14,49 @@ def nanmean_or_nan(matrix: np.ndarray, axis: int = 0) -> np.ndarray:
     valid = np.isfinite(arr)
     count = valid.sum(axis=axis)
     total = np.nansum(arr, axis=axis)
-    return np.divide(total, count, out=np.full_like(total, np.nan, dtype=np.float64), where=count > 0)
+    return np.divide(
+        total,
+        count,
+        out=np.full_like(total, np.nan, dtype=np.float64),
+        where=count > 0,
+    )
 
 
 def error_of_mean(error_matrix: np.ndarray) -> np.ndarray:
     """Combine profile one-sigma errors into uncertainty of the temporal mean."""
-    valid_count = np.sum(np.isfinite(error_matrix), axis=0)
-    combined = np.sqrt(np.nansum(error_matrix**2, axis=0))
+    errors = np.asarray(error_matrix, dtype=np.float64)
+    valid_count = np.sum(np.isfinite(errors), axis=0)
+    combined = np.sqrt(np.nansum(errors**2, axis=0))
     return np.divide(
         combined,
         valid_count,
         out=np.full_like(combined, np.nan, dtype=np.float64),
         where=valid_count > 0,
     )
+
+
+def valid_block_mean(block_matrix: np.ndarray, valid_block: np.ndarray) -> np.ndarray:
+    """Average a block x altitude product using only accepted retrieval blocks."""
+    matrix = np.asarray(block_matrix, dtype=np.float64)
+    valid = np.asarray(valid_block, dtype=bool)
+    if matrix.ndim != 2 or valid.ndim != 1 or valid.size != matrix.shape[0]:
+        raise ValueError("block_matrix must be 2D and valid_block must match its block axis.")
+    if valid.any():
+        return nanmean_or_nan(matrix[valid, :], axis=0)
+    return np.full(matrix.shape[-1], np.nan, dtype=np.float64)
+
+
+def valid_block_error(block_error_matrix: np.ndarray, valid_block: np.ndarray) -> np.ndarray:
+    """Combine block uncertainties using only accepted retrieval blocks."""
+    errors = np.asarray(block_error_matrix, dtype=np.float64)
+    valid = np.asarray(valid_block, dtype=bool)
+    if errors.ndim != 2 or valid.ndim != 1 or valid.size != errors.shape[0]:
+        raise ValueError(
+            "block_error_matrix must be 2D and valid_block must match its block axis."
+        )
+    if valid.any():
+        return error_of_mean(errors[valid, :])
+    return np.full(errors.shape[-1], np.nan, dtype=np.float64)
 
 
 def block_groups(time_values: np.ndarray, minutes: int) -> tuple[np.ndarray, list[np.ndarray]]:
