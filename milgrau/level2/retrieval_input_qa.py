@@ -18,6 +18,7 @@ from typing import Any, Mapping
 import numpy as np
 
 from milgrau.level2.contracts import RetrievalInputInvalidReason
+from milgrau.level2.rayleigh_window import rayleigh_window_bins
 
 
 def _invalid_window_reason(
@@ -52,10 +53,11 @@ def evaluate_retrieval_input_supported_domain(
 ) -> tuple[bool, RetrievalInputInvalidReason, float]:
     """Require at least one viable Rayleigh-sized window inside the search band.
 
-    ``ref_alt_min_m``/``ref_alt_max_m`` are search bounds. ``ref_window_bins`` is
-    the tested window width and ``min_valid_fraction`` is the minimum fraction
-    of finite positive samples with finite non-negative uncertainty. Saturation
-    diagnostics, when required, participate in the same candidate-window mask.
+    ``ref_alt_min_m``/``ref_alt_max_m`` are search bounds. ``ref_window_m`` is
+    converted to bins on the actual altitude grid and ``min_valid_fraction`` is
+    the minimum fraction of finite positive samples with finite non-negative
+    uncertainty. Saturation diagnostics, when required, participate in the same
+    candidate-window mask.
 
     This pre-QA intentionally does not impose a hard SNR threshold. SNR is
     exposed as a diagnostic while the instrument-specific threshold remains to
@@ -85,10 +87,8 @@ def evaluate_retrieval_input_supported_domain(
 
     ref_alt_min_m = float(fit_config["ref_alt_min_m"])
     ref_alt_max_m = float(fit_config["ref_alt_max_m"])
-    window_size = int(fit_config["ref_window_bins"])
+    window_size = rayleigh_window_bins(altitude, float(fit_config["ref_window_m"]))
     min_valid_fraction = float(fit_config["min_valid_fraction"])
-    if window_size < 3:
-        raise ValueError("Rayleigh reference window must contain at least three bins.")
     if not 0.0 <= min_valid_fraction <= 1.0:
         raise ValueError("Rayleigh minimum valid fraction must be between 0 and 1.")
 
