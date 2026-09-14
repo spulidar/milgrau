@@ -129,7 +129,7 @@ def _config(tmp_path: Path) -> dict:
             "molecular_fit": {
                 "ref_alt_min_m": 500.0,
                 "ref_alt_max_m": 1500.0,
-                "ref_window_bins": 20,
+                "ref_window_m": 150.0,
                 "max_relative_slope": 10.0,
                 "max_relative_variance": 10.0,
                 "min_valid_fraction": 0.10,
