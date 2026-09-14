@@ -13,7 +13,6 @@ import pandas as pd
 import xarray as xr
 from scipy.signal import savgol_filter
 
-from milgrau.level2.completeness import format_dataset_product_summary
 from milgrau.viz.quicklooks import (
     extract_datetime_strings,
     safe_error_of_mean,
@@ -349,10 +348,6 @@ def plot_qa_gluing(
                 except Exception:
                     clip_mean = np.nan
 
-    # ------------------------------------------------------------------
-    # Robust x-limits for main panel.
-    # Use positive RCS values only and ignore extreme tails.
-    # ------------------------------------------------------------------
     main_vals = []
     for arr in (analog_profile_plot[valid_alt], photon_profile_plot[valid_alt], glued_profile[valid_alt]):
         arr = np.asarray(arr, dtype=np.float64)
@@ -369,12 +364,8 @@ def plot_qa_gluing(
     else:
         xmin, xmax = 1e-3, 1.0
 
-    # Portrait-ish 3:4 layout.
     fig, ax = plt.subplots(figsize=(9.0, 12.0))
 
-    # ------------------------------------------------------------------
-    # Main curves
-    # ------------------------------------------------------------------
     ax.plot(
         analog_profile_plot[valid_alt],
         alt_km[valid_alt],
@@ -399,7 +390,6 @@ def plot_qa_gluing(
         label="Selected signal mean",
     )
 
-    # Visible gluing window.
     if np.isfinite(median_start) and np.isfinite(median_stop) and 0.0 < median_start < median_stop <= max_alt_km:
         ax.axhspan(
             median_start,
@@ -410,7 +400,6 @@ def plot_qa_gluing(
             label=f"Median gluing window {median_start:.2f}-{median_stop:.2f} km",
         )
 
-    # Median split line.
     if np.isfinite(median_split) and 0.0 < median_split <= max_alt_km:
         ax.axhline(
             median_split,
@@ -420,11 +409,6 @@ def plot_qa_gluing(
             label=f"Median split {median_split:.2f} km",
         )
 
-    # ax.set_title(
-    #     f"Gluing profile - {format_wavelength_label(wavelength)}",
-    #     fontsize=16,
-    #     fontweight="bold",
-    # )
     ax.set_xlabel("Selected-signal RCS [a.u.]", fontsize=13, fontweight="bold")
     ax.set_ylabel("Altitude (km a.g.l.)", fontsize=13, fontweight="bold")
     ax.set_ylim(0, max_alt_km)
@@ -432,7 +416,6 @@ def plot_qa_gluing(
     ax.set_xscale("log")
     ax.grid(True, which="both", alpha=0.42)
 
-    # Cleaner summary box. No repeated split/window text.
     summary_lines = [
         f"success = {success_count}/{n_blocks} ({success_rate:.1f}%)",
         f"single-channel selected = {fallback_count}",
@@ -454,9 +437,6 @@ def plot_qa_gluing(
         bbox={"facecolor": "white", "alpha": 0.86, "edgecolor": "gray"},
     )
 
-    # ------------------------------------------------------------------
-    # Zoom inset on the left.
-    # ------------------------------------------------------------------
     if np.isfinite(median_start) and np.isfinite(median_stop):
         zoom_ymin = max(0.0, median_start - 0.5)
         zoom_ymax = min(max_alt_km, median_stop + 0.5)
@@ -490,7 +470,6 @@ def plot_qa_gluing(
             zmax = float(np.nanpercentile(zoom_vals, 99.0))
 
             if np.isfinite(zmin) and np.isfinite(zmax) and zmax > zmin:
-                # left-side inset: [x0, y0, width, height]
                 inset = ax.inset_axes([0.08, 0.10, 0.38, 0.30])
 
                 inset.plot(
@@ -526,7 +505,6 @@ def plot_qa_gluing(
                 inset.tick_params(labelsize=7)
                 inset.grid(True, alpha=0.35)
 
-    # Put legend on right to avoid the left inset/summary.
     ax.legend(fontsize=8.8, loc="center right")
 
     fig.suptitle(
@@ -778,12 +756,7 @@ def plot_all_level2_qa(
     """Generate available Level 2 QA plots for each wavelength."""
     output_path = Path(output_folder)
     output_path.mkdir(parents=True, exist_ok=True)
-    status_path = output_path / f"QA_L2_Product_Status_{file_name_prefix}.txt"
-    status_path.write_text(
-        "\n".join(format_dataset_product_summary(ds_l2)) + "\n",
-        encoding="utf-8",
-    )
-    generated: list[Path] = [status_path]
+    generated: list[Path] = []
     qa_cfg = config.get("visualization", {}).get("level2_qa", {}) or {}
     for wavelength_nm in get_wavelength_values(ds_l2):
         if bool(qa_cfg.get("generate_gluing_qa", True)):
