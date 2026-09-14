@@ -159,7 +159,6 @@ def process_level_0(
         )
 
     incremental = incremental_enabled(config)
-    total_groups = len(df_good["meas_id"].unique())
     results: list[ExecutionResult] = []
     for meas_id, group_df in df_good.groupby("meas_id"):
         save_id = measurement_save_id(meas_id)
@@ -187,13 +186,4 @@ def process_level_0(
                 group_logger.debug("failure traceback\n%s", result.traceback)
         results.append(result)
 
-    summary = ExecutionSummary.from_results(results)
-    counts = summary.counts
-    bind_log_context(pipeline_logger, stage="summary").info(
-        "groups=%d | processed=%d | skipped=%d | errors=%d",
-        total_groups,
-        counts[ExecutionStatus.OK],
-        counts[ExecutionStatus.SKIPPED],
-        counts[ExecutionStatus.ERROR],
-    )
-    return summary
+    return ExecutionSummary.from_results(results)
