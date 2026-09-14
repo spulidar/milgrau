@@ -200,11 +200,93 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 
 - [ ] Add repository `LICENSE` after confirming institutional licensing choice.
 - [x] Runtime/package/CITATION release version synchronized at CalVer `2026.9`.
-- [ ] Restore/create documentation referenced by README.
+- [x] Replace the stale README that referenced removed config structures, a planned-only Level 2, radiosonde-only tropopause behavior, old status policy, and documentation pages that did not exist.
+- [ ] Build the scientific documentation set tracked in Section K and make README links point only to reviewed/current pages.
 - [ ] Add CI checks and branch protection.
 - [ ] Audit NetCDF semantic metadata against current CF conventions.
 - [ ] Add archived release/DOI workflow and changelog.
 - [ ] External real-data validation against independent/reference processing chain.
+
+## K. Scientific documentation and data-product reference
+
+The documentation goal is broader than an installation README. The repository should let a scientist reconstruct what was measured, which assumptions were applied, how each product variable was generated, and which limitations affect interpretation without reading the Python implementation first.
+
+### K1. README as scientific entry point
+
+- [x] Rewrite `README.md` around the actual L0 → L1 → L2 scientific data flow rather than package architecture.
+- [x] Document installation, optional ERA5/explorer extras, primary CLI usage, selectors, `--force`, and LEBEAR `--time-window`.
+- [x] Explain the ownership split `config.yaml = processing recipe` versus `station.yaml = observational/instrumental truth`.
+- [x] Document current repository configuration values with physical units/meaning instead of showing obsolete `physics`/`hardware` examples.
+- [x] Describe historical station-profile resolution and its effect on station altitude, calibration and SCC mapping.
+- [x] Document current L0/L1/L2 input/output naming and canonical processed-data hierarchy.
+- [x] Provide a current variable-family reference for Level 0, Level 1 and Level 2 products, including flag meanings and multispectral completeness.
+- [x] Document productive scientific choices: native-grid L1 corrections, PBL reference policy, atmosphere priority, CPT/LRT sources, 1-km Rayleigh window, origin-constrained molecular scaling, backward KFS, `R_ref=1`, station LR climatology and partial Monte Carlo scope.
+- [x] Make current limitations prominent: uncharacterized PC saturation, disabled cloud screening, diagnostic-only SNR, ERA5 tropopause vertical-resolution caveat and incomplete total uncertainty budget.
+- [x] Document readable FAIR YAML provenance and current Zenodo citation.
+
+### K2. Processing/configuration reference pages
+
+- [ ] Create `docs/processing_levels.md` with the end-to-end scientific lineage from raw Licel records through Level 0, Level 1 and Level 2, including which stage owns each transformation.
+- [ ] Create `docs/configuration.md` as the authoritative `config.yaml` dictionary: full path, type, unit, allowed domain, current value, scientific effect, output metadata/variable affected, and reprocessing consequence when changed.
+- [ ] Create `docs/station_catalog.md` as the authoritative `station.yaml` reference: station/site fields, timezone, historical altitude/instrument profiles, calibration sets, saturation status, SCC mapping, radiosonde identity and lidar-ratio climatology ownership.
+- [ ] Explain station-profile date resolution with a worked historical example spanning at least two SPU instrument eras.
+- [ ] Document which settings are scientific assumptions versus acquisition/instrument facts versus visualization-only settings.
+- [ ] Document the station-config selection precedence (`explicit argument → MILGRAU_STATION_CONFIG → config.yaml`) without presenting it as a scientific source override.
+
+### K3. NetCDF product dictionaries
+
+- [ ] Create `docs/level0_product.md` with every dimension, variable, dtype, unit/flag, optionality rule and relevant global attribute for base and SCC-ready Level 0 products.
+- [ ] Document Level 0 acquisition QA, rejected-profile semantics, dark-current association, native `BinW`, DAQ range, weather missingness and SCC readiness alongside the variable dictionary.
+- [ ] Create `docs/level1_product.md` with every Level 1 signal, uncertainty, correction diagnostic, PBL variable, atmosphere variable, tropopause attribute and source/provenance field.
+- [ ] Include the exact L1 correction order and uncertainty propagation equations, explicitly distinguishing numerical dead-time clipping from physical detector saturation.
+- [ ] Create `docs/level2_product.md` with every Level 2 dimension/coordinate, molecular field, selected/glued signal, optical field, Rayleigh/KFS/gluing/source-selection diagnostic, completeness field and global method attribute.
+- [ ] Document every integer flag/code with stable numeric meaning, including `signal_source_flag`, `retrieval_input_invalid_reason`, KFS branch flags, merge-source flags and failed-wavelength stage/code.
+- [ ] Explicitly document current aggregate aliases (`aerosol_backscatter[_mean]`, `aerosol_extinction[_mean]`) and decide a future deprecation/migration path rather than leaving duplicate semantics implicit.
+- [ ] State missing-value/NaN/sentinel semantics for every product family; remove or clearly justify legacy scalar `-999` conventions where CF-compatible missingness can be used instead.
+
+### K4. Scientific methods and equations
+
+- [ ] Create `docs/scientific_methods.md` with notation and equations for PC normalization, Poisson/dark-current/background uncertainty, non-paralyzable dead-time correction, bin shift, background subtraction and range correction.
+- [ ] Document PBL gradient method and its limitations as a simple elastic-RCS boundary-layer diagnostic rather than a universal PBL truth.
+- [ ] Consolidate atmosphere mapping methodology: ASL/AGL relation, historical station altitude, linear temperature interpolation, log-pressure interpolation and USSA76 outside-coverage extension.
+- [ ] Update `docs/atmospheric_profiles.md` to the current nested `level1.atmosphere` configuration, source-priority contract, CDS endpoint behavior and ERA5-derived CPT/LRT support.
+- [ ] Document CPT/LRT equations/criteria and explicitly distinguish radiosonde-derived versus ERA5-derived vertical information/precision.
+- [ ] Document the molecular/Rayleigh equations and physical constants used by the Bucholtz-style implementation, including `8π/3 sr` molecular lidar ratio and transmission convention.
+- [ ] Document the automatic Rayleigh-reference objective/QA in physical units, including how `ref_window_m` is converted on the Level 1 grid.
+- [ ] Document analog/PC gluing equations, regression direction, fade weights, uncertainty propagation, candidate acceptance criteria and current score definition.
+- [ ] Version/document the gluing selection-score weights before presenting them as a stable algorithm identity.
+- [ ] Document the generalized Fernald/Klett–Sasano equation, exact reference-bin boundary, productive backward integration, SCI-001 backward-sign correction and research-only forward/two-sided modes.
+- [ ] Document the relationship `aerosol_ref_fraction = R_ref - 1` and the current pure-molecular `R_ref=1` assumption.
+- [ ] Document the partial MC ensemble exactly: perturbed quantities, distributions, lower LR bound, seed/iterations, aggregation and which uncertainty sources remain outside the budget.
+
+### K5. FAIR provenance, QA and interpretation
+
+- [ ] Create `docs/provenance_fair.md` covering exact embedded YAML, software release, station/calibration identity, external atmosphere provenance, LR provenance, incremental reuse semantics and the future readable input-manifest decision.
+- [ ] Create `docs/quality_flags.md` as a scientist-facing interpretation guide for correction status, saturation characterization, Rayleigh/KFS validity, wavelength completeness and failure diagnostics.
+- [ ] Create `docs/known_limitations.md` so provisional policies are visible outside the tracker: PC saturation, cloud mask, SNR threshold, station LR dependence, `R_ref=1`, ERA5 tropopause resolution, partial uncertainty budget and any schema metadata gaps.
+- [ ] Create `docs/validation.md` distinguishing unit/synthetic numerical validation, internal product-contract tests and still-pending independent real-data validation.
+- [ ] Add worked examples showing how to decide whether a Level 1 or Level 2 profile is scientifically usable from NetCDF flags alone.
+- [ ] Add worked examples for complete versus partial multispectral Level 2 products and explain why partial products are not incrementally final.
+
+### K6. Metadata/schema audit driven by documentation
+
+- [ ] Audit every documented NetCDF physical variable for explicit `units`, `long_name`/description, dimensions and missing-value semantics before freezing the product-reference pages.
+- [ ] Audit current Level 2 descriptions against the productive backward-only policy; remove residual text that still says both/two-sided branches are required for productive success.
+- [ ] Reconcile versioned algorithm metadata so `elastic_inversion_algorithm_metadata()` and product-level `KFS_Mode` cannot disagree about productive integration mode.
+- [ ] Audit Level 2 backscatter/extinction units and add explicit CF-readable attributes where currently implied by equations but not stored on the variable.
+- [ ] Audit CF standard-name applicability conservatively; do not assign a CF `standard_name` unless the quantity exactly matches the convention definition.
+- [ ] Decide whether global scalar diagnostics such as CPT/LRT should remain attrs or become typed variables with explicit missing-value metadata in a future schema version.
+- [ ] Add a product-schema/version field if needed so documentation can identify intentional NetCDF contract changes independently of package CalVer.
+
+### K7. Scientific references, examples and maintenance
+
+- [ ] Build a verified bibliography for the exact methods actually implemented: Licel/SCC conventions where citable, Bucholtz/Rayleigh method, WMO thermal tropopause, Klett/Fernald/Sasano elastic inversion, ERA5 and any network-method comparisons used to justify productive choices.
+- [ ] Cite primary/authoritative sources rather than copying thresholds or prose from secondary implementations.
+- [ ] Add small xarray examples for opening L0/L1/L2 files, inspecting embedded YAML provenance, filtering valid Level 2 blocks and checking source/completeness flags.
+- [ ] Add one end-to-end scientific worked example for a real SPU measurement once an anonymization/public-data policy is settled.
+- [ ] Keep README concise enough to remain an entry point after dedicated docs exist; move exhaustive tables to `docs/` while retaining the scientific overview and links.
+- [ ] Add a documentation review item to each scientific/schema change: equations, config reference, variable dictionary, provenance and reprocessing note must be updated together when affected.
+- [ ] Add a lightweight regression/link check so README/docs cannot reference deleted pages or obsolete public config keys.
 
 ## Current high-value technical debt
 
@@ -218,6 +300,7 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - [ ] Decide readable input manifest policy.
 - [ ] Finish repository-wide semantic-default static guard.
 - [ ] Add CI so the full suite becomes an enforced branch contract.
+- [ ] Complete Section K documentation and use its metadata audit to close product-description/unit inconsistencies before treating the scientific schema as documented/frozen.
 
 ## Implementation log
 
@@ -302,3 +385,11 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - Added regressions for physical-width conversion, rejection of the legacy public `ref_window_bins` recipe, removal of the `physics` section, and provenance-gated NetCDF incremental reuse.
 - No Rayleigh QA thresholds, search bounds, calibration equation, KFS equation, lidar-ratio assumption, or detector policy changed in this tranche.
 - The full repository suite is still not claimed because this branch has no attached CI/status checks and the complete dependency/test matrix cannot be executed here.
+
+### 2026-09-14 — scientific README and documentation roadmap
+
+- Replaced the stale README with a current scientific/data-product reference for the `new-architecture` branch: installation, complete L0→L1→L2 lineage, configuration/station ownership, historical station context, scientific methods, NetCDF variables/flags, FAIR provenance, visualization and known limitations.
+- Documented Level 2 as the current productive backward Klett–Fernald retrieval rather than a planned feature and made the elastic-extinction LR dependence, `R_ref=1` boundary, partial Monte Carlo scope and signal-source/Rayleigh QA explicit.
+- Added Section K as the detailed roadmap for splitting the README into reviewed scientific method, configuration, station, product-schema, provenance, QA, validation and bibliography documents.
+- Documentation review is now coupled to a metadata audit so prose cannot silently normalize current schema inconsistencies; residual two-sided wording, implied Level 2 units and duplicate aggregate aliases are tracked for explicit cleanup before a documented schema freeze.
+- No processing equation, threshold, scientific configuration value or NetCDF numerical result changed in this documentation tranche.
