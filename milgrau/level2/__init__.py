@@ -1,8 +1,11 @@
-"""Level 2 processing modules.
+"""Level 2 processing and scientific APIs.
 
 Package import is intentionally declarative: scientific behavior is defined by
 canonical modules and is never installed through import-time monkey patching.
-The public surface below preserves the pre-P1 Level 2 package API.
+The package surface contains productive processing/contracts plus a small set of
+explicitly retained numerical research kernels. Productive elastic retrieval is
+backward Klett--Fernald; availability of forward/two-sided research kernels does
+not change that processing contract.
 """
 
 from milgrau.io.paths import LEVEL2_SUFFIX
