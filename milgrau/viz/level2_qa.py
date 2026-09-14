@@ -125,7 +125,7 @@ def _safe_median_dataarray(ds: xr.Dataset, name: str, wavelength: int) -> float:
 
 
 def _block_standard_error(block_values: np.ndarray, valid_block: np.ndarray | None = None) -> np.ndarray:
-    """Return standard error across block profiles for a block x altitude matrix."""
+    """Return standard error across block profiles without empty-slice warnings."""
     arr = np.asarray(block_values, dtype=np.float64)
     if arr.ndim != 2:
         return np.full(arr.shape[-1] if arr.ndim else 0, np.nan, dtype=np.float64)
@@ -133,8 +133,13 @@ def _block_standard_error(block_values: np.ndarray, valid_block: np.ndarray | No
         arr = arr[np.asarray(valid_block, dtype=bool), :]
     finite = np.isfinite(arr)
     count = finite.sum(axis=0)
-    std = np.nanstd(arr, axis=0, ddof=0)
-    return np.divide(std, np.sqrt(np.maximum(count, 1)), out=np.full(arr.shape[1], np.nan, dtype=np.float64), where=count > 1)
+    result = np.full(arr.shape[1], np.nan, dtype=np.float64)
+    supported = count > 1
+    if not supported.any():
+        return result
+    std = np.nanstd(arr[:, supported], axis=0, ddof=0)
+    result[supported] = std / np.sqrt(count[supported])
+    return result
 
 
 def _legacy_scale_factor(analog: np.ndarray, photon: np.ndarray, start: int = 1000, stop: int = 1500) -> tuple[float, tuple[int, int]]:
