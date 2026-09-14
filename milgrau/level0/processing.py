@@ -32,14 +32,14 @@ def fetch_group_weather(group_df: pd.DataFrame, config: Mapping[str, Any], logge
     weather_data = fetch_surface_weather(dt_utc_mean, lat, lon, logger=weather_logger, config=config)
     if weather_data:
         weather_logger.info(
-            "%.1f C | %.1f hPa",
+            "%.1f °C | %.1f hPa",
             float(weather_data["temperature_c"]),
             float(weather_data["pressure_hpa"]),
         )
         return weather_data
     if level0.surface_weather.missing_policy == "fail":
         raise RuntimeError("Surface weather is unavailable and level0.surface_weather.missing_policy='fail'.")
-    weather_logger.warning("unavailable -> NaN (policy=nan)")
+    weather_logger.warning("unavailable | NaN (policy=nan)")
     return {
         "temperature_c": np.nan,
         "pressure_hpa": np.nan,
@@ -73,9 +73,9 @@ def _resolve_group_station_config(
     effective_config["_resolved_station"] = deepcopy(dict(context))
     station_logger = bind_log_context(logger, stage="station")
     if context.get("scc_available", False):
-        station_logger.info("profile=%s | SCC=%s", context["profile_id"], context["scc_configuration_id"])
+        station_logger.info("%s | SCC %s", context["profile_id"], context["scc_configuration_id"])
         station_logger.debug(
-            "mode=%s calibration=%s selected_channels=%d SCC_channels=%d extra_channels=%s missing_SCC_channels=%s",
+            "mode=%s | calibration=%s | selected=%d | SCC=%d | extra=%s | missing=%s",
             context["mode"],
             context["calibration_id"],
             len(context["selected_channels"]),
@@ -86,8 +86,8 @@ def _resolve_group_station_config(
         if context["missing_scc_channels"]:
             station_logger.warning("SCC export disabled | missing=%s", ",".join(context["missing_scc_channels"]))
     else:
-        station_logger.info("profile=%s | SCC=none", context["profile_id"])
-        station_logger.debug("calibration=%s selected_channels=%d", context["calibration_id"], len(context["selected_channels"]))
+        station_logger.info("%s | SCC none", context["profile_id"])
+        station_logger.debug("calibration=%s | selected=%d", context["calibration_id"], len(context["selected_channels"]))
     return effective_config, dict(lidar_data), context
 
 
@@ -133,11 +133,11 @@ def _write_scc_export(
         group_df=group_df,
         weather_data=dict(weather_data),
         config=dict(effective_config),
-        logger=logger,
+        logger=scc_logger,
     )
     write_netcdf_provenance(scc_path, effective_config)
     scc_logger.info(
-        "%s | %d/%d channels | config=%s",
+        "%s | %d/%d channels | config %s",
         scc_path.name,
         len(scc_channels),
         len(lidar_data.get("channels", [])),
@@ -170,7 +170,8 @@ def process_measurement_group(
                 metadata={"pipeline": "L0", "save_id": save_id},
             )
         stage = "level0.parse"
-        lidar_data_tensors = parse_licel_group(files_meas, logger)
+        parse_logger = bind_log_context(logger, stage="parse")
+        lidar_data_tensors = parse_licel_group(files_meas, parse_logger)
         if not lidar_data_tensors.get("tensors"):
             return ExecutionResult.skipped(
                 stage,
@@ -179,8 +180,8 @@ def process_measurement_group(
                 output_path=netcdf_path,
                 metadata={"pipeline": "L0", "save_id": save_id},
             )
-        bind_log_context(logger, stage="parse").debug(
-            "files=%d channels=%d", len(files_meas), len(lidar_data_tensors.get("channels", []))
+        parse_logger.debug(
+            "files=%d | channels=%d", len(files_meas), len(lidar_data_tensors.get("channels", []))
         )
         stage = "level0.station"
         period = meas_id[8:]
@@ -200,7 +201,7 @@ def process_measurement_group(
             group_df=group_df,
             weather_data=weather_data,
             config=primary_config,
-            logger=logger,
+            logger=bind_log_context(logger, stage="write"),
         )
         provenance_attrs = write_netcdf_provenance(netcdf_path, primary_config)
         bind_log_context(logger, stage="provenance").debug(
