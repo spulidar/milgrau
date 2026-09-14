@@ -174,3 +174,7 @@ def test_level2_saves_rayleigh_reference_qa_variables(tmp_path: Path) -> None:
         assert "Rayleigh_Reference_Min_Valid_Fraction" in ds.attrs
         assert int(ds["rayleigh_reference_success_flag"].isel(wavelength=0)) in {0, 1}
         assert float(ds["rayleigh_reference_valid_fraction"].isel(wavelength=0)) >= 0.0
+        assert ds.attrs["KFS_Mode"] == "backward"
+        assert ds.attrs["integration_mode"] == "backward"
+        assert "backward" in ds.attrs["KFS_Mode_Description"].lower()
+        assert "productive backward KFS branch" in ds["retrieval_success_flag"].attrs["description"]
