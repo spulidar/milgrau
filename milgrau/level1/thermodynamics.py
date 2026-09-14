@@ -226,11 +226,11 @@ def _log_tropopause(logger: logging.Logger, cpt_km: float, lrt_km: float, *, sou
     cpt_logger = bind_log_context(logger, stage="cpt")
     lrt_logger = bind_log_context(logger, stage="lrt")
     if np.isfinite(cpt_km) and cpt_km > 0.0:
-        cpt_logger.info("%.2f km", cpt_km)
+        cpt_logger.info("%.2f km | %s", cpt_km, source)
     else:
         cpt_logger.warning("unavailable | source=%s", source)
     if np.isfinite(lrt_km) and lrt_km > 0.0:
-        lrt_logger.info("%.2f km", lrt_km)
+        lrt_logger.info("%.2f km | %s", lrt_km, source)
     else:
         lrt_logger.warning("unavailable | source=%s", source)
 
@@ -252,6 +252,7 @@ def integrate_thermodynamics(final_ds: xr.Dataset, config: Mapping[str, Any], lo
             "radiosonde_available": "false",
             "tropopause_cpt_km": -999.0,
             "tropopause_lrt_km": -999.0,
+            "tropopause_source_type": "unavailable",
             "thermodynamic_station_latitude": float(station_site["latitude"]),
             "thermodynamic_station_longitude": float(station_site["longitude"]),
             "thermodynamic_station_altitude_m": float(station_altitude_m),
@@ -293,6 +294,7 @@ def integrate_thermodynamics(final_ds: xr.Dataset, config: Mapping[str, Any], lo
                         "radiosonde_available": "true",
                         "tropopause_cpt_km": cpt,
                         "tropopause_lrt_km": lrt,
+                        "tropopause_source_type": "radiosonde",
                     }
                 )
                 _record_policy(result, policy, attempts)
@@ -333,12 +335,22 @@ def integrate_thermodynamics(final_ds: xr.Dataset, config: Mapping[str, Any], lo
                     source_name="Copernicus Climate Change Service ERA5 pressure-level reanalysis",
                     outside_coverage_policy=policy.external_profile_outside_coverage,
                 )
+                cpt, lrt = calculate_tropopause_heights(_clean_profile(df_era5))
+                cpt = finite_or_fill(cpt)
+                lrt = finite_or_fill(lrt)
+                result.attrs.update(
+                    {
+                        "tropopause_cpt_km": cpt,
+                        "tropopause_lrt_km": lrt,
+                        "tropopause_source_type": "era5",
+                    }
+                )
                 _record_policy(result, policy, attempts)
                 logger.info(
                     "ERA5 | USSA76 extension %.1f%%",
                     100.0 * float(result.attrs["thermodynamic_profile_standard_fallback_fraction"]),
                 )
-                _log_tropopause(logger, np.nan, np.nan, source="ERA5 (radiosonde diagnostic only)")
+                _log_tropopause(logger, float(cpt), float(lrt), source="ERA5")
                 return result
             except Exception as exc:
                 logger.warning("ERA5 profile unusable | %s", _compact_error(exc))
@@ -349,7 +361,7 @@ def integrate_thermodynamics(final_ds: xr.Dataset, config: Mapping[str, Any], lo
             result = _materialize_ussa76(final_ds, station_altitude_m=station_altitude_m)
             _record_policy(result, policy, attempts)
             logger.warning("USSA76 | fallback from configured source priority")
-            _log_tropopause(logger, np.nan, np.nan, source="USSA76 (radiosonde diagnostic only)")
+            _log_tropopause(logger, np.nan, np.nan, source="USSA76")
             return result
 
         raise RuntimeError(f"Unsupported atmosphere source after validation: {source!r}.")
