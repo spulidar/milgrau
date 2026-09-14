@@ -61,6 +61,30 @@ class _ContextFormatter(logging.Formatter):
             record.args = original_args
 
 
+class _ConsoleDedupFilter(logging.Filter):
+    """Keep station/calibration warnings readable without hiding them from the audit file."""
+
+    _DEDUP_STAGES = {"calibration", "saturation"}
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._seen: set[tuple[str, str, str]] = set()
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        stage = str(getattr(record, "stage", "-"))
+        if record.levelno < logging.WARNING or stage not in self._DEDUP_STAGES:
+            return True
+        key = (
+            str(getattr(record, "pipeline", "--")),
+            stage,
+            _clean_log_message(record.getMessage()),
+        )
+        if key in self._seen:
+            return False
+        self._seen.add(key)
+        return True
+
+
 def bind_log_context(
     logger: logging.Logger | logging.LoggerAdapter,
     *,
@@ -162,6 +186,7 @@ def setup_logger(
     setattr(stream_handler, _MILGRAU_HANDLER_MARKER, True)
     stream_handler.setLevel(console_level)
     stream_handler.setFormatter(console_formatter)
+    stream_handler.addFilter(_ConsoleDedupFilter())
     logger.addHandler(stream_handler)
 
     logger.propagate = False
