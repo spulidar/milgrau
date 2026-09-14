@@ -102,6 +102,7 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - [x] Productive gluing configuration is complete and strict.
 - [x] Uncharacterized PC channels may participate only through the temporary 10% dead-time-occupancy guard when Level 1 correction succeeded and a traceable positive station dead-time is available; physical saturation remains `not_characterized`.
 - [x] A numerically successful AN/PC gluing result that fails retrieval-input QA can retry configured single-channel candidates blockwise instead of suppressing a valid AN fallback.
+- [x] Retrieval-input QA uses one contiguous Rayleigh-anchored finite-positive support with valid uncertainty; intentional Level 1 bin-shift/nonpositive edge bins may remain invalid, while disjoint valid islands and internal gaps still fail.
 - [ ] Remove remaining low-level/public gluing defaults retained for compatibility.
 - [x] Invalid gluing search domains fail; they are never widened to the full profile.
 - [ ] Document/version gluing selection-score weights as explicit algorithm constants.
@@ -135,6 +136,7 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - [x] Unknown PC saturation remains explicit `not_characterized`.
 - [x] Numerical dead-time clipping is not treated as physical detector saturation.
 - [x] Level 2 does not accept uncharacterized PC saturation as known-clear input; temporary guarded operation remains distinguishable from a characterized detector limit.
+- [x] Invalid edge bins are never filled or interpolated by retrieval-input QA: Level 2 may stop outside one contiguous Rayleigh-anchored support, while internal holes and invalid Rayleigh bins remain scientific failures.
 - [x] Invalid Rayleigh/gluing search domains fail rather than substitute scientific domains.
 - [x] Missing external atmosphere follows only configured source priority; reaching USSA76 after external-source failure is an explicit configured fallback, not an execution error.
 - [x] Missing surface weather follows only explicit `nan|fail` policy.
@@ -168,6 +170,7 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - [x] Missing station timezone/coordinates/geometry strict-accessor tests.
 - [x] Saturation characterization and clipping-vs-saturation tests.
 - [x] Provisional PC dead-time guard and post-gluing single-channel fallback regression tests.
+- [x] Contiguous retrieval-support regressions cover bin-shift edge NaNs, nonpositive edge truncation, internal gaps, Rayleigh-window invalidity, PC saturation outside support, and KFS edge-NaN preservation.
 - [x] Strict Licel BinW/ADC/DAQ tests.
 - [x] Level 0 writer tests prove native range/background ownership and readable provenance.
 - [x] Quarantine layout/sidecar/collision/read-only discovery tests.
@@ -195,6 +198,7 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 ## Current high-value technical debt
 
 - [ ] Characterize physical PC saturation for the operational SPU detector settings (AN/PC overlap and preferably controlled optical attenuation), then replace the Level 2 corrected-rate proxy with a raw-rate Level 1 mask and traceable `max_rate_mhz` calibration.
+- [ ] Remove the temporary Level 2 package-init retrieval-QA shim when `_retrieval_impl.py` is decomposed; keep the contiguous supported-domain evaluator as an explicit retrieval component.
 - [ ] Remove remaining generic `physics.vertical_resolution_m` config/schema residue.
 - [ ] Remove low-level Level 2 compatibility defaults and duplicate `_retrieval_impl.py` paths.
 - [ ] Version/document gluing scoring constants.
@@ -245,3 +249,13 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - Added retrieval-input rejection summaries and dedicated regression tests for guarded PC use and analog fallback.
 - Physical saturation characterization remains high-priority technical debt: move the guard to raw observed PC rate in Level 1 and determine a traceable limit from AN/PC linearity and preferably controlled optical attenuation before declaring `status: characterized`.
 - Targeted modified files compile in this environment; the full repository suite is still not claimed because this branch has no attached CI/status checks and the complete dependency/test matrix cannot be executed here.
+
+### 2026-09-14 — contiguous Level 2 retrieval support
+
+- Aligned pre-inversion retrieval-input QA with the existing KFS branch semantics: invalid bins may terminate only the outer edge of the physically supported profile instead of invalidating every block merely because Level 1 bin shifting produced edge NaNs.
+- Defined the accepted input as one contiguous finite-positive signal / finite non-negative uncertainty run containing the complete configured Rayleigh-reference interval; no signal or uncertainty values are filled, extrapolated, or interpolated by this QA.
+- Continued to reject NaNs/non-positive signal/invalid uncertainty inside the Rayleigh interval and any disjoint usable island separated by an invalid internal bin.
+- Saturation QA is evaluated only on the physically supported run, so a saturation flag outside an already-invalid edge cannot invalidate otherwise usable PC support.
+- Added regressions for edge NaNs, non-positive edge truncation, internal gaps, invalid Rayleigh support, saturation outside support, package integration, and KFS preservation of NaN edge bins.
+- The supported-domain evaluator is installed through a small package-init compatibility shim while `_retrieval_impl.py` remains monolithic; removing that shim is tracked with the broader Level 2 decomposition debt.
+- Targeted new Python files pass syntax validation in this environment; the full repository suite is still not claimed because this branch has no attached CI/status checks and the complete dependency/test matrix cannot be executed here.
