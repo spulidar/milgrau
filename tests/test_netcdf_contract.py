@@ -102,7 +102,7 @@ def test_lebear_uses_level1_atmosphere_and_generates_level2(tmp_path: Path) -> N
             "wavelengths_to_process": [532],
             "monte_carlo_iterations": 10,
             "random_seed": 123,
-            "molecular_fit": {"ref_alt_min_m": 500.0, "ref_alt_max_m": 1400.0, "ref_window_bins": 20},
+            "molecular_fit": {"ref_alt_min_m": 500.0, "ref_alt_max_m": 1400.0, "ref_window_m": 150.0},
             "gluing": {
                 "window_length_bins": 80,
                 "correlation_threshold": 0.95,
