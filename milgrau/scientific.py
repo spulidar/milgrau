@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Final
 
 ELASTIC_BACKSCATTER_INVERSION_METHOD: Final[str] = "Klett-Fernald-Sasano"
-ELASTIC_BACKSCATTER_INTEGRATION_MODE: Final[str] = "two_sided"
+ELASTIC_BACKSCATTER_INTEGRATION_MODE: Final[str] = "backward"
 ELASTIC_BACKSCATTER_UNCERTAINTY_METHOD: Final[str] = "Monte Carlo"
 FERNALD_IMPLEMENTATION_VERSION: Final[str] = "2"
 FERNALD_SCIENTIFIC_CHANGE: Final[str] = "corrected_backward_molecular_factor_sign"
