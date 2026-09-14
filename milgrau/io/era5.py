@@ -11,7 +11,7 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Any, Final, Mapping, Optional
 
 import numpy as np
 import pandas as pd
@@ -20,6 +20,7 @@ import xarray as xr
 from milgrau.io.paths import resolve_project_path
 
 ERA5_DOI = "10.24381/cds.bd0915c6"
+CDS_API_URL: Final[str] = "https://cds.climate.copernicus.eu/api"
 _STANDARD_GRAVITY_M_S2 = 9.80665
 _EARTH_RADIUS_M = 6_356_766.0
 _REQUIRED_ERA5_KEYS = {
@@ -269,6 +270,17 @@ def _read_metadata(path: Path) -> dict[str, Any]:
         return {}
 
 
+def _compact_exception_message(exc: BaseException) -> str:
+    """Return one operator-readable line while detailed traceback stays at DEBUG."""
+    lines = [line.strip() for line in str(exc).splitlines() if line.strip()]
+    if not lines:
+        return type(exc).__name__
+    first = lines[0]
+    if len(first) > 180:
+        first = first[:177] + "..."
+    return first
+
+
 def fetch_era5_pressure_level_profile(
     measurement_dt_utc: datetime | pd.Timestamp,
     latitude: float,
@@ -299,29 +311,34 @@ def fetch_era5_pressure_level_profile(
                         str(cfg["dataset"]), cache_file,
                     )
                 )
-            logger.debug("ERA5 cache hit: %s", cache_file.name)
+            logger.debug("ERA5 cache hit | %s", cache_file.name)
             return frame
         except Exception as exc:
-            logger.warning("ERA5 cache unreadable: %s | %s", cache_file, exc)
+            logger.warning("ERA5 cache unreadable | %s", _compact_exception_message(exc))
+            logger.debug("ERA5 cache failure", exc_info=True)
 
     try:
         import cdsapi  # type: ignore[import-not-found]
     except ImportError:
-        logger.warning(
-            "ERA5 configured but cdsapi is not installed; install MILGRAU with the 'era5' extra and configure ~/.cdsapirc"
-        )
+        logger.warning("ERA5 unavailable | cdsapi is not installed")
+        logger.debug("Install MILGRAU with the 'era5' extra; CDS credentials remain external to the repository.")
         return None
 
     dataset, request = build_era5_request(analysis_dt, latitude, longitude, cfg)
     temporary_file = cache_file.with_suffix(".part.nc")
     try:
         logger.debug(
-            "ERA5 fetch: %sZ | lat=%.4f lon=%.4f",
+            "ERA5 request | %sZ | lat=%.4f | lon=%.4f | endpoint=%s",
             analysis_dt.strftime("%Y-%m-%d %H:%M"),
             latitude,
             longitude,
+            CDS_API_URL,
         )
-        client = cdsapi.Client()
+        # ERA5 belongs to the Climate Data Store. Pinning the service URL prevents
+        # a machine-wide ADS endpoint from silently redirecting this dataset to
+        # the wrong Copernicus service while still reading the user's secret token
+        # from CDSAPI_KEY or ~/.cdsapirc.
+        client = cdsapi.Client(url=CDS_API_URL, quiet=True)
         client.retrieve(dataset, request, str(temporary_file))
         with xr.open_dataset(temporary_file) as ds:
             ds.load()
@@ -332,10 +349,11 @@ def fetch_era5_pressure_level_profile(
         )
         metadata_file.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
         frame.attrs.update(metadata)
-        logger.debug("ERA5 cached: %s", cache_file.name)
+        logger.debug("ERA5 cached | %s", cache_file.name)
         return frame
     except Exception as exc:
-        logger.warning("ERA5 retrieval unavailable: %s", exc)
+        logger.warning("ERA5 unavailable | %s", _compact_exception_message(exc))
+        logger.debug("ERA5 retrieval failure", exc_info=True)
         try:
             if temporary_file.exists():
                 temporary_file.unlink()
