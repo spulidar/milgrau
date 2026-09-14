@@ -1,45 +1,41 @@
-"""Public Level 2 retrieval API with explicit productive orchestration.
-
-Level 2 consumes the canonical thermodynamic atmosphere materialized by Level 1.
-Productive signal selection and backward optical aggregation are wired directly;
-package import order does not change scientific behavior.  Shared dataclasses
-and a few low-level helpers remain in ``_retrieval_impl`` until the next
-decomposition batch.
-"""
+"""Public Level 2 retrieval API with explicit productive orchestration."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
 import logging
-from typing import Any, Mapping
+from typing import Any, Mapping, TypeVar
 
 import numpy as np
 import xarray as xr
 
-from milgrau.level2._retrieval_impl import (
-    BlockGluingResult,
-    MolecularModel,
-    RetrievalStageError,
-    WavelengthBlockInputs,
-    _run_retrieval_stage,
-    assemble_wavelength_result,
-    evaluate_rayleigh_reference,
-    prepare_wavelength_blocks,
+from milgrau.level2.config import (
+    get_kfs_mode,
+    get_lidar_ratio,
+    get_molecular_fit_config,
 )
-from milgrau.level2.config import get_kfs_mode, get_lidar_ratio, get_molecular_fit_config
 from milgrau.level2.contracts import WavelengthRetrievalResult
 from milgrau.level2.gluing import propagate_glued_error
 from milgrau.level2.molecular import (
     calculate_molecular_profile,
     calculate_simulated_molecular_signal,
 )
-from milgrau.level2.optical_retrieval import retrieve_optical_blocks
+from milgrau.level2.optical_retrieval import (
+    MolecularModel,
+    evaluate_rayleigh_reference,
+    retrieve_optical_blocks,
+)
 from milgrau.level2.rayleigh_window import rayleigh_window_bins
+from milgrau.level2.result_assembly import assemble_wavelength_result
 from milgrau.level2.signal_selection import (
-    _apply_single_channel_fallback_after_input_qa,
+    BlockGluingResult,
+    WavelengthBlockInputs,
     glue_signal_blocks,
+    prepare_wavelength_blocks,
 )
 
+_StageResult = TypeVar("_StageResult")
 
 # Temporary operational policy for legacy SPU photon-counting channels whose
 # physical saturation limit is not yet characterized. This is deliberately not
@@ -47,6 +43,27 @@ from milgrau.level2.signal_selection import (
 # guard used only to decide whether an uncharacterized PC sample may participate
 # in Level 2.
 PROVISIONAL_PC_MAX_DEADTIME_OCCUPANCY = 0.10
+
+
+class RetrievalStageError(RuntimeError):
+    """Identify the stable retrieval stage that raised an underlying exception."""
+
+    def __init__(self, stage: str, cause: Exception) -> None:
+        self.stage = stage
+        super().__init__(f"[{stage}] {cause}")
+
+
+def _run_retrieval_stage(
+    stage: str,
+    operation: Callable[[], _StageResult],
+) -> _StageResult:
+    """Run one retrieval stage and attach its stable name to any failure."""
+    try:
+        return operation()
+    except RetrievalStageError:
+        raise
+    except Exception as exc:
+        raise RetrievalStageError(stage, exc) from exc
 
 
 def build_thermodynamic_profile(
@@ -187,9 +204,7 @@ def _channel_calibration_mapping(
     if not isinstance(calibrations, Mapping):
         return None
 
-    calibration_id = str(
-        ds_l1.attrs.get("instrument_calibration_id", "")
-    ).strip()
+    calibration_id = str(ds_l1.attrs.get("instrument_calibration_id", "")).strip()
     if not calibration_id:
         profile_id = str(ds_l1.attrs.get("station_profile_id", "")).strip()
         profiles = catalog.get("profiles")
@@ -201,9 +216,7 @@ def _channel_calibration_mapping(
                 and str(profile.get("id", "")).strip() == profile_id
             ]
             if len(matches) == 1:
-                calibration_id = str(
-                    matches[0].get("calibration_id", "")
-                ).strip()
+                calibration_id = str(matches[0].get("calibration_id", "")).strip()
     if not calibration_id:
         return None
 
@@ -226,7 +239,7 @@ def _apply_provisional_pc_deadtime_guard(
     """Allow guarded use of uncharacterized PC when dead-time is traceable.
 
     This remains an operational QA rule, not a physical detector saturation
-    characterization.  It maps corrected Level 1 PC rate back through the
+    characterization. It maps corrected Level 1 PC rate back through the
     non-paralyzable relation as a temporary observed-rate occupancy proxy.
     """
     channel = inputs.photon_channel
@@ -248,9 +261,7 @@ def _apply_provisional_pc_deadtime_guard(
     try:
         correction_valid = bool(
             "channel_correction_success" in ds_l1
-            and int(
-                ds_l1["channel_correction_success"].sel(channel=channel).item()
-            )
+            and int(ds_l1["channel_correction_success"].sel(channel=channel).item())
             == 1
         )
     except Exception:
@@ -283,9 +294,7 @@ def _apply_provisional_pc_deadtime_guard(
     )
     observed_rate_proxy = positive_rate / (1.0 + positive_rate * deadtime_us)
     occupancy_proxy = observed_rate_proxy * deadtime_us
-    provisional_mask = (
-        occupancy_proxy >= PROVISIONAL_PC_MAX_DEADTIME_OCCUPANCY
-    )
+    provisional_mask = occupancy_proxy >= PROVISIONAL_PC_MAX_DEADTIME_OCCUPANCY
 
     if inputs.photon_mask_block is None:
         combined_mask = provisional_mask.astype(np.float64)
@@ -295,9 +304,7 @@ def _apply_provisional_pc_deadtime_guard(
             provisional_mask.astype(np.float64),
         )
 
-    rate_proxy_limit_mhz = (
-        PROVISIONAL_PC_MAX_DEADTIME_OCCUPANCY / deadtime_us
-    )
+    rate_proxy_limit_mhz = PROVISIONAL_PC_MAX_DEADTIME_OCCUPANCY / deadtime_us
     logger.warning(
         "  -> %d nm provisional PC guard active for %s: max dead-time occupancy %.3f "
         "(nominal observed-rate proxy %.2f MHz); physical saturation remains uncharacterized.",
@@ -327,9 +334,7 @@ def process_wavelength(
             ds_l1,
             _enforce_pc_saturation_characterization(
                 ds_l1,
-                prepare_wavelength_blocks(
-                    ds_l1, wavelength_nm, altitude_m, config
-                ),
+                prepare_wavelength_blocks(ds_l1, wavelength_nm, altitude_m, config),
             ),
             config,
             logger,
@@ -341,9 +346,7 @@ def process_wavelength(
     )
     molecular_model = _run_retrieval_stage(
         "molecular_model",
-        lambda: build_molecular_model(
-            ds_l1, wavelength_nm, altitude_m, config
-        ),
+        lambda: build_molecular_model(ds_l1, wavelength_nm, altitude_m, config),
     )
     molecular, optical, rayleigh, kfs = _run_retrieval_stage(
         "rayleigh_kfs",
