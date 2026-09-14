@@ -346,11 +346,14 @@ def get_cloud_screening_config(config: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def get_kfs_mode(config: Mapping[str, Any]) -> str:
-    """Require the approved productive KFS two-sided integration mode."""
+    """Require backward Klett--Fernald for the productive elastic retrieval."""
     mode = str(_required_value(_inversion(config), "kfs_mode", "inversion")).strip().lower()
-    if mode != "two_sided":
-        raise Level2ConfigurationError("Level 2 KFS retrieval requires inversion.kfs_mode = 'two_sided'.")
-    return "two_sided"
+    if mode != "backward":
+        raise Level2ConfigurationError(
+            "Level 2 primary elastic retrieval requires inversion.kfs_mode = 'backward'. "
+            "Forward/two-sided solutions may be diagnostic research products, but are not the productive aerosol contract."
+        )
+    return "backward"
 
 
 def get_kfs_config(config: Mapping[str, Any]) -> dict[str, Any]:
@@ -391,10 +394,15 @@ def get_kfs_config(config: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def kfs_mode_description(mode: str) -> str:
-    """Return a human-readable description of the KFS mode."""
-    if mode != "two_sided":
-        raise ValueError("The productive Level 2 integration mode must be 'two_sided'.")
-    return "Backward below and forward above one shared reference bin; the forward branch is mathematically validated but remains noise-sensitive."
+    """Return FAIR-readable metadata for the productive backward KFS mode."""
+    normalized = str(mode).strip().lower()
+    if normalized != "backward":
+        raise ValueError("The productive Level 2 integration mode must be 'backward'.")
+    return (
+        "Backward Klett--Fernald integration from one high-altitude molecular "
+        "reference toward lower altitudes; an unrequested forward branch above "
+        "the reference is not required for the productive aerosol retrieval."
+    )
 
 
 def get_block_average_minutes(config: Mapping[str, Any]) -> int:
