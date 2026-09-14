@@ -177,6 +177,7 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - [x] Rayleigh-search regressions cover bin-shift edge NaNs, non-positive samples elsewhere in the search band, absence of any viable window, PC saturation inside/outside candidate windows, and backward KFS with an invalid upper tail.
 - [x] Backward aggregation regression proves a valid backward branch produces the optical product without requiring an unrequested forward branch.
 - [x] Strict Level 2 config regression pins productive `kfs_mode: backward` and rejects `two_sided` as a productive contract.
+- [x] Dataset metadata regression pins a FAIR-readable backward KFS description and rejects the obsolete two-sided descriptor.
 - [x] Strict Licel BinW/ADC/DAQ tests.
 - [x] Level 0 writer tests prove native range/background ownership and readable provenance.
 - [x] Quarantine layout/sidecar/collision/read-only discovery tests.
@@ -282,3 +283,10 @@ Make scientific and instrumental decisions explicit, auditable, and readable:
 - Added operator-visible aggregate Rayleigh diagnostics (selected altitude/window, valid fraction, slope, variance, backward-valid block count), backward-only optical aggregation, and regression tests for the new search-window and branch semantics.
 - Productive policy is currently installed at the Level 2 boundary while `_retrieval_impl.py` and the historical `config.py` mode text remain monolithic compatibility debt; moving the rule into the canonical decomposed config/retrieval implementation is explicitly tracked.
 - Targeted new/modified Python files were syntax-validated during preparation; the full repository suite is still not claimed because this branch has no attached CI/status checks and the complete dependency/test matrix cannot be executed here.
+
+### 2026-09-14 — backward KFS metadata consistency
+
+- Real-data retrieval reached scientifically valid Rayleigh/backward-KFS results for both 355 and 532 nm (5/5 blocks each) but failed during dataset assembly because the legacy `KFS_Mode_Description` helper still rejected `backward`.
+- Added the FAIR-readable backward-KFS description to the same Level 2 scientific-policy boundary used for the productive mode and installed it before dataset assembly.
+- Added a strict-config regression proving `backward` metadata is accepted and the obsolete two-sided descriptor is rejected.
+- No retrieval equations, Rayleigh selection thresholds, or detector assumptions changed in this micro-fix; it only removes a contradictory post-retrieval metadata gate.
