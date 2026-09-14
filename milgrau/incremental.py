@@ -3,7 +3,8 @@
 MILGRAU deliberately keeps incremental processing lightweight: an output may be
 reused when it exists, is non-empty, passes its optional integrity check, and is
 not older than any of its inputs, configuration files, extra dependencies, or
-installed MILGRAU Python sources.  No hashes or sidecar manifests are written.
+installed MILGRAU Python sources. Published NetCDF products must also contain the
+current readable FAIR provenance. No hashes or sidecar manifests are written.
 """
 from __future__ import annotations
 
@@ -11,6 +12,8 @@ from collections.abc import Callable, Iterable, Mapping
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+
+from milgrau.provenance import netcdf_provenance_is_complete
 
 _PACKAGE_ROOT = Path(__file__).resolve().parent
 
@@ -55,8 +58,9 @@ def output_is_current(
 ) -> bool:
     """Return whether an existing output is safe to reuse incrementally.
 
-    This intentionally uses only filesystem mtimes plus an optional product
-    contract.  Any missing dependency makes the output stale.
+    This intentionally uses filesystem mtimes plus an optional product contract.
+    Any missing dependency makes the output stale. NetCDF products additionally
+    require the current embedded MILGRAU provenance schema before reuse.
     """
     output = Path(output_path).expanduser()
     try:
@@ -80,6 +84,8 @@ def output_is_current(
             if source_mtime <= 0 or source_mtime > output_mtime:
                 return False
 
+        if output.suffix.lower() == ".nc" and not netcdf_provenance_is_complete(output):
+            return False
         if integrity_check is not None and not integrity_check(output):
             return False
         return True
