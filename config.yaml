@@ -149,7 +149,7 @@ inversion:
   # The altitude limits are SEARCH bounds for an automatic Rayleigh-like
   # reference window, not a requirement that the complete 5-25 km interval be
   # positive. The reference-window width is expressed physically and converted
-  # to an odd number of bins on the actual Level 1 altitude grid at runtime.
+  # to bins on the actual Level 1 altitude grid at runtime.
   molecular_fit:
     ref_alt_min_m: 5000.0
     ref_alt_max_m: 25000.0
