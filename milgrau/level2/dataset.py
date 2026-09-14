@@ -222,21 +222,21 @@ def build_level2_dataset(
     ds_l2["glued_corrected_signal"].attrs.update({"description": "Analog/PC merged Level 1 corrected signal before range correction."})
     ds_l2["glued_range_corrected_signal"].attrs.update({"description": "Range-corrected signal computed after gluing corrected_signal."})
     ds_l2["gluing_merge_source_flag"].attrs.update({"flag_values": "0, 1, 2, 3", "flag_meanings": "photon_counting blend analog invalid", "description": "Per-bin source used by the corrected-signal gluing step."})
-    ds_l2["retrieval_success_flag"].attrs.update({"flag_values": "0, 1", "flag_meanings": "failed success", "description": "Valid retrieval input passed Rayleigh QA and both KFS-v2 branches; only successful blocks enter mean optical products."})
+    ds_l2["retrieval_success_flag"].attrs.update({"flag_values": "0, 1", "flag_meanings": "failed success", "description": "Valid retrieval input passed Rayleigh QA and the productive backward KFS branch; only successful blocks enter mean optical products."})
     ds_l2["retrieval_success_fraction"].attrs.update(
         {"units": "1", "description": "Fraction of blocks with successful optical retrieval; independent of wavelength presence/completeness."}
     )
     ds_l2["scattering_ratio_mean"].attrs.update({"units": "1", "description": "Mean of valid block scattering ratios."})
     ds_l2["scattering_ratio_block"].attrs.update({"units": "1", "description": "Block scattering ratio from block-mean glued RCS and block-scaled molecular RCS."})
     ds_l2["rayleigh_calibration_intercept"].attrs.update({"description": "Median intercept from free linear Rayleigh diagnostic fit. The main calibration factor is constrained through the origin."})
-    ds_l2["kfs_branch"].attrs.update({"flag_values": "0, 1, 2, 3", "flag_meanings": "invalid backward_below_reference exact_reference_bin forward_above_reference", "description": "Klett-Fernald-Sasano v2 branch by altitude around the single physical boundary bin."})
+    ds_l2["kfs_branch"].attrs.update({"flag_values": "0, 1, 2, 3", "flag_meanings": "invalid backward_below_reference exact_reference_bin forward_above_reference", "description": "Klett-Fernald-Sasano v2 branch by altitude around the single physical boundary bin; forward values are research diagnostics when explicitly requested, not part of productive success."})
     for name in (
         "kfs_backward_valid_flag",
         "kfs_forward_valid_flag",
         "kfs_backward_valid_flag_block",
         "kfs_forward_valid_flag_block",
     ):
-        ds_l2[name].attrs.update({"flag_values": "0, 1", "flag_meanings": "invalid valid", "description": "Whether the complete physically sampled KFS branch remained finite with positive denominators in every Monte Carlo realization."})
+        ds_l2[name].attrs.update({"flag_values": "0, 1", "flag_meanings": "invalid valid", "description": "Whether the corresponding explicitly requested KFS branch remained finite with positive denominators in every Monte Carlo realization."})
     for name in ("gluing_attempted_flag", "gluing_attempted_flag_block"):
         ds_l2[name].attrs.update({"flag_values": "0, 1", "flag_meanings": "not_attempted attempted"})
     for name in ("gluing_success_flag", "gluing_success_flag_block"):
@@ -256,7 +256,7 @@ def build_level2_dataset(
     for name in ("retrieval_input_invalid_reason", "retrieval_input_invalid_reason_block"):
         ds_l2[name].attrs.update({"flag_values": invalid_reason_values, "flag_meanings": invalid_reason_meanings})
     for name in ("retrieval_input_snr_median", "retrieval_input_snr_median_block"):
-        ds_l2[name].attrs.update({"units": "1", "description": "Median absolute signal/one-sigma uncertainty over the positive-altitude input domain; diagnostic only, with no new SCI-002 SNR threshold."})
+        ds_l2[name].attrs.update({"units": "1", "description": "Median absolute signal/one-sigma uncertainty over the viable Rayleigh-search support; diagnostic only, with no new SCI-002 SNR threshold."})
     ds_l2["gluing_start_altitude_m"].attrs.update({"units": "m", "description": "Start altitude of analog/photon-counting fade-in/fade-out gluing window."})
     ds_l2["gluing_stop_altitude_m"].attrs.update({"units": "m", "description": "Stop altitude of analog/photon-counting fade-in/fade-out gluing window."})
     ds_l2["rayleigh_reference_success_flag"].attrs.update({"flag_values": "0, 1", "flag_meanings": "failed passed", "description": "Whether at least one block Rayleigh reference passed QA."})
@@ -280,7 +280,7 @@ def build_level2_dataset(
             "Gluing_Error_Propagation": "Weighted one-sigma propagation across fade window: sigma² = w_an²(slope sigma_an)² + w_pc² sigma_pc², followed by range-squared scaling.",
             "Signal_Selection_Policy": "Use approved glued signal; otherwise assess PC and AN independently and select one valid channel by configured priority without mixing.",
             "Single_Channel_Priority": str(config.get("inversion", {}).get("gluing", {}).get("single_channel_priority", "photon_counting")),
-            "Single_Channel_QA": "Finite positive corrected signal over the two-sided domain, finite non-negative one-sigma uncertainty, full configured Rayleigh coverage, calculable SNR, successful Level 1 correction when exposed, and zero PC saturation where diagnosed.",
+            "Single_Channel_QA": "Require at least one viable Rayleigh-sized window with finite positive corrected signal, finite non-negative one-sigma uncertainty, calculable SNR, successful Level 1 correction when exposed, and zero PC saturation where diagnosed.",
             "Rayleigh_Reference_Max_Relative_Slope": float(fit_cfg["max_relative_slope"]),
             "Rayleigh_Reference_Max_Relative_Variance": float(fit_cfg["max_relative_variance"]),
             "Rayleigh_Reference_Min_Valid_Fraction": float(fit_cfg["min_valid_fraction"]),
@@ -293,7 +293,7 @@ def build_level2_dataset(
             "Wavelength_Order": "Ascending numeric order; scientific wavelength equals processed_wavelengths exactly.",
             "Partial_Product_Reuse": "Partial products are never incrementally reusable; the next run recalculates every requested wavelength.",
             "uncertainty_scope": "partial Monte Carlo dispersion; not a total uncertainty budget",
-            "scientific_reprocessing_required": "Level 2 optical products generated with Fernald implementation versions before 2 must be reprocessed.",
+            "scientific_reprocessing_required": "Level 2 optical products with productive KFS metadata other than backward, or with Fernald implementation versions before 2, must be reprocessed.",
             **elastic_inversion_algorithm_metadata(),
         }
     )
