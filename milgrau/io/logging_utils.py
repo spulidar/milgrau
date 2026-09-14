@@ -21,11 +21,46 @@ _LEVEL_LABELS = {
 
 
 def _clean_log_message(message: str) -> str:
-    """Normalize legacy presentation noise without changing diagnostic content."""
+    """Normalize legacy presentation noise without changing event semantics."""
     text = str(message).strip()
     text = re.sub(r"^(?:[-=]>\s*)+", "", text)
     text = re.sub(r"^->\s*", "", text)
     text = " | ".join(part.strip() for part in text.splitlines() if part.strip())
+
+    parse_match = re.fullmatch(r"Parsing\s+(\d+)\s+raw binary files\.{0,3}", text, flags=re.IGNORECASE)
+    if parse_match:
+        return f"{parse_match.group(1)} raw files"
+
+    dark_match = re.fullmatch(
+        r"Successfully injected Dark Current matrix\s*\((\d+) profiles\)\.?",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if dark_match:
+        return f"dark current | {dark_match.group(1)} profiles"
+
+    timing_match = re.fullmatch(
+        r"(Measurement|Background) SCC time axis normalized to (\d+) s from upstream QA; "
+        r"adjusted (\d+)/(\d+) profiles \(max (\d+) s\)\.?",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if timing_match:
+        label, cadence, adjusted, total, maximum = timing_match.groups()
+        return f"{label.lower()} {cadence} s | {adjusted}/{total} adjusted | max {maximum} s"
+
+    clipped_match = re.fullmatch(r"clipped:\s*(.+)", text, flags=re.IGNORECASE)
+    if clipped_match:
+        return f"{clipped_match.group(1)} | clipped"
+
+    neutral_match = re.fullmatch(r"neutral assumed:\s*(.+)", text, flags=re.IGNORECASE)
+    if neutral_match:
+        return f"neutral assumed | {neutral_match.group(1)}"
+
+    saturation_match = re.fullmatch(r"uncharacterized PC:\s*(.+)", text, flags=re.IGNORECASE)
+    if saturation_match:
+        return f"uncharacterized PC | {saturation_match.group(1)}"
+
     return text
 
 
@@ -174,7 +209,7 @@ def setup_logger(
 
     row_format = "%(asctime)s %(levelshort)-5s %(pipeline)-3s %(save_id)-12s %(stage)-11s %(message)s"
     console_formatter = _ContextFormatter(row_format, datefmt="%H:%M:%S")
-    file_formatter = _ContextFormatter(row_format, datefmt="%Y-%m-%d %H:%M:%S")
+    file_formatter = _ContextFormatter(row_format, datefmt="%Y-%m-%dT%H:%M:%S%z")
 
     file_handler = logging.FileHandler(log_path, encoding="utf-8")
     setattr(file_handler, _MILGRAU_HANDLER_MARKER, True)
