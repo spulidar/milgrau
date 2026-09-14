@@ -4,254 +4,208 @@ Branch: `new-architecture`
 
 Audit baseline: `c6400a941964de73438132afdb7f3db9a5916f32` (2026-09-14)
 
-This file is the source of truth for consolidating the current architecture before a future `fixing_l2` branch is recreated. Priorities are deliberate: scientific correctness and truthful metadata first, then removal of compatibility/dead code, then automated quality/schema hardening, and only then the larger high-column Level 2 redesign.
+This file is the source of truth for preparing a clean, scientifically defensible base before recreating `fixing_l2`. Priorities are intentional: correctness and truthful provenance first; one canonical implementation second; automated code-quality/schema hardening third; high-column retrieval only after those gates are stable.
 
-## Goal
+## 1. Engineering/scientific rules
 
-MILGRAU should be scientifically defensible, FAIR, concise and easy to audit. Good quality does **not** mean retaining every historical path or adding abstraction for its own sake.
+MILGRAU should be FAIR, concise, testable and easy to audit.
 
-- `config.yaml` = processing/scientific recipe.
-- `station.yaml` = observational reality, hardware history, calibration, station-derived climatology and SCC mapping.
-- Python = equations, physical constants, validated runtime objects and implementation details.
-- One productive scientific behavior must have one canonical implementation.
-- Productive science must not depend on import order, monkey patching or hidden semantic defaults.
-- Every retained module/function/class/public variable must have a current role: productive API, internal implementation, validated research diagnostic, or explicitly temporary compatibility path.
-- Compatibility code without a named consumer and removal criterion should be removed.
-- Duplicate public outputs/aliases require an explicit migration/deprecation contract.
-- Split large modules only when cohesion improves; do not replace one monolith with trivial wrapper modules.
-- Comments/docstrings should explain scientific or architectural intent, not preserve obsolete implementation history.
-- Missing scientific/instrumental configuration must fail early unless an explicit unavailable/legacy policy is selected.
-- Operator logs report outcomes; detailed transport/search/debug information belongs in the DEBUG audit log.
-- Cleanup must not silently change an equation, threshold, calibration assumption or uncertainty model.
+- `config.yaml` owns the processing/scientific recipe.
+- `station.yaml` owns station/instrument reality, hardware history, calibration, station-derived climatology and SCC mapping.
+- Python owns equations, physical constants, validated runtime objects and implementation details.
+- One productive scientific behavior has one canonical implementation.
+- Productive science must not depend on import order, monkey patching, wildcard imports or hidden semantic defaults.
+- Every retained module/function/class/public variable needs a current role: productive API, internal implementation, validated research diagnostic, or explicitly temporary compatibility path.
+- Compatibility code without a named consumer and removal criterion is deleted.
+- Split files only when cohesion improves; do not replace one monolith with trivial wrappers.
+- Numerical kernels stay independent of filesystem/config-discovery/orchestration policy.
+- Dataset/QA code must not decide retrieval science.
+- Cleanup must not silently alter an equation, threshold, calibration assumption or uncertainty model.
+- Missing scientific/instrumental settings fail early unless an explicit unavailable/legacy policy exists.
+- Unsupported data remain unsupported/NaN; no filling, clipping or interpolation is introduced merely to extend a retrieval.
 
-## Current audit snapshot
+## 2. Current audit snapshot
 
 ### Stable foundations
 
-- [x] Obsolete generic top-level `physics` config and global `milgrau/config/schema.py` are removed.
-- [x] Main L0/L1/L2 paths use stage-specific strict configuration.
-- [x] Station/site/instrument truth is owned by `station.yaml`; loader-created legacy station/hardware aliases are removed.
-- [x] L0 requires traceable Licel range/ADC/DAQ information and explicit weather/dark-current/SCC policies.
-- [x] L1 materializes canonical thermodynamics with atmosphere-source provenance.
-- [x] CPT/LRT share one thermal kernel for radiosonde and ERA5; USSA76 is not invented as a tropopause source.
-- [x] L2 supports strict AN/PC gluing, post-QA single-channel fallback and explicit retrieval-input reasons.
-- [x] Unknown physical PC saturation remains `not_characterized`; the 10% dead-time occupancy guard is explicitly provisional.
-- [x] Rayleigh bounds are search bounds; invalid far-range samples are not fabricated.
-- [x] Productive Rayleigh width is physical (`ref_window_m`) and grid-independent.
-- [x] Real case `20251107sapm` reached 5/5 valid Rayleigh/backward-KFS blocks at 355 and 532 nm before and after P1 lot 2 orchestration cleanup.
-- [x] Published NetCDF reuse requires current readable provenance, not timestamps alone.
-- [x] README describes the current L0→L1→L2 scientific flow and productive backward KFS baseline.
+- [x] Stage-specific strict L0/L1/L2 configuration is in use; obsolete generic top-level `physics` config and global schema are removed.
+- [x] Station/site/instrument truth is owned by `station.yaml`; historical profile/calibration IDs persist in products.
+- [x] L0 requires traceable acquisition metadata and explicit weather/dark-current/SCC policies.
+- [x] L1 materializes canonical pressure/temperature with atmosphere-source provenance; CPT/LRT share the thermal kernel.
+- [x] L2 has explicit wavelengths, temporal blocks, LR/MC/KFS, gluing, Rayleigh and cloud-policy configuration.
+- [x] AN/PC gluing, post-QA single-channel fallback and retrieval-input rejection reasons are explicit.
+- [x] Unknown physical PC saturation remains `not_characterized`; the 10% dead-time occupancy rule remains explicitly provisional.
+- [x] Rayleigh altitude limits are search bounds, not a requirement that the entire far-range band be positive.
+- [x] Rayleigh reference width is physical (`ref_window_m`) and converted on the actual grid.
+- [x] Productive elastic retrieval identity is backward Klett–Fernald across config, provenance, dataset wording and operational logs.
+- [x] Incremental L2 reuse rejects stale/contradictory KFS metadata.
+- [x] Redundant Level 2 QA status TXT is removed.
+- [x] Real case `20251107sapm` reproduced 100% gluing and 5/5 backward-KFS blocks at 355/532 nm after P1 lot 2.
+- [x] QA sparse-support statistics no longer emit NumPy all-NaN/low-DOF warnings; unsupported bins remain NaN.
+- [ ] No CI/status checks are attached to this branch; do not claim the complete suite is green until CI/full pytest exists.
 
-### P0 — status after lot 1
+## 3. Priority order
 
-- [x] `milgrau/level2/config.py` owns productive `backward` KFS mode and description.
-- [x] `milgrau/scientific.py` publishes `integration_mode = backward`.
-- [x] `dataset.py` and `lebear.py` no longer describe productive success as two-sided.
-- [x] Incremental Level 2 reuse rejects stale/contradictory KFS scientific metadata.
-- [x] Redundant `QA_L2_Product_Status_*.txt` generation is removed.
-- [x] Focused regressions pin backward identity, stale-output rejection, failure wording and absence of the redundant QA TXT.
-- [x] Future `retrieval_support_flag` / `retrieval_top_altitude_m` semantics are frozen below before schema implementation.
+### P0 — scientific identity / public consistency — COMPLETE
 
-### P1 — status after lot 2
+- [x] Canonical productive `backward` KFS mode and FAIR-readable description.
+- [x] Versioned scientific metadata publishes backward integration.
+- [x] Dataset/failure wording matches the productive method.
+- [x] Stale two-sided outputs are not incrementally reused.
+- [x] Redundant QA status TXT removed.
+- [x] Future vertical-support/top semantics frozen before schema implementation.
 
-- [x] `milgrau/level2/__init__.py` is declarative and no longer monkey-patches scientific functions.
-- [x] Productive signal selection calls `evaluate_retrieval_input_supported_domain()` directly in `level2/signal_selection.py`.
-- [x] Productive Rayleigh/KFS aggregation is direct in `level2/optical_retrieval.py`; success requires Rayleigh QA + backward KFS, not the forward branch.
-- [x] `backward_retrieval.py` was removed after its only scientific responsibility moved into the canonical optical-retrieval path.
-- [x] `scientific_policy.py` was removed after P0 made backward policy canonical in `level2/config.py`.
-- [x] `retrieval.py` no longer uses `from ..._retrieval_impl import *`; productive dependencies are explicit.
-- [x] Regressions detect import-time patching and point supported-domain/backward aggregation tests at canonical modules.
-- [x] Package-init public API was corrected after a real-run import regression exposed stale invented cloud-screening re-exports; regression now pins the actual public cloud symbols.
-- [x] Real `20251107sapm` post-P1 run reproduced 100% gluing, Rayleigh references 5749 m (355) / 5816 m (532), and 5/5 backward-KFS blocks at both wavelengths.
-- [x] Level 2 QA block standard-error calculation now skips unsupported all-NaN altitude columns instead of asking NumPy to reduce them; unsupported bins remain NaN without `Degrees of freedom <= 0 for slice` warnings.
-- [ ] `_retrieval_impl.py` still contains duplicate legacy gluing/input-QA/optical-retrieval/atmosphere paths and semantic defaults. These are no longer productive, but must be deleted/decomposed in P1 lot 3.
-- [ ] Shared retrieval dataclasses/helpers still live in `_retrieval_impl.py`; move them to cohesive modules while deleting the legacy implementations rather than creating another adapter layer.
-- [ ] `milgrau/level2/atmosphere.py` compatibility path remains to be audited after legacy atmosphere removal.
-- [ ] Low-level KFS research defaults still need an API audit so `two_sided` cannot look like the productive default.
-- [ ] No CI/status checks are attached to this branch; focused regressions are committed but the full suite is not claimed green.
+Acceptance gate: **passed in implementation and real-data baseline.**
 
-## Priority order
+### P1 — remove import-order behavior, duplicate science and obsolete compatibility
 
-### P0 — scientific identity / public consistency
+#### Lot 2 — COMPLETE + REAL-DATA VALIDATED
 
-**Lot 1: implemented. Full-suite execution remains unverified because the branch has no CI/status checks.**
+- [x] Removed all scientific monkey patches from `milgrau.level2.__init__`.
+- [x] Productive signal selection directly uses `evaluate_retrieval_input_supported_domain()`.
+- [x] Productive Rayleigh/KFS aggregation directly requires Rayleigh QA + backward KFS, not the forward branch.
+- [x] Removed `backward_retrieval.py` and `scientific_policy.py` after their responsibilities became canonical.
+- [x] Replaced wildcard `_retrieval_impl` exposure with explicit orchestration.
+- [x] Restored the pre-lot package API after a manual run exposed invalid invented cloud-screening re-exports; import regressions now pin the real cloud API.
+- [x] `20251107sapm` post-lot run reproduced references 5749 m (355) and 5816 m (532), with 5/5 valid backward blocks for both wavelengths.
 
-- [x] Canonicalize productive backward KFS mode/description.
-- [x] Align versioned scientific metadata and public product wording.
-- [x] Reject incrementally reused L2 files with stale KFS identity.
-- [x] Remove redundant Level 2 QA status TXT.
-- [x] Freeze future vertical-support/top semantics.
+#### Lot 3 — IMPLEMENTATION COMPLETE; REAL-DATA RE-RUN PENDING
 
-### P1 — remove import-order behavior and duplicate compatibility paths
+- [x] Deleted `_retrieval_impl.py` rather than preserving it as a compatibility wrapper: all 1245 legacy/duplicate lines are gone.
+- [x] `signal_selection.py` now owns `WavelengthBlockInputs`, `BlockGluingResult`, blocking, source selection, state validation and gluing orchestration.
+- [x] `optical_retrieval.py` now owns `MolecularModel`, Rayleigh acceptance/calibration helpers, branch diagnostics, strict KFS orchestration and backward aggregation.
+- [x] `result_assembly.py` owns block→time expansion and construction of the public `WavelengthRetrievalResult` contract.
+- [x] `block_average.py` owns generic accepted-block mean/error aggregation used by both optical products and result assembly.
+- [x] `retrieval.py` is now an explicit orchestration boundary; it no longer depends on the deleted monolith.
+- [x] Removed the legacy `_evaluate_retrieval_input()` path; supported-domain QA is the only productive input-QA implementation.
+- [x] Removed the duplicate legacy `glue_signal_blocks()`, `retrieve_optical_blocks()`, `process_wavelength()` and result assembly implementations.
+- [x] Removed legacy Level 2 atmosphere reconstruction based on obsolete `site`/`physics` config. Productive L2 only consumes atmosphere materialized by current L1.
+- [x] Deleted `milgrau/level2/atmosphere.py`; the shared atmosphere kernel is `milgrau.physics.atmosphere` and no Level 2 compatibility alias is retained without a consumer.
+- [x] Productive Rayleigh QA now direct-indexes strict slope/variance/min-valid settings; no local literal scientific fallbacks remain there.
+- [x] Productive KFS profile orchestration obtains MC/reference/LR-bound settings from `get_kfs_config()`; no local 300/0.10/10 sr/etc. semantic fallbacks remain.
+- [x] Regression verifies incomplete Rayleigh/KFS settings fail instead of silently taking local defaults.
+- [x] Regression verifies productive KFS calls the multi-mode numerical kernel with explicit `mode="backward"`.
+- [x] Tests that exercised old compatibility owners now import the canonical owner (`signal_selection`, `optical_retrieval`, `milgrau.physics.atmosphere`).
+- [x] Import regression requires both `_retrieval_impl` and `level2.atmosphere` to be absent.
+- [ ] Re-run `20251107sapm` after lot 3 and require the same baseline gluing/reference/backward-block diagnostics before closing P1 operationally.
 
-**Lot 2: implemented and validated on `20251107sapm`. Lot 3 is now the highest-priority work.**
+Low-level KFS note: `level2.kfs` intentionally remains a multi-mode numerical/research kernel (`backward`, `forward`, `two_sided`). Productive L2 never relies on its direction default; the canonical wrapper passes explicit backward mode and that contract is regression-tested. Whether direct research-kernel mode should become a required argument, and which low-level symbols deserve package-level re-export, is deferred to the P2 public-API audit rather than mixed into this no-equation-change cleanup.
 
-- [x] Remove scientific monkey patches from `milgrau/level2/__init__.py`.
-- [x] Direct-wire supported-domain retrieval-input QA.
-- [x] Make backward-only aggregate success canonical.
-- [x] Retire `backward_retrieval.py`.
-- [x] Retire superseded `scientific_policy.py`.
-- [x] Replace wildcard `_retrieval_impl` import/export with explicit symbols.
-- [x] Preserve the pre-lot public Level 2 API surface rather than inventing package re-exports during cleanup.
-- [x] Confirm real-data equivalence for the current baseline diagnostics on `20251107sapm`.
-- [x] Keep QA sparse-support statistics warning-free without fabricating unsupported values.
-- [ ] Decompose `_retrieval_impl.py` by responsibility and delete the duplicate legacy implementations now bypassed by productive code.
-- [ ] Move shared dataclasses/state validation/helpers out of `_retrieval_impl.py` only where they have a clear cohesive owner.
-- [ ] Remove legacy `_retrieval_impl.build_thermodynamic_profile()` after proving the canonical Level 1-atmosphere boundary is the only productive consumer.
-- [ ] Remove duplicate legacy `_evaluate_retrieval_input()`.
-- [ ] Remove duplicate legacy `glue_signal_blocks()` and `retrieve_optical_blocks()` after canonical module regressions cover their productive behavior.
-- [ ] Remove/rewrite `_retrieval_impl.run_kfs_profile()` semantic defaults; productive KFS settings must come from strict config.
-- [ ] Remove residual `fit_config.get(..., literal)` / `gluing_config.get(..., literal)` scientific defaults where strict resolvers guarantee keys.
-- [ ] Audit `milgrau/level2/atmosphere.py`; delete it if no legitimate public consumer remains.
-- [ ] Review low-level KFS `mode="two_sided"` defaults. Research modes may remain, but productive callers must pass explicit mode and public API must not imply two-sided production.
+P1 acceptance gate: **implementation satisfied; one post-lot-3 real-data equivalence run remains.** No productive path depends on import side effects, wildcard imports, duplicate retrieval implementations, obsolete atmosphere reconstruction, or local KFS/Rayleigh semantic defaults.
 
-P1 acceptance gate: importing `milgrau.level2` has no scientific side effects; no productive path depends on wildcard imports, duplicate scientific implementations or obsolete config compatibility.
+### P2 — repository code-use audit, concision and automated guardrails — NEXT
 
-### P2 — code-use audit, concision and automated guardrails
+Order inside P2:
 
-- [ ] Build repository-wide symbol/module inventory: public API, internal implementation, research diagnostic, compatibility, unused.
-- [ ] Record actual consumer + removal criterion for every compatibility path; delete compatibility with no consumer.
-- [ ] Audit `__all__` and package re-exports; each public symbol needs a documented/tested purpose.
-- [ ] Add lightweight Ruff (or equivalent) checks for unused imports/variables, obvious dead code and basic style; keep rules scientifically neutral.
-- [ ] Add guard against `config.get(..., semantic_literal_default)` outside explicit resolver/compatibility code.
-- [ ] Add repository regression for undeclared scientific/instrumental defaults in productive paths.
-- [ ] Search for duplicated scientific equations/selection rules and retain one canonical implementation.
-- [ ] Review broad `except Exception`; retain only intentional orchestration/diagnostic boundaries.
-- [ ] Review large mixed-responsibility files (`_retrieval_impl.py`, `dataset.py`, `viz/level2_qa.py`, explorer app) and split only when cohesion improves.
-- [ ] Remove obsolete `legacy` helpers/comments after replacement is validated; Git history/docs retain historical context.
-- [ ] Add CI for imports, syntax/static checks and full pytest; add branch protection only after CI is stable.
+1. [ ] Build a repository-wide symbol/module inventory: productive public API, internal implementation, research diagnostic, compatibility, unused.
+2. [ ] Audit every `__all__`/package re-export; retain only documented/tested public symbols. In particular, decide the intended public status of low-level gluing/KFS research kernels.
+3. [ ] Identify every compatibility path and its actual consumer/removal criterion; delete paths with no consumer.
+4. [ ] Add lightweight Ruff (or equivalent) checks for unused imports/variables, unreachable/dead code and basic neutral style rules.
+5. [ ] Add a guard against `config.get(..., scientific_literal_default)` in productive scientific paths.
+6. [ ] Search for duplicated equations/selection rules and retain one canonical implementation.
+7. [ ] Review broad `except Exception`; keep only intentional orchestration/optional-diagnostic boundaries.
+8. [ ] Audit QA/display-only helpers for real consumers and remove obsolete legacy helpers.
+9. [ ] Review remaining large mixed-responsibility files (`dataset.py`, `viz/level2_qa.py`, explorer app) and split only where cohesion demonstrably improves.
+10. [ ] Add CI for imports, static checks and full pytest; only then consider branch protection.
 
-P2 acceptance gate: no known unused compatibility code, no wildcard productive API, no scientific import side effects, and automated checks prevent those patterns from returning.
+P2 acceptance gate: no known unused compatibility code, intentional public API only, no productive hidden semantic defaults, and automated checks prevent these patterns from returning.
 
 ### P3 — Level 2 schema / FAIR metadata / focused documentation
 
-- [ ] Decide canonical aggregate names and migration path for `aerosol_backscatter[_mean]` / `aerosol_extinction[_mean]` aliases.
-- [ ] Audit every L2 physical variable for units, description/long_name, dimensions and NaN/missing semantics.
-- [ ] Add explicit units for aerosol backscatter/extinction and uncertainty fields where currently implied.
+- [ ] Choose canonical aggregate variable names and migration policy for `aerosol_backscatter[_mean]` / `aerosol_extinction[_mean]` aliases.
+- [ ] Audit every L2 physical variable for units, dimensions, long_name/description and missing/NaN semantics.
+- [ ] Add explicit units for aerosol backscatter/extinction and uncertainty fields wherever currently implied.
 - [ ] Audit numeric flag metadata for CF-compatible representation.
-- [ ] Add product-schema/method-version field independent of package CalVer if intentional schema evolution needs it.
-- [ ] Name/version/document gluing selection-score constants; algorithmic weights must not remain anonymous literals.
+- [ ] Add independent product-schema/method version if schema/method evolution needs a contract beyond package CalVer.
+- [ ] Name/version/document gluing selection-score constants; no anonymous algorithmic weights.
 - [ ] Decide readable immutable input-manifest policy.
-- [ ] Create focused docs (`processing_levels`, config, station catalog, products, methods, provenance, flags, limitations, validation) and then shorten README into an entry point.
+- [ ] Add focused docs: processing levels, configuration, station catalog, L0/L1/L2 products, scientific methods, provenance, flags, limitations and validation; then shorten README into an entry point.
+- [ ] Build a verified primary-source bibliography for methods actually implemented.
 
-P3 acceptance gate: a Level 2 NetCDF is scientifically interpretable without reading implementation source and its metadata cannot contradict the method used.
+P3 acceptance gate: a Level 2 NetCDF is scientifically interpretable without reading implementation source and cannot describe a method different from the one used.
 
-### P4 — observational/scientific evidence tasks (parallel)
+### P4 — observational/scientific evidence tasks — PARALLEL
 
-- [ ] Characterize physical PC saturation for operational SPU detector settings using AN/PC overlap and preferably controlled attenuation; only then write traceable `max_rate_mhz`.
-- [ ] Move any surviving provisional PC guard to raw observed Level 1 PC rate rather than corrected/background-subtracted proxy.
-- [ ] Characterize propagated-error SNR on SPU data before introducing a hard Rayleigh-window SNR threshold.
-- [ ] Validate cloud/layer screening on SPU observations before making it a productive Rayleigh gate.
-- [ ] Compare real-data retrieval against an independent/reference chain (LPP and SCC/ELDA methodological expectations where appropriate) without claiming numerical identity.
-- [ ] Audit Level 1 PC dark-current subtraction versus nonlinear dead-time correction as a separate evidence-backed issue.
+- [ ] Characterize physical PC saturation for operational SPU settings using AN/PC overlap and preferably controlled attenuation before writing traceable `max_rate_mhz`.
+- [ ] Move any surviving provisional PC guard to raw observed L1 PC rate rather than a corrected/background-subtracted proxy.
+- [ ] Audit Level 1 dark-current subtraction versus nonlinear dead-time correction with evidence; do not change it as collateral cleanup.
+- [ ] Characterize propagated-error SNR on SPU data before any hard Rayleigh-window SNR gate.
+- [ ] Validate cloud/layer screening on SPU observations before making it a productive reference-window gate.
+- [ ] Compare real retrievals against an independent/reference chain (LPP and SCC/ELDA methodological expectations where appropriate) without claiming numerical identity.
 
-Evidence tasks must not be replaced by invented software defaults.
+Evidence tasks must not be replaced by invented software constants.
 
 ### P5 — future high-column Level 2 redesign (`fixing_l2`)
 
-Do not implement ensemble/cascade retrieval until P0 is complete and P1 duplicate/compatibility cleanup is complete. Detailed objectives are in Section L.
+Recreate `fixing_l2` only after P1 is real-data validated and the core P2 cleanup/guardrails are stable. Detailed scientific requirements are in Section 6.
 
----
+## 4. Processing-level follow-up outside the main P0–P5 queue
 
-## Current processing-level contract
+### Configuration / station ownership
 
-### A. Configuration / station ownership
+- [x] Processing recipe and observational reality are separated between `config.yaml` and `station.yaml`.
+- [x] Historical calibration/profile identity is resolved and persisted.
+- [ ] Validate unknown keys with full paths across every remaining auxiliary config path.
+- [ ] Extend typed/resolved accessors to auxiliary paths that still reinterpret mappings locally.
+- [ ] Add legacy ADC/range overrides only if real Licel evidence demonstrates they are needed.
 
-- [x] `config.yaml` owns processing/scientific recipe; `station.yaml` owns station/instrument reality.
-- [x] Historical station profiles reference named calibration sets; resolved profile/calibration IDs persist through products.
-- [x] `deadtime_us`, `bin_shift_bins`, `background_offset`, detector mode and saturation characterization are station calibration metadata.
-- [ ] Validate unknown keys with full paths across every stage.
-- [ ] Extend typed/resolved strict accessors to remaining auxiliary paths.
-- [ ] Add legacy ADC/range overrides only if real Licel evidence proves native headers insufficient.
+### Level 0
 
-### B. Level 0
+- [x] Raw discovery/quarantine, shot tolerance, timing and dark-current association are explicit.
+- [x] No invented weather, SCC ID, ADC/range or DAQ metadata.
+- [x] Incremental currentness requires structural contract + readable provenance.
+- [ ] Finish auxiliary semantic-default/unknown-key audit under P2.
 
-- [x] Explicit raw/processed/log paths, discovery/quarantine, laser-shot tolerance, time jitter and dark-current association.
-- [x] No invented weather, SCC ID, range resolution, ADC bits or DAQ range.
-- [x] Incremental currentness requires structural contract plus readable provenance.
-- [ ] Finish auxiliary unknown-key/semantic-default audit under P2.
-
-### C. Level 1
+### Level 1
 
 - [x] PC Poisson uncertainty uses observed counts before dark subtraction.
-- [x] Missing channel calibration follows explicit policy and neutral legacy use is persisted.
-- [x] Background, numerical dead-time clipping, PBL and atmosphere-source policy are explicit.
+- [x] Missing channel calibration follows explicit policy; neutral legacy use is persisted.
+- [x] Background, numerical dead-time clipping, PBL and atmosphere source are explicit.
 - [x] Productive PBL does not substitute another channel.
-- [x] Radiosonde/ERA5 selection and historical station geometry are explicit; ERA5 is pinned to CDS.
-- [x] Canonical thermodynamics are materialized in L1; productive L2 consumes them.
-- [x] CPT/LRT share one thermal kernel.
+- [x] Radiosonde/ERA5/USSA76 ownership and historical geometry are explicit; ERA5 is pinned to CDS.
+- [x] Canonical thermodynamics are materialized in L1 and consumed directly by L2.
 - [ ] PC correction-order scientific audit remains P4.
 
-### D. Level 2 baseline
+### Level 2 baseline
 
-- [x] Wavelengths, temporal blocks, KFS/MC/LR/gluing/Rayleigh/cloud policy are explicit.
+- [x] Productive backward KFS identity is canonical.
 - [x] No productive 60 sr / 10 sr LR fallback.
-- [x] Post-gluing QA can recover a valid single-channel block.
-- [x] Rayleigh search tolerates invalid far-range edge samples without filling/clipping them.
-- [x] `ref_window_m` makes reference width grid-independent.
-- [x] Productive config/provenance/public metadata identify backward Klett–Fernald.
-- [x] Productive runtime QA/aggregation is direct; package import no longer installs scientific adapters.
-- [x] Productive retrieval API uses explicit imports rather than wildcard monolith exposure.
-- [ ] Remove duplicate legacy retrieval functions/defaults from `_retrieval_impl.py` under P1 lot 3.
-- [ ] Later migrate gluing spatial search/window settings to physical units when changing that API.
-- [ ] Version gluing score constants.
+- [x] Rayleigh search permits invalid far-range edge samples without fabricating values.
+- [x] Physical reference-window width is grid-independent.
+- [x] Productive runtime has explicit signal-selection and optical-retrieval boundaries.
+- [x] Legacy Level 2 retrieval monolith and atmosphere compatibility alias are removed.
+- [ ] Migrate gluing spatial search/window settings to physical units only when that API is deliberately revised.
+- [ ] Version gluing score constants under P3.
 - [ ] Keep cloud/SNR productive gates disabled until P4 evidence supports them.
 
-### E. Runtime / visualization / logging
+### Runtime / QA / logging
 
-- [x] Generic filesystem roots, logging levels and incremental policy are explicit.
-- [x] Main CLIs share `--input`, `--force`, `--version`; LEBEAR additionally has `--time-window`.
-- [x] Operational result/exit-code model is compact and contextual logs separate INFO outcomes from DEBUG detail.
-- [x] Level 2 QA no longer creates the redundant product-status TXT.
-- [x] Level 2 QA block SEM treats unsupported/single-sample altitude bins as NaN without NumPy empty-slice warnings.
-- [ ] Audit QA helpers for actual use; remove display-only legacy helpers without consumers.
+- [x] Main CLIs share the common execution model; LEBEAR supports explicit time windows.
+- [x] INFO reports outcomes while detailed diagnostic material belongs in DEBUG.
+- [x] Optional QA failure is isolated from product generation.
+- [x] QA product-status TXT is removed.
+- [x] QA block SEM is warning-free on sparse/unsupported upper columns without fabricating data.
+- [ ] Audit QA helper usage under P2.
 
-### F. Failure semantics / FAIR
+## 5. Validation status and immediate gate
 
-- [x] Unknown PC saturation remains explicit `not_characterized`.
-- [x] Numerical dead-time clipping is not detector saturation characterization.
-- [x] Invalid edge bins are not interpolated/fabricated to keep KFS alive.
-- [x] Invalid search domains fail rather than widen silently.
-- [x] Exact processing/station YAML, CalVer, station/calibration identity, atmosphere source, LR source and MC settings persist.
-- [x] L2 incremental reuse rejects contradictory current KFS scientific identity.
-- [ ] Missing required config must fail before processing for every remaining auxiliary path.
-- [ ] Optional diagnostic failure must never silently change scientific algorithm choice.
-- [ ] Decide readable immutable input manifest and additional method/schema versioning under P3.
+Committed regression coverage includes strict configuration, station/acquisition, atmosphere, gluing, supported-domain QA, Rayleigh window, KFS science/MC, backward aggregation, provenance/currentness, CLI/logging and Level 2 QA statistics.
 
-## Tests / validation status
+P1-specific guards now cover:
 
-- [x] Broad config/station/acquisition/atmosphere/gluing/KFS/provenance/CLI/logging regressions exist.
-- [x] Physical Rayleigh-window tests prove 1000 m converts correctly across uniform grids.
-- [x] Backward aggregation and productive backward-config regressions exist.
-- [x] P0 regressions pin config/scientific metadata/generated L2 product to backward mode and reject stale two-sided metadata.
-- [x] P0 regression ensures QA does not emit `QA_L2_Product_Status_*.txt`.
-- [x] P1 regressions are committed to prove legacy `_retrieval_impl` functions are not monkey-patched and canonical signal selection uses supported-domain QA directly.
-- [x] P1 backward-aggregation regression targets `optical_retrieval.py`, not the removed adapter.
-- [x] Package import regression pins actual cloud-screening exports and rejects the stale invented names that broke the first post-P1 real run.
-- [x] Sparse QA-statistics regression proves all-NaN/one-sample altitude bins stay NaN without RuntimeWarning.
-- [x] Real `20251107sapm` post-P1 lot-2 run confirmed numerical/diagnostic baseline equivalence: 355 nm reference 5749 m [5254, 6244], 532 nm reference 5816 m [5321, 6311], both 100% valid Rayleigh and 5/5 backward KFS blocks.
-- [ ] Add synthetic support/top tests before implementing high-column retrieval.
-- [ ] Add static semantic-default/dead-code guardrails under P2.
-- [ ] Add CI/full pytest enforcement. **Until then, do not claim the complete suite is green.**
+- [x] No package-import scientific monkey patching.
+- [x] No `_retrieval_impl` module remains.
+- [x] No `level2.atmosphere` compatibility module remains.
+- [x] Signal selection uses the supported-domain QA directly.
+- [x] Backward aggregation ignores the unrequested forward branch for productive success.
+- [x] Rayleigh/KFS orchestration does not hide missing scientific configuration behind local defaults.
+- [x] Productive KFS passes explicit backward mode to the research kernel.
+- [x] Current L2 atmosphere boundary rejects old L1 files that do not contain materialized canonical thermodynamics.
+- [x] Pre-lot-3 real baseline: `20251107sapm` = 355 ref 5749 m, 532 ref 5816 m, 5/5 backward blocks each.
+- [ ] **Immediate manual gate:** rerun `milgrau-lebear -i 20251107sapm --force` on the lot-3 HEAD and require equivalent diagnostics with no new warning/error before marking P1 closed.
+- [ ] Full pytest/static suite in CI. Until this exists, do not label the repository globally green.
 
-## Scientific documentation / repository follow-up
-
-- [x] README is a current scientific entry point and describes productive backward KFS.
-- [ ] Add repository `LICENSE` after institutional licensing choice is confirmed.
-- [ ] `docs/processing_levels.md` — end-to-end transformation ownership.
-- [ ] `docs/configuration.md` — authoritative config path/type/unit/domain/effect/reprocessing reference.
-- [ ] `docs/station_catalog.md` — site/history/calibration/saturation/SCC/radiosonde/LR ownership.
-- [ ] `docs/level0_product.md`, `docs/level1_product.md`, `docs/level2_product.md` — dimensions/variables/units/flags/missing semantics.
-- [ ] `docs/scientific_methods.md` — corrections, PBL, atmosphere, Rayleigh, gluing, KFS, MC equations/limitations.
-- [ ] Update `docs/atmospheric_profiles.md` to current nested config/CDS/ERA5-tropopause behavior.
-- [ ] `docs/provenance_fair.md`, `docs/quality_flags.md`, `docs/known_limitations.md`, `docs/validation.md`.
-- [ ] Build verified primary-source bibliography for methods actually implemented.
-- [ ] Add small xarray examples and eventually one public/anonymized SPU worked example.
-- [ ] Add archived release/DOI workflow, changelog and documentation link/reference regression.
-
----
-
-## L. Future high-column Level 2 redesign — inherited `fixing_l2` objectives
+## 6. Future high-column Level 2 redesign — inherited `fixing_l2` objectives
 
 ### L0. Non-negotiable scientific rules
 
@@ -260,75 +214,71 @@ Do not implement ensemble/cascade retrieval until P0 is complete and P1 duplicat
 - [x] Do not interpolate across internal invalid intervals to make KFS continuous.
 - [x] Backward retrieval never implies values above its boundary condition.
 - [x] A lower cascade segment inherits its boundary from an accepted upper solution; never reset `SR_ref=1` at every segment.
-- [x] Multiple reference solutions form a sensitivity/ensemble experiment; disagreement contributes to uncertainty.
+- [x] Multiple reference solutions are a sensitivity/ensemble experiment; disagreement contributes to uncertainty.
 - [x] Elastic extinction remains conditional on assumed aerosol lidar ratio.
 - [x] 20-minute block retrieval and long-mean/high-column retrieval are distinct products/diagnostics.
 - [x] Selection, merge and uncertainty policies must be explicit and persisted in readable provenance.
 
-### L1. Vertical-support semantics — frozen before schema implementation
+### L1. Vertical-support semantics — FROZEN, NOT YET IN SCHEMA
 
-- [x] `retrieval_support_flag(block_time, wavelength, altitude)` means the **final productive optical retrieval** is scientifically supported and usable at that altitude after source selection, Rayleigh QA, KFS/candidate QA and any accepted merge. It is not merely `isfinite(product)` and does not encode source/member identity.
-- [x] For the current backward-only baseline, support includes only bins actually solved on the accepted backward branch through the selected reference bin. Invalid outer bins and bins beyond a terminated branch remain unsupported/NaN; internal gaps are never bridged.
-- [x] A future accepted high-column candidate/cascade may extend support only where that candidate has its own valid physical support. No extrapolated/fabricated bin can set support to `1`.
-- [x] `retrieval_top_altitude_m(block_time, wavelength)` is the highest altitude where `retrieval_support_flag == 1`; NaN when no supported bin exists. Never derive it independently from the last finite array element.
-- [x] Mean/backbone support and top come from the corresponding accepted product/support mask, not blindly from block products.
-- [ ] Implement support variables only with the redesigned schema after synthetic support tests exist.
-- [ ] Add machine-readable baseline summary for `20251107sapm` without raw observational files: reference/window metrics, valid KFS blocks and retrieval top for 355/532 nm.
-- [ ] Add synthetic single-reference truncation, molecular+aerosol truth, noisy upper tail, internal-gap and valid high molecular-region tests.
+- [x] `retrieval_support_flag(block_time, wavelength, altitude)` means the final productive optical retrieval is scientifically supported and usable at that bin after source selection, Rayleigh QA, KFS/candidate QA and accepted merge. It is not merely `isfinite(product)` and does not encode source/member identity.
+- [x] Current backward-only support includes only bins actually solved through the accepted reference; unsupported outer bins and terminated branches remain NaN and internal gaps are never bridged.
+- [x] A future high-column candidate/cascade can extend support only where it has its own valid physical support.
+- [x] `retrieval_top_altitude_m` is the highest altitude with support flag 1; NaN when no supported bin exists. Never derive it independently from the last finite array element.
+- [x] Backbone/mean support is derived from its own accepted product/support mask, not copied from block products.
+- [ ] Add synthetic support/top tests before adding these variables to NetCDF.
+- [ ] Add a machine-readable baseline summary for `20251107sapm` without committing raw observational data.
 
-Acceptance gate: vertical support is testable/measurable before introducing a coverage-extension algorithm.
+### L2. QA/output semantics
 
-### L2. QA/output cleanup
+- [x] Redundant status TXT removed.
+- [ ] After support enters the schema, mark retrieval support/top in KFS and scattering-ratio QA.
+- [ ] Plot accepted reference windows explicitly and never present unsupported upper-tail signal diagnostics as aerosol retrieval.
 
-- [x] Remove redundant QA product-status TXT.
-- [x] Sparse unsupported upper-altitude columns no longer emit misleading numerical RuntimeWarnings during QA uncertainty calculation.
-- [ ] Mark optical support/top explicitly in KFS and scattering-ratio QA after support variables enter the schema.
-- [ ] Plot selected/accepted reference windows and never visually present unsupported signal diagnostics as aerosol retrieval.
+### L3. Physical Rayleigh window — COMPLETE
 
-### L3. Physical Rayleigh window
-
-- [x] Productive fixed-bin width replaced by `ref_window_m`.
-- [x] Physical width is converted on the actual uniform altitude grid with regression coverage.
-- [x] Search bounds stay in meters and invalid geometry fails.
+- [x] `ref_window_m` replaces fixed productive bin width.
+- [x] Width converts on the real uniform altitude grid with regression coverage.
+- [x] Search bounds remain in meters and invalid geometry fails.
 
 ### L4. Rayleigh candidate catalogue
 
-- [ ] Replace single-best selection with evaluator returning every window that passes minimum scientific QA.
-- [ ] Candidate diagnostics: start/stop/center, valid fraction, slope, variance, calibration factor, free-intercept diagnostic, uncertainty/SNR diagnostic and future validated layer flag.
+- [ ] Return every window that passes minimum scientific QA instead of a single minimum-cost candidate.
+- [ ] Persist candidate start/stop/center, valid fraction, slope, variance, calibration factor, free-intercept diagnostic, SNR/uncertainty diagnostic and future validated layer flag.
 - [ ] Separate pass/fail criteria from ranking criteria.
-- [ ] Prefer higher altitude only among already-valid windows.
+- [ ] Prefer high altitude only among already-valid candidates.
 - [ ] Define minimum separation/correlation so heavily overlapping windows do not masquerade as independent ensemble evidence.
-- [ ] Persist compact auditable accepted/rejected reasoning.
+- [ ] Persist compact accepted/rejected reasoning.
 - [ ] Do not add hard SNR/cloud gates before P4 validation.
 
 ### L5. High-column backbone
 
-- [ ] Add long-mean retrieval input separate from 20-minute block products; averaging duration explicit/provenanced.
-- [ ] Evaluate altitude-dependent vertical aggregation only if data require it; widths in meters, original-resolution signal retained.
-- [ ] Select high references from the backbone profile.
-- [ ] Treat 20 km as an initial target, not a success condition; publish a lower top whenever no trustworthy high boundary exists.
+- [ ] Add a long-mean retrieval input distinct from 20-minute block products; averaging duration is explicit/provenanced.
+- [ ] Evaluate altitude-dependent vertical aggregation only if evidence requires it; widths are physical and original-resolution signal remains available.
+- [ ] Select high reference candidates from the backbone.
+- [ ] Treat ~20 km as an initial target, not a success condition; publish a lower top if no trustworthy boundary exists above it.
 
 ### L6. Multi-reference ensemble
 
 - [ ] Run backward KFS from multiple accepted high references.
 - [ ] Preserve member-specific Rayleigh/MC diagnostics.
 - [ ] Combine only members whose physical backward support contains the altitude and whose QA passed.
-- [ ] Define explicit uncertainty/quality weights; no anonymous heuristics.
+- [ ] Define explicit uncertainty/quality weights; no anonymous heuristic weights.
 - [ ] Add between-reference spread as an uncertainty component.
 - [ ] Keep member solutions internally auditable/testable.
 
-Acceptance gate: reference sensitivity increases exposed uncertainty rather than disappearing in an average.
+Acceptance gate: reference sensitivity increases exposed uncertainty instead of disappearing in an average.
 
 ### L7. Cascaded backward retrieval
 
 - [ ] Define ordered overlapping high→low segments.
-- [ ] Solve highest segment from valid high/molecular boundary.
-- [ ] Each lower segment inherits `beta_total_ref` / scattering ratio from accepted upper solution.
-- [ ] Propagate inherited-boundary uncertainty in lower-segment Monte Carlo.
-- [ ] Require adequate overlap/support; reject uncertainty-inconsistent handoffs.
-- [ ] Never bridge unsupported internal gaps or reset `SR_ref=1` merely because a new segment begins.
+- [ ] Solve the highest segment from a valid high/molecular boundary.
+- [ ] Each lower segment inherits `beta_total_ref` / scattering ratio from the accepted upper solution.
+- [ ] Propagate inherited-boundary uncertainty through lower-segment Monte Carlo.
+- [ ] Require adequate overlap/support and reject uncertainty-inconsistent handoffs.
+- [ ] Never bridge unsupported internal gaps or reset `SR_ref=1` because a new segment begins.
 
-Acceptance gate: cascade reproduces a well-conditioned synthetic full-column truth within defined tolerance and rejects inconsistent handoffs.
+Acceptance gate: cascade reproduces a well-conditioned synthetic full-column truth within a defined tolerance and rejects inconsistent handoffs.
 
 ### L8. Overlap merge / uncertainty model
 
@@ -337,26 +287,26 @@ Acceptance gate: cascade reproduces a well-conditioned synthetic full-column tru
 - [ ] Check value and vertical-gradient continuity across merge regions.
 - [ ] Separate measurement/MC, LR, boundary, reference-choice, cascade-handoff and optional aggregation uncertainty components.
 - [ ] Treat covariance deliberately; do not blindly quadrature-sum correlated terms.
-- [ ] Verify uncertainty grows when reference ambiguity is introduced.
+- [ ] Verify uncertainty increases when reference ambiguity is introduced.
 
-### L9. Redesigned product / FAIR / QA concepts
+### L9. Redesigned product / FAIR concepts
 
-Names become public only after L1 support tests/schema decisions are stable.
+Names become public only after support tests/schema decisions are stable.
 
 - [ ] `retrieval_support_flag[..., altitude]`.
 - [ ] `retrieval_top_altitude_m[...]` for block and backbone/aggregate products.
-- [ ] accepted reference-member count/diagnostics and ensemble-spread uncertainty.
-- [ ] cascade segment/handoff/merge diagnostics.
-- [ ] clear separation of long-mean/backbone from 20-minute products.
-- [ ] explicit elastic-extinction dependence on assumed aerosol LR.
-- [ ] independent redesigned-method version and NetCDF contract update; pre-redesign semantics become incrementally stale.
-- [ ] QA overview shows signal, molecular fit, candidate references, support top, ensemble spread and cascade/merge regions without unsupported upper-tail axes.
+- [ ] Accepted reference-member count/diagnostics and ensemble-spread uncertainty.
+- [ ] Cascade segment/handoff/merge diagnostics.
+- [ ] Clear separation of long-mean/backbone from 20-minute products.
+- [ ] Explicit elastic-extinction dependence on assumed aerosol LR.
+- [ ] Independent redesigned-method/schema version; pre-redesign outputs become incrementally stale when required.
+- [ ] QA overview shows signal, molecular fit, reference candidates, support top, ensemble spread and cascade/merge regions without visually legitimizing unsupported upper tails.
 
 ### L10. Validation / merge gate
 
 Synthetic:
 
-- [ ] Pure molecular → approximately zero aerosol backscatter within tolerance.
+- [ ] Pure molecular → approximately zero aerosol backscatter within defined tolerance.
 - [ ] Known aerosol layers → recover truth within defined tolerance.
 - [ ] Multiple valid references → stable ensemble.
 - [ ] Contaminated reference → rejected or visibly inflates uncertainty.
@@ -366,93 +316,76 @@ Synthetic:
 
 Real SPU:
 
-- [ ] `20251107sapm`: materially extend defensible coverage above the current lower-column solution while preserving/explaining that solution.
-- [ ] Evaluate whether ~15 km is supported; attempt 20 km only with valid boundary/support above target.
+- [ ] `20251107sapm`: materially extend defensible coverage while preserving/explaining the current lower-column solution.
+- [ ] Evaluate whether ~15 km is supported; attempt 20 km only with a valid boundary/support above the target.
 - [ ] Test clear, high-aerosol, cloud-contaminated, weak-signal and different AN/PC-dominance cases.
 - [ ] Compare with LPP where practical and SCC/ELDA methodological expectations without claiming numerical identity.
 
-Merge success criterion: **maximize validated vertical support, expose where support ends, and remain stable/traceable under reference/noise sensitivity. Reaching 20 km by itself is not success.**
+Merge criterion: **maximize validated vertical support, expose where support ends, and remain stable/traceable under reference/noise sensitivity. Reaching 20 km alone is not success.**
 
----
+## 7. Code-organization acceptance checklist
 
-## Code organization / concision acceptance checklist
+Use this for every subsequent batch.
 
-Use this for every refactor batch.
-
-- [ ] Every symbol/module has a current consumer or documented public/research role.
+- [ ] Every retained symbol/module has a real consumer or documented productive/research role.
 - [x] No productive scientific behavior is installed by import side effect.
-- [x] No wildcard import defines the productive Level 2 public API.
-- [ ] No duplicate active/legacy implementation of one productive scientific rule remains after P1 lot 3.
-- [ ] Compatibility wrappers have named consumers and planned removal point.
-- [ ] Public aliases are canonical or in an explicit deprecation window.
-- [ ] Scientific constants/weights have names and versioned meaning; avoid anonymous magic weights.
-- [ ] Configuration is resolved once through strict accessors rather than repeatedly reinterpreted with local defaults.
-- [ ] Numerical kernels do not own filesystem/config-discovery/logging policy.
-- [x] Productive Level 2 orchestration coordinates explicit signal-selection and optical-retrieval modules rather than package-init patching.
-- [ ] Dataset construction defines schema/metadata without deciding retrieval science.
-- [x] QA/visualization does not feed back into scientific retrieval decisions.
-- [x] Current P1 tests target canonical modules rather than the removed compatibility adapters.
-- [ ] Refactoring reduces/preserves conceptual complexity after obsolete monolith code is deleted; temporary line-count growth during extraction is not an acceptance endpoint.
-- [x] New P1 modules represent real scientific boundaries (signal selection and optical retrieval), not one-call renaming wrappers.
+- [x] No wildcard import defines productive Level 2 behavior.
+- [x] No duplicate legacy Level 2 retrieval monolith remains.
+- [x] No unused Level 2 atmosphere compatibility wrapper remains.
+- [ ] Package/public aliases are canonical or have an explicit deprecation window.
+- [ ] Scientific constants/weights have named/versioned meaning where they affect method selection.
+- [ ] Configuration is resolved through strict accessors rather than local semantic literals.
+- [x] Numerical KFS/gluing/molecular kernels do not own filesystem policy.
+- [x] Orchestration coordinates stages without duplicating the removed retrieval implementations.
+- [ ] Dataset construction defines schema/metadata without duplicated scientific decisions.
+- [x] QA/visualization does not feed back into retrieval decisions.
+- [x] Current tests point to canonical owner modules rather than removed compatibility adapters.
+- [x] Lot 3 reduced conceptual and physical duplication rather than merely moving the monolith.
+- [x] New boundaries correspond to real responsibilities: source selection, optical retrieval and result assembly.
 
-## Recommended implementation batches
+## 8. Recommended batches from here
 
-1. [x] **P0 lot 1 — backward identity + stale-output guard + QA TXT removal + regressions + support semantics.**
-2. [x] **P1 lot 2 — remove Level 2 monkey patches, direct-wire supported-domain QA/backward aggregation, remove wildcard productive import and retire adapters; real-data baseline validated.**
-3. [ ] **P1 lot 3 — decompose/delete duplicate `_retrieval_impl.py` paths, legacy atmosphere/input-QA and semantic defaults; move shared types/helpers to cohesive owners.**
-4. [ ] **P2 — repository symbol-use/dead-code/default audit, static analysis and CI.**
-5. [ ] **P3 — Level 2 schema aliases/units/flags/method version + focused docs.**
-6. [ ] **Validation baseline — synthetic support tests + machine-readable real-case regression summary.**
-7. [ ] **Recreate `fixing_l2` from the cleaned base and start candidate-catalogue/high-column work.**
+1. [x] **P0 lot 1 — backward identity + stale-output guard + QA TXT removal + support semantics.**
+2. [x] **P1 lot 2 — remove monkey patches/wildcard behavior and direct-wire supported-domain QA/backward aggregation.**
+3. [x] **P1 lot 3 implementation — delete retrieval monolith/atmosphere alias, move real responsibilities to canonical owners, remove local scientific defaults.**
+4. [ ] **P1 lot 3 validation — rerun `20251107sapm` and close P1 if diagnostics remain equivalent.**
+5. [ ] **P2 lot 4 — symbol/public-API/dead-code inventory + Ruff/static semantic-default guardrails.**
+6. [ ] **P2 lot 5 — CI/full pytest + cleanup findings from static audit.**
+7. [ ] **P3 — L2 schema aliases/units/flags/method version + focused docs.**
+8. [ ] **Validation baseline — synthetic vertical-support tests + machine-readable real-case summary.**
+9. [ ] **Recreate `fixing_l2` from the cleaned base and start candidate-catalogue/high-column work.**
 
-P4 physical PC/SNR/cloud evidence tasks may proceed in parallel.
+P4 physical PC/SNR/cloud evidence work can proceed in parallel.
 
-## Current highest-value debt
+## 9. Implementation log
 
-1. [ ] Delete/decompose duplicate legacy retrieval paths in `_retrieval_impl.py` and move only genuinely shared types/helpers to cohesive modules.
-2. [ ] Remove remaining semantic defaults and obsolete Level 2 atmosphere compatibility.
-3. [ ] Build symbol-use/dead-code/default guardrails and CI.
-4. [ ] Clean L2 duplicate aliases/units/flag metadata and method/schema versioning.
-5. [ ] Version/document gluing score.
-6. [ ] Add synthetic support/top validation and focused scientific docs.
-7. [ ] Physical PC saturation characterization/raw-rate guard migration.
-8. [ ] SNR/cloud validation for high-altitude reference QA.
-9. [ ] Begin ensemble/cascade redesign only after the base above is clean.
+### 2026-09-09 to 2026-09-14 — strict/scientific baseline
 
-## Implementation log
+- Introduced stage-specific fail-fast configuration, station calibration history, atmosphere/weather policies, strict acquisition metadata, contextual logging, readable FAIR provenance and simplified execution semantics.
+- Corrected guarded PC use without inventing physical saturation characterization; established post-gluing fallback, Rayleigh search semantics and backward Fernald behavior.
+- Replaced fixed productive Rayleigh bins with `ref_window_m`; removed global schema/generic physics residue; gated incremental reuse on current provenance.
 
-### 2026-09-09 to 2026-09-14 — strict-config and scientific baseline
+### 2026-09-14 — architecture/science re-audit + P0
 
-- Introduced stage-specific fail-fast L0/L1/L2 configuration, station calibration history, explicit atmosphere/weather policies, strict acquisition metadata, contextual logging, readable FAIR provenance and simplified execution/CLI behavior.
-- Corrected/validated guarded PC use without inventing saturation characterization, post-gluing fallback, Rayleigh search semantics and backward Fernald sign/branch behavior.
-- Replaced fixed Rayleigh bins with physical `ref_window_m`, retired global schema/final generic `physics` config residue and gated incremental reuse on current provenance.
-- Rewrote README as current scientific entry point.
+- Re-audited `new-architecture`, promoted code-use/dead-code/concision to a first-class objective and incorporated the saved `fixing_l2` plan into this tracker.
+- Canonicalized backward KFS identity in config/scientific metadata/product wording.
+- Removed redundant QA status TXT and added focused regressions.
 
-### 2026-09-14 — architecture/science re-audit
+### 2026-09-14 — P1 lot 2
 
-- Re-audited `new-architecture` at `c6400a941964de73438132afdb7f3db9a5916f32`.
-- Identified import-time Level 2 scientific adapters, wildcard monolith exposure, duplicated legacy retrieval paths and stale KFS metadata as the highest-value cleanup cluster.
-- Promoted code-use/dead-code/concision auditing to a first-class goal and folded saved `fixing_l2` objectives into Section L.
+- Removed package-init scientific monkey patches and wildcard monolith exposure.
+- Created canonical signal-selection and optical-retrieval boundaries; retired transitional backward/scientific-policy adapters.
+- Fixed the package-public cloud import regression exposed by manual execution.
+- Real `20251107sapm` reproduced the pre-refactor 355/532 reference and 5/5 backward-block diagnostics.
+- Fixed sparse-support QA SEM warnings without altering saved science.
 
-### 2026-09-14 — P0 lot 1: backward identity and QA-output consistency
+### 2026-09-14 — P1 lot 3 implementation
 
-- Made productive backward KFS identity canonical in config, scientific metadata, dataset wording and operational failure diagnostics.
-- Made incremental L2 reuse reject stale KFS identity.
-- Removed redundant QA status TXT.
-- Added focused regressions and froze future support/top semantics.
-- No Fernald numerical equation, LR, MC, Rayleigh threshold, gluing threshold or PC saturation characterization was changed.
-- Full repository suite is **not claimed** because no CI/status checks are attached.
-
-### 2026-09-14 — P1 lot 2: explicit Level 2 scientific orchestration
-
-- Removed all scientific monkey patches from `milgrau/level2/__init__.py`; package import is now declarative.
-- Added `level2/signal_selection.py` as the canonical productive boundary for block gluing/source selection and direct supported-domain retrieval-input QA.
-- Added `level2/optical_retrieval.py` as the canonical productive Rayleigh/backward-KFS aggregation boundary.
-- Replaced `retrieval.py` wildcard monolith exposure with explicit dependencies and direct canonical orchestration.
-- Removed `backward_retrieval.py` and `scientific_policy.py` after their responsibilities became canonical elsewhere.
-- Corrected an import-only regression discovered by the first real rerun: `level2/__init__.py` now preserves the actual pre-lot public cloud-screening API rather than exporting nonexistent names.
-- Real rerun `20251107sapm` then reproduced 355 nm reference 5749 m [5254, 6244] and 532 nm reference 5816 m [5321, 6311], with 100% Rayleigh-valid windows and 5/5 backward KFS blocks for each wavelength.
-- The successful rerun exposed a diagnostic-only NumPy warning from block SEM above the backward support top. `_block_standard_error()` now reduces only altitude columns with at least two finite valid blocks, leaving unsupported/single-sample bins NaN without warnings; focused regression added.
-- This lot did **not** change NetCDF schema, Fernald equations, LR/MC settings, Rayleigh thresholds, gluing thresholds or PC guard policy.
-- `_retrieval_impl.py` still contains bypassed duplicate legacy implementations and defaults; P1 lot 3 must remove them before P1 is considered complete.
-- Full repository suite is **not claimed**; the real-data baseline is validated, but no CI/status checks are attached to the branch.
+- Deleted `_retrieval_impl.py` (1245 legacy/duplicate lines) rather than retaining another compatibility layer.
+- Deleted the unused `level2.atmosphere` alias; shared atmosphere physics remains in `milgrau.physics.atmosphere`, while productive L2 reads the atmosphere already materialized by L1.
+- Moved input/block/gluing state and selection logic into `signal_selection.py`; Rayleigh/KFS helpers and molecular retrieval state into `optical_retrieval.py`; block→public-result construction into `result_assembly.py`; generic accepted-block aggregation into `block_average.py`.
+- Removed the obsolete full-band input QA, legacy atmosphere reconstruction, duplicate optical aggregation and duplicate orchestration paths with the monolith.
+- Removed local Rayleigh and KFS semantic defaults from productive orchestration; strict config is now authoritative.
+- Updated tests to target canonical owners and added regressions for absent legacy modules, missing-config failure and explicit productive backward kernel mode.
+- No Fernald equation, Rayleigh/gluing threshold, lidar-ratio climatology, Monte Carlo uncertainty model, NetCDF schema or provisional PC policy was intentionally changed in this lot.
+- Full-suite green is not claimed because the branch still has no CI/status checks; the next mandatory action is the real-data equivalence rerun listed above.
