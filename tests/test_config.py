@@ -29,11 +29,7 @@ def test_repository_config_loads_without_legacy_station_aliases() -> None:
     assert "site" not in config
     assert "radiosonde" not in config
     assert "hardware" not in config
-    assert "channels" not in config["physics"]
-    assert "speed_of_light" not in config["physics"]
-    assert "speed_of_light_m_s" not in config["physics"]
-    assert "bg_start" not in config["physics"]
-    assert "bg_stop" not in config["physics"]
+    assert "physics" not in config
 
 
 def test_repository_config_passes_stage_specific_resolvers() -> None:
@@ -71,11 +67,7 @@ def test_station_lidar_ratio_climatology_materializes_only_level2_recipe_view() 
 
 def test_normalize_config_is_defensive_copy_without_alias_creation() -> None:
     source = {
-        "physics": {
-            "vertical_resolution_m": 7.5,
-            "speed_of_light_m_s": 299792458.0,
-            "background_start_m": 29000.0,
-        },
+        "processing": {"incremental": True},
         "inversion": {"lidar_ratios_sr": {"532": {"01": 60.0}}},
     }
 
@@ -83,19 +75,17 @@ def test_normalize_config_is_defensive_copy_without_alias_creation() -> None:
 
     assert normalized == source
     assert normalized is not source
-    assert "speed_of_light" not in normalized["physics"]
-    assert "bg_start" not in normalized["physics"]
+    assert "physics" not in normalized
     assert "lidar_ratios" not in normalized["inversion"]
 
 
-def test_positional_channel_corrections_are_not_normalized_back_into_productive_config() -> None:
-    source = {"physics": {"channels": {"532.PC": [0.0035, -3, 0.0]}}}
+def test_normalize_config_does_not_recreate_removed_physics_section() -> None:
+    source = {"processing": {"incremental": False}}
 
     normalized = normalize_config(source)
 
-    assert normalized["physics"]["channels"]["532.PC"] == [0.0035, -3, 0.0]
-    # Productive calibration resolution comes from station.yaml; the loader does
-    # not reinterpret this legacy shape into named correction fields.
+    assert normalized == source
+    assert "physics" not in normalized
 
 
 def test_load_minimal_config_without_station_keeps_only_declared_fields(tmp_path: Path) -> None:
@@ -140,5 +130,5 @@ def test_loader_does_not_recreate_removed_hardware_or_site_views(tmp_path: Path)
     assert "hardware" not in loaded
     assert "site" not in loaded
     assert "radiosonde" not in loaded
-    assert "channels" not in loaded["physics"]
+    assert "physics" not in loaded
     assert loaded["_station_catalog"]["station"]["id"] == "spu"
