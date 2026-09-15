@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1] / "milgrau"
+TEST_ROOT = PACKAGE_ROOT.parent / "tests"
 PUBLIC_PACKAGES = (
     "milgrau",
     "milgrau.config",
@@ -29,6 +30,16 @@ STRICT_STAGE_CONFIGS = (
     PACKAGE_ROOT / "level1" / "config.py",
     PACKAGE_ROOT / "level2" / "config.py",
 )
+REMOVED_COMPATIBILITY_MODULES = {
+    "milgrau.level2._retrieval_impl",
+    "milgrau.level2.atmosphere",
+    "milgrau.level2.backward_retrieval",
+    "milgrau.level2.scientific_policy",
+}
+REMOVED_COMPATIBILITY_SYMBOLS = {
+    ("milgrau.level1.common", "get_channel_constant"),
+    ("milgrau.level1.common", "level1_output_path"),
+}
 SEMANTIC_MAPPING_NAMES = {
     "config",
     "inv_cfg",
@@ -94,6 +105,32 @@ def test_productive_package_has_no_wildcard_imports() -> None:
             if isinstance(node, ast.ImportFrom) and any(alias.name == "*" for alias in node.names):
                 offenders.append(f"{path.relative_to(PACKAGE_ROOT.parent)}:{node.lineno}")
     assert not offenders, "Wildcard imports are not allowed in milgrau: " + ", ".join(offenders)
+
+
+def test_removed_compatibility_is_not_reimported() -> None:
+    """Productive code and tests must use canonical owners after compatibility removal."""
+    offenders: list[str] = []
+    for root in (PACKAGE_ROOT, TEST_ROOT):
+        for path in root.rglob("*.py"):
+            for node in ast.walk(_tree(path)):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if alias.name in REMOVED_COMPATIBILITY_MODULES:
+                            offenders.append(
+                                f"{path.relative_to(PACKAGE_ROOT.parent)}:{node.lineno} imports removed {alias.name}"
+                            )
+                elif isinstance(node, ast.ImportFrom):
+                    module = node.module or ""
+                    if module in REMOVED_COMPATIBILITY_MODULES:
+                        offenders.append(
+                            f"{path.relative_to(PACKAGE_ROOT.parent)}:{node.lineno} imports removed {module}"
+                        )
+                    for alias in node.names:
+                        if (module, alias.name) in REMOVED_COMPATIBILITY_SYMBOLS:
+                            offenders.append(
+                                f"{path.relative_to(PACKAGE_ROOT.parent)}:{node.lineno} imports removed {module}.{alias.name}"
+                            )
+    assert not offenders, "Removed compatibility must not be reintroduced: " + ", ".join(offenders)
 
 
 def test_level2_productive_science_has_no_mapping_get_fallbacks() -> None:
