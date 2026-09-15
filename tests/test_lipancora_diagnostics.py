@@ -49,6 +49,7 @@ def test_deadtime_clipping_does_not_claim_physical_saturation_when_uncharacteriz
     )
     assert diagnostics["deadtime_correction_applied"] is True
     assert np.isclose(float(diagnostics["deadtime_clipping_fraction"].values[0]), 0.4)
+    assert np.isclose(float(diagnostics["deadtime_raw_clipping_fraction"].values[0]), 0.4)
     assert np.isclose(float(diagnostics["pc_saturation_fraction"].values[0]), 0.0)
     assert not np.any(diagnostics["pc_saturation_mask"].values)
     assert diagnostics["pc_saturation_characterized"] is False
@@ -71,6 +72,73 @@ def test_characterized_pc_saturation_uses_physical_rate_limit() -> None:
     assert np.isclose(diagnostics["pc_saturation_rate_limit_mhz"], 5.0)
     expected_rate = raw / 5.0
     np.testing.assert_array_equal(diagnostics["pc_saturation_mask"].values, (expected_rate >= 5.0).values)
+
+
+def test_observed_pc_rate_diagnostic_is_before_dark_subtraction() -> None:
+    time = pd.date_range("2024-01-01", periods=1)
+    raw = xr.DataArray(
+        np.array([[100.0, 200.0, 300.0, 400.0]]),
+        dims=("time", "range"),
+        coords={"time": time, "range": np.arange(4)},
+    )
+    dark = xr.DataArray(np.full(4, 90.0), dims=["range"], coords={"range": np.arange(4)})
+    z_da = xr.DataArray(np.arange(4, dtype=np.float64) * 7.5, dims=["range"])
+    bg_mask = xr.DataArray(np.array([False, False, True, True]), dims=["range"])
+
+    *_signals, diagnostics = apply_instrumental_corrections(
+        sig=raw,
+        z_da=z_da,
+        shots=10.0,
+        bin_time_us=0.5,
+        deadtime=0.0035,
+        shift=0,
+        bg_offset=0.0,
+        is_photon=True,
+        bg_mask=bg_mask,
+        dc_prof=dark,
+        return_diagnostics=True,
+        **_kernel_kwargs(),
+    )
+
+    assert np.isclose(float(diagnostics["pc_observed_rate_mhz_max"].values[0]), 80.0)
+    assert np.isclose(float(diagnostics["deadtime_raw_min_denominator_observed"]), 1.0 - 80.0 * 0.0035)
+    assert not np.isclose(
+        float(diagnostics["deadtime_raw_min_denominator_observed"]),
+        float(diagnostics["deadtime_min_denominator_observed"]),
+    )
+
+
+def test_characterized_saturation_uses_observed_rate_before_dark_subtraction() -> None:
+    time = pd.date_range("2024-01-01", periods=1)
+    raw = xr.DataArray(
+        np.array([[30.0, 30.0, 10.0, 10.0]]),
+        dims=("time", "range"),
+        coords={"time": time, "range": np.arange(4)},
+    )
+    dark = xr.DataArray(np.array([20.0, 20.0, 0.0, 0.0]), dims=["range"], coords={"range": np.arange(4)})
+    z_da = xr.DataArray(np.arange(4, dtype=np.float64) * 7.5, dims=["range"])
+    bg_mask = xr.DataArray(np.array([False, False, True, True]), dims=["range"])
+
+    *_signals, diagnostics = apply_instrumental_corrections(
+        sig=raw,
+        z_da=z_da,
+        shots=10.0,
+        bin_time_us=0.5,
+        deadtime=0.0,
+        shift=0,
+        bg_offset=0.0,
+        is_photon=True,
+        bg_mask=bg_mask,
+        dc_prof=dark,
+        deadtime_min_denominator=0.05,
+        pc_saturation_max_rate_mhz=5.0,
+        return_diagnostics=True,
+    )
+
+    np.testing.assert_array_equal(
+        diagnostics["pc_saturation_mask"].values,
+        np.array([[True, True, False, False]]),
+    )
 
 
 def test_apply_instrumental_corrections_converts_pc_counts_to_mhz_deterministically() -> None:
@@ -205,6 +273,9 @@ def test_apply_all_physical_corrections_persists_distinct_diagnostics() -> None:
     }
     result = apply_all_physical_corrections(ds, altitude, config, logging.getLogger("test"))
     assert "deadtime_clipping_fraction" in result
+    assert "deadtime_raw_clipping_fraction" in result
+    assert "deadtime_raw_min_denominator_observed" in result
+    assert "pc_observed_rate_mhz_max" in result
     assert "pc_saturation_mask" in result
     assert "pc_saturation_fraction" in result
     assert "pc_saturation_characterized" in result
@@ -215,6 +286,9 @@ def test_apply_all_physical_corrections_persists_distinct_diagnostics() -> None:
     assert int(result["deadtime_correction_applied"].sel(channel="532.PC")) == 1
     assert int(result["deadtime_correction_applied"].sel(channel="532.AN")) == 0
     assert float(result["deadtime_clipping_fraction"].sel(channel="532.PC").max()) > 0.0
+    assert float(result["deadtime_raw_clipping_fraction"].sel(channel="532.PC").max()) > 0.0
+    assert np.isfinite(float(result["pc_observed_rate_mhz_max"].sel(channel="532.PC").max()))
+    assert np.all(np.isnan(result["pc_observed_rate_mhz_max"].sel(channel="532.AN").values))
     assert float(result["pc_saturation_fraction"].sel(channel="532.PC").max()) == 0.0
     assert int(result["pc_saturation_characterized"].sel(channel="532.PC")) == 0
     assert np.isnan(float(result["pc_saturation_rate_limit_mhz"].sel(channel="532.PC")))
