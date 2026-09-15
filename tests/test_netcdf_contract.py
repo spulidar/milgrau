@@ -12,6 +12,7 @@ import xarray as xr
 from milgrau.level2.lebear import process_single_level1_file
 from milgrau.operations import ExecutionStatus
 from milgrau.physics.atmosphere import get_standard_atmosphere
+from milgrau.scientific import LEVEL2_PRODUCT_SCHEMA_VERSION
 
 
 class _ListLogger(logging.Logger):
@@ -148,9 +149,28 @@ def test_lebear_uses_level1_atmosphere_and_generates_level2(tmp_path: Path) -> N
     assert output_path.exists()
 
     with xr.open_dataset(output_path) as ds_l2:
+        assert ds_l2.attrs["level2_product_schema_version"] == LEVEL2_PRODUCT_SCHEMA_VERSION
         assert ds_l2.attrs["Molecular_sources"] == "ussa76"
         assert ds_l2.attrs["molecular_atmosphere_implementation_version"] == "3"
         assert ds_l2.attrs["molecular_atmosphere_scientific_change"] == "level1_materialized_atmosphere_with_log_pressure_interpolation"
         assert ds_l2["molecular_backscatter"].dims == ("wavelength", "altitude")
         assert np.all(np.isfinite(ds_l2["molecular_backscatter"].values))
         assert set(np.unique(ds_l2["retrieval_success_flag"].values).tolist()) == {1}
+
+        canonical_aggregate = {
+            "aerosol_backscatter_mean",
+            "aerosol_backscatter_mean_error",
+            "aerosol_extinction_mean",
+            "aerosol_extinction_mean_error",
+        }
+        assert canonical_aggregate <= set(ds_l2.data_vars)
+        for name in canonical_aggregate:
+            assert ds_l2[name].dims == ("wavelength", "altitude")
+
+        legacy_duplicate_aliases = {
+            "aerosol_backscatter",
+            "aerosol_backscatter_error",
+            "aerosol_extinction",
+            "aerosol_extinction_error",
+        }
+        assert legacy_duplicate_aliases.isdisjoint(ds_l2.data_vars)
