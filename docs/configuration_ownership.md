@@ -9,7 +9,7 @@ This document defines ownership. It deliberately does not copy the current numer
 | Owner | What belongs here | What does not belong here |
 | --- | --- | --- |
 | `config.yaml` | processing/scientific recipe chosen for a run | station history, instrument calibration facts, physical equations |
-| `station.yaml` | station/site/instrument reality, dated history, calibration identity, station-derived climatology/mapping | generic processing policy, algorithmic equations |
+| `station.yaml` | station/site/instrument reality, dated history, calibration identity, station-derived climatology/mapping, explicitly labeled provisional instrument estimates | generic processing policy, algorithmic equations |
 | Python modules | equations, physical constants, validation logic, typed contracts and implementation mechanics | mutable station facts or silent scientific recipe defaults |
 | external scientific source | ancillary data content such as ERA5/radiosonde | MILGRAU processing configuration |
 | NetCDF provenance | resolved record of what actually ran | secrets, machine-local absolute paths, transient cache mechanics |
@@ -44,6 +44,7 @@ Examples that should not migrate into `config.yaml` merely for convenience:
 - station coordinates/altitude/timezone;
 - dated laser/instrument periods;
 - channel dead time/bin shift/calibration facts;
+- telescope/FOV/beam/divergence/alignment values used to describe instrument overlap;
 - station SCC channel IDs;
 - station-derived lidar-ratio climatology when it represents the station record;
 - CDS/API secrets.
@@ -61,9 +62,12 @@ Typical responsibilities include:
 - dead time/bin shifts and other characterized instrument properties;
 - instrument calibration identity;
 - SCC mapping/IDs;
-- station-derived lidar-ratio climatology/assumptions where this is part of the station scientific record.
+- station-derived lidar-ratio climatology/assumptions where this is part of the station scientific record;
+- overlap receiver/transmitter geometry, including explicitly labeled estimates while characterization is pending.
 
 Station history is date-resolved before processing. Downstream code should consume the resolved station profile instead of rediscovering history independently.
+
+For overlap, the station may define a clearly labeled transmitter fallback when a historical profile lacks a more specific geometry. Profile-specific geometry takes precedence. The resolver records whether the effective values came from the profile or the station fallback. A fallback remains an estimate; using it does not promote the geometry to a calibration.
 
 ## Python — scientific implementation
 
@@ -72,21 +76,26 @@ Python owns behavior that must be tested and versioned as code rather than edite
 - atmosphere and Rayleigh equations;
 - lidar inversion equations;
 - numerical kernels;
+- generic geometrical-overlap equations and numerical integration;
 - signal/error propagation formulas;
 - support/missing-value logic;
-- config validation;
+- config validation and station/profile fallback resolution mechanics;
 - channel/source selection mechanics;
 - product contracts/schema assembly;
 - provenance algorithms such as content identity;
 - stable enums/flag meanings.
 
-A physical constant or equation coefficient that is universal to the implemented model belongs in code. A characterized instrument parameter belongs in the station record. A scientific run choice belongs in the processing recipe.
+A physical constant or equation coefficient that is universal to the implemented model belongs in code. A characterized instrument parameter belongs in the station record. A provisional instrument estimate also belongs in the station record but must carry an explicit status. A scientific run choice belongs in the processing recipe.
+
+The current overlap model is intentionally diagnostic: Python evaluates the station-owned geometry but does not apply an overlap correction to the signal. See `docs/overlap_model.md`.
 
 ## Canonical scientific owners
 
 The detailed module inventory is in `docs/code_inventory.md`. Current productive ownership includes:
 
 - atmosphere fallback physics — `milgrau.physics.atmosphere`;
+- diagnostic geometrical overlap physics — `milgrau.physics.overlap`;
+- overlap station validation/resolution — `milgrau.config.overlap`;
 - Level 1 corrections — `milgrau.level1.corrections`;
 - atmosphere source/materialization — `milgrau.level1.thermodynamics`;
 - strict Level 2 recipe parsing — `milgrau.level2.config`;
@@ -132,6 +141,8 @@ Configuration hashes are intentionally not used as a substitute for readable con
 ## Versioning consequences
 
 Changing a YAML value does not automatically require changing a retrieval-method version; it normally changes the resolved run recipe and is captured in embedded YAML/provenance.
+
+Changing a diagnostic overlap estimate in `station.yaml` therefore does not change method v3 while the curve is not used productively. Turning overlap into a productive signal correction or support decision would be a scientific semantic change and requires deliberate method/version review, tests, uncertainty treatment and provenance.
 
 Changing a scientific equation, accepted support semantics, uncertainty interpretation or productive method policy **does** require deliberate method/version review. The current Level 2 schema version and retrieval-method version are separate so storage-only changes and scientific changes are not conflated.
 
