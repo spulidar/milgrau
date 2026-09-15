@@ -12,7 +12,7 @@ def _safe_nanmax_xarray(data: xr.DataArray, default: float = 0.0) -> float:
     try:
         value = float(data.max(skipna=True).values)
         return value if np.isfinite(value) else float(default)
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return float(default)
 
 
@@ -20,7 +20,7 @@ def _safe_nanmin_xarray(data: xr.DataArray, default: float = np.nan) -> float:
     try:
         value = float(data.min(skipna=True).values)
         return value if np.isfinite(value) else float(default)
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return float(default)
 
 
