@@ -4,11 +4,11 @@ Branch: `new-architecture`
 
 Audit baseline: `c6400a941964de73438132afdb7f3db9a5916f32` (2026-09-14)
 
-This file is the source of truth for preparing a concise, scientifically defensible base before recreating `fixing_l2`. Priority is intentional: truthful scientific identity first, one canonical implementation second, code-use/static/schema hardening third, and only then the high-column redesign.
+This file is the source of truth for preparing a concise, scientifically defensible base before recreating `fixing_l2`. Priority is intentional: truthful scientific identity first, one canonical implementation second, code-use/static hardening third, FAIR/schema semantics fourth, and only then the high-column redesign.
 
 ## 1. Non-negotiable engineering/scientific rules
 
-- `config.yaml` owns the processing/scientific recipe.
+- `config.yaml` owns processing/scientific recipe.
 - `station.yaml` owns site/instrument reality, history, calibration, SCC mapping and station-derived climatology.
 - Python owns equations, physical constants, validated runtime objects and implementation details.
 - One productive scientific behavior has one canonical implementation.
@@ -30,8 +30,8 @@ This file is the source of truth for preparing a concise, scientifically defensi
 | --- | --- | --- |
 | **P0** | **COMPLETE** | truthful backward-KFS identity, output/currentness consistency, remove redundant QA TXT, freeze support semantics |
 | **P1** | **COMPLETE + REAL-DATA VALIDATED** | remove import-order behavior, duplicate Level 2 science, monoliths and obsolete compatibility |
-| **P2** | **IN PROGRESS; LOCAL + CI BASELINES GREEN** | code-use audit, deliberate API, dead compatibility, exception/default guardrails, Ruff/full tests/CI |
-| **P3** | pending | Level 2 schema/FAIR metadata and focused documentation |
+| **P2** | **COMPLETE** | code-use audit, deliberate API, dead compatibility/helpers, exception/default guardrails, Ruff/full tests/CI |
+| **P3** | **NEXT** | Level 2 schema/FAIR metadata, method/schema identity and focused documentation |
 | **P4** | parallel evidence work | PC saturation, correction order, SNR/cloud validation, external comparison |
 | **P5** | pending | recreate `fixing_l2` and implement scientifically validated high-column retrieval |
 
@@ -76,12 +76,12 @@ Acceptance gate: **passed in implementation and real-data baseline.**
 - [x] 355 nm gluing = 100%; Rayleigh reference 5749 m `[5254, 6244] m`; backward KFS 5/5.
 - [x] 532 nm gluing = 100%; Rayleigh reference 5816 m `[5321, 6311] m`; backward KFS 5/5.
 - [x] Product written for 2/2 wavelengths, zero runtime errors.
-- [x] Previous sparse/all-NaN QA variance warnings did not return.
-- [x] PC warnings remained explicitly provisional: physical saturation still `not_characterized`.
+- [x] Sparse/all-NaN QA variance warning fixed without filling unsupported bins.
+- [x] PC warnings remain explicitly provisional: physical saturation still `not_characterized`.
 
 Acceptance gate: **passed.**
 
-## 5. P2 — code-use audit, concision and automated guardrails — IN PROGRESS
+## 5. P2 — code-use audit, concision and automated guardrails — COMPLETE
 
 Detailed ownership decisions live in `docs/code_inventory.md`.
 
@@ -89,40 +89,42 @@ Detailed ownership decisions live in `docs/code_inventory.md`.
 
 - [x] Added role taxonomy and repository/module ownership inventory.
 - [x] Root `milgrau.__all__` reduced to the real lightweight root API: `__version__`.
+- [x] Exact supported `__all__` surfaces for `io`, `level0`, `level1`, `level2`, `physics`, and `viz` are regression-pinned.
 - [x] AST regression rejects wildcard imports under `milgrau/`.
 - [x] Productive Level 2 mappings cannot use `.get(..., scientific_literal_default)`.
 - [x] Strict `level0/config.py`, `level1/config.py`, `level2/config.py` are guarded against semantic literal `.get` fallbacks.
-- [x] Ruff added to dev dependencies with correctness/dead-code rules `E4`, `E7`, `E9`, `F`; `E731` remains deliberately excluded as style-only.
-- [x] First Ruff pass removed 8 real `F401` imports; reruns stayed clean.
+- [x] Ruff added to dev dependencies with correctness/dead-code rules `E4`, `E7`, `E9`, `F`; `E731` deliberately excluded as style-only.
+- [x] First Ruff pass removed 8 real `F401` imports; subsequent CI Ruff runs remain clean.
 
-### Lot 4B — ownership/compatibility/default/exception cleanup — FINAL AUDIT IN PROGRESS
+### Lot 4B — ownership/compatibility/dead-code/default cleanup — COMPLETE
 
-Completed:
-
-- [x] Level 1 package exports point directly to canonical owners; obsolete one-line compatibility wrappers are gone.
-- [x] `level1.common.level1_output_path()` removed; canonical owner is `milgrau.io.paths.level1_output_path`.
-- [x] `level1.common.get_channel_constant(..., logger)` removed; calibration owner is `resolve_channel_calibration()`.
+- [x] Level 1 exports point directly to canonical owners.
+- [x] Removed `level1.common.level1_output_path()` compatibility wrapper.
+- [x] Removed obsolete `level1.common.get_channel_constant(..., logger)`; calibration owner is `resolve_channel_calibration()`.
 - [x] Compatibility-import AST guard prevents tests/package code from reintroducing removed Level 1/2 paths.
 - [x] Full-suite stale imports/fixtures were migrated to current owners/contracts instead of restoring compatibility.
-- [x] Level 0 acquisition QA and station-config loading now contain only expected malformed-data/config errors; unexpected runtime defects propagate.
-- [x] Level 1 helper catches were narrowed where broad containment could hide defects.
-- [x] Licel header/group parsing now contains malformed-file/IO failures (`ValueError`, `OSError`) but propagates unexpected `RuntimeError`; regressions pin both behaviors.
-- [x] Broad catches intentionally retained at outer execution boundaries, per-wavelength partial-product handling, per-channel L1 containment, filesystem action boundaries, and optional QA/UI presentation boundaries.
+- [x] `config.loader` creates no legacy `site`/`hardware`/`physics.channels` compatibility structures; station-owned LR climatology materialization is an intentional productive data view.
+- [x] Historical Licel file-level laser-shot fallback retained only as a named file-format compatibility path; channel `NShots` has priority.
+- [x] Removed dead QA helpers `viz/level2_qa.py::_legacy_ylim` and `_visual_scale_to_reference`; active display-only `_legacy_scale_factor` remains.
+- [x] Removed inert `inversion.gluing.gaussian_threshold` from config/kernel/productive plumbing. Old configs containing it fail explicitly rather than pretending it affects selection.
+- [x] Repository-wide duplicate-science review found no second productive implementation for atmosphere, corrections, gluing, Rayleigh/KFS, signal selection or L2 result assembly.
+- [x] Research numerical exports/multi-mode kernels are explicitly classified and do not define productive policy.
+- [x] Large files reviewed by cohesion; no split performed solely to reduce line count.
+
+### Lot 4C — exception boundaries — COMPLETE
+
+Broad catches are retained only at explicit containment boundaries: outer execution/file orchestration, per-wavelength partial L2 handling, per-channel L1 handling, filesystem mutation APIs returning `ExecutionResult`, product-currentness checks, and optional QA/UI presentation.
+
+Narrowed/regression-tested helper/parser boundaries:
+
+- [x] Level 0 acquisition QA and station-config loading propagate unexpected runtime defects.
+- [x] Licel parsing contains malformed/IO failures (`ValueError`, `OSError`) but propagates unexpected runtime defects.
+- [x] Open-Meteo cache/retry handles only expected IO/payload failures; an unexpected `RuntimeError` is not retried/converted to ordinary missing weather.
+- [x] Level 1 min/max diagnostic reductions contain only conversion failures (`TypeError`, `ValueError`, `OverflowError`); unexpected runtime failures propagate.
+- [x] Raw-tree `Path.resolve()` containment is limited to expected `OSError`/`RuntimeError`; filesystem mutation boundaries remain explicit `ExecutionResult` containment.
 - [x] Human-readable `ExecutionResult` paths are stable across Windows/Linux separators.
-- [x] SCC `LR_Input` policy recognizes historical 607 nm as Raman companion of 532 nm as well as 530 nm.
-- [x] Exact supported `__all__` surfaces for `io`, `level0`, `level1`, `level2`, `physics`, and `viz` are now regression-pinned. New/removal exports require deliberate review instead of becoming accidental API.
-- [x] `config.loader` creates no legacy `site`/`hardware`/`physics.channels` compatibility structures; station-owned LR climatology materialization is an intentional productive data view, not an alias.
-- [x] Historical Licel file-level laser-shot fallback is retained deliberately as a file-format compatibility path: channel `NShots` has priority; fallback remains only while historical/custom SPU Licel files requiring it are supported.
-- [x] Local functional baseline: Ruff clean and `pytest -q` **347 passed / 0 failed** on Windows/Python 3.14 before the final two Licel exception tests were added.
 
-Still open before calling lot 4 complete:
-
-- [ ] Remove confirmed dead QA/display helpers `viz/level2_qa.py::_legacy_ylim` and `_visual_scale_to_reference` (definition-only; `_legacy_scale_factor` remains used).
-- [ ] Finish repository-wide duplicate **scientific equation/selection-rule** audit and record canonical owners; do not over-abstract generic utilities.
-- [ ] Final pass over remaining `except Exception` sites: classify each as orchestration/filesystem/optional-UI containment or narrow it if it can hide a programming defect.
-- [ ] Review large files by cohesion, not line count; split only where responsibility actually improves: `explorer/streamlit_app.py`, `viz/level2_qa.py`, `level2/signal_selection.py`, `level2/dataset.py`, `level0/netcdf.py`, `level1/config.py`, `level2/kfs.py`, `level2/contracts.py`, `level1/lipancora.py`, `config/station.py`.
-
-### Lot 5 — full suite and CI — GREEN BASELINE ESTABLISHED
+### Lot 5 — full suite, dependencies and CI — COMPLETE
 
 Full-suite progression:
 
@@ -130,31 +132,60 @@ Full-suite progression:
 - [x] All 23 failures classified before repair; mostly stale contracts/fixtures plus Windows path portability and historical SCC Raman mapping.
 - [x] Repair batch implemented without restoring hidden defaults/compatibility.
 - [x] Residual inventory failures were stale mocks only and fixed in tests.
-- [x] Clean local baseline reproduced: **347 passed, 0 failed, 346 warnings**, Ruff clean.
-- [x] Warning baseline classified: all 346 are the NumPy 2.5 `ndarray.shape` deprecation triggered inside the published netCDF4 1.7.4 write path. 285 surface through xarray's backend and 61 at MILGRAU caller lines; the latter are not a separate MILGRAU deprecation.
-- [x] Upstream source changelog lists a 1.7.4.1 fix, but PyPI currently publishes through 1.7.4 only. The invalid `>=1.7.4.1` floor was reverted immediately after pip rejected it.
-- [x] MILGRAU requires the latest published floor `netCDF4>=1.7.4`; do not pin NumPy backwards or suppress the known upstream warning merely to get warning count zero.
+- [x] Clean local baseline reproduced: **347 passed, 0 failed, 346 warnings**, Ruff clean, before additional exception-boundary regressions were added.
+- [x] Warning baseline classified: NumPy 2.5 `ndarray.shape` deprecation is triggered inside published netCDF4 1.7.4 write paths. Warnings surfacing at MILGRAU caller lines are not a separate MILGRAU deprecation.
+- [x] Invalid unpublished `netCDF4>=1.7.4.1` requirement was reverted after pip correctly rejected it.
+- [x] Supported published floor is `netCDF4>=1.7.4`; do not pin NumPy backwards or hide the upstream warning merely to get warning count zero.
 - [x] User-confirmed environment: NumPy **2.5.3**, netCDF4 **1.7.4**.
-- [x] GitHub Actions CI added: Ruff on Ubuntu/Python 3.12 plus full pytest matrix on Ubuntu/Windows × Python 3.12/3.14.
-- [x] CI run `34916492050` on commit `e0bed288e1d4829f0ffaa61647e1257b9b0ca5ab` completed **success**: Ruff passed and every pytest matrix job passed.
-- [ ] After final lot-4 cleanup commits, require the same CI workflow to remain green on the new HEAD.
-- [ ] Branch protection/required checks is optional follow-up only after the final P2 HEAD is stable; branch is currently unprotected.
+- [x] GitHub Actions CI runs Ruff plus full pytest on Ubuntu/Windows × Python 3.12/3.14.
+- [x] CI repeatedly passed through the P2 cleanup sequence, including the final code-audit commits before tracker/documentation closure.
+- [x] Branch protection/required checks is optional repository policy, not a P2 scientific/code-quality acceptance blocker; branch remains unprotected unless deliberately changed later.
 
-P2 acceptance gate: **intentional public API, no known unused compatibility code, no productive hidden semantic defaults, justified exception boundaries, one canonical owner per scientific behavior, and local + CI guardrails preventing regression.**
+P2 acceptance gate: **passed — deliberate public API, no known unused compatibility/dead helpers, no productive hidden semantic defaults, justified exception boundaries, one canonical owner per productive scientific behavior, local baseline and cross-platform CI guardrails.**
 
-## 6. P3 — Level 2 schema / FAIR metadata / focused docs — PENDING
+## 6. P3 — Level 2 schema / FAIR metadata / focused docs — NEXT
 
-- [ ] Choose canonical aggregate names and migration policy for `aerosol_backscatter[_mean]` / `aerosol_extinction[_mean]` aliases.
-- [ ] Audit every L2 physical variable for units, dimensions, `long_name`/description and missing/NaN semantics.
+P3 must improve product interpretation and provenance without changing the already validated backward-KFS numerical baseline as collateral work.
+
+### P3.1 — canonical Level 2 schema names
+
+- [ ] Inventory every L2 data variable/coordinate/global attribute written by `level2.dataset`.
+- [ ] Choose canonical aggregate names and migration policy for `aerosol_backscatter[_mean]` and `aerosol_extinction[_mean]` aliases.
+- [ ] Identify any duplicate variables that encode the same quantity under different names; retain compatibility only with an explicit migration window.
+- [ ] Separate block-resolved quantities from aggregate/mean quantities in names and dimensions.
+- [ ] Preserve frozen support semantics: do not create `retrieval_support_flag` / `retrieval_top_altitude_m` until their synthetic tests exist.
+
+### P3.2 — units, dimensions and missing-value semantics
+
+- [ ] Audit every L2 physical variable for dimensions, units, `long_name`/description and NaN/unsupported semantics.
 - [ ] Add explicit backscatter/extinction uncertainty units where currently implied.
-- [ ] Audit numeric flag metadata for CF-compatible representation.
-- [ ] Introduce independent product-schema/method version if method/schema evolution requires more than package CalVer.
-- [ ] Name/version/document gluing selection-score constants; no anonymous algorithmic weights.
-- [ ] Decide readable immutable input-manifest policy.
-- [ ] Create focused docs for processing levels, configuration/station catalog, products, methods, provenance, flags, limitations and validation; shorten README into an entry point afterward.
-- [ ] Build verified primary-source bibliography for methods actually implemented.
+- [ ] Verify altitude/time/wavelength coordinates and units are unambiguous.
+- [ ] Ensure unsupported retrieval bins remain NaN and metadata never implies finite coverage where backward support ends.
+- [ ] Audit numeric flag metadata for CF-compatible `flag_values` / `flag_meanings` representation where appropriate.
+- [ ] Distinguish missing/not-computed/not-supported/failure states when one flag cannot truthfully encode all of them.
 
-Acceptance gate: one Level 2 NetCDF is scientifically interpretable without reading implementation source and cannot describe a different method from the one used.
+### P3.3 — method/schema identity and algorithm provenance
+
+- [ ] Introduce independent product schema/method version if schema/method evolution requires more than package CalVer.
+- [ ] Define stale-product/currentness behavior for future schema/method version changes.
+- [ ] Name/version/document gluing selection-score constants (`RMSE + |bias| + intercept/saturation terms`); no anonymous algorithmic weights in a FAIR method description.
+- [ ] Record productive KFS integration direction, reference assumption, LR source and uncertainty method in stable machine-readable metadata.
+- [ ] Ensure method metadata cannot describe a different branch than the one that produced the variables.
+
+### P3.4 — provenance/input manifest
+
+- [ ] Decide readable immutable input-manifest policy: source L1 path/name, relevant hashes/identifiers, station profile, calibration ID and config provenance without embedding secrets/local machine noise.
+- [ ] Verify provenance fields remain comparable across Windows/Linux paths.
+- [ ] Define which external atmosphere source identifiers/caches belong in the product versus logs.
+
+### P3.5 — focused documentation
+
+- [ ] Create focused docs for processing levels, config/station ownership, L2 products, retrieval methods, provenance, flags, limitations and validation.
+- [ ] Shorten README into an entry point after focused docs exist; avoid duplicating mutable scientific detail across many files.
+- [ ] Build a verified primary-source bibliography for methods actually implemented; distinguish historical inspiration from equations actually used.
+- [ ] Document known limitations explicitly: provisional PC saturation guard, assumed aerosol LR, backward support ending at the reference, cloud screening not yet productive, and current warning/dependency caveat where relevant.
+
+P3 acceptance gate: **one Level 2 NetCDF is scientifically interpretable without reading implementation source and cannot describe a different method/support domain from the one actually used.**
 
 ## 7. P4 — observational/scientific evidence tasks — PARALLEL
 
@@ -169,7 +200,7 @@ Evidence tasks must not be replaced by invented constants.
 
 ## 8. P5 — future `fixing_l2` high-column redesign
 
-Recreate `fixing_l2` only after P2 core cleanup/guardrails are stable. The redesign must maximize **validated support**, not finite bins.
+Recreate `fixing_l2` only after P3 schema/FAIR groundwork is stable enough that new support/ensemble/cascade semantics have an explicit product home. The redesign must maximize **validated support**, not finite bins.
 
 ### L0 — non-negotiable scientific rules
 
@@ -210,14 +241,14 @@ Recreate `fixing_l2` only after P2 core cleanup/guardrails are stable. The redes
 - [ ] Persist start/stop/center, valid fraction, slope, variance, calibration factor, free-intercept diagnostic, uncertainty/SNR diagnostic and future validated layer flag.
 - [ ] Separate pass/fail criteria from ranking.
 - [ ] Prefer altitude only among already-valid candidates; do not choose a poor high candidate solely for coverage.
-- [ ] Define minimum separation/correlation so overlapping windows do not masquerade as independent ensemble evidence.
-- [ ] Persist compact accepted/rejected reasoning.
-- [ ] Do not add hard SNR/cloud gates before P4 validation.
+- [ ] Define minimum separation/correlation so overlapping windows do not masquerade as independent references.
+- [ ] Keep cloud/SNR gates disabled until validated on SPU data.
 
 ### L5 — high-column backbone
 
-- [ ] Add explicit long-mean/high-column input distinct from 20-min block retrieval; averaging duration is configured/provenanced.
-- [ ] Evaluate altitude-dependent vertical aggregation only if evidence requires it; widths remain physical and original-resolution data remain available.
+- [ ] Build a long-mean/backbone signal separately from 20-min products.
+- [ ] Make averaging/error propagation explicit and physically traceable.
+- [ ] Use meter-based aggregation/windowing where grid changes require it.
 - [ ] Select high reference candidates from the backbone.
 - [ ] Treat ~20 km as an initial target, not a success condition; publish a lower top if no trustworthy boundary exists above it.
 
@@ -286,7 +317,7 @@ Merge criterion: **maximize validated vertical support, expose where support end
 
 ## 9. Current code-organization acceptance checklist
 
-- [ ] Every retained symbol/module has a real consumer or documented productive/research role; final private-helper/duplicate audit remains.
+- [x] Every retained module/symbol has a documented productive/research/UI/compatibility role; known definition-only helpers are removed.
 - [x] Root package exports only a real lightweight bound symbol.
 - [x] Supported subpackage public surfaces are exact and regression-pinned.
 - [x] No productive scientific behavior is installed by import side effect.
@@ -300,13 +331,14 @@ Merge criterion: **maximize validated vertical support, expose where support end
 - [x] Cross-platform human-readable execution logs do not depend on host path separator.
 - [x] Published dependency floor installs with NumPy 2.5.3 + netCDF4 1.7.4.
 - [x] Full local correctness baseline is green.
-- [x] GitHub Actions CI baseline is green across Ruff + Linux/Windows × Python 3.12/3.14.
-- [ ] Final cleanup HEAD must rerun the same CI green before P2 is marked complete.
+- [x] GitHub Actions covers Ruff + Linux/Windows × Python 3.12/3.14 and has stayed green through the cleanup sequence.
+- [x] Productive scientific behaviors have one canonical owner; retained research kernels are explicitly nonproductive policy surfaces.
+- [x] Remaining broad exceptions are deliberate containment boundaries; helper/parser catches that could hide defects were narrowed and regression-tested.
 
-## 10. Immediate next gate
+## 10. Immediate next gate — P3 lot 1
 
-1. Remove the two confirmed dead private Level 2 QA display helpers only; do not touch active `_legacy_scale_factor` behavior.
-2. Finish scientific-duplicate and broad-exception classification and update `docs/code_inventory.md` with canonical owners/removal criteria.
-3. Run/observe CI on the final cleanup HEAD.
-4. Mark P2 complete only when the final HEAD stays green; branch protection remains a separate optional repository-policy choice.
-5. Then move to P3 FAIR/schema work; do not begin the high-column P5 redesign before P2 is closed.
+1. Inventory the exact current L2 NetCDF schema emitted by `level2.dataset` and classify every variable as block, aggregate, diagnostic, flag, coordinate or provenance.
+2. Resolve `aerosol_backscatter[_mean]` / `aerosol_extinction[_mean]` alias semantics and define a migration policy before renaming anything.
+3. Audit units/dimensions/NaN semantics and flag metadata without changing retrieval equations.
+4. Add schema/method-version tests before introducing new support variables.
+5. Keep P4 evidence items parallel and do not recreate `fixing_l2` until the P3 schema can represent support/ensemble/cascade truthfully.
