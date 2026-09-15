@@ -5,11 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import matplotlib.dates as mdates
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import xarray as xr
 from scipy.signal import savgol_filter
 
