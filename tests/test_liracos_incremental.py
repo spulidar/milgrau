@@ -47,6 +47,8 @@ def _write_level1(path: Path, channels: list[str]) -> Path:
             rcs[time_idx, channel_idx, :] = corrected[time_idx, channel_idx, :] * altitude.astype(np.float32) ** 2
             rcs_error[time_idx, channel_idx, :] = corrected_error[time_idx, channel_idx, :] * altitude.astype(np.float32) ** 2
 
+    temperature_k = 288.15 - 0.0065 * altitude
+    pressure_hpa = 1013.25 * np.exp(-altitude / 8434.0)
     ds = xr.Dataset(
         data_vars={
             "corrected_signal": (("time", "channel", "altitude"), corrected),
@@ -54,9 +56,17 @@ def _write_level1(path: Path, channels: list[str]) -> Path:
             "range_corrected_signal": (("time", "channel", "altitude"), rcs),
             "range_corrected_signal_error": (("time", "channel", "altitude"), rcs_error),
             "PBL_Height_km": (("time",), np.array([0.7, 0.8, 0.9], dtype=np.float32)),
+            "Atmospheric_Temperature_K": (("altitude",), temperature_k.astype(np.float64)),
+            "Atmospheric_Pressure_hPa": (("altitude",), pressure_hpa.astype(np.float64)),
         },
         coords={"time": time, "channel": channel, "altitude": altitude},
-        attrs={"tropopause_cpt_km": np.nan, "tropopause_lrt_km": np.nan},
+        attrs={
+            "tropopause_cpt_km": np.nan,
+            "tropopause_lrt_km": np.nan,
+            "thermodynamic_profile_source_type": "ussa76",
+            "thermodynamic_profile_available": "true",
+            "thermodynamic_profile_standard_fallback_fraction": 1.0,
+        },
     )
     ds.to_netcdf(path)
     return path
