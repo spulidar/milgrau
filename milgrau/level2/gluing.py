@@ -8,7 +8,7 @@ merging, the caller can multiply the glued profile by range squared.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Final
 
 import numpy as np
 
@@ -16,6 +16,27 @@ MERGE_SOURCE_PC = 0
 MERGE_SOURCE_BLEND = 1
 MERGE_SOURCE_ANALOG = 2
 MERGE_SOURCE_INVALID = 3
+
+GLUING_SELECTION_SCORE_VERSION: Final[str] = "1"
+GLUING_SCORE_RELATIVE_RMSE_WEIGHT: Final[float] = 1.0
+GLUING_SCORE_ABSOLUTE_RELATIVE_BIAS_WEIGHT: Final[float] = 1.0
+GLUING_SCORE_INTERCEPT_PERCENT_WEIGHT: Final[float] = 0.001
+GLUING_SCORE_SATURATION_FRACTION_WEIGHT: Final[float] = 0.01
+
+
+def gluing_selection_score(
+    relative_rmse: float,
+    relative_bias: float,
+    intercept_percent: float,
+    saturation_fraction: float,
+) -> float:
+    """Return the versioned residual-minimization score for one valid window."""
+    return float(
+        GLUING_SCORE_RELATIVE_RMSE_WEIGHT * float(relative_rmse)
+        + GLUING_SCORE_ABSOLUTE_RELATIVE_BIAS_WEIGHT * abs(float(relative_bias))
+        + GLUING_SCORE_INTERCEPT_PERCENT_WEIGHT * float(intercept_percent)
+        + GLUING_SCORE_SATURATION_FRACTION_WEIGHT * float(saturation_fraction)
+    )
 
 
 def _as_1d(values: np.ndarray) -> np.ndarray:
@@ -219,7 +240,12 @@ def _select_window(
         if not gluing_possible:
             continue
 
-        score = float(relative_rmse + abs(relative_bias) + 0.001 * intercept_percent + 0.01 * saturation_fraction)
+        score = gluing_selection_score(
+            relative_rmse=relative_rmse,
+            relative_bias=relative_bias,
+            intercept_percent=intercept_percent,
+            saturation_fraction=saturation_fraction,
+        )
         if score < best_score:
             best_score = score
             best.update(
@@ -408,6 +434,7 @@ def slide_glue_signals(
             "search_max_idx": search_stop,
             "window_size": int(window),
             "gluing_score": float(selected["score"]),
+            "gluing_score_version": GLUING_SELECTION_SCORE_VERSION,
             "selection_mode": str(selected["selection_mode"]),
             "intercept_percent": float(selected["intercept_percent"]),
             "relative_intercept": (
