@@ -144,6 +144,13 @@ def test_gluing_requires_every_active_scientific_threshold() -> None:
         get_gluing_config(config)
 
 
+def test_gluing_rejects_inert_legacy_gaussian_threshold() -> None:
+    config = _complete_level2_config()
+    config["inversion"]["gluing"]["gaussian_threshold"] = 0.10
+    with pytest.raises(Level2ConfigurationError, match="never used"):
+        get_gluing_config(config)
+
+
 def test_gluing_rejects_search_interval_smaller_than_window() -> None:
     config = _complete_level2_config()
     config["inversion"]["gluing"]["search_min_idx"] = 150
