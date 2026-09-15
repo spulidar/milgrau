@@ -18,7 +18,7 @@ from milgrau.io.filesystem import ensure_directories
 from milgrau.io.logging_utils import bind_log_context
 from milgrau.io.paths import level2_output_path, logging_save_id
 from milgrau.operations import ExecutionResult, ExecutionSummary
-from milgrau.provenance import write_netcdf_provenance
+from milgrau.provenance import file_sha256, write_netcdf_provenance
 from milgrau.scientific import (
     LEVEL2_PRODUCT_SCHEMA_VERSION,
     LEVEL2_RETRIEVAL_METHOD_VERSION,
@@ -70,6 +70,7 @@ def level2_output_is_current(
     expected_algorithm_metadata = elastic_inversion_algorithm_metadata()
     expected_gluing_metadata = gluing_selection_score_metadata()
     try:
+        source_level1_sha256 = file_sha256(nc_file)
         with xr.open_dataset(output) as ds:
             validate_level2_contract(ds)
             if (
@@ -77,6 +78,8 @@ def level2_output_is_current(
                 != LEVEL2_PRODUCT_SCHEMA_VERSION
                 or str(ds.attrs.get("level2_retrieval_method_version", ""))
                 != LEVEL2_RETRIEVAL_METHOD_VERSION
+                or str(ds.attrs.get("source_level1_sha256", ""))
+                != source_level1_sha256
                 or str(ds.attrs.get("product_completeness", "")) != "complete"
                 or str(ds.attrs.get("product_status", "")) != "success"
                 or "requested_wavelengths" not in ds
@@ -225,8 +228,10 @@ def process_single_level1_file(
     output_path: Path | None = None
     stage = "level2.ingestion"
     source_provenance: dict[str, Any] = {}
+    source_level1_sha256 = ""
     kfs_cfg: dict[str, Any] = {}
     try:
+        source_level1_sha256 = file_sha256(nc_path)
         with xr.open_dataset(nc_path) as ds_l1:
             ds_l1.load()
             source_provenance = dict(ds_l1.attrs)
@@ -311,6 +316,7 @@ def process_single_level1_file(
             config,
             source_attrs=source_provenance,
             extra_attrs={
+                "source_level1_sha256": source_level1_sha256,
                 "level2_retrieval_method_version": LEVEL2_RETRIEVAL_METHOD_VERSION,
                 "monte_carlo_random_seed": int(kfs_cfg["random_seed"]),
                 "monte_carlo_iterations": int(kfs_cfg["monte_carlo_iterations"]),
@@ -326,9 +332,10 @@ def process_single_level1_file(
             },
         )
         bind_log_context(file_logger, stage="provenance").debug(
-            "MILGRAU=%s | method=%s | profile=%s | calibration=%s | MC seed=%s | LR=%s",
+            "MILGRAU=%s | method=%s | source_sha256=%s | profile=%s | calibration=%s | MC seed=%s | LR=%s",
             provenance_attrs.get("software_version", "-"),
             provenance_attrs.get("level2_retrieval_method_version", "-"),
+            str(provenance_attrs.get("source_level1_sha256", "-"))[:12],
             provenance_attrs.get("station_profile_id", "-"),
             provenance_attrs.get("instrument_calibration_id", "-"),
             provenance_attrs.get("monte_carlo_random_seed", "-"),
