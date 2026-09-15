@@ -58,12 +58,24 @@ def _validate_receiver(receiver: Mapping[str, Any], label: str) -> None:
         "field_of_view_full_angle_mrad",
         "field_of_view_status",
     }
-    if set(receiver) != required:
-        raise ValueError(f"{label} must contain exactly {sorted(required)}.")
+    optional = {"field_stop_diameter_m", "field_stop_status"}
+    missing = sorted(required - set(receiver))
+    unknown = sorted(set(receiver) - required - optional)
+    if missing or unknown:
+        raise ValueError(f"{label} keys invalid; missing={missing}, unknown={unknown}.")
     _positive(receiver["telescope_diameter_m"], f"{label}.telescope_diameter_m")
     _positive(receiver["focal_length_m"], f"{label}.focal_length_m")
     _positive(receiver["field_of_view_full_angle_mrad"], f"{label}.field_of_view_full_angle_mrad")
     _text(receiver["field_of_view_status"], f"{label}.field_of_view_status")
+    has_stop = "field_stop_diameter_m" in receiver
+    has_stop_status = "field_stop_status" in receiver
+    if has_stop != has_stop_status:
+        raise ValueError(
+            f"{label}.field_stop_diameter_m and {label}.field_stop_status must be provided together."
+        )
+    if has_stop:
+        _positive(receiver["field_stop_diameter_m"], f"{label}.field_stop_diameter_m")
+        _text(receiver["field_stop_status"], f"{label}.field_stop_status")
 
 
 def _validate_transmitter(transmitter: Mapping[str, Any], label: str) -> None:
