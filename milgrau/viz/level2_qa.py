@@ -634,7 +634,12 @@ def plot_qa_l2_kfs(
 ) -> Path | None:
     """Render Level 2 KFS QA panel with uncertainty bands clipped by robust x-limits."""
     wavelength = int(wavelength_nm)
-    required = {"aerosol_backscatter", "aerosol_backscatter_error", "aerosol_extinction", "aerosol_extinction_error"}
+    required = {
+        "aerosol_backscatter_mean",
+        "aerosol_backscatter_mean_error",
+        "aerosol_extinction_mean",
+        "aerosol_extinction_mean_error",
+    }
     if not required.issubset(set(ds_l2.data_vars)):
         return None
 
@@ -645,14 +650,14 @@ def plot_qa_l2_kfs(
     valid_alt = alt_km <= max_alt_km
     smooth_bins = int(config.get("visualization", {}).get("level2_qa", {}).get("smooth_bins", 15))
 
-    beta = ds_l2["aerosol_backscatter"].sel(wavelength=wavelength)
-    beta_err = ds_l2["aerosol_backscatter_error"].sel(wavelength=wavelength)
-    alpha = ds_l2["aerosol_extinction"].sel(wavelength=wavelength)
-    alpha_err = ds_l2["aerosol_extinction_error"].sel(wavelength=wavelength)
-    beta_mean = _smooth_for_plot(safe_time_mean(beta).values, smooth_bins)
-    beta_sigma = _smooth_for_plot(safe_error_of_mean(beta_err).values, smooth_bins)
-    alpha_mean = _smooth_for_plot(safe_time_mean(alpha).values, smooth_bins)
-    alpha_sigma = _smooth_for_plot(safe_error_of_mean(alpha_err).values, smooth_bins)
+    beta = ds_l2["aerosol_backscatter_mean"].sel(wavelength=wavelength)
+    beta_err = ds_l2["aerosol_backscatter_mean_error"].sel(wavelength=wavelength)
+    alpha = ds_l2["aerosol_extinction_mean"].sel(wavelength=wavelength)
+    alpha_err = ds_l2["aerosol_extinction_mean_error"].sel(wavelength=wavelength)
+    beta_mean = _smooth_for_plot(np.asarray(beta.values, dtype=np.float64), smooth_bins)
+    beta_sigma = _smooth_for_plot(np.asarray(beta_err.values, dtype=np.float64), smooth_bins)
+    alpha_mean = _smooth_for_plot(np.asarray(alpha.values, dtype=np.float64), smooth_bins)
+    alpha_sigma = _smooth_for_plot(np.asarray(alpha_err.values, dtype=np.float64), smooth_bins)
 
     beta_plot = beta_mean * 1e6
     beta_sigma_plot = beta_sigma * 1e6
