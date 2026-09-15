@@ -165,7 +165,6 @@ def get_gluing_config(config: Mapping[str, Any]) -> dict[str, Any]:
         "search_min_idx",
         "search_max_idx",
         "intercept_threshold",
-        "gaussian_threshold",
         "minmax_threshold",
         "max_relative_rmse",
         "max_relative_bias",
@@ -210,9 +209,6 @@ def get_gluing_config(config: Mapping[str, Any]) -> dict[str, Any]:
         "search_max_idx": search_max_idx,
         "intercept_threshold": _nonnegative_number(
             gluing_cfg["intercept_threshold"], "inversion.gluing.intercept_threshold"
-        ),
-        "gaussian_threshold": _nonnegative_number(
-            gluing_cfg["gaussian_threshold"], "inversion.gluing.gaussian_threshold"
         ),
         "minmax_threshold": _nonnegative_number(
             gluing_cfg["minmax_threshold"], "inversion.gluing.minmax_threshold"
