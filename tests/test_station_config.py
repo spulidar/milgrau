@@ -173,7 +173,7 @@ def test_station_context_is_self_contained_for_productive_consumers() -> None:
     assert context["lr_input"]["532.AN"] == 1
     assert "hardware" not in config
     assert "site" not in config
-    assert "channels" not in config["physics"]
+    assert "physics" not in config
 
 
 def test_station_catalog_declares_vertical_pointing_geometry() -> None:
