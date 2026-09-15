@@ -162,7 +162,6 @@ inversion:
     window_length_bins: 120
     correlation_threshold: 0.95
     intercept_threshold: 5.0
-    gaussian_threshold: 0.10
     minmax_threshold: 0.05
     max_relative_rmse: 0.08
     max_relative_bias: 0.05
