@@ -39,7 +39,7 @@ def _level1_recipe() -> dict:
     }
 
 
-def test_repository_level1_recipe_is_explicit_and_speed_of_light_is_not_yaml_configurable() -> None:
+def test_repository_level1_recipe_is_explicit_and_removed_physics_alias_stays_absent() -> None:
     config = load_config("config.yaml")
     resolved = resolve_level1_config(config)
 
@@ -59,10 +59,7 @@ def test_repository_level1_recipe_is_explicit_and_speed_of_light_is_not_yaml_con
     assert resolved.atmosphere.radiosonde.max_time_delta_hours == 6.0
     assert resolved.atmosphere.era5 is not None
     assert len(resolved.atmosphere.era5.pressure_levels_hpa) > 1
-    assert "speed_of_light_m_s" not in config["physics"]
-    assert "speed_of_light" not in config["physics"]
-    assert "background_start_m" not in config["physics"]
-    assert "pbl_min_search_m" not in config["physics"]
+    assert "physics" not in config
 
 
 def test_level1_recipe_rejects_missing_required_sections() -> None:
