@@ -10,7 +10,7 @@ import xarray as xr
 
 from milgrau.level2 import lebear
 from milgrau.level2.config import get_kfs_mode, kfs_mode_description
-from milgrau.scientific import elastic_inversion_algorithm_metadata
+from milgrau.scientific import LEVEL2_PRODUCT_SCHEMA_VERSION, elastic_inversion_algorithm_metadata
 from milgrau.viz.level2_qa import plot_all_level2_qa
 
 
@@ -31,7 +31,7 @@ def test_productive_kfs_identity_is_backward() -> None:
     assert elastic_inversion_algorithm_metadata()["integration_mode"] == "backward"
 
 
-def test_level2_incremental_rejects_stale_kfs_metadata(tmp_path, monkeypatch) -> None:
+def test_level2_incremental_rejects_stale_kfs_or_schema_metadata(tmp_path, monkeypatch) -> None:
     input_path = tmp_path / "level1.nc"
     product_path = tmp_path / "level2.nc"
     input_path.write_text("synthetic source", encoding="utf-8")
@@ -44,6 +44,7 @@ def test_level2_incremental_rejects_stale_kfs_metadata(tmp_path, monkeypatch) ->
             "failed_wavelengths": (("failed_wavelength",), np.array([], dtype=np.int32)),
         },
         attrs={
+            "level2_product_schema_version": LEVEL2_PRODUCT_SCHEMA_VERSION,
             "product_completeness": "complete",
             "product_status": "success",
             "KFS_Mode": "backward",
@@ -59,6 +60,11 @@ def test_level2_incremental_rejects_stale_kfs_metadata(tmp_path, monkeypatch) ->
 
     assert lebear.level2_output_is_current(input_path, product_path, {}) is True
 
+    del ds.attrs["level2_product_schema_version"]
+    ds.to_netcdf(product_path)
+    assert lebear.level2_output_is_current(input_path, product_path, {}) is False
+
+    ds.attrs["level2_product_schema_version"] = LEVEL2_PRODUCT_SCHEMA_VERSION
     ds.attrs["integration_mode"] = "two_sided"
     ds.to_netcdf(product_path)
     assert lebear.level2_output_is_current(input_path, product_path, {}) is False
