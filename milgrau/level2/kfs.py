@@ -447,7 +447,9 @@ def kfs_inversion_monte_carlo(
 
     The returned standard deviations are the spread of the existing partial
     Monte Carlo ensemble (signal noise, scalar lidar ratio and reference
-    boundary perturbations); they are not a total uncertainty budget.
+    boundary perturbations); they are not a total uncertainty budget. Missing
+    signal uncertainty remains unsupported; it is never converted to zero
+    noise inside the Monte Carlo ensemble.
     """
     rcs_arr = np.ascontiguousarray(rcs, dtype=np.float64)
     beta_mol_arr = np.ascontiguousarray(beta_mol, dtype=np.float64)
@@ -491,9 +493,25 @@ def kfs_inversion_monte_carlo(
             raise ValueError("rcs_error must have the same shape as rcs.")
         if np.any(np.isfinite(rcs_error_arr) & (rcs_error_arr < 0.0)):
             raise ValueError("rcs_error must contain nonnegative one-sigma values.")
-        rcs_error_arr = np.ascontiguousarray(np.where(np.isfinite(rcs_error_arr), rcs_error_arr, 0.0), dtype=np.float64)
+        uncertainty_supported = np.isfinite(rcs_error_arr) & (rcs_error_arr >= 0.0)
     else:
         rcs_error_arr = np.zeros_like(rcs_arr, dtype=np.float64)
+        uncertainty_supported = np.ones_like(rcs_arr, dtype=bool)
+
+    sampled = (
+        np.isfinite(rcs_arr)
+        & (rcs_arr > 0.0)
+        & np.isfinite(beta_mol_arr)
+        & (beta_mol_arr > 0.0)
+    )
+    backward_sampled = sampled[: ref_idx + 1]
+    forward_sampled = sampled[ref_idx:]
+    backward_uncertainty_complete = bool(
+        np.all(uncertainty_supported[: ref_idx + 1][backward_sampled])
+    )
+    forward_uncertainty_complete = bool(
+        np.all(uncertainty_supported[ref_idx:][forward_sampled])
+    )
 
     rng = np.random.default_rng(seed)
     n_iterations = int(n_iterations)
@@ -537,14 +555,6 @@ def kfs_inversion_monte_carlo(
     if return_diagnostics:
         backward_requested = mode in {"backward", "two_sided"}
         forward_requested = mode in {"forward", "two_sided"}
-        sampled = (
-            np.isfinite(rcs_arr)
-            & (rcs_arr > 0.0)
-            & np.isfinite(beta_mol_arr)
-            & (beta_mol_arr > 0.0)
-        )
-        backward_sampled = sampled[: ref_idx + 1]
-        forward_sampled = sampled[ref_idx:]
         backward_valid_simulations = (
             np.all(np.isfinite(beta_sims[:, : ref_idx + 1][:, backward_sampled]), axis=1)
             if backward_requested
@@ -563,13 +573,24 @@ def kfs_inversion_monte_carlo(
             "ref_idx": int(ref_idx),
             "altitude_m": altitude_m,
             "used_rcs_noise": bool(use_rcs_noise),
+            "rcs_uncertainty_support": uncertainty_supported,
+            "backward_uncertainty_complete": backward_uncertainty_complete,
+            "forward_uncertainty_complete": forward_uncertainty_complete,
             "mode": mode,
             "backward_requested": backward_requested,
             "forward_requested": forward_requested,
             "backward_valid_simulations": backward_valid_simulations,
             "forward_valid_simulations": forward_valid_simulations,
-            "backward_valid": bool(backward_requested and np.all(backward_valid_simulations)),
-            "forward_valid": bool(forward_requested and np.all(forward_valid_simulations)),
+            "backward_valid": bool(
+                backward_requested
+                and backward_uncertainty_complete
+                and np.all(backward_valid_simulations)
+            ),
+            "forward_valid": bool(
+                forward_requested
+                and forward_uncertainty_complete
+                and np.all(forward_valid_simulations)
+            ),
             "uncertainty_scope": "partial_monte_carlo_dispersion",
         }
         return beta_mean, beta_std, alpha_mean, alpha_std, diagnostics
