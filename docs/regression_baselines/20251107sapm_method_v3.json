@@ -1,0 +1,104 @@
+{
+  "baseline_kind": "observational_regression",
+  "ground_truth": false,
+  "measurement_id": "20251107sapm",
+  "purpose": "Regression/behavior baseline for the productive Level 0 -> Level 2 path. It must not be used as proof of equation correctness or as synthetic truth.",
+  "source_repository_revision": "842389a23c3ddc2006243db9b7d98bf200c90c0f",
+  "software_version": "2026.9",
+  "level2_product_schema_version": "1",
+  "level2_retrieval_method_version": "3",
+  "source_code_sha256": "9eb5c1aacae4fdffb0643280eb4389e781835ff613c9be9bc8ce23258c50c487",
+  "file_identity": {
+    "level0_sha256": "706e0f850a293f2117530fe32bd4dc398eff6dd41fc21260f80d7af67b4e5510",
+    "scc_sha256": "e9dd5388b1b2baa3a6c0792a8f13ad5d1f99d57cf786d445b01446188cb96bde",
+    "level1_sha256": "f24a914218f0230a6635d0dda12d3ca9456f9a779a7f6777d7efb16ae366bd57",
+    "level2_sha256": "208098231bb7680882f7a2a445b10c1df77345e5ea0c9216b13b40d8164f7aae"
+  },
+  "level0": {
+    "accepted_inventory_files": 207,
+    "inventory_files_total": 209,
+    "measurement_raw_profiles": 167,
+    "dark_current_profiles": 40,
+    "channels": 12,
+    "bins": 4000
+  },
+  "level1": {
+    "profiles": 167,
+    "channels": 12,
+    "bins": 4000,
+    "pbl_height_km": {
+      "mean": 1.117208083946548,
+      "min": 0.768750011920929,
+      "max": 1.5712499618530273,
+      "valid_profiles": 167
+    },
+    "thermodynamics": {
+      "source_type": "radiosonde",
+      "source_id": "university_of_wyoming/upper_air_sounding/service_unversioned",
+      "source_datetime_utc": "2025-11-07T12:00:00+00:00",
+      "time_delta_hours": 5.514166666666667,
+      "station_id": "83779",
+      "ussa76_extension_fraction": 0.335,
+      "cold_point_tropopause_km": 18.088,
+      "lapse_rate_tropopause_km": 14.255
+    },
+    "deadtime": {
+      "355.PC": {
+        "min_denominator_observed": 0.7259731888771057,
+        "clipped_profiles": 0,
+        "max_clipped_bin_fraction_per_profile": 0.0
+      },
+      "532.PC": {
+        "min_denominator_observed": -0.2284773290157318,
+        "clipped_profiles": 8,
+        "mean_clipped_bin_fraction_per_profile": 1.6467066476132697e-05,
+        "max_clipped_bin_fraction_per_profile": 0.000750000006519258
+      }
+    }
+  },
+  "level2": {
+    "product_completeness": "complete",
+    "product_status": "success",
+    "uncertainty_aggregation_policy": "fully_correlated_upper_bound",
+    "all_productive_value_bins_have_finite_reported_uncertainty": true,
+    "wavelengths_nm": {
+      "355": {
+        "gluing_success_fraction": 1.0,
+        "gluing_block_correlation_min": 0.9993811519101734,
+        "gluing_block_relative_rmse_max": 0.008536567914890172,
+        "gluing_split_altitude_m": [2081.25, 2478.75, 2486.25, 2658.75, 2681.25],
+        "rayleigh_reference_altitude_m_aggregate": 5748.75,
+        "rayleigh_reference_altitude_m_blocks": [5748.75, 5606.25, 6101.25, 5996.25, 5621.25],
+        "retrieval_success_blocks": 5,
+        "retrieval_blocks_total": 5,
+        "aggregate_finite_top_m": 6101.25,
+        "common_5_block_top_m": 5606.25,
+        "at_least_3_block_top_m": 5748.75,
+        "aggregate_finite_bottom_m": 3.75,
+        "lidar_ratio_sr": 91.06,
+        "lidar_ratio_std_sr": 15.0
+      },
+      "532": {
+        "gluing_success_fraction": 1.0,
+        "gluing_block_correlation_min": 0.9999076231511368,
+        "gluing_block_relative_rmse_max": 0.005978611934304089,
+        "gluing_split_altitude_m": [1916.25, 1961.25, 2066.25, 2148.75, 2201.25],
+        "rayleigh_reference_altitude_m_aggregate": 5816.25,
+        "rayleigh_reference_altitude_m_blocks": [5793.75, 5816.25, 5748.75, 5861.25, 6318.75],
+        "retrieval_success_blocks": 5,
+        "retrieval_blocks_total": 5,
+        "aggregate_finite_top_m": 6318.75,
+        "common_5_block_top_m": 5748.75,
+        "at_least_3_block_top_m": 5816.25,
+        "aggregate_finite_bottom_m": 3.75,
+        "lidar_ratio_sr": 57.11,
+        "lidar_ratio_std_sr": 10.0
+      }
+    }
+  },
+  "interpretation_notes": [
+    "Finite aggregate optical values are not themselves an altitude-resolved scientific support contract.",
+    "The 3.75 m finite lower edge is not accepted as validated near-field support; instrument overlap is not characterized in this baseline and must be handled separately.",
+    "Physical photon-counting saturation remains uncharacterized; current dead-time/PC guards are provisional."
+  ]
+}
