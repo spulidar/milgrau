@@ -34,6 +34,7 @@ LEVEL0_RAW_DATA_DIMS: Final[tuple[str, ...]] = ("time", "channels", "points")
 LEVEL0_TIME_SCALE_DIMS: Final[tuple[str, ...]] = ("time", "nb_of_time_scales")
 LEVEL0_BACKGROUND_DIMS: Final[tuple[str, ...]] = ("time_bck", "channels", "points")
 LEVEL0_BACKGROUND_TIME_DIMS: Final[tuple[str, ...]] = ("time_bck", "nb_of_time_scales")
+LEVEL0_BACKGROUND_LASER_SHOTS_DIMS: Final[tuple[str, ...]] = ("time_bck", "channels")
 LEVEL0_CHANNEL_DIMS: Final[tuple[str, ...]] = ("channels",)
 LEVEL0_LASER_SHOTS_DIMS: Final[tuple[str, ...]] = ("time", "channels")
 LEVEL1_CORE_DIMS: Final[tuple[str, ...]] = ("time", "channel", "altitude")
@@ -113,6 +114,24 @@ def _validate_level0_background_contract(ds: xr.Dataset) -> None:
     missing_attrs = [name for name in ("RawBck_Start_Date", "RawBck_Start_Time_UT", "RawBck_Stop_Time_UT") if not str(ds.attrs.get(name, "")).strip()]
     if missing_attrs:
         raise KeyError(f"Level 0 file with Background_Profile lacks SCC background attribute(s): {missing_attrs}")
+
+    if "Background_Laser_Shots" in ds:
+        _require_exact_dims(
+            ds["Background_Laser_Shots"],
+            LEVEL0_BACKGROUND_LASER_SHOTS_DIMS,
+            "Level 0 Background_Laser_Shots",
+        )
+        shots = np.asarray(ds["Background_Laser_Shots"].values, dtype=np.float64)
+        if shots.shape != (ds.sizes.get("time_bck", 0), ds.sizes.get("channels", 0)):
+            raise ValueError("Level 0 Background_Laser_Shots shape must match time_bck x channels.")
+        if "Background_Profile_Available" in ds:
+            available = np.asarray(ds["Background_Profile_Available"].values, dtype=np.int8) == 1
+            if np.any(available):
+                available_shots = shots[:, available]
+                if not np.all(np.isfinite(available_shots)) or np.any(available_shots <= 0.0):
+                    raise ValueError(
+                        "Level 0 Background_Laser_Shots must contain positive finite shot counts for every available dark channel."
+                    )
 
 
 def validate_level0_contract(ds: xr.Dataset) -> None:
