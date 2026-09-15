@@ -130,19 +130,21 @@ P3 freezes a scientifically defensible baseline before high-column R&D. It may c
 
 This subsection addresses issues in the present productive method; it must not be deferred to the future high-column redesign.
 
-- [ ] Replace independent signal/error reductions with a joint reduction using one scientifically defined valid mask (at minimum finite signal + finite non-negative uncertainty where an uncertainty-bearing mean is reported).
-- [ ] Return/store an effective sample count (`n_effective`) where needed so means and mean uncertainties are auditable.
-- [ ] Add regressions proving that samples cannot contribute to the signal mean while being silently absent from its reported uncertainty denominator.
-- [ ] Remove the rule that converts non-finite `rcs_error` to `0.0` inside KFS Monte Carlo.
-- [ ] Define the productive contiguous retrieval/error support on which signal, signal uncertainty and required molecular terms are simultaneously valid.
-- [ ] Add synthetic tests where missing uncertainty inside the integration path causes explicit unsupported/rejected output rather than zero-noise Monte Carlo perturbation.
+- [x] Replace independent signal/error reductions with a joint reduction using one scientifically defined valid mask (finite signal + finite non-negative uncertainty where an uncertainty-bearing mean is reported).
+- [x] Return/store an effective sample count (`n_effective`) in the productive block inputs so means and mean uncertainties are auditable.
+- [x] Add regressions proving that samples cannot contribute to the signal mean while being silently absent from its reported uncertainty denominator.
+- [x] Remove the rule that converts non-finite `rcs_error` to `0.0` inside KFS Monte Carlo.
+- [x] Define the current productive backward retrieval/error support as the physically sampled branch on which signal and molecular backscatter are finite/positive and signal uncertainty is finite/non-negative; missing uncertainty on that sampled path invalidates the productive branch.
+- [x] Add synthetic tests where missing uncertainty inside the integration path causes explicit unsupported/rejected output rather than zero-noise Monte Carlo perturbation, and distinguish explicit `sigma=0` from missing uncertainty.
 - [ ] Define which current uncertainty components are independent per block and which represent shared/correlated/systematic nuisance parameters.
 - [ ] Review aggregate block uncertainty so LR/reference/model components are not blindly reduced as `sqrt(sum(sigma_i^2))/N` unless independence is justified.
-- [ ] State explicitly that current gluing propagated uncertainty is the measurement-noise component and excludes fitted slope/intercept uncertainty unless/until regression-parameter uncertainty is propagated.
+- [x] State explicitly that current gluing propagated uncertainty is a partial measurement-noise propagation and excludes fitted slope/intercept uncertainty; it is not a total uncertainty budget.
 - [ ] Decide whether gluing regression-parameter uncertainty is material for the productive budget; if implemented, validate with synthetic/Monte Carlo tests.
-- [ ] If any accepted-output or uncertainty semantics change, increment `level2_retrieval_method_version` and make pre-change products stale.
+- [x] Because accepted-output/uncertainty semantics changed, increment `level2_retrieval_method_version` to `2`; incremental currentness makes pre-v2 products stale and method provenance records the change identity.
 
-Acceptance gate: **for every productive optical value with reported uncertainty, support and uncertainty semantics are internally consistent; missing uncertainty never means zero uncertainty; aggregation assumptions are explicit and tested.**
+Method-v2 hardening gate: **Ruff plus full pytest passed on Ubuntu/Windows x Python 3.12/3.14 (CI run 57).**
+
+Acceptance gate remains open: **for every productive optical value with reported uncertainty, support and uncertainty semantics are internally consistent; missing uncertainty never means zero uncertainty; aggregation assumptions are explicit and tested.** The remaining blockers are the shared/correlated uncertainty model and the decision on fitted gluing-parameter uncertainty.
 
 ### P3.4 — provenance/input identity — IN PROGRESS
 
@@ -162,7 +164,7 @@ Acceptance gate: **a product can identify the exact Level 1 content, scientific 
 
 ### P3.5 — focused documentation and scientific traceability — IN PROGRESS
 
-- [x] `docs/level2_schema.md` documents schema v1, method identity, units, flags, support/NaN semantics, gluing score identity, provenance boundary and current scientific limitations.
+- [x] `docs/level2_schema.md` documents schema v1, method v2 identity, units, flags, joint signal/error support, missing-uncertainty semantics, gluing score identity, provenance boundary and current scientific limitations.
 - [ ] Create/refresh focused docs for processing levels and config/station ownership without duplicating mutable scientific detail.
 - [ ] Shorten README into an entry point after focused docs exist.
 - [ ] Build a verified primary-source bibliography for methods actually implemented; distinguish historical inspiration from equations actually used.
@@ -409,10 +411,10 @@ P6 acceptance gate: **a third party can identify, install, cite and rerun the re
 
 ### Scientific-baseline acceptance still required
 
-- [ ] Signal/error averaging uses common support semantics.
-- [ ] Missing uncertainty cannot become zero-noise Monte Carlo support.
+- [x] Signal/error averaging uses common support semantics.
+- [x] Missing uncertainty cannot become zero-noise Monte Carlo support.
 - [ ] Aggregate uncertainty states independence/correlation assumptions explicitly.
-- [ ] Gluing uncertainty scope is explicit and not described as total uncertainty unless regression-parameter uncertainty is included.
+- [x] Gluing uncertainty scope is explicit and not described as total uncertainty while fitted regression-parameter uncertainty is excluded.
 - [ ] Product provenance identifies exact Level 1 content.
 - [ ] Development/release code identity is unambiguous.
 - [ ] Scientific traceability matrix exists.
@@ -421,15 +423,16 @@ P6 acceptance gate: **a third party can identify, install, cite and rerun the re
 
 ## 11. Immediate next gate
 
+Completed in method v2: joint signal/error averaging, `n_effective`, missing-uncertainty rejection in KFS, synthetic regressions, common-support aggregate optical reduction, method-version bump and stale-product enforcement.
+
 Do these before recreating high-column `fixing_l2` work:
 
-1. Fix joint signal/error averaging semantics and add `n_effective`/regressions where needed.
-2. Remove `NaN uncertainty -> 0` Monte Carlo behavior and define contiguous uncertainty-bearing retrieval support.
-3. Review aggregate/correlated uncertainty assumptions and clarify gluing uncertainty scope.
-4. Increment retrieval method identity if the accepted numerical/uncertainty semantics change.
-5. Add Level 1 content identity to provenance and incremental currentness; keep paths portable.
-6. Define stable thermodynamic source identifiers and non-release source-code revision identity.
-7. Build the scientific traceability matrix and verified bibliography.
-8. Add explicit software licensing and prepare CF validation criteria.
-9. Keep P4 instrument characterization parallel and evidence-first.
-10. Only after that, start P5 with synthetic support tests, observational regression baseline, Rayleigh candidate catalogue, backbone and ensemble. Evaluate cascade only after Decision gate A.
+1. Define the current uncertainty-component model: which terms are independent acquisition noise and which LR/reference/model terms are shared or correlated across blocks.
+2. Replace or qualify aggregate uncertainty reduction accordingly; add tests for shared versus independent nuisance components.
+3. Decide whether fitted gluing slope/intercept uncertainty is material enough to propagate; keep the current scope explicitly partial until then.
+4. Add Level 1 content identity to provenance and incremental currentness; keep paths portable.
+5. Define stable thermodynamic source identifiers and non-release source-code revision identity.
+6. Build the scientific traceability matrix and verified bibliography.
+7. Add explicit software licensing and prepare CF validation criteria.
+8. Keep P4 instrument characterization parallel and evidence-first.
+9. Only after that, start P5 with synthetic support tests, observational regression baseline, Rayleigh candidate catalogue, backbone and ensemble. Evaluate cascade only after Decision gate A.
