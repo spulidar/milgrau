@@ -162,7 +162,7 @@ def load_config(
         try:
             validate_station_config(station_catalog)
             _apply_station_lidar_ratio_climatology(config, station_catalog)
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise type(exc)(f"{exc} [station config: {station_path}]") from exc
 
     normalized = normalize_config(config)
