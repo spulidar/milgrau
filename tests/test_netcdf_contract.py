@@ -13,7 +13,10 @@ from milgrau.level2.lebear import process_single_level1_file
 from milgrau.level2.metadata import LEVEL2_METADATA_VARIABLE_NAMES
 from milgrau.operations import ExecutionStatus
 from milgrau.physics.atmosphere import get_standard_atmosphere
-from milgrau.scientific import LEVEL2_PRODUCT_SCHEMA_VERSION
+from milgrau.scientific import (
+    LEVEL2_PRODUCT_SCHEMA_VERSION,
+    LEVEL2_RETRIEVAL_METHOD_VERSION,
+)
 
 
 class _ListLogger(logging.Logger):
@@ -24,7 +27,16 @@ class _ListLogger(logging.Logger):
         self.messages: list[str] = []
         self.propagate = False
 
-    def _log(self, level, msg, args, exc_info=None, extra=None, stack_info=False, stacklevel=1):  # noqa: D401
+    def _log(
+        self,
+        level,
+        msg,
+        args,
+        exc_info=None,
+        extra=None,
+        stack_info=False,
+        stacklevel=1,
+    ):  # noqa: D401
         rendered = str(msg) % args if args else str(msg)
         self.messages.append(f"{logging.getLevelName(level)}: {rendered}")
 
@@ -44,20 +56,44 @@ def _write_synthetic_level1(path: Path) -> Path:
         for c_idx in range(channel.size):
             scale = 1.0 + 0.1 * t_idx + 0.05 * c_idx
             corrected_signal[t_idx, c_idx, :] = scale * base_profile
-            corrected_signal_error[t_idx, c_idx, :] = 0.05 * np.abs(corrected_signal[t_idx, c_idx, :])
-            range_corrected_signal[t_idx, c_idx, :] = corrected_signal[t_idx, c_idx, :] * altitude**2
-            range_corrected_signal_error[t_idx, c_idx, :] = corrected_signal_error[t_idx, c_idx, :] * altitude**2
+            corrected_signal_error[t_idx, c_idx, :] = 0.05 * np.abs(
+                corrected_signal[t_idx, c_idx, :]
+            )
+            range_corrected_signal[t_idx, c_idx, :] = (
+                corrected_signal[t_idx, c_idx, :] * altitude**2
+            )
+            range_corrected_signal_error[t_idx, c_idx, :] = (
+                corrected_signal_error[t_idx, c_idx, :] * altitude**2
+            )
 
     pressure_hpa, temperature_k = get_standard_atmosphere(altitude + 760.0)
     ds = xr.Dataset(
         data_vars={
             "corrected_signal": (("time", "channel", "altitude"), corrected_signal),
-            "corrected_signal_error": (("time", "channel", "altitude"), corrected_signal_error),
-            "range_corrected_signal": (("time", "channel", "altitude"), range_corrected_signal),
-            "range_corrected_signal_error": (("time", "channel", "altitude"), range_corrected_signal_error),
-            "pc_saturation_mask": (("time", "channel", "altitude"), np.zeros(shape, dtype=np.int8)),
-            "channel_correction_success": (("channel",), np.ones(channel.size, dtype=np.int8)),
-            "PBL_Height_km": (("time",), np.array([0.8, 0.9, 1.0], dtype=np.float32)),
+            "corrected_signal_error": (
+                ("time", "channel", "altitude"),
+                corrected_signal_error,
+            ),
+            "range_corrected_signal": (
+                ("time", "channel", "altitude"),
+                range_corrected_signal,
+            ),
+            "range_corrected_signal_error": (
+                ("time", "channel", "altitude"),
+                range_corrected_signal_error,
+            ),
+            "pc_saturation_mask": (
+                ("time", "channel", "altitude"),
+                np.zeros(shape, dtype=np.int8),
+            ),
+            "channel_correction_success": (
+                ("channel",),
+                np.ones(channel.size, dtype=np.int8),
+            ),
+            "PBL_Height_km": (
+                ("time",),
+                np.array([0.8, 0.9, 1.0], dtype=np.float32),
+            ),
             "Atmospheric_Temperature_K": (("altitude",), temperature_k),
             "Atmospheric_Pressure_hPa": (("altitude",), pressure_hpa),
         },
@@ -151,9 +187,33 @@ def test_lebear_uses_level1_atmosphere_and_generates_level2(tmp_path: Path) -> N
 
     with xr.open_dataset(output_path) as ds_l2:
         assert ds_l2.attrs["level2_product_schema_version"] == LEVEL2_PRODUCT_SCHEMA_VERSION
+        assert (
+            ds_l2.attrs["level2_retrieval_method_version"]
+            == LEVEL2_RETRIEVAL_METHOD_VERSION
+        )
         assert ds_l2.attrs["Molecular_sources"] == "ussa76"
         assert ds_l2.attrs["molecular_atmosphere_implementation_version"] == "3"
-        assert ds_l2.attrs["molecular_atmosphere_scientific_change"] == "level1_materialized_atmosphere_with_log_pressure_interpolation"
+        assert (
+            ds_l2.attrs["molecular_atmosphere_scientific_change"]
+            == "level1_materialized_atmosphere_with_log_pressure_interpolation"
+        )
+        assert ds_l2.attrs["integration_mode"] == "backward"
+        assert ds_l2.attrs["uncertainty_method"] == "Monte Carlo"
+        assert (
+            ds_l2.attrs["kfs_reference_boundary_model"]
+            == "beta_total_ref=beta_mol_ref*(1+aerosol_ref_fraction)"
+        )
+        assert ds_l2.attrs["kfs_aerosol_ref_fraction"] == 0.0
+        assert ds_l2.attrs["kfs_beta_ref_relative_std"] == 0.10
+        assert ds_l2.attrs["kfs_min_lidar_ratio_sr"] == 10.0
+        assert ds_l2.attrs["kfs_allow_negative_aerosol"] == 0
+        assert ds_l2.attrs["gluing_selection_score_version"] == "1"
+        assert ds_l2.attrs["gluing_score_relative_rmse_weight"] == 1.0
+        assert ds_l2.attrs["gluing_score_absolute_relative_bias_weight"] == 1.0
+        assert ds_l2.attrs["gluing_score_intercept_percent_weight"] == 0.001
+        assert ds_l2.attrs["gluing_score_saturation_fraction_weight"] == 0.01
+        assert "relative_rmse" in ds_l2.attrs["gluing_selection_score_formula"]
+
         assert ds_l2["molecular_backscatter"].dims == ("wavelength", "altitude")
         assert np.all(np.isfinite(ds_l2["molecular_backscatter"].values))
         assert set(np.unique(ds_l2["retrieval_success_flag"].values).tolist()) == {1}
@@ -177,7 +237,10 @@ def test_lebear_uses_level1_atmosphere_and_generates_level2(tmp_path: Path) -> N
         assert legacy_duplicate_aliases.isdisjoint(ds_l2.data_vars)
 
         assert set(ds_l2.data_vars) == set(LEVEL2_METADATA_VARIABLE_NAMES)
-        assert all(str(ds_l2[name].attrs.get("long_name", "")).strip() for name in ds_l2.data_vars)
+        assert all(
+            str(ds_l2[name].attrs.get("long_name", "")).strip()
+            for name in ds_l2.data_vars
+        )
         assert ds_l2["altitude"].attrs["units"] == "m"
         assert ds_l2["altitude"].attrs["reference"] == "above_station"
         assert ds_l2["wavelength"].attrs["units"] == "nm"
@@ -217,8 +280,13 @@ def test_lebear_uses_level1_atmosphere_and_generates_level2(tmp_path: Path) -> N
             assert flag_values.ndim == 1
             assert str(ds_l2[name].attrs["flag_meanings"]).strip()
 
-        assert np.asarray(ds_l2["signal_source_flag"].attrs["flag_values"]).tolist() == [0, 1, 2, 3]
-        assert np.asarray(ds_l2["retrieval_input_invalid_reason"].attrs["flag_values"]).tolist() == list(
-            range(11)
-        )
+        assert np.asarray(ds_l2["signal_source_flag"].attrs["flag_values"]).tolist() == [
+            0,
+            1,
+            2,
+            3,
+        ]
+        assert np.asarray(
+            ds_l2["retrieval_input_invalid_reason"].attrs["flag_values"]
+        ).tolist() == list(range(11))
         assert "not requested" in ds_l2["kfs_forward_valid_flag"].attrs["description"]
