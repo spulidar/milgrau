@@ -23,7 +23,7 @@ from milgrau.io.paths import (
     product_save_id,
     quicklook_output_path,
 )
-from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary
+from milgrau.operations import ExecutionResult, ExecutionSummary
 from milgrau.viz.config import resolve_visualization_config
 from milgrau.viz.quicklooks import format_channel_name, plot_global_mean_rcs, plot_quicklook
 from milgrau.viz.style import DEFAULT_LOGO_SPECS
