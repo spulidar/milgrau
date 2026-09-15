@@ -10,7 +10,7 @@ The product intentionally separates three kinds of identity:
 
 - package/software version: normal MILGRAU release identity;
 - `level2_product_schema_version = "1"`: storage names/dimensions/metadata contract;
-- `level2_retrieval_method_version = "1"`: productive L2 method identity independent of package CalVer and schema-only changes.
+- `level2_retrieval_method_version = "2"`: productive L2 method identity independent of package CalVer and schema-only changes. Method v2 requires common value/uncertainty support during averaging and treats missing signal uncertainty as unsupported rather than as zero Monte Carlo noise.
 
 Incremental reuse rejects a product whose schema version, retrieval-method version, productive KFS identity, Fernald scientific identity, or versioned gluing-selection score does not match the running code. Partial products are never incrementally reusable.
 
@@ -70,7 +70,11 @@ Selected lidar signals are deliberately **not** assigned invented SI units. Anal
 
 NaN is never filled or interpolated merely to extend retrieval coverage.
 
-For aerosol backscatter/extinction products, NaN means no accepted productive backward-retrieval support at that altitude. Internal unsupported gaps are not bridged. Aggregate products use only accepted retrieval blocks.
+For productive temporal/block averaging in method v2, a sample contributes to a reported signal mean only when both the signal and its one-sigma uncertainty are finite and the uncertainty is non-negative. The signal mean and propagated uncertainty therefore use one common mask and one common effective sample count. A finite signal with missing uncertainty is unsupported for that reduction; missing uncertainty is never interpreted as zero uncertainty.
+
+For KFS Monte Carlo retrieval in method v2, non-finite `rcs_error` is preserved as unsupported. It is not replaced with zero before perturbation. A missing uncertainty sample on the requested backward integration support invalidates that productive branch, and invalid KFS blocks do not publish partial aerosol optical arrays as accepted block products.
+
+For aerosol backscatter/extinction products, NaN means no accepted productive backward-retrieval support at that altitude. Internal unsupported gaps are not bridged. Aggregate products use only accepted retrieval blocks, and aggregate optical means/errors use the same finite value/uncertainty support at each altitude.
 
 `scattering_ratio_mean` and `scattering_ratio_block` are measured-to-molecular diagnostics. They can remain finite above the productive backward KFS boundary; a finite scattering ratio is **not** evidence of supported aerosol retrieval.
 
@@ -114,6 +118,7 @@ Time-expanded gluing/source diagnostics repeat block decisions on the original L
 The final NetCDF records stable machine-readable productive identity including:
 
 - `level2_retrieval_method_version`;
+- `level2_retrieval_method_change`;
 - `elastic_backscatter_inversion_method`;
 - `integration_mode = backward` and matching `KFS_Mode`;
 - Fernald implementation/scientific-change identity;
@@ -154,12 +159,13 @@ The product currently favors readable, portable provenance over host-specific pa
 - thermodynamic source identity inherited/materialized from Level 1;
 - software/method/schema identities described above.
 
-Full local paths, secrets, transient cache paths, and operational tracebacks do not belong in the scientific product. Current provenance intentionally does not publish configuration/Git SHA attributes merely for appearance of reproducibility; exact YAML plus stable IDs are the readable configuration record. Any future source-content hash needs a named consumer/use case and a documented portability policy.
+Full local paths, secrets, transient cache paths, and operational tracebacks do not belong in the scientific product. Current provenance intentionally does not publish configuration/Git SHA attributes merely for appearance of reproducibility; exact YAML plus stable IDs are the readable configuration record. A Level 1 source-content identity is tracked separately in the roadmap because cache correctness and scientific lineage are now named consumers; it is not claimed as implemented until the provenance/currentness code and tests land.
 
 ## Known limitations
 
 - Productive elastic inversion is backward KFS from one accepted Rayleigh reference toward lower altitude.
 - Aerosol extinction is conditional on assumed aerosol lidar ratio.
+- Current optical uncertainty remains a partial budget: signal Monte Carlo, scalar lidar-ratio perturbation and reference-boundary perturbation are represented, while correlation/systematic semantics and fitted gluing-coefficient uncertainty still require explicit characterization.
 - Physical photon-counting saturation is not characterized; the current dead-time occupancy guard is provisional and must not be described as a detector saturation limit.
 - Cloud screening is not yet a productive Rayleigh-reference rejection gate.
 - No hard propagated-error SNR gate is enabled without SPU evidence.
