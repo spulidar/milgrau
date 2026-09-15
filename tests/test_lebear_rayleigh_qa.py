@@ -141,7 +141,6 @@ def _config(tmp_path: Path) -> dict:
                 "search_min_idx": 20,
                 "search_max_idx": 120,
                 "intercept_threshold": 5.0,
-                "gaussian_threshold": 1.0,
                 "minmax_threshold": 0.05,
                 "max_relative_rmse": 1.0,
                 "max_relative_bias": 1.0,
