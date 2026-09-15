@@ -28,6 +28,19 @@ def test_core_package_imports() -> None:
     assert isinstance(milgrau.__version__, str)
 
 
+def test_level1_public_exports_use_canonical_owners() -> None:
+    """Package-level Level 1 helpers must come directly from their owner modules."""
+    import milgrau.level1 as level1
+    import milgrau.level1.ingestion as ingestion
+    import milgrau.level1.pbl as pbl
+    import milgrau.level1.thermodynamics as thermodynamics
+
+    assert level1.load_and_prepare_level0 is ingestion.load_and_prepare_level0
+    assert level1.estimate_pbl_timeseries is pbl.estimate_pbl_timeseries
+    assert level1.calculate_pbl_height_gradient is pbl.calculate_pbl_height_gradient
+    assert level1.integrate_thermodynamics is thermodynamics.integrate_thermodynamics
+
+
 def test_level2_productive_orchestration_has_no_legacy_module_dependency() -> None:
     """Canonical retrieval functions must come from their cohesive owner modules."""
     import milgrau.level2.optical_retrieval as optical_retrieval
