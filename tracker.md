@@ -89,7 +89,8 @@ Evidence tasks may finish as `characterized/enabled`, `insufficient evidence/pro
 - [x] Keep all SPU-specific receiver/transmitter values and their uncertainty/status in `station.yaml`; no SPU numerical geometry is embedded in Python.
 - [x] Support a profile-specific transmitter geometry with an explicit station fallback when that profile lacks geometry; record which source was resolved.
 - [x] Keep the current model diagnostic only: `correction_policy=diagnostic_only_no_correction`; no Level 0/1 signal is divided by the model curve.
-- [x] Preserve the current discrepancy rather than tuning parameters: with provisional 30 cm telescope, ~4 cm beam, 0.1 mrad FOV interpreted as full angle and 0.1 mrad divergence upper-bound value, the first-order model has no finite exact-full-overlap range and gives only ~0.028 overlap at the reported 500 m altitude.
+- [x] Refine the provisional receiver geometry from operator evidence: with 30 cm telescope, ~4 cm beam, 0.10 mrad divergence upper-bound value and reported ~500 m full overlap, infer a provisional **0.78 mrad full-angle FOV**. For `f=1.5 m` this implies a ~1.17 mm field stop, reasonably consistent with the operator estimate of roughly 1 mm. This is internal consistency, not independent validation.
+- [x] Record the approximate ~1 mm physical diaphragm separately in `station.yaml` with explicit unverified status; do not replace the inferred angular FOV with a hidden code constant.
 - [x] Document assumptions, equations, current diagnostic and campaign update path in `docs/overlap_model.md`.
 - [ ] Experimentally determine FOV convention/value, field-stop diameter, beam diameter convention, wavelength-dependent divergence, alignment/separation and overlap stability.
 - [ ] Use telecover/alignment mapping and preferably an independent horizontal/Raman-based method to validate the overlap curve and lower quantitative-support boundary.
@@ -214,7 +215,7 @@ P6 acceptance gate: a third party can identify, install, cite and rerun the rele
 
 ## Immediate next gate
 
-1. Let the new diagnostic overlap implementation pass the full cross-platform CI; fix any real regression before calling this implementation stable.
+1. Let the refined diagnostic overlap configuration pass the full cross-platform CI; fix any real regression before calling this provisional implementation stable.
 2. Run a real CF/compliance checker against the uploaded `20251107sapm` method-v3 Level 2 and fix genuine schema issues.
 3. Confirm the copyright holder/institutional approval for BSD-3-Clause, then add the root license/CFF/package identity.
 4. Continue P4 overlap experimentally without blocking algorithm development; keep the model diagnostic-only until validated.
