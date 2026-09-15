@@ -78,7 +78,7 @@ def test_correlated_error_bound_does_not_gain_inverse_sqrt_n() -> None:
 
     assert mean[0] == pytest.approx(12.0)
     assert mean_error[0] == pytest.approx(2.0)
-    assert mean_error[0] > pytest.approx(2.0 / np.sqrt(3.0))
+    assert mean_error[0] > 2.0 / np.sqrt(3.0)
     assert n_effective[0] == 3
 
 
