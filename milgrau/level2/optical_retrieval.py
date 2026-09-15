@@ -8,7 +8,7 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from milgrau.level2.block_average import valid_block_error, valid_block_mean
+from milgrau.level2.block_average import valid_block_mean, valid_block_mean_and_error
 from milgrau.level2.config import get_kfs_config
 from milgrau.level2.contracts import (
     KfsDiagnostics,
@@ -245,23 +245,25 @@ def _reaggregate_backward_optical_products(
         (np.asarray(rayleigh.reference_success_flag_block) == 1)
         & (np.asarray(kfs.backward_valid_flag_block) == 1)
     )
+    backscatter_mean, backscatter_error, _ = valid_block_mean_and_error(
+        optical.aerosol_backscatter_block,
+        optical.aerosol_backscatter_error_block,
+        valid_block,
+    )
+    extinction_mean, extinction_error, _ = valid_block_mean_and_error(
+        optical.aerosol_extinction_block,
+        optical.aerosol_extinction_error_block,
+        valid_block,
+    )
     updated = replace(
         optical,
         scattering_ratio_mean=valid_block_mean(
             optical.scattering_ratio_block, valid_block
         ),
-        aerosol_backscatter=valid_block_mean(
-            optical.aerosol_backscatter_block, valid_block
-        ),
-        aerosol_backscatter_error=valid_block_error(
-            optical.aerosol_backscatter_error_block, valid_block
-        ),
-        aerosol_extinction=valid_block_mean(
-            optical.aerosol_extinction_block, valid_block
-        ),
-        aerosol_extinction_error=valid_block_error(
-            optical.aerosol_extinction_error_block, valid_block
-        ),
+        aerosol_backscatter=backscatter_mean,
+        aerosol_backscatter_error=backscatter_error,
+        aerosol_extinction=extinction_mean,
+        aerosol_extinction_error=extinction_error,
         retrieval_success_flag=valid_block.astype(np.int8),
     )
     return updated, valid_block
@@ -384,16 +386,16 @@ def retrieve_optical_blocks(
                 config,
             )
         )
+        backward_valid = bool(kfs_diagnostic["backward_valid"])
+        forward_valid = bool(kfs_diagnostic["forward_valid"])
+        kfs_backward_valid[block_index] = np.int8(backward_valid)
+        kfs_forward_valid[block_index] = np.int8(forward_valid)
+        if not backward_valid:
+            continue
         aerosol_backscatter[block_index, :] = beta_mean
         aerosol_backscatter_error[block_index, :] = beta_std
         aerosol_extinction[block_index, :] = alpha_mean
         aerosol_extinction_error[block_index, :] = alpha_std
-        kfs_backward_valid[block_index] = np.int8(
-            bool(kfs_diagnostic["backward_valid"])
-        )
-        kfs_forward_valid[block_index] = np.int8(
-            bool(kfs_diagnostic["forward_valid"])
-        )
 
     rayleigh_valid_block = (
         (np.asarray(glued.retrieval_input_valid_flag) == 1)
