@@ -83,6 +83,64 @@ def inherited_provenance(source_attrs: Mapping[str, Any]) -> dict[str, str]:
     return result
 
 
+def _era5_dataset_from_config(config: Mapping[str, Any]) -> str:
+    """Return the explicitly configured ERA5 dataset identifier when available."""
+    level1 = config.get("level1")
+    if not isinstance(level1, Mapping):
+        return ""
+    atmosphere = level1.get("atmosphere")
+    if not isinstance(atmosphere, Mapping):
+        return ""
+    era5 = atmosphere.get("era5")
+    if not isinstance(era5, Mapping):
+        return ""
+    dataset = era5.get("dataset")
+    return str(dataset).strip() if isinstance(dataset, str) else ""
+
+
+def thermodynamic_source_provenance(
+    source_attrs: Mapping[str, Any],
+    config: Mapping[str, Any],
+) -> dict[str, str]:
+    """Return a portable provider/product/release identity for the Level 1 atmosphere.
+
+    The identity deliberately excludes cache filenames, download timestamps and
+    host paths. ERA5 uses the configured CDS dataset plus its dataset DOI when
+    available; radiosonde records the stable Wyoming upper-air service family;
+    USSA76 records the standard-atmosphere edition. Source-specific timestamps,
+    station identifiers and fallback fractions remain separate attributes.
+    """
+    source_type = str(source_attrs.get("thermodynamic_profile_source_type", "")).strip().lower()
+    if not source_type:
+        return {}
+
+    doi = str(source_attrs.get("thermodynamic_profile_doi", "")).strip()
+    if source_type == "era5":
+        provider = "copernicus_climate_change_service"
+        product = _era5_dataset_from_config(config) or "era5_pressure_levels"
+        release = f"doi:{doi}" if doi else "dataset_family_unversioned"
+    elif source_type == "radiosonde":
+        provider = "university_of_wyoming"
+        product = "upper_air_sounding"
+        release = "service_unversioned"
+    elif source_type == "ussa76":
+        provider = "us_standard_atmosphere"
+        product = "standard_atmosphere"
+        release = "1976"
+    else:
+        return {}
+
+    result = {
+        "thermodynamic_profile_provider": provider,
+        "thermodynamic_profile_product": product,
+        "thermodynamic_profile_version_or_release": release,
+        "thermodynamic_profile_source_id": f"{provider}/{product}/{release}",
+    }
+    if doi:
+        result["thermodynamic_profile_doi"] = doi
+    return result
+
+
 def _yaml_document_variable(dataset: nc.Dataset, name: str) -> nc.Variable:
     """Return a one-element NC_STRING variable safe for netCDF4-python VLEN writes.
 
@@ -160,7 +218,9 @@ def write_netcdf_provenance(
     such as ``source_level1_sha256`` for Level 2 lineage and incremental cache
     correctness. Host-specific absolute paths are not written.
     """
-    attrs: dict[str, str | int | float] = inherited_provenance(source_attrs or {})
+    source = source_attrs or {}
+    attrs: dict[str, str | int | float] = inherited_provenance(source)
+    attrs.update(thermodynamic_source_provenance(source, config))
     attrs.update(configuration_provenance(config))
     if extra_attrs:
         for key, value in extra_attrs.items():
