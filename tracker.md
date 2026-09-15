@@ -28,7 +28,7 @@ This file is the active source of truth for current scientific/engineering gates
 | P2 | COMPLETE | engineering guardrails and cross-platform CI |
 | P3 | IN PROGRESS — LICENSE + METADATA QA | current-method scientific + FAIR hardening |
 | P4 | PARALLEL EVIDENCE WORK | instrument characterization / observational validation |
-| P5 | PENDING | altitude-resolved support + high-column R&D |
+| P5 | READY FOR SCIENTIFIC R&D | altitude-resolved support + high-column R&D |
 | P6 | PENDING | reproducible release/publication process |
 
 ## Current productive baseline
@@ -53,7 +53,7 @@ Key current limitations remain: elastic extinction is conditional on assumed lid
 - [x] Keep clear coordinate semantics, physical units where meaningful, explicit unit status for instrument-native quantities, machine-readable flags, honest missing values, and readable provenance.
 - [ ] Audit representative Level 2 metadata for ambiguity/inconsistency and fix genuine readability/interoperability problems. External checkers may be used as optional linting aids, not as a project certification gate.
 
-P3 acceptance gate: **open on deliberate software-license selection plus a recorded representative NetCDF metadata review.**
+P3 acceptance gate: **open on deliberate software-license selection plus a recorded representative NetCDF metadata review. This gate does not block scientific P4/P5 development; it blocks release/FAIR completion.**
 
 ## P4 — instrument characterization / observational validation
 
@@ -65,11 +65,19 @@ P3 acceptance gate: **open on deliberate software-license selection plus a recor
 - [ ] Experimentally determine FOV convention/value, field-stop diameter, beam diameter convention, wavelength-dependent divergence, alignment/separation, and temporal stability.
 - [ ] Validate with telecover/alignment mapping and preferably an independent horizontal/Raman-based overlap method before any productive correction/support boundary is introduced.
 
+### Photon-counting dead time / saturation
+
+- [x] Preserve the maximum directly observed PC rate per profile in Level 1 before dark-current subtraction, dead-time correction, bin shift or background subtraction.
+- [x] Evaluate and persist dead-time denominator/clipping diagnostics on that raw observed rate separately from the current productive dark-subtracted path.
+- [x] A future characterized physical saturation mask uses the observed pre-dark PC rate. No SPU saturation limit is invented or enabled by this change.
+- [x] Preserve parsed dark-acquisition `NShots` as optional `Background_Laser_Shots(time_bck, channels)` in newly generated Level 0 files, so dark PC rates can be normalized independently.
+- [x] Re-analysis of the existing `20251107sapm` Level 0 shows 532.PC observed-rate maxima near 133–134 MHz for ordinary profiles and approximately 351 MHz for the eight anomalous profiles. Raw-rate denominator clipping identifies the same 8/167 profiles and the same maximum clipped-bin fraction (~0.00075) as the current productive diagnostic. This is observational evidence of extreme acquired count rates, not proof of a physical detector-saturation threshold.
+- [ ] Regenerate `20251107sapm` Level 0/Level 1 with the new diagnostics, verify real dark `NShots`, and quantify the difference between the current productive order (`dark subtraction -> dead-time correction`) and separately normalized/corrected measurement and dark rates.
+- [ ] Change the productive correction order only if the quantified evidence supports it; any such change requires explicit scientific-method/provenance versioning and regression tests.
+- [ ] Characterize physical photon-counting saturation under operational SPU conditions using AN/PC overlap and preferably controlled attenuation before defining a traceable maximum rate.
+
 ### Other instrument evidence
 
-- [ ] Characterize physical photon-counting saturation under operational SPU conditions using AN/PC overlap and preferably controlled attenuation before defining a traceable maximum rate.
-- [ ] Move any surviving provisional PC guard to raw observed Level 1 PC rate rather than a corrected/background-subtracted proxy.
-- [ ] Audit dark-current subtraction versus nonlinear dead-time correction and quantify the difference over observed regimes; `20251107sapm` had 532.PC clipping in 8/167 profiles.
 - [ ] Characterize propagated-error SNR before enabling a hard Rayleigh SNR gate.
 - [ ] Validate cloud/layer screening before productive reference-window rejection.
 - [ ] Quantify gluing slope/intercept uncertainty and covariance before expanding the declared uncertainty budget.
@@ -77,7 +85,7 @@ P3 acceptance gate: **open on deliberate software-license selection plus a recor
 
 ## P5 — altitude-resolved support + high-column R&D
 
-Start after P3.6 closes; P4 evidence may continue in parallel.
+Scientific P5 development may proceed in parallel with the unresolved P3 license/metadata release work. P4 evidence remains authoritative: unresolved instrument boundaries must stay provisional/unsupported rather than being invented for P5.
 
 ### P5.1 support semantics + synthetic truth
 
@@ -116,7 +124,7 @@ Start after P3.6 closes; P4 evidence may continue in parallel.
 
 ## Immediate next gate
 
-1. Choose the software license based on desired reuse/copolyft behavior, then align repository metadata.
-2. Perform a representative NetCDF metadata/readability audit without claiming external-convention conformance.
-3. Continue P4 with 532.PC dead-time/saturation evidence while overlap remains experimental/diagnostic.
-4. After P3.6 closes, begin P5 with synthetic support tests and the Rayleigh candidate catalogue, then backbone and ensemble.
+1. Complete the `20251107sapm` real-data dead-time/dark-order comparison using newly preserved dark `NShots`; do not alter the productive correction order before that evidence exists.
+2. Begin P5 synthetic support/truth tests in parallel with P4 evidence work; license and metadata policy remain release gates rather than scientific-development blockers.
+3. Refactor Rayleigh selection into an all-candidates -> QA -> rank pipeline after the support/truth harness is established.
+4. Quantify gluing fit-parameter uncertainty, then proceed to long-mean backbone and multi-reference ensemble work.
