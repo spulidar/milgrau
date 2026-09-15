@@ -238,7 +238,7 @@ def read_licel_header(
         if representative_shots <= 0:
             raise ValueError(f"No positive laser-shot count found in {filepath}.")
         return start_time_utc, stop_time_utc, duration, representative_shots, laser_freq
-    except Exception as exc:
+    except (OSError, ValueError) as exc:
         if logger:
             logger.warning(f"  -> Invalid Licel header skipped: {filepath} ({exc})")
         return None, None, None, None, None
@@ -390,7 +390,7 @@ def parse_licel_group(filepaths: list[str], logger: logging.Logger) -> dict:
             global_shots.extend(shot_row)
             for ch_name, array in data.items():
                 time_series[ch_name].append(array)
-        except Exception as exc:
+        except (OSError, ValueError) as exc:
             logger.warning(f"    -> Failed to read {Path(filepath).name}: {exc}")
             continue
 
