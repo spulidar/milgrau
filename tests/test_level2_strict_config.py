@@ -44,7 +44,6 @@ def _complete_level2_config() -> dict:
                 "window_length_bins": 120,
                 "correlation_threshold": 0.95,
                 "intercept_threshold": 5.0,
-                "gaussian_threshold": 0.10,
                 "minmax_threshold": 0.05,
                 "max_relative_rmse": 0.08,
                 "max_relative_bias": 0.05,
@@ -72,7 +71,9 @@ def test_complete_level2_config_validates_and_extracts_values() -> None:
     assert get_block_average_minutes(config) == 20
     assert get_kfs_mode(config) == "backward"
     assert get_kfs_config(config)["random_seed"] == 143
-    assert get_gluing_config(config)["gaussian_threshold"] == 0.10
+    gluing = get_gluing_config(config)
+    assert gluing["minmax_threshold"] == 0.05
+    assert "gaussian_threshold" not in gluing
     assert get_molecular_fit_config(config)["ref_window_m"] == 1000.0
     assert get_cloud_screening_config(config) == {"enabled": False}
     assert get_lidar_ratio(config, 532, "2026-09-09T00:00:00") == (69.0, 10.0)
@@ -136,10 +137,10 @@ def test_missing_lidar_ratio_uncertainty_fails_before_processing() -> None:
         validate_level2_config(config)
 
 
-def test_gluing_requires_every_scientific_threshold() -> None:
+def test_gluing_requires_every_active_scientific_threshold() -> None:
     config = _complete_level2_config()
-    del config["inversion"]["gluing"]["gaussian_threshold"]
-    with pytest.raises(Level2ConfigurationError, match="gaussian_threshold"):
+    del config["inversion"]["gluing"]["max_relative_rmse"]
+    with pytest.raises(Level2ConfigurationError, match="max_relative_rmse"):
         get_gluing_config(config)
 
 
