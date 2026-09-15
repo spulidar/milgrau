@@ -159,6 +159,11 @@ def get_lidar_ratio(config: Mapping[str, Any], wavelength_nm: int, measurement_t
 def get_gluing_config(config: Mapping[str, Any]) -> dict[str, Any]:
     """Return complete explicitly configured analog/PC gluing settings."""
     gluing_cfg = _required_mapping(_inversion(config), "gluing", "inversion")
+    if "gaussian_threshold" in gluing_cfg:
+        raise Level2ConfigurationError(
+            "inversion.gluing.gaussian_threshold is unsupported: the current residual-based gluing selector never used "
+            "that value. Remove the inert setting rather than treating it as scientific policy."
+        )
     required = {
         "window_length_bins",
         "correlation_threshold",
