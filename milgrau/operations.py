@@ -52,6 +52,11 @@ def _freeze_metadata(metadata: Mapping[str, MetadataValue]) -> Mapping[str, Meta
     return MappingProxyType(copied)
 
 
+def _display_path(path: Path) -> str:
+    """Return one platform-independent path spelling for logs and diagnostics."""
+    return path.as_posix()
+
+
 @dataclass(frozen=True, slots=True)
 class ExecutionResult:
     status: ExecutionStatus
@@ -135,9 +140,9 @@ class ExecutionResult:
         tag = {ExecutionStatus.OK: "OK", ExecutionStatus.SKIPPED: "SKIPPED", ExecutionStatus.ERROR: "ERROR"}[self.status]
         details = [f"[{tag}] {self.stage}: {self.message}"]
         if self.input_path is not None:
-            details.append(f"input={self.input_path}")
+            details.append(f"input={_display_path(self.input_path)}")
         if self.output_path is not None:
-            details.append(f"output={self.output_path}")
+            details.append(f"output={_display_path(self.output_path)}")
         if self.duration_seconds is not None:
             details.append(f"duration={self.duration_seconds:.3f}s")
         if self.cause is not None:
