@@ -19,8 +19,13 @@ station:
     receiver:
       telescope_diameter_m: 0.30
       focal_length_m: 1.50
-      field_of_view_full_angle_mrad: 0.10
-      field_of_view_status: "assumed_full_angle_unverified"
+      # Operator estimates the physical diaphragm at about 1 mm. The provisional
+      # 0.78 mrad full-angle FOV is inferred from the reported ~500 m full-overlap
+      # altitude using the current ~4 cm beam and 0.10 mrad divergence upper bound.
+      field_stop_diameter_m: 0.001
+      field_stop_status: "operator_estimate_unverified_approximately_1mm"
+      field_of_view_full_angle_mrad: 0.78
+      field_of_view_status: "inferred_unverified_from_reported_500m_full_overlap"
     transmitter_fallback:
       beam_diameter_m: 0.04
       beam_diameter_status: "estimated_unverified"
@@ -34,7 +39,7 @@ station:
       status: "reported_unverified"
       source: "operator-provided system description; experimental overlap campaign pending"
     provenance:
-      source: "SPU nominal receiver description plus operator estimates recorded 2026-09-15"
+      source: "SPU nominal receiver description plus operator estimates recorded 2026-09-15; provisional FOV inferred from reported full overlap"
   radiosonde:
     station_id: "83779"
     station_name: "SBMT Marte Civ"
