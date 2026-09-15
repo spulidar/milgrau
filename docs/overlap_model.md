@@ -46,15 +46,20 @@ The current `station.yaml` deliberately records uncertain values as uncertain ra
 
 - telescope diameter: 0.30 m;
 - focal length: 1.50 m;
-- receiver FOV: 0.10 mrad, provisionally interpreted as **full angle**;
+- physical diaphragm/field stop: about 1 mm, operator estimate, unverified;
+- receiver FOV: 0.78 mrad, provisionally interpreted as **full angle** and inferred from the reported ~500 m full-overlap altitude together with the other current geometry assumptions;
 - laser beam diameter: about 0.04 m;
 - laser divergence: less than 0.10 mrad; the present diagnostic conservatively uses 0.10 mrad as an unverified upper-bound model value;
 - transmitter/receiver geometry: provisionally coaxial and parallel;
-- reported full overlap: about 500 m AGL, retained as unverified historical/operator evidence.
+- reported full overlap: about 500 m AGL, retained as unverified operator/system-description evidence.
 
-Under exactly those assumptions, the first-order model does **not** reproduce the reported 500 m full-overlap statement. Because the configured FOV and model divergence are both 0.10 mrad, the analytic model has no finite exact-full-overlap range. The modeled overlap fraction at 500 m is approximately 0.028. With focal length 1.5 m and a 0.10 mrad full FOV, the implied focal-plane field-stop diameter is approximately 0.15 mm.
+With `D_T=0.30 m`, `D_L=0.04 m`, `Psi_L=0.10 mrad` and `R_full=500 m`, the first-order relation gives a provisional full receiver FOV of
 
-This disagreement is intentionally preserved as a diagnostic. It may indicate an incorrect FOV convention/value, an over-conservative divergence estimate, an inaccurate beam-diameter estimate, a different optical definition of the quoted overlap, or a configuration/alignment difference between the historical statement and the present instrument. MILGRAU must not tune parameters merely to force agreement with 500 m.
+`Psi_T = Psi_L + (D_T + D_L) / R_full = 0.78 mrad`.
+
+For a 1.50 m focal length, that FOV implies a focal-plane field-stop diameter of approximately 1.17 mm. This is reasonably consistent with the operator estimate of roughly 1 mm, given that the diaphragm size and other optical parameters have not yet been measured precisely.
+
+The agreement must **not** be treated as an independent validation of the overlap curve: the 0.78 mrad FOV is currently inferred using the same reported ~500 m full-overlap statement. The approximate ~1 mm diaphragm is a useful sanity check, but it is not yet a calibrated optical measurement. The current geometry is therefore internally consistent provisional metadata, not a characterized instrument correction.
 
 ## Updating after an experimental campaign
 
@@ -74,7 +79,7 @@ After characterization, update `station.yaml` (preferably a dated station/profil
 
 A finite KFS value is not automatically a scientifically supported aerosol value. Until overlap is characterized, the very-low-altitude finite output remains algorithmic output only. The future altitude-resolved retrieval support contract must carry both a lower instrument-validity boundary and the upper inversion/reference boundary.
 
-The present 500 m statement is therefore evidence for planning and QA, not yet a hard productive cutoff and not a correction curve.
+The present ~500 m statement and provisional geometry are therefore evidence for planning and QA, not yet a hard productive cutoff and not a correction curve.
 
 ## References
 
