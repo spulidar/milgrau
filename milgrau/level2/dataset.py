@@ -22,7 +22,7 @@ from milgrau.level2.completeness import (
     enum_flag_metadata,
 )
 from milgrau.level2.contracts import WavelengthRetrievalResult, validate_retrieval_results
-from milgrau.scientific import elastic_inversion_algorithm_metadata
+from milgrau.scientific import LEVEL2_PRODUCT_SCHEMA_VERSION, elastic_inversion_algorithm_metadata
 
 
 def build_level2_dataset(
@@ -86,10 +86,6 @@ def build_level2_dataset(
             "aerosol_backscatter_mean_error": (("wavelength", "altitude"), stack(lambda result: result.optical.aerosol_backscatter_error)),
             "aerosol_extinction_mean": (("wavelength", "altitude"), stack(lambda result: result.optical.aerosol_extinction)),
             "aerosol_extinction_mean_error": (("wavelength", "altitude"), stack(lambda result: result.optical.aerosol_extinction_error)),
-            "aerosol_backscatter": (("wavelength", "altitude"), stack(lambda result: result.optical.aerosol_backscatter)),
-            "aerosol_backscatter_error": (("wavelength", "altitude"), stack(lambda result: result.optical.aerosol_backscatter_error)),
-            "aerosol_extinction": (("wavelength", "altitude"), stack(lambda result: result.optical.aerosol_extinction)),
-            "aerosol_extinction_error": (("wavelength", "altitude"), stack(lambda result: result.optical.aerosol_extinction_error)),
             "aerosol_backscatter_block": (("block_time", "wavelength", "altitude"), stack_block(lambda result: result.optical.aerosol_backscatter_block)),
             "aerosol_backscatter_error_block": (("block_time", "wavelength", "altitude"), stack_block(lambda result: result.optical.aerosol_backscatter_error_block)),
             "aerosol_extinction_block": (("block_time", "wavelength", "altitude"), stack_block(lambda result: result.optical.aerosol_extinction_block)),
@@ -270,6 +266,7 @@ def build_level2_dataset(
             "Processing_level": "Level 2: LEBEAR block-based optical inversion",
             "Pipeline": "MILGRAU/LEBEAR",
             "Input_Level1_File": source_file.name,
+            "level2_product_schema_version": LEVEL2_PRODUCT_SCHEMA_VERSION,
             "LEBEAR_Mode": "block_mean_signal_selection_rayleigh_kfs",
             "LEBEAR_Block_Average_Minutes": get_block_average_minutes(config),
             "KFS_Mode": kfs_mode,
@@ -293,7 +290,7 @@ def build_level2_dataset(
             "Wavelength_Order": "Ascending numeric order; scientific wavelength equals processed_wavelengths exactly.",
             "Partial_Product_Reuse": "Partial products are never incrementally reusable; the next run recalculates every requested wavelength.",
             "uncertainty_scope": "partial Monte Carlo dispersion; not a total uncertainty budget",
-            "scientific_reprocessing_required": "Level 2 optical products with productive KFS metadata other than backward, or with Fernald implementation versions before 2, must be reprocessed.",
+            "scientific_reprocessing_required": "Level 2 products without schema version 1, with productive KFS metadata other than backward, or with Fernald implementation versions before 2 must be reprocessed.",
             **elastic_inversion_algorithm_metadata(),
         }
     )
