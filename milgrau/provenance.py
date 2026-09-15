@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from pathlib import Path
+import subprocess
 from typing import Any, Mapping
 
 import netCDF4 as nc
@@ -27,6 +29,8 @@ YAML_DOCUMENT_VARIABLES: tuple[str, str] = (
     "processing_configuration_yaml",
     "station_configuration_yaml",
 )
+SOURCE_REPOSITORY = "https://github.com/spulidar/milgrau"
+SOURCE_CODE_IDENTITY_SCOPE = "installed_milgrau_python_sources_normalized_lf"
 
 
 def file_sha256(path: str | Path, *, chunk_size: int = 1024 * 1024) -> str:
@@ -39,6 +43,87 @@ def file_sha256(path: str | Path, *, chunk_size: int = 1024 * 1024) -> str:
         for chunk in iter(lambda: stream.read(chunk_size), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def package_source_sha256(package_root: str | Path | None = None) -> str:
+    """Return a portable content identity for the installed MILGRAU Python source tree.
+
+    Relative POSIX paths and UTF-8 source text are hashed in sorted order. Line
+    endings are normalized to LF so the identity is stable across equivalent
+    Unix/Windows checkouts while still changing for edited Python source.
+    """
+    root = (
+        Path(package_root).expanduser().resolve()
+        if package_root is not None
+        else Path(__file__).resolve().parent
+    )
+    source_files = sorted(path for path in root.rglob("*.py") if path.is_file())
+    if not source_files:
+        raise FileNotFoundError(f"No Python sources found below {root}")
+
+    digest = hashlib.sha256()
+    for path in source_files:
+        relative = path.relative_to(root).as_posix()
+        text = path.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n")
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(text.encode("utf-8"))
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _repository_revision(package_root: Path) -> tuple[str, str] | None:
+    """Resolve an optional repository/build revision without making Git mandatory."""
+    explicit = os.environ.get("MILGRAU_SOURCE_REVISION", "").strip()
+    if explicit:
+        return explicit, "environment"
+
+    repository_root = package_root.parent
+    if not (repository_root / ".git").exists():
+        return None
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(repository_root), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=2.0,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    revision = completed.stdout.strip()
+    return (revision, "git") if revision else None
+
+
+def source_code_provenance(
+    *,
+    package_root: str | Path | None = None,
+) -> dict[str, str]:
+    """Return a code-state identity that remains meaningful outside Git checkouts.
+
+    ``source_code_sha256`` is always derived from the installed Python source
+    content, so development states sharing one package CalVer remain distinct.
+    A Git/build revision is added when supplied through ``MILGRAU_SOURCE_REVISION``
+    or discoverable from a source checkout; released wheels need not depend on a
+    local ``.git`` directory for their primary content identity.
+    """
+    root = (
+        Path(package_root).expanduser().resolve()
+        if package_root is not None
+        else Path(__file__).resolve().parent
+    )
+    source_hash = package_source_sha256(root)
+    attrs = {
+        "source_repository": SOURCE_REPOSITORY,
+        "source_code_sha256": source_hash,
+        "source_code_identity": f"sha256:{source_hash}",
+        "source_code_identity_scope": SOURCE_CODE_IDENTITY_SCOPE,
+    }
+    revision = _repository_revision(root)
+    if revision is not None:
+        attrs["source_repository_revision"] = revision[0]
+        attrs["source_repository_revision_source"] = revision[1]
+    return attrs
 
 
 def _source_path(config: Mapping[str, Any], key: str, label: str) -> Path | None:
@@ -214,14 +299,15 @@ def write_netcdf_provenance(
 
     Exact YAML remains the human-readable configuration record, so legacy
     processing/station configuration hashes are not restored. Content hashes
-    may be supplied in ``extra_attrs`` when they have a documented consumer,
-    such as ``source_level1_sha256`` for Level 2 lineage and incremental cache
-    correctness. Host-specific absolute paths are not written.
+    are used only with an explicit consumer: exact Level 1 bytes for scientific
+    lineage/cache correctness and normalized installed Python sources for code
+    state identity. Host-specific absolute paths are not written.
     """
     source = source_attrs or {}
     attrs: dict[str, str | int | float] = inherited_provenance(source)
     attrs.update(thermodynamic_source_provenance(source, config))
     attrs.update(configuration_provenance(config))
+    attrs.update(source_code_provenance())
     if extra_attrs:
         for key, value in extra_attrs.items():
             if not isinstance(key, str) or not key.strip():
