@@ -5,7 +5,10 @@ from __future__ import annotations
 from typing import Final
 
 LEVEL2_PRODUCT_SCHEMA_VERSION: Final[str] = "1"
-LEVEL2_RETRIEVAL_METHOD_VERSION: Final[str] = "1"
+LEVEL2_RETRIEVAL_METHOD_VERSION: Final[str] = "2"
+LEVEL2_RETRIEVAL_METHOD_CHANGE: Final[str] = (
+    "joint_signal_uncertainty_support_and_missing_uncertainty_rejection"
+)
 
 ELASTIC_BACKSCATTER_INVERSION_METHOD: Final[str] = "Klett-Fernald-Sasano"
 ELASTIC_BACKSCATTER_INTEGRATION_MODE: Final[str] = "backward"
@@ -26,6 +29,7 @@ def elastic_inversion_algorithm_metadata() -> dict[str, str]:
         "elastic_backscatter_inversion_method": ELASTIC_BACKSCATTER_INVERSION_METHOD,
         "integration_mode": ELASTIC_BACKSCATTER_INTEGRATION_MODE,
         "uncertainty_method": ELASTIC_BACKSCATTER_UNCERTAINTY_METHOD,
+        "level2_retrieval_method_change": LEVEL2_RETRIEVAL_METHOD_CHANGE,
         "fernald_implementation_version": FERNALD_IMPLEMENTATION_VERSION,
         "scientific_change": FERNALD_SCIENTIFIC_CHANGE,
         "fernald_scientific_change": FERNALD_SCIENTIFIC_CHANGE,
