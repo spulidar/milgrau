@@ -15,13 +15,12 @@ from milgrau.incremental import output_is_current
 from milgrau.io.contracts import netcdf_satisfies_contract, validate_level1_contract
 from milgrau.io.filesystem import ensure_directories
 from milgrau.io.logging_utils import bind_log_context
-from milgrau.io.paths import logging_save_id, processed_data_root
+from milgrau.io.paths import level1_output_path, logging_save_id, processed_data_root
 from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary
 from milgrau.level1.common import (
     diagnostic_vector,
     incremental_enabled,
     level0_dark_current_available,
-    level1_output_path,
 )
 from milgrau.level1.config import (
     Level1Config,
@@ -411,7 +410,7 @@ def process_level_1(config: Mapping[str, Any], logger: logging.Logger) -> Execut
     if not files:
         bind_log_context(logger, stage="discovery").warning("no Level 0 files found | %s", in_dir)
         return ExecutionSummary.from_results(
-            [ExecutionResult.skipped("level1.discovery", "No Level 0 files found", input_path=in_dir, metadata={"pipeline": "L1"})]
+            [ExecutionResult.skipped("level1.discovery", "No Level 0 NetCDF files found", input_path=in_dir, metadata={"pipeline": "L1"})]
         )
     files_to_process, skipped_results = _files_requiring_level1(files, config, logger)
     if not files_to_process:
