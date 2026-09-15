@@ -328,7 +328,6 @@ def slide_glue_signals(
     search_min_idx: int = 0,
     search_max_idx: int | None = None,
     intercept_threshold: float = 5.0,
-    gaussian_threshold: float = 0.1,
     minmax_threshold: float = 0.05,
     return_diagnostics: bool = False,
     pc_saturation_mask: np.ndarray | None = None,
@@ -427,12 +426,6 @@ def slide_glue_signals(
             "invalid_saturation_fraction": float(selected["invalid_saturation_fraction"]),
             "slope": float(selected["slope"]),
             "intercept": float(selected["intercept"]),
-            "slope_zero_intercept": np.nan,
-            "shapiro_p_value": np.nan,
-            "gaussian_score": np.nan,
-            "gaussian_threshold_requested": float(gaussian_threshold),
-            "minmax_ratio": float(selected["dynamic_range_ratio"]),
-            "minmax_score": float(selected["dynamic_range_ratio"]),
             "pc_saturation_fraction_window": (
                 float(selected.get("pc_saturation_fraction_window", np.nan))
                 if split_point >= 0
