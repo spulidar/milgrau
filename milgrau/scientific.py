@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Final
 
 LEVEL2_PRODUCT_SCHEMA_VERSION: Final[str] = "1"
+LEVEL2_RETRIEVAL_METHOD_VERSION: Final[str] = "1"
 
 ELASTIC_BACKSCATTER_INVERSION_METHOD: Final[str] = "Klett-Fernald-Sasano"
 ELASTIC_BACKSCATTER_INTEGRATION_MODE: Final[str] = "backward"
