@@ -9,7 +9,7 @@ from pathlib import Path
 from milgrau.cli.common import finish_cli, run_guarded
 from milgrau.config.loader import load_config
 from milgrau.io.logging_utils import bind_log_context, setup_logger
-from milgrau.io.paths import measurement_product_dir, product_save_id
+from milgrau.io.paths import logging_save_id, measurement_product_dir
 from milgrau.level1.lipancora import _files_requiring_level1, process_level_1, process_single_file
 from milgrau.operations import ExecutionStatus, ExecutionSummary
 from milgrau.version import __version__
@@ -50,13 +50,20 @@ def _expand_inputs(inputs: list[str], config: dict) -> list[Path]:
 
 
 def _process_selected(args: argparse.Namespace, config: dict, logger) -> ExecutionSummary:
+    """Process explicit Level 0 paths without requiring MILGRAU-specific filenames.
+
+    External SCC raw files may use provider-specific names. File naming is not a
+    scientific identity source, so logging falls back to ``-`` when a canonical
+    MILGRAU save ID cannot be parsed. Ingestion resolves channel identity from
+    file metadata plus station.yaml instead.
+    """
     files = _expand_inputs(args.inputs, config)
     skipped = []
     if not args.force:
         files, skipped = _files_requiring_level1(files, config, logger)
     results = list(skipped)
     for path in files:
-        save_id = product_save_id(path)
+        save_id = logging_save_id(path)
         file_logger = bind_log_context(logger, save_id=save_id)
         result = process_single_file((path, config, file_logger))
         if result.status is ExecutionStatus.OK:
