@@ -18,6 +18,7 @@ This file is the active source of truth for current scientific/engineering gates
 - Instrument constants/thresholds are evidence-derived or explicitly provisional/disabled; they are never invented to close the roadmap.
 - Diagnostic instrument models must not silently become productive corrections.
 - NetCDF products should be readable and self-describing, but MILGRAU currently makes no formal metadata-convention conformance/alignment claim.
+- Interoperable file syntax does not replace station/instrument knowledge: external SCC raw data must resolve through explicit station-owned channel identity and calibration metadata rather than permissive guessing.
 
 ## Status overview
 
@@ -55,6 +56,19 @@ Key current limitations remain: elastic extinction is conditional on assumed lid
 
 P3 acceptance gate: **open on deliberate software-license selection plus a recorded representative NetCDF metadata review. This gate does not block scientific P4/P5 development; it blocks release/FAIR completion.**
 
+## P3.7 — SCC raw Level 0 interoperability
+
+- [x] Document the interoperability contract in `docs/scc_level0_interoperability.md`.
+- [x] Keep MILGRAU canonical physical channel names (`532.PC`, `355.AN`, etc.) as the calibration-facing internal identity while accepting numeric SCC `channel_ID` at ingestion.
+- [x] Canonicalize external numeric SCC channel IDs through the temporally valid `station.yaml` SCC mapping before Level 0 validation and Level 1 corrections; do not infer wavelength/detector identity from opaque IDs alone.
+- [x] Verify `channel_string` against `channel_ID` when both are present, as in MILGRAU's own `*_scc.nc` output.
+- [x] Reject unknown IDs, duplicate IDs and genuinely ambiguous day/night/configuration mappings; optional `Measurement_ID` and `SCC_Configuration_ID` hints may disambiguate without guessing.
+- [x] Wire the station catalog into the productive LIPANCORA ingestion path.
+- [x] Preserve default discovery behavior so a colocated full Level 0 and `_scc.nc` are not both processed automatically. The SCC subset is an explicit input when both products coexist.
+- [ ] Validate MILGRAU's own newly generated `*_scc.nc` through an end-to-end explicit LIPANCORA run on real `20251107sapm` data.
+- [ ] Add broader external-converter fixtures only from real SCC raw files. `channel_string_ID` remains outside the productive mapping path until a traceable station-owned use case requires it.
+- [ ] External SCC dark profiles that lack `Background_Laser_Shots` remain usable by the current productive dark-profile path, but cannot support separately shot-normalized dark dead-time diagnostics without another traceable dark-shot source.
+
 ## P4 — instrument characterization / observational validation
 
 ### Overlap
@@ -71,9 +85,10 @@ P3 acceptance gate: **open on deliberate software-license selection plus a recor
 - [x] Evaluate and persist dead-time denominator/clipping diagnostics on that raw observed rate separately from the current productive dark-subtracted path.
 - [x] A future characterized physical saturation mask uses the observed pre-dark PC rate. No SPU saturation limit is invented or enabled by this change.
 - [x] Preserve parsed dark-acquisition `NShots` as optional `Background_Laser_Shots(time_bck, channels)` in newly generated Level 0 files, so dark PC rates can be normalized independently.
-- [x] Re-analysis of the existing `20251107sapm` Level 0 shows 532.PC observed-rate maxima near 133–134 MHz for ordinary profiles and approximately 351 MHz for the eight anomalous profiles. Raw-rate denominator clipping identifies the same 8/167 profiles and the same maximum clipped-bin fraction (~0.00075) as the current productive diagnostic. This is observational evidence of extreme acquired count rates, not proof of a physical detector-saturation threshold.
-- [ ] Regenerate `20251107sapm` Level 0/Level 1 with the new diagnostics, verify real dark `NShots`, and quantify the difference between the current productive order (`dark subtraction -> dead-time correction`) and separately normalized/corrected measurement and dark rates.
-- [ ] Change the productive correction order only if the quantified evidence supports it; any such change requires explicit scientific-method/provenance versioning and regression tests.
+- [x] Re-analysis of `20251107sapm` confirms 532.PC observed-rate maxima near 133–134 MHz for ordinary profiles and approximately 350–351 MHz for eight anomalous profiles. Raw-rate and current productive denominator clipping identify the same 8/167 profiles. This is observational evidence of extreme acquired count rates, not proof of a physical detector-saturation threshold.
+- [x] Real rerun from revision `1194efc9227d31f95ce7670cd2258745dd7201cd` preserves measurement and dark shot counts (both 3001–3002 shots). 532.PC dark observed rate reaches about 15.75 MHz and produces no numerical dead-time clipping.
+- [x] Quantified `20251107sapm` correction-order sensitivity. Comparing the current productive `DT(measurement - mean_dark)` path with separately shot-normalized/corrected `DT(measurement) - mean(DT(dark))`, after the current bin shift and background removal, gives median absolute difference ~8.5e-7 MHz, 99th percentile ~4.2e-4 MHz and maximum ~0.051 MHz. Where the current corrected signal magnitude exceeds 1 MHz, the relative-difference median is ~5.5e-7, 99th percentile ~2.5e-5 and maximum ~2.0e-4 (0.020%). This is one-day observational sensitivity evidence, not a universal detector model.
+- [x] Retain the existing productive dark-before-dead-time order for method v3 for now: this representative dataset provides no material retrieval-range benefit from changing order, while a change would create a new scientific method/provenance state. Continue to preserve the diagnostics needed for broader evidence.
 - [ ] Characterize physical photon-counting saturation under operational SPU conditions using AN/PC overlap and preferably controlled attenuation before defining a traceable maximum rate.
 
 ### Other instrument evidence
@@ -127,8 +142,8 @@ Scientific P5 development may proceed in parallel with the unresolved P3 license
 
 ## Immediate next gate
 
-1. Complete the `20251107sapm` real-data dead-time/dark-order comparison using newly preserved dark `NShots`; do not alter the productive correction order before that evidence exists.
-2. Let the new P4 diagnostics and P5 support-contract tests pass the full cross-platform CI; fix genuine regressions before product-schema integration.
+1. Let the SCC-ingestion and P5 support-contract tests pass the full cross-platform CI; fix genuine regressions before product-schema integration.
+2. Validate the newly generated `20251107sapm_scc.nc` as an explicit real LIPANCORA input and compare the five-channel SCC-derived Level 1 output with the corresponding channels of the full-channel Level 1 product.
 3. Integrate the support contract into Level 2 assembly and add schema/output tests before exposing support/bottom/top variables.
 4. Refactor Rayleigh selection into an all-candidates -> QA -> rank pipeline after the support contract is product-integrated.
 5. Quantify gluing fit-parameter uncertainty, then proceed to long-mean backbone and multi-reference ensemble work.
