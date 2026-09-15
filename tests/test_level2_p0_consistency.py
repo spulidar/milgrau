@@ -11,6 +11,7 @@ import xarray as xr
 from milgrau.level2 import lebear
 from milgrau.level2.config import get_kfs_mode, kfs_mode_description
 from milgrau.level2.gluing import gluing_selection_score_metadata
+from milgrau.provenance import file_sha256
 from milgrau.scientific import (
     LEVEL2_PRODUCT_SCHEMA_VERSION,
     LEVEL2_RETRIEVAL_METHOD_VERSION,
@@ -64,6 +65,7 @@ def test_level2_incremental_rejects_stale_method_schema_or_gluing_metadata(
         attrs={
             "level2_product_schema_version": LEVEL2_PRODUCT_SCHEMA_VERSION,
             "level2_retrieval_method_version": LEVEL2_RETRIEVAL_METHOD_VERSION,
+            "source_level1_sha256": file_sha256(input_path),
             "product_completeness": "complete",
             "product_status": "success",
             "KFS_Mode": "backward",
