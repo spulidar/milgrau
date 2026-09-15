@@ -50,7 +50,14 @@ def test_inventory_reassigns_orphan_dark_current_with_provenance(
     measurement_path = str(tmp_path / "measurement_file")
     dark_path = str(tmp_path / "dark_file")
 
-    def fake_scan_raw_files(raw_dir: str, logger: logging.Logger, config: dict) -> tuple[list[str], list[str]]:
+    def fake_scan_raw_files(
+        raw_dir,
+        *,
+        spurious_extensions,
+        quarantine_dir,
+        raw_scan_ignore_dirs,
+        logger=None,
+    ) -> tuple[list[str], list[str]]:
         return [measurement_path, dark_path], ["measurements", "dark_current"]
 
     def fake_read_licel_header(filepath: str, logger: logging.Logger):
@@ -79,11 +86,17 @@ def test_inventory_respects_explicit_dark_current_maximum(tmp_path: Path, monkey
     measurement_path = str(tmp_path / "measurement_file")
     dark_path = str(tmp_path / "dark_file")
 
-    monkeypatch.setattr(
-        inventory_module,
-        "scan_raw_files",
-        lambda raw_dir, logger, config: ([measurement_path, dark_path], ["measurements", "dark_current"]),
-    )
+    def fake_scan_raw_files(
+        raw_dir,
+        *,
+        spurious_extensions,
+        quarantine_dir,
+        raw_scan_ignore_dirs,
+        logger=None,
+    ) -> tuple[list[str], list[str]]:
+        return [measurement_path, dark_path], ["measurements", "dark_current"]
+
+    monkeypatch.setattr(inventory_module, "scan_raw_files", fake_scan_raw_files)
 
     def fake_read_licel_header(filepath: str, logger: logging.Logger):
         hour = 12 if filepath == measurement_path else 18
@@ -108,7 +121,14 @@ def test_inventory_keeps_incremental_decision_out_of_inventory(tmp_path: Path, m
 
     measurement_path = str(tmp_path / "measurement_file")
 
-    def fake_scan_raw_files(raw_dir: str, logger: logging.Logger, config: dict) -> tuple[list[str], list[str]]:
+    def fake_scan_raw_files(
+        raw_dir,
+        *,
+        spurious_extensions,
+        quarantine_dir,
+        raw_scan_ignore_dirs,
+        logger=None,
+    ) -> tuple[list[str], list[str]]:
         return [measurement_path], ["measurements"]
 
     def fake_read_licel_header(filepath: str, logger: logging.Logger):
@@ -131,7 +151,14 @@ def test_inventory_keeps_post_midnight_measurements_on_same_civil_date(tmp_path:
 
     measurement_path = str(tmp_path / "night_measurement")
 
-    def fake_scan_raw_files(raw_dir: str, logger: logging.Logger, config: dict) -> tuple[list[str], list[str]]:
+    def fake_scan_raw_files(
+        raw_dir,
+        *,
+        spurious_extensions,
+        quarantine_dir,
+        raw_scan_ignore_dirs,
+        logger=None,
+    ) -> tuple[list[str], list[str]]:
         return [measurement_path], ["measurements"]
 
     def fake_read_licel_header(filepath: str, logger: logging.Logger):
