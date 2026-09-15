@@ -39,6 +39,25 @@ def gluing_selection_score(
     )
 
 
+def gluing_selection_score_metadata() -> dict[str, str | float]:
+    """Return stable machine-readable identity for the productive window score."""
+    return {
+        "gluing_selection_score_version": GLUING_SELECTION_SCORE_VERSION,
+        "gluing_selection_score_formula": (
+            "w_rmse*relative_rmse + w_bias*abs(relative_bias) + "
+            "w_intercept*intercept_percent + w_saturation*saturation_fraction"
+        ),
+        "gluing_score_relative_rmse_weight": GLUING_SCORE_RELATIVE_RMSE_WEIGHT,
+        "gluing_score_absolute_relative_bias_weight": (
+            GLUING_SCORE_ABSOLUTE_RELATIVE_BIAS_WEIGHT
+        ),
+        "gluing_score_intercept_percent_weight": GLUING_SCORE_INTERCEPT_PERCENT_WEIGHT,
+        "gluing_score_saturation_fraction_weight": (
+            GLUING_SCORE_SATURATION_FRACTION_WEIGHT
+        ),
+    }
+
+
 def _as_1d(values: np.ndarray) -> np.ndarray:
     """Return a contiguous one-dimensional float array."""
     arr = np.ascontiguousarray(values, dtype=np.float64)
