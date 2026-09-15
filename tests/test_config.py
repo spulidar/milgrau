@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 
+import milgrau.config.loader as config_loader
 from milgrau.config.loader import load_config, normalize_config
 from milgrau.level0.config import resolve_level0_config, station_coordinates, station_timezone
 from milgrau.level1.config import resolve_level1_config
@@ -132,3 +134,22 @@ def test_loader_does_not_recreate_removed_hardware_or_site_views(tmp_path: Path)
     assert "radiosonde" not in loaded
     assert "physics" not in loaded
     assert loaded["_station_catalog"]["station"]["id"] == "spu"
+
+
+def test_unexpected_station_validation_failure_is_not_reclassified(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unexpected implementation errors must propagate instead of looking like bad YAML."""
+    config_path = tmp_path / "config.yaml"
+    station_path = tmp_path / "station.yaml"
+    config_path.write_text(yaml.safe_dump({"station_config": "station.yaml"}), encoding="utf-8")
+    station_path.write_text(yaml.safe_dump({"station": {}}), encoding="utf-8")
+
+    def fail_unexpectedly(_catalog) -> None:
+        raise RuntimeError("synthetic station validator failure")
+
+    monkeypatch.setattr(config_loader, "validate_station_config", fail_unexpectedly)
+
+    with pytest.raises(RuntimeError, match="synthetic station validator failure"):
+        load_config(config_path)
