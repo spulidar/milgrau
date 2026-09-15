@@ -360,7 +360,11 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
         stage = "level1.output_path"
         save_path = level1_output_path(nc_file, config)
         stage = "level1.ingestion"
-        ds_raw, z_arr = load_and_prepare_level0(nc_file, bind_log_context(file_logger, stage="ingestion"))
+        ds_raw, z_arr = load_and_prepare_level0(
+            nc_file,
+            bind_log_context(file_logger, stage="ingestion"),
+            config=config,
+        )
         source_provenance = dict(ds_raw.attrs)
         bind_log_context(file_logger, stage="start").info("%d channels", ds_raw.sizes.get("channel", 0))
         stage = "level1.corrections"
