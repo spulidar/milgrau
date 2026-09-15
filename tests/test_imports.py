@@ -41,6 +41,14 @@ def test_level1_public_exports_use_canonical_owners() -> None:
     assert level1.integrate_thermodynamics is thermodynamics.integrate_thermodynamics
 
 
+def test_level1_common_has_no_obsolete_compatibility_helpers() -> None:
+    """Removed compatibility wrappers must not silently return."""
+    import milgrau.level1.common as common
+
+    assert not hasattr(common, "get_channel_constant")
+    assert not hasattr(common, "level1_output_path")
+
+
 def test_level2_productive_orchestration_has_no_legacy_module_dependency() -> None:
     """Canonical retrieval functions must come from their cohesive owner modules."""
     import milgrau.level2.optical_retrieval as optical_retrieval
