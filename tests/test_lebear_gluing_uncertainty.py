@@ -11,6 +11,7 @@ import xarray as xr
 
 from milgrau.io.paths import level2_output_path
 from milgrau.level2 import lebear
+from milgrau.level2.gluing import propagate_glued_error
 from milgrau.operations import ExecutionStatus
 
 
@@ -27,7 +28,7 @@ def test_propagate_glued_error_uses_fade_weights() -> None:
     analog_error = np.ones(10, dtype=np.float64) * 2.0
     photon_error = np.ones(10, dtype=np.float64) * 10.0
 
-    result = lebear._propagate_glued_error(
+    result = propagate_glued_error(
         analog_error=analog_error,
         photon_error=photon_error,
         slope=3.0,
@@ -116,7 +117,7 @@ def _config(tmp_path: Path) -> dict:
                 "search_max_idx": 120,
                 "intercept_threshold": 5.0,
                 "gaussian_threshold": 1.0,
-                "minmax_threshold": 1.0,
+                "minmax_threshold": 0.05,
                 "max_relative_rmse": 1.0,
                 "max_relative_bias": 1.0,
                 "min_valid_fraction": 0.50,
