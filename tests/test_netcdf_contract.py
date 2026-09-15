@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -13,18 +14,17 @@ from milgrau.operations import ExecutionStatus
 from milgrau.physics.atmosphere import get_standard_atmosphere
 
 
-class _ListLogger:
+class _ListLogger(logging.Logger):
+    """Capture stdlib-compatible messages without configuring global logging."""
+
     def __init__(self) -> None:
+        super().__init__("test.netcdf.contract", level=logging.DEBUG)
         self.messages: list[str] = []
+        self.propagate = False
 
-    def info(self, message: str) -> None:
-        self.messages.append(f"INFO: {message}")
-
-    def warning(self, message: str) -> None:
-        self.messages.append(f"WARNING: {message}")
-
-    def error(self, message: str) -> None:
-        self.messages.append(f"ERROR: {message}")
+    def _log(self, level, msg, args, exc_info=None, extra=None, stack_info=False, stacklevel=1):  # noqa: D401
+        rendered = str(msg) % args if args else str(msg)
+        self.messages.append(f"{logging.getLevelName(level)}: {rendered}")
 
 
 def _write_synthetic_level1(path: Path) -> Path:
@@ -82,6 +82,53 @@ def _write_synthetic_level1(path: Path) -> Path:
     return path
 
 
+def _level2_config(tmp_path: Path) -> dict:
+    months = {f"{month:02d}": 60.0 for month in range(1, 13)}
+    return {
+        "processing": {"incremental": False},
+        "directories": {"processed_data": str(tmp_path)},
+        "inversion": {
+            "wavelengths_to_process": [532],
+            "block_average_minutes": 15,
+            "kfs_mode": "backward",
+            "monte_carlo_iterations": 10,
+            "random_seed": 123,
+            "beta_ref_relative_std": 0.10,
+            "aerosol_ref_fraction": 0.0,
+            "min_lidar_ratio_sr": 10.0,
+            "allow_negative_aerosol": False,
+            "molecular_fit": {
+                "ref_alt_min_m": 500.0,
+                "ref_alt_max_m": 1400.0,
+                "ref_window_m": 150.0,
+                "max_relative_slope": 10.0,
+                "max_relative_variance": 10.0,
+                "min_valid_fraction": 0.50,
+            },
+            "gluing": {
+                "window_length_bins": 20,
+                "correlation_threshold": 0.5,
+                "search_min_idx": 20,
+                "search_max_idx": 120,
+                "intercept_threshold": 5.0,
+                "gaussian_threshold": 1.0,
+                "minmax_threshold": 0.01,
+                "max_relative_rmse": 1.0,
+                "max_relative_bias": 1.0,
+                "min_valid_fraction": 0.50,
+                "max_saturation_fraction": 0.20,
+                "invalid_saturation_fraction": 1.0,
+                "allow_single_channel_fallback": True,
+                "single_channel_priority": "photon_counting",
+            },
+            "cloud_screening": {"enabled": False},
+            "lidar_ratios_sr": {"532": months},
+            "lidar_ratio_std_sr": {"532": 5.0},
+        },
+        "visualization": {"level2_qa": {"enabled": False}},
+    }
+
+
 def test_synthetic_level1_contract_contains_canonical_atmosphere(tmp_path: Path) -> None:
     path = _write_synthetic_level1(tmp_path / "synthetic_level1_rcs.nc")
     with xr.open_dataset(path) as ds:
@@ -95,29 +142,10 @@ def test_synthetic_level1_contract_contains_canonical_atmosphere(tmp_path: Path)
 def test_lebear_uses_level1_atmosphere_and_generates_level2(tmp_path: Path) -> None:
     path = _write_synthetic_level1(tmp_path / "synthetic_level1_rcs.nc")
     logger = _ListLogger()
-    config = {
-        "directories": {"processed_data": str(tmp_path)},
-        "site": {"station_altitude_m": 760.0},
-        "inversion": {
-            "wavelengths_to_process": [532],
-            "monte_carlo_iterations": 10,
-            "random_seed": 123,
-            "molecular_fit": {"ref_alt_min_m": 500.0, "ref_alt_max_m": 1400.0, "ref_window_m": 150.0},
-            "gluing": {
-                "window_length_bins": 80,
-                "correlation_threshold": 0.95,
-                "search_min_idx": 20,
-                "search_max_idx": 120,
-                "allow_single_channel_fallback": True,
-                "single_channel_priority": "photon_counting",
-            },
-        },
-        "visualization": {"level2_qa": {"enabled": False}},
-    }
 
-    summary = process_single_level1_file(path, config, logger)  # type: ignore[arg-type]
+    summary = process_single_level1_file(path, _level2_config(tmp_path), logger)
     output_path = tmp_path / "synthetic_level2_optical.nc"
-    assert summary.results[0].status is ExecutionStatus.SUCCESS
+    assert summary.results[0].status is ExecutionStatus.OK
     assert output_path.exists()
 
     with xr.open_dataset(output_path) as ds_l2:
