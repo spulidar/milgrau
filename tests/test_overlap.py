@@ -25,15 +25,15 @@ def _context(config: dict, when: str) -> dict:
     )
 
 
-def test_full_overlap_formula_for_refined_spu_geometry() -> None:
+def test_full_overlap_formula_for_well_conditioned_coaxial_geometry() -> None:
     result = coaxial_full_overlap_range_m(
         telescope_diameter_m=0.30,
         laser_beam_diameter_m=0.04,
-        receiver_fov_full_angle_mrad=0.78,
+        receiver_fov_full_angle_mrad=0.80,
         laser_divergence_full_angle_mrad=0.10,
     )
 
-    assert result == pytest.approx(500.0)
+    assert result == pytest.approx(485.7142857142857)
 
 
 def test_equal_receiver_fov_and_laser_divergence_has_no_finite_full_overlap() -> None:
@@ -47,8 +47,8 @@ def test_equal_receiver_fov_and_laser_divergence_has_no_finite_full_overlap() ->
     assert result is None
 
 
-def test_geometric_overlap_is_bounded_and_reaches_full_overlap_for_refined_nominal_case() -> None:
-    altitude = np.array([0.0, 100.0, 300.0, 500.0, 1000.0])
+def test_geometric_overlap_is_bounded_and_increases_for_current_nominal_case() -> None:
+    altitude = np.array([0.0, 100.0, 250.0, 400.0, 500.0, 1000.0])
     overlap = coaxial_geometric_overlap(
         altitude,
         telescope_diameter_m=0.30,
@@ -58,12 +58,12 @@ def test_geometric_overlap_is_bounded_and_reaches_full_overlap_for_refined_nomin
     )
 
     assert np.all((0.0 <= overlap) & (overlap <= 1.0))
-    assert np.all(np.diff(overlap) >= -1e-12)
-    assert overlap[3] == pytest.approx(1.0, abs=1e-10)
+    assert np.all(np.diff(overlap) >= 0.0)
+    assert overlap[-2] == pytest.approx(1.0, abs=1e-10)
     assert overlap[-1] == pytest.approx(1.0, abs=1e-10)
 
 
-def test_reported_spu_full_overlap_matches_current_inferred_diagnostic_geometry() -> None:
+def test_reported_spu_full_overlap_is_retained_as_unvalidated_consistency_target() -> None:
     config = load_config("config.yaml")
     context = _context(config, "2025-01-01T15:00:00")
     overlap = context["overlap"]
@@ -87,7 +87,7 @@ def test_historical_profile_uses_explicit_station_transmitter_fallback() -> None
 
     assert context["profile_id"] == "spu-raman-2018"
     assert context["overlap"]["parameter_source"] == "station_fallback"
-    assert context["overlap"]["transmitter"]["beam_diameter_status"] == "estimated_unverified"
+    assert context["overlap"]["transmitter"]["beam_diameter_status"] == "experimental_pending"
     assert context["overlap"]["correction_policy"] == "diagnostic_only_no_correction"
 
 
