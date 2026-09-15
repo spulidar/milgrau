@@ -19,6 +19,7 @@ This file is the active source of truth for scientific/engineering work. Detaile
 - A target top altitude is a validation target, never permission to extrapolate, bridge gaps or relax physics.
 - Instrument constants/thresholds are evidence-derived or explicitly provisional/disabled; they are never invented to close the roadmap.
 - Diagnostic instrument models must not silently become productive corrections.
+- CF metadata practices are used for interoperability, but formal CF compliance is not claimed unless the product deliberately carries the required `Conventions` declaration and supporting validation evidence.
 
 ## Status overview
 
@@ -27,7 +28,7 @@ This file is the active source of truth for scientific/engineering work. Detaile
 | P0 | COMPLETE | truthful backward-KFS identity and support semantics |
 | P1 | COMPLETE + REAL-DATA VALIDATED | canonical Level 2 architecture |
 | P2 | COMPLETE | engineering guardrails and cross-platform CI |
-| P3 | IN PROGRESS — HOLDER/CF GATE | current-method scientific + FAIR hardening |
+| P3 | IN PROGRESS — CF METADATA QA GATE | current-method scientific + FAIR hardening |
 | P4 | PARALLEL EVIDENCE WORK | instrument characterization / observational validation |
 | P5 | PENDING | altitude-resolved support + high-column R&D |
 | P6 | PENDING | reproducible release/publication process |
@@ -68,16 +69,18 @@ Observed baseline:
 
 Interpretation constraint: aggregate optical arrays are finite from 3.75 m AGL, but SPU near-field geometrical overlap is not experimentally characterized. That lower edge is **not** accepted as validated quantitative aerosol support.
 
-## P3.6 — FAIR license + CF validation — BLOCKING P3 COMPLETION
+## P3.6 — FAIR software license + CF-aligned metadata QA — BLOCKING P3 COMPLETION
 
-- [x] Provisional software-license family selected: **BSD-3-Clause**.
-- [ ] Confirm the legal copyright holder / institutional approval, then add the root `LICENSE` and matching identity to `CITATION.cff` / package metadata. Do not invent the holder.
-- [ ] Keep software, documentation and data licensing separate where their terms differ.
-- [x] Representative CF-validation product selected: method-v3 `20251107sapm` Level 2 from revision `842389a...`.
-- [x] Preliminary structural inspection completed; the current file has no global `Conventions` declaration, therefore MILGRAU does **not** claim CF compliance yet.
-- [ ] Run an actual CF/compliance checker, record checker + CF version, fix genuine schema issues and document justified exceptions.
+- [x] Software-license family selected: **BSD-3-Clause**.
+- [x] Software copyright holders confirmed by project owner as the four code authors: Luisa Mello, Fábio J. S. Lopes, Alexandre C. Yoshida, and Alexandre Cacheffo.
+- [x] Add root `LICENSE` using the canonical BSD-3-Clause terms and align `CITATION.cff` / package metadata with that software license.
+- [x] Keep the BSD-3-Clause claim scoped to the software; no documentation/data license is inferred automatically from the code license.
+- [x] Representative metadata-QA product selected: method-v3 `20251107sapm` Level 2 from revision `842389a...`.
+- [x] Adopt an explicit **CF-aligned, not formally CF-compliant** policy. Current products intentionally do not carry `Conventions = "CF-..."`; therefore MILGRAU does not claim formal CF conformance. The policy and terminology are documented in `docs/cf_metadata_policy.md`.
+- [x] Pin IOOS Compliance Checker 6.1.0 in the optional `validation` dependency group. Its current built-in CF checker covers CF 1.11 and is used as metadata QA, not as proof of scientific correctness.
+- [ ] Run the checker against the representative real Level 2, record actionable findings, fix genuine metadata/schema issues, and document justified lidar-specific exceptions. Review relevant CF 1.12/1.13 requirements manually where they improve interoperability without making a formal compliance claim.
 
-P3 acceptance gate: **open on copyright-holder/institutional license completion + recorded CF validation evidence.**
+P3 acceptance gate: **open only on recorded CF-aligned metadata QA evidence. The software-license/holder gate is closed.**
 
 ## P4 — instrument characterization / observational validation — ACTIVE IN PARALLEL
 
@@ -197,7 +200,7 @@ P5 merge criterion: **maximize validated vertical support and expose where suppo
 
 ## P6 — release/publication readiness — PENDING
 
-- [ ] explicit BSD-3-Clause software license with confirmed holder reflected in citation/package metadata;
+- [x] explicit BSD-3-Clause software license with confirmed code-author holders reflected in root license, citation metadata and package metadata;
 - [ ] `CITATION.cff` version/date/DOI aligned with the actual release;
 - [ ] scientific method/schema changes summarized in release notes;
 - [ ] frozen reference scientific environment/constraints;
@@ -206,7 +209,7 @@ P5 merge criterion: **maximize validated vertical support and expose where suppo
 - [ ] core-science coverage report focused on critical modules/contracts;
 - [ ] deliberate known-warning policy so new warnings cannot hide in repeated upstream warnings;
 - [ ] end-to-end Level 0 -> Level 2 run from release artifact/environment;
-- [ ] recorded CF/compliance validation;
+- [ ] recorded CF-aligned metadata QA; formal CF compliance remains a separate future policy decision if the project chooses to claim it;
 - [ ] frozen machine-readable synthetic acceptance and observational regression summaries;
 - [ ] required CI/review policy on release/merge path when governance is ready;
 - [ ] consciously reconcile branch history with `main` before merge.
@@ -215,8 +218,7 @@ P6 acceptance gate: a third party can identify, install, cite and rerun the rele
 
 ## Immediate next gate
 
-1. Let the refined diagnostic overlap configuration pass the full cross-platform CI; fix any real regression before calling this provisional implementation stable.
-2. Run a real CF/compliance checker against the uploaded `20251107sapm` method-v3 Level 2 and fix genuine schema issues.
-3. Confirm the copyright holder/institutional approval for BSD-3-Clause, then add the root license/CFF/package identity.
-4. Continue P4 overlap experimentally without blocking algorithm development; keep the model diagnostic-only until validated.
-5. After P3.6 closes, begin P5 with synthetic lower+upper support tests and the Rayleigh candidate catalogue, then backbone and ensemble. Evaluate cascade only after Decision gate A.
+1. Run IOOS Compliance Checker 6.1.0 / CF 1.11 as metadata QA against the representative `20251107sapm` method-v3 Level 2; record findings and fix genuine metadata/schema issues without adding a formal `Conventions` claim.
+2. Review relevant CF 1.12/1.13 metadata requirements manually where they improve interoperability, while retaining the explicit CF-aligned/non-compliant terminology.
+3. Continue P4 instrument evidence in parallel, with the 532.PC dead-time/saturation behavior as the next concrete real-data investigation and overlap characterization left experimental/diagnostic.
+4. After P3.6 metadata QA closes, begin P5 with synthetic lower+upper support tests and the Rayleigh candidate catalogue, then backbone and ensemble. Evaluate cascade only after Decision gate A.
