@@ -36,7 +36,7 @@ def _flag_attrs(
     values: list[int] | tuple[int, ...] | np.ndarray,
     meanings: str,
     *,
-    dtype: np.dtype[Any] | type[np.integer[Any]] = np.int8,
+    dtype: Any = np.int8,
     description: str | None = None,
 ) -> dict[str, Any]:
     attrs: dict[str, Any] = {
@@ -51,7 +51,7 @@ def _flag_attrs(
 def _enum_flag_attrs(
     enum_type: type[IntEnum],
     *,
-    dtype: np.dtype[Any] | type[np.integer[Any]],
+    dtype: Any,
     description: str,
 ) -> dict[str, Any]:
     members = tuple(sorted(enum_type, key=int))
@@ -172,8 +172,11 @@ _merge_flag = _flag_attrs(
     "photon_counting blend analog invalid",
     description="Per-altitude source used by corrected-signal gluing: PC, blend, analog, or invalid.",
 )
-for name in ("gluing_merge_source_flag", "gluing_merge_source_flag_block"):
-    LEVEL2_DATA_VARIABLE_METADATA[name] = dict(_merge_flag)
+for name, long_name in (
+    ("gluing_merge_source_flag", "Per-bin selected gluing source"),
+    ("gluing_merge_source_flag_block", "Per-bin block selected gluing source"),
+):
+    LEVEL2_DATA_VARIABLE_METADATA[name] = {"long_name": long_name, **_merge_flag}
 
 
 LEVEL2_DATA_VARIABLE_METADATA.update(
@@ -223,14 +226,17 @@ for name, long_name, units in (
         ),
     )
 
-LEVEL2_DATA_VARIABLE_METADATA["retrieval_success_flag"] = _flag_attrs(
-    [0, 1],
-    "not_successful successful",
-    description=(
-        "Block-level productive retrieval acceptance. Zero includes blocks not attempted or rejected at input, "
-        "Rayleigh QA, or backward KFS; use the dedicated diagnostic flags/reason code to identify stage."
+LEVEL2_DATA_VARIABLE_METADATA["retrieval_success_flag"] = {
+    "long_name": "Block productive optical-retrieval success flag",
+    **_flag_attrs(
+        [0, 1],
+        "not_successful successful",
+        description=(
+            "Block-level productive retrieval acceptance. Zero includes blocks not attempted or rejected at input, "
+            "Rayleigh QA, or backward KFS; use the dedicated diagnostic flags/reason code to identify stage."
+        ),
     ),
-)
+}
 LEVEL2_DATA_VARIABLE_METADATA["retrieval_success_fraction"] = _attrs(
     "Fraction of Level 2 blocks with successful productive optical retrieval",
     units="1",
@@ -290,12 +296,12 @@ _rayleigh_success_flag = _flag_attrs(
     description="Rayleigh reference QA result; zero includes blocks for which reference QA was not attempted.",
 )
 LEVEL2_DATA_VARIABLE_METADATA["rayleigh_reference_success_flag"] = {
-    **_rayleigh_success_flag,
     "long_name": "Whether at least one block Rayleigh reference passed QA",
+    **_rayleigh_success_flag,
 }
 LEVEL2_DATA_VARIABLE_METADATA["rayleigh_reference_success_flag_block"] = {
-    **_rayleigh_success_flag,
     "long_name": "Block Rayleigh reference QA acceptance flag",
+    **_rayleigh_success_flag,
 }
 
 
@@ -314,13 +320,13 @@ _kfs_valid_flag = _flag_attrs(
         "or that the requested branch was invalid; KFS_Mode/integration_mode identifies which branch was productive."
     ),
 )
-for name in (
-    "kfs_backward_valid_flag",
-    "kfs_forward_valid_flag",
-    "kfs_backward_valid_flag_block",
-    "kfs_forward_valid_flag_block",
+for name, long_name in (
+    ("kfs_backward_valid_flag", "Aggregate backward KFS branch validity"),
+    ("kfs_forward_valid_flag", "Aggregate forward KFS branch validity diagnostic"),
+    ("kfs_backward_valid_flag_block", "Block backward KFS branch validity"),
+    ("kfs_forward_valid_flag_block", "Block forward KFS branch validity diagnostic"),
 ):
-    LEVEL2_DATA_VARIABLE_METADATA[name] = dict(_kfs_valid_flag)
+    LEVEL2_DATA_VARIABLE_METADATA[name] = {"long_name": long_name, **_kfs_valid_flag}
 
 _kfs_branch_flag = _flag_attrs(
     [0, 1, 2, 3],
@@ -330,8 +336,14 @@ _kfs_branch_flag = _flag_attrs(
         "a nonzero branch label alone is not the future altitude-resolved retrieval-support contract."
     ),
 )
-for name in ("kfs_branch", "kfs_branch_block"):
-    LEVEL2_DATA_VARIABLE_METADATA[name] = dict(_kfs_branch_flag)
+LEVEL2_DATA_VARIABLE_METADATA["kfs_branch"] = {
+    "long_name": "Aggregate KFS branch relative to the Rayleigh reference",
+    **_kfs_branch_flag,
+}
+LEVEL2_DATA_VARIABLE_METADATA["kfs_branch_block"] = {
+    "long_name": "Block KFS branch relative to the Rayleigh reference",
+    **_kfs_branch_flag,
+}
 
 
 _gluing_attempted = _flag_attrs([0, 1], "not_attempted attempted")
@@ -343,12 +355,21 @@ _single_channel = _flag_attrs(
     "not_selected selected",
     description="A QA-valid PC-only or analog-only source was selected without mixing channels.",
 )
-for name in ("gluing_attempted_flag", "gluing_attempted_flag_block"):
-    LEVEL2_DATA_VARIABLE_METADATA[name] = dict(_gluing_attempted)
-for name in ("gluing_success_flag", "gluing_success_flag_block"):
-    LEVEL2_DATA_VARIABLE_METADATA[name] = dict(_gluing_success)
-for name in ("single_channel_fallback_flag", "single_channel_fallback_flag_block"):
-    LEVEL2_DATA_VARIABLE_METADATA[name] = dict(_single_channel)
+for name, long_name in (
+    ("gluing_attempted_flag", "Whether gluing was attempted for the time-expanded block"),
+    ("gluing_attempted_flag_block", "Whether gluing was attempted for the block"),
+):
+    LEVEL2_DATA_VARIABLE_METADATA[name] = {"long_name": long_name, **_gluing_attempted}
+for name, long_name in (
+    ("gluing_success_flag", "Time-expanded gluing approval flag"),
+    ("gluing_success_flag_block", "Block gluing approval flag"),
+):
+    LEVEL2_DATA_VARIABLE_METADATA[name] = {"long_name": long_name, **_gluing_success}
+for name, long_name in (
+    ("single_channel_fallback_flag", "Time-expanded single-channel selection flag"),
+    ("single_channel_fallback_flag_block", "Block single-channel selection flag"),
+):
+    LEVEL2_DATA_VARIABLE_METADATA[name] = {"long_name": long_name, **_single_channel}
 
 for base_name, long_name in (
     ("gluing_split_altitude_m", "Analog/photon-counting gluing split altitude"),
@@ -406,12 +427,21 @@ _input_valid = _flag_attrs(
     "invalid valid",
     description="Whether the selected signal passed the minimum source-specific QA required before Rayleigh/KFS retrieval.",
 )
-for name in ("signal_source_flag", "signal_source_flag_block"):
-    LEVEL2_DATA_VARIABLE_METADATA[name] = dict(_signal_source)
-for name in ("retrieval_input_valid_flag", "retrieval_input_valid_flag_block"):
-    LEVEL2_DATA_VARIABLE_METADATA[name] = dict(_input_valid)
-for name in ("retrieval_input_invalid_reason", "retrieval_input_invalid_reason_block"):
-    LEVEL2_DATA_VARIABLE_METADATA[name] = dict(_input_invalid_reason)
+for name, long_name in (
+    ("signal_source_flag", "Time-expanded selected retrieval-input source"),
+    ("signal_source_flag_block", "Block selected retrieval-input source"),
+):
+    LEVEL2_DATA_VARIABLE_METADATA[name] = {"long_name": long_name, **_signal_source}
+for name, long_name in (
+    ("retrieval_input_valid_flag", "Time-expanded retrieval-input validity flag"),
+    ("retrieval_input_valid_flag_block", "Block retrieval-input validity flag"),
+):
+    LEVEL2_DATA_VARIABLE_METADATA[name] = {"long_name": long_name, **_input_valid}
+for name, long_name in (
+    ("retrieval_input_invalid_reason", "Time-expanded retrieval-input invalid-reason code"),
+    ("retrieval_input_invalid_reason_block", "Block retrieval-input invalid-reason code"),
+):
+    LEVEL2_DATA_VARIABLE_METADATA[name] = {"long_name": long_name, **_input_invalid_reason}
 for name in ("retrieval_input_snr_median", "retrieval_input_snr_median_block"):
     LEVEL2_DATA_VARIABLE_METADATA[name] = _attrs(
         "Median retrieval-input signal-to-noise diagnostic",
