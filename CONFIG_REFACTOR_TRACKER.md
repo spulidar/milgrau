@@ -21,6 +21,7 @@ This file is the source of truth for preparing a concise, scientifically defensi
 - Cleanup must not silently alter equations, thresholds, calibration assumptions or uncertainty models.
 - Missing scientific/instrument settings fail early unless an explicit unavailable/legacy policy exists.
 - Unsupported data remain unsupported/NaN; no filling/interpolation is introduced merely to extend retrieval coverage.
+- Tests must exercise current canonical owners/contracts; obsolete tests are not a reason to restore compatibility code or hidden defaults.
 - A successful real-data run validates the exercised path, not the full scientific method or repository test suite.
 
 ## 2. Priority/status overview
@@ -111,12 +112,17 @@ Completed:
 - [x] Added regression proving unexpected station-validator `RuntimeError` is not reclassified as bad YAML/config.
 - [x] Narrowed `level1.common.finite_or_fill` and dark-current availability catches to expected conversion/index failures.
 - [x] Extended semantic-default AST guard to strict `level0/config.py`, `level1/config.py`, `level2/config.py`: structural absence sentinels are allowed; recipe defaults are not.
-- [x] Fixed stale full-suite test that still indexed removed top-level `physics`; it now asserts the alias stays absent.
+- [x] Compatibility-import AST guard covers both package and tests, preventing reintroduction of removed Level 1/2 aliases.
 - [x] Broad exception policy documented: retain explicit outer orchestration/partial-product/optional-QA containment; narrow helper-level catches that can hide defects.
+- [x] Full-suite stale references to removed `level2.atmosphere`, `get_channel_constant`, top-level `physics`, private `lebear` gluing/Rayleigh helpers and pre-strict configuration fixtures were migrated to canonical owners/contracts rather than restoring compatibility.
+- [x] Level 1 ingestion tests now use stdlib-compatible loggers and explicitly provide dead-time/saturation policy arguments; no kernel defaults were reintroduced for test convenience.
+- [x] LIRACOS and LEBEAR synthetic fixtures now materialize the canonical Level 1 atmosphere and complete strict recipes instead of bypassing current product/config contracts.
+- [x] Human-readable `ExecutionResult` log paths use POSIX separators for stable cross-platform diagnostics while stored `Path` semantics remain unchanged.
+- [x] SCC `LR_Input` station policy now recognizes historical 607 nm as a Raman companion of 532 nm in addition to 530 nm, matching the APEL SCC channel inventory and the catalog's stated Raman-companion policy.
 
 Still open in lot 4:
 
-- [ ] Run Ruff + **full `pytest -q`** on the current lot-4B HEAD; classify every failure before CI.
+- [ ] Rerun Ruff + **full `pytest -q`** after the classified failure-repair batch; do not call the suite clean until reproduced locally.
 - [ ] Finish deliberate package-public-surface decisions for `io`, `level0`, `level1`, `level2`, `physics`, `viz`; avoid accidental breaking changes to plausible external/research APIs.
 - [ ] Finish compatibility/deprecation audit outside cleaned L1/L2 and require named consumers/removal criteria.
 - [ ] Search repository-wide for duplicated **scientific equations/selection rules** and retain one canonical implementation; do not over-abstract tiny generic utilities.
@@ -126,6 +132,15 @@ Still open in lot 4:
 
 ### Lot 5 — full suite and CI — PENDING
 
+First full-suite baseline on the P2 cleanup branch:
+
+- [x] Ruff: **all checks passed**.
+- [x] `pytest -q` reached the complete suite after obsolete collection imports were removed.
+- [x] Baseline result recorded rather than hidden: **324 passed, 23 failed, 266 warnings**.
+- [x] All 23 failures were classified before changes: mostly stale tests/fixtures after strict contracts/canonical-owner cleanup, plus a Windows-path portability issue and a real historical SCC Raman-companion mapping inconsistency.
+- [x] Repair batch implemented without restoring hidden defaults/compatibility paths.
+- [ ] Reproduce the full suite after the repair batch and classify any residual failures.
+- [ ] Classify warning baseline separately from test correctness: third-party xarray/netCDF4↔NumPy 2.5 warnings versus MILGRAU-owned `level0/netcdf.py` assignment deprecations.
 - [ ] Establish clean full local pytest baseline in the dev environment.
 - [ ] Add CI for Ruff, architecture/static guards and full pytest.
 - [ ] Only after stable CI, consider branch protection/required checks.
@@ -282,16 +297,20 @@ Merge criterion: **maximize validated vertical support, expose where support end
 - [x] No wildcard import defines productive behavior.
 - [x] No legacy Level 2 retrieval monolith/atmosphere compatibility alias remains.
 - [x] Removed known Level 1 compatibility helpers with no remaining productive responsibility.
+- [x] Tests are guarded against imports from known removed compatibility paths.
 - [ ] Package/public aliases are intentional or have an explicit deprecation/API decision.
 - [x] Canonical productive L2 and strict stage configs are guarded against local semantic defaults.
 - [ ] Auxiliary config interpretation outside strict stage resolvers still needs final audit.
 - [x] Numerical KFS/gluing/molecular kernels do not own filesystem policy.
 - [x] QA/visualization does not feed back into retrieval decisions.
-- [ ] Confirm current changes with full pytest, then add CI.
+- [x] Cross-platform human-readable execution logs do not depend on host path separator.
+- [ ] Confirm the classified full-suite repair batch with full pytest, then add CI.
 
 ## 10. Immediate next gate
 
-On the current P2 lot-4B HEAD run:
+The first complete full-suite run after collection cleanup produced **324 passed / 23 failed / 266 warnings** while Ruff remained clean. The failures were classified and repaired without restoring obsolete APIs or semantic defaults; the current repair batch now needs reproduction.
+
+Run:
 
 ```bash
 ruff check milgrau tests
@@ -301,7 +320,8 @@ pytest -q
 Expected handling:
 
 - Ruff must remain clean for the configured gate.
-- Every pytest failure is classified before any CI is added: real regression, stale test/contract, missing optional dependency isolation, or test defect.
-- Do **not** call the repository globally green until this full-suite gate is clean and reproduced in CI.
+- Any residual pytest failure is classified before another code change: real regression, stale test/contract, optional-dependency isolation, platform portability, or test defect.
+- Warnings are tracked separately from correctness. Third-party xarray/netCDF4↔NumPy 2.5 deprecations must not be confused with MILGRAU-owned `level0/netcdf.py` deprecation sites.
+- Do **not** call the repository globally green until this full-suite gate is clean and subsequently reproduced in CI.
 
 After a clean full-suite baseline, finish the remaining public-surface/QA-helper/duplicate-rule audit, then implement lot 5 CI.
