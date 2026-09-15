@@ -38,7 +38,7 @@ The order is intentional: truthful scientific identity -> one canonical implemen
 | **P0** | **COMPLETE** | truthful backward-KFS identity and support semantics |
 | **P1** | **COMPLETE + REAL-DATA VALIDATED** | canonical Level 2 architecture and removal of duplicate/hidden productive science |
 | **P2** | **COMPLETE** | engineering hardening, deliberate API, exception/default guardrails and CI |
-| **P3** | **IN PROGRESS** | current-method scientific hardening, FAIR schema/provenance, traceability and focused docs |
+| **P3** | **IN PROGRESS — RELEASE/CF GATE ONLY** | current-method scientific hardening, FAIR schema/provenance, traceability and focused docs |
 | **P4** | **PARALLEL EVIDENCE WORK** | instrument characterization and external/observational validation |
 | **P5** | **PENDING** | high-column R&D: support, Rayleigh catalogue, backbone, ensemble and optional cascade |
 | **P6** | **PENDING** | release/publication readiness and reproducible scientific release process |
@@ -142,13 +142,13 @@ This subsection addresses issues in the present productive method; it must not b
 - [x] Freeze the current productive gluing policy: fitted slope/intercept uncertainty remains outside the partial measurement-noise component and is **not** claimed negligible. Its materiality must be quantified under P4 before any versioned propagation is added.
 - [x] Because accepted-output/uncertainty semantics changed, increment `level2_retrieval_method_version` to `3`; method v2 introduced common support/missing-error rejection, and method v3 introduced conservative correlated aggregate optical uncertainty. Incremental currentness makes older methods stale.
 
-Method-v3 hardening gate: **Ruff plus full pytest passed on Ubuntu/Windows x Python 3.12/3.14; the complete method-v3/content-provenance baseline is green in CI run 71.**
+Method-v3 hardening gate: **Ruff plus full pytest passed on Ubuntu/Windows x Python 3.12/3.14.**
 
 Acceptance gate: **passed for the declared partial uncertainty budget.** Productive values/errors now share support, missing uncertainty cannot become zero noise, aggregate covariance is not silently treated as independent, and omitted gluing-fit uncertainty is explicitly outside scope rather than assumed absent.
 
-### P3.4 — provenance/input identity — IN PROGRESS
+### P3.4 — provenance/input/code identity — COMPLETE
 
-Readable provenance remains primary, but content identity now has named consumers: incremental cache correctness, exact Level 1 lineage and distinction of scientific source families.
+Readable provenance remains primary, while content identity is used only where it has a named scientific/operational consumer.
 
 - [x] Keep source Level 1 filename, stable station profile/calibration IDs, config filenames, exact processing/station YAML snapshots, method/schema/software identity and portable scientific source metadata.
 - [x] Do not persist secrets, transient cache paths or host-specific absolute paths.
@@ -157,43 +157,39 @@ Readable provenance remains primary, but content identity now has named consumer
 - [x] Pin cross-platform regressions for the content-identity/currentness contract and preserve portable filenames/IDs rather than machine-local paths.
 - [x] Define stable thermodynamic source identifiers as `provider/product/version_or_release`, separate from cache/download mechanics.
 - [x] Persist `thermodynamic_profile_source_id` plus provider/product/release metadata in Level 2 provenance; ERA5 uses the configured dataset and DOI when available, radiosonde identifies the Wyoming upper-air service family, and USSA76 records edition 1976.
-- [ ] Define and implement source-code identity policy: tagged scientific releases may use package version + release DOI/tag as primary identity; non-release/development products must additionally expose a repository/build/content revision sufficient to distinguish materially different code states sharing the same package version.
+- [x] Add source-code content identity independent of package CalVer: `source_code_sha256` hashes the normalized installed MILGRAU Python source tree; `source_repository_revision` is added from `MILGRAU_SOURCE_REVISION` or Git when available but is not required for installed-product identity.
+- [x] Normalize source text line endings before code hashing so equivalent Windows/Unix checkouts have one identity; edited/dirty Python source produces a distinct code identity.
 - [x] Keep exact YAML snapshots as the human-readable configuration record; do not replace them with configuration hashes.
 
-P3.4 implementation gate through thermodynamic identity: **green in CI run 71 on Ruff plus Ubuntu/Windows x Python 3.12/3.14.**
+Source-code identity gate: **CI run 75 passed Ruff plus full pytest on Ubuntu/Windows x Python 3.12/3.14.**
 
-Acceptance gate remains open only on code-state identity: **a product already identifies exact Level 1 content, scientific configuration and thermodynamic source without machine-local paths; development/release code identity still needs to distinguish different source states sharing one package CalVer.**
+Acceptance gate: **passed.** A Level 2 product can identify exact Level 1 content, exact processing/station YAML, stable thermodynamic source family and installed MILGRAU source state without embedding machine-local paths. Tagged-release DOI/tag alignment remains a P6 release-management task.
 
-### P3.5 — focused documentation and scientific traceability — IN PROGRESS
+### P3.5 — focused documentation and scientific traceability — COMPLETE
 
-- [x] `docs/level2_schema.md` documents schema v1, method v3 identity, units, flags, joint signal/error support, missing-uncertainty semantics, conservative correlated block aggregation, gluing uncertainty scope, Level 1 content identity, thermodynamic source identity and current scientific limitations.
-- [ ] Create/refresh focused docs for processing levels and config/station ownership without duplicating mutable scientific detail.
-- [ ] Shorten README into an entry point after focused docs exist.
-- [ ] Build a verified primary-source bibliography for methods actually implemented; distinguish historical inspiration from equations actually used.
-- [ ] Minimum bibliography set: Klett (1981), Fernald (1984), Bucholtz (1995), photon-counting/dead-time reference(s), SCC/ELDA methodology references, FAIR4RS and the CF conventions used for claims/validation.
-- [ ] Create a scientific traceability matrix linking each productive scientific claim/behavior to: canonical owner, tests, product metadata/provenance and primary literature/method reference.
-- [ ] Explicitly mark elastic extinction as conditional on assumed aerosol lidar ratio and avoid implying semantic equivalence to Raman extinction products.
-- [ ] Separate documentation of observational regression baselines from synthetic/analytical truth tests.
+- [x] `docs/level2_schema.md` documents schema v1, method v3 identity, units, flags, joint signal/error support, missing-uncertainty semantics, conservative correlated block aggregation, gluing uncertainty scope and FAIR provenance identities.
+- [x] `docs/processing_levels.md` defines the stable Level 0/1/2 responsibilities without copying mutable thresholds.
+- [x] `docs/configuration_ownership.md` defines `config.yaml` vs `station.yaml` vs Python scientific ownership, external-source identity and hash policy.
+- [x] README is shortened to a project entry point that links focused documents instead of duplicating mutable scientific/config detail.
+- [x] Build a verified primary-source bibliography for methods actually implemented and distinguish historical/validation/interoperability references from equations actually used.
+- [x] Minimum bibliography includes Klett (1981), Fernald (1984), Bucholtz (1995), Donovan et al. (1993), SCC preprocessing/optical methodology, FAIR4RS and the current CF release target.
+- [x] `docs/scientific_traceability.md` links productive scientific behavior to canonical owner, executable tests, product metadata/provenance and primary reference/status.
+- [x] Elastic extinction is explicitly described as conditional on assumed aerosol lidar ratio and is not presented as semantically equivalent to directly retrieved Raman extinction.
+- [x] Synthetic/analytical truth, observational regression, external-chain comparison and instrument characterization are explicitly separated in the validation hierarchy.
 
-Recommended traceability-matrix columns:
+Primary references verified for the current matrix include Klett DOI `10.1364/AO.20.000211`, Fernald DOI `10.1364/AO.23.000652`, Bucholtz DOI `10.1364/AO.34.002765`, Donovan et al. DOI `10.1364/AO.32.006742`, D'Amico et al. SCC Part 1 DOI `10.5194/amt-9-491-2016`, Mattis et al. SCC Part 2 DOI `10.5194/amt-9-3009-2016`, and FAIR4RS DOI `10.1038/s41597-022-01710-x`. CF release 1.13 is the current roadmap target for compliance validation.
 
-| Scientific behavior | Canonical owner | Test evidence | Product metadata | Primary reference |
-| --- | --- | --- | --- | --- |
-| Rayleigh molecular model | `level2.molecular` | molecular/synthetic tests | molecular/method identity | Bucholtz |
-| backward Fernald/KFS | `level2.kfs` + `optical_retrieval` | forward-model recovery | retrieval method/version | Fernald/Klett |
-| AN/PC gluing | `level2.gluing` + `signal_selection` | synthetic + overlap tests | gluing method/score | implemented methodology |
-| Rayleigh reference QA | `level2.molecular` + `optical_retrieval` | candidate/QA tests | reference diagnostics | implemented methodology |
-| uncertainty model | `block_average` + `kfs` + aggregation | MC/error tests | uncertainty scope/components | implemented methodology |
+Acceptance gate: **passed.** Current productive scientific claims now have an explicit owner/evidence/provenance/reference trail, while implementation-specific MILGRAU policies are labeled as such instead of being falsely attributed to external literature.
 
-### P3.6 — FAIR licensing and repository identity — BLOCKING FOR RELEASE
+### P3.6 — FAIR licensing and CF validation — BLOCKING FOR RELEASE/P3 ACCEPTANCE
 
 - [ ] Add an explicit root software `LICENSE` chosen according to project/institution policy.
 - [ ] Add the corresponding software-license identity to `CITATION.cff`/package metadata where appropriate.
 - [ ] Keep documentation/data licensing separate when their terms differ from the software license.
-- [ ] Do not infer a code license from image assets or unrelated Creative Commons badges.
-- [ ] Run a CF/compliance checker against representative Level 2 NetCDF before claiming CF compliance; document the exact convention version used for validation.
+- [x] Do not infer a code license from image assets or unrelated Creative Commons badges; README now states the explicit-license status.
+- [ ] Run a CF/compliance checker against a representative current Level 2 NetCDF and document the exact CF convention/checker version and any justified exceptions.
 
-P3 acceptance gate: **one Level 2 NetCDF is scientifically interpretable and traceable without reading implementation source, cannot describe a different method/support domain from the one used, does not understate missing/undefined uncertainty, and has portable input/software provenance.**
+P3 acceptance gate remains open only on P3.6: **the current method/schema/provenance/traceability baseline is otherwise frozen enough for observational validation, but software licensing and representative CF validation must be resolved before P3 is declared complete.**
 
 ## 7. P4 — instrument characterization and observational validation — PARALLEL EVIDENCE WORK
 
@@ -419,21 +415,20 @@ P6 acceptance gate: **a third party can identify, install, cite and rerun the re
 - [x] Aggregate uncertainty states independence/correlation assumptions explicitly and does not reduce mixed nuisance terms as independent noise.
 - [x] Gluing uncertainty scope is explicit and not described as total uncertainty while fitted regression-parameter uncertainty is excluded.
 - [x] Product provenance identifies exact Level 1 content and incremental reuse verifies it.
-- [ ] Development/release code identity is unambiguous.
-- [ ] Scientific traceability matrix exists.
-- [ ] Primary-source bibliography is verified.
+- [x] Development code-state identity is unambiguous even when package CalVer is unchanged.
+- [x] Scientific traceability matrix exists.
+- [x] Primary-source bibliography is verified.
 - [ ] Software license is explicit.
+- [ ] Representative current Level 2 product has recorded CF/compliance validation evidence.
 
 ## 11. Immediate next gate
 
-Completed across method v2/v3 and P3.4 provenance hardening: joint signal/error averaging, `n_effective`, missing-uncertainty rejection in KFS, conservative correlated aggregate optical uncertainty, explicit partial gluing scope, method-version/stale-product enforcement, exact Level 1 SHA-256 lineage/currentness, and stable thermodynamic provider/product/release identity.
+Completed across P3.1–P3.5: canonical schema/metadata, method-v3 uncertainty/support hardening, exact Level 1 lineage/currentness, stable thermodynamic identity, portable source-code identity, focused documentation, traceability matrix and verified bibliography.
 
-Do these before recreating high-column `fixing_l2` work:
+Do these before starting the P5 high-column redesign:
 
-1. Implement portable development/release source-code identity so materially different code states sharing the same package CalVer remain distinguishable.
-2. Build the scientific traceability matrix and verified primary-source bibliography; keep implemented equations distinct from historical inspiration.
-3. Finish focused processing/config/station documentation and then shorten README into an entry point.
-4. Add explicit software licensing according to project/institution policy and prepare CF validation criteria.
-5. Keep P4 instrument characterization parallel and evidence-first, including photon-counting saturation/dead-time order, SNR/cloud gates and gluing-fit parameter uncertainty materiality.
-6. Freeze the observational `20251107sapm` regression summary after the current method-v3 real-data run is reviewed; label it regression evidence, not truth.
-7. Only after the P3 baseline is accepted, start P5 with synthetic support tests, Rayleigh candidate catalogue, backbone and ensemble. Evaluate cascade only after Decision gate A.
+1. **Review the current `20251107sapm` method-v3 real-data run** and freeze a machine-readable observational regression summary. Record the exact commit/source-code identity; observational agreement remains regression evidence, not truth.
+2. **Run CF/compliance validation on that representative current Level 2 NetCDF**, record CF release/checker version and fix real schema issues before making compliance claims.
+3. **Resolve the explicit software license with project/institution policy**, then add the license identity to the root, CFF and package metadata. Do not guess this choice in code.
+4. Keep P4 instrument characterization parallel and evidence-first: PC saturation, raw-rate guard, dead-current/dead-time order, SNR/cloud gates and gluing-fit parameter uncertainty materiality.
+5. Once P3.6 is closed and the method-v3 real regression is accepted, start P5 with synthetic support/top tests and the Rayleigh candidate catalogue, then backbone and ensemble. Evaluate cascade only after Decision gate A.
