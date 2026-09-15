@@ -5,7 +5,29 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from milgrau.level2.gluing import slide_glue_signals
+from milgrau.level2.gluing import (
+    GLUING_SELECTION_SCORE_VERSION,
+    gluing_selection_score,
+    gluing_selection_score_metadata,
+    slide_glue_signals,
+)
+
+
+def test_gluing_selection_score_v1_is_exactly_pinned() -> None:
+    score = gluing_selection_score(
+        relative_rmse=0.2,
+        relative_bias=-0.1,
+        intercept_percent=10.0,
+        saturation_fraction=0.5,
+    )
+    assert score == pytest.approx(0.315)
+
+    metadata = gluing_selection_score_metadata()
+    assert metadata["gluing_selection_score_version"] == GLUING_SELECTION_SCORE_VERSION == "1"
+    assert metadata["gluing_score_relative_rmse_weight"] == 1.0
+    assert metadata["gluing_score_absolute_relative_bias_weight"] == 1.0
+    assert metadata["gluing_score_intercept_percent_weight"] == 0.001
+    assert metadata["gluing_score_saturation_fraction_weight"] == 0.01
 
 
 def test_slide_glue_signals_recovers_overlap_region() -> None:
@@ -31,6 +53,7 @@ def test_slide_glue_signals_recovers_overlap_region() -> None:
 
     assert split_point > 0
     assert diagnostics["selection_mode"] == "residual_minimization"
+    assert diagnostics["gluing_score_version"] == GLUING_SELECTION_SCORE_VERSION
     assert diagnostics["best_corr"] > 0.99
     assert diagnostics["relative_rmse"] < 1.0e-12
     assert np.isclose(slope, 3.0, rtol=1.0e-6, atol=1.0e-6)
