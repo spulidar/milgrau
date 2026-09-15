@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from milgrau.level2.atmosphere import get_standard_atmosphere
 from milgrau.level2.molecular import calculate_molecular_profile, find_optimal_reference_altitude
+from milgrau.physics.atmosphere import get_standard_atmosphere
 
 
 def test_standard_atmosphere_shapes_and_monotonic_pressure() -> None:
