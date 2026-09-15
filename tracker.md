@@ -8,7 +8,7 @@ This file is the active source of truth for scientific/engineering work. Detaile
 
 ## Non-negotiable rules
 
-- `config.yaml` owns the processing/scientific recipe; `station.yaml` owns site/instrument reality and station-derived observational metadata; Python owns equations/constants/implementation.
+- `config.yaml` owns the processing/scientific recipe; `station.yaml` owns site/instrument reality, station-derived observations, calibration state and provisional instrument estimates; Python owns equations and generic implementation.
 - One productive scientific behavior has one canonical implementation.
 - Missing uncertainty is never zero uncertainty.
 - Correlated/model/systematic uncertainty is not silently treated as independent noise.
@@ -18,6 +18,7 @@ This file is the active source of truth for scientific/engineering work. Detaile
 - Vertical support must respect both the upper inversion/reference boundary and the lower instrument-validity boundary.
 - A target top altitude is a validation target, never permission to extrapolate, bridge gaps or relax physics.
 - Instrument constants/thresholds are evidence-derived or explicitly provisional/disabled; they are never invented to close the roadmap.
+- Diagnostic instrument models must not silently become productive corrections.
 
 ## Status overview
 
@@ -26,7 +27,7 @@ This file is the active source of truth for scientific/engineering work. Detaile
 | P0 | COMPLETE | truthful backward-KFS identity and support semantics |
 | P1 | COMPLETE + REAL-DATA VALIDATED | canonical Level 2 architecture |
 | P2 | COMPLETE | engineering guardrails and cross-platform CI |
-| P3 | IN PROGRESS — LICENSE/CF GATE ONLY | current-method scientific + FAIR hardening |
+| P3 | IN PROGRESS — HOLDER/CF GATE | current-method scientific + FAIR hardening |
 | P4 | PARALLEL EVIDENCE WORK | instrument characterization / observational validation |
 | P5 | PENDING | altitude-resolved support + high-column R&D |
 | P6 | PENDING | reproducible release/publication process |
@@ -49,7 +50,7 @@ Completed and regression-guarded:
 - portable installed-source `source_code_sha256` plus repository revision when available;
 - focused processing/configuration/schema docs and scientific traceability matrix;
 - verified primary references and explicit distinction between implemented physics, MILGRAU policy, observational regression, external comparison and instrument characterization;
-- Ruff + full pytest on Ubuntu/Windows × Python 3.12/3.14.
+- Ruff + full pytest on Ubuntu/Windows × Python 3.12/3.14 for the pre-overlap method-v3 baseline.
 
 ## Method-v3 real-data regression baseline — COMPLETE
 
@@ -65,28 +66,40 @@ Observed baseline:
 - Aggregate uncertainty exactly follows method-v3 `sum(sigma_block)/n_effective` on common value/error support.
 - Level 2 `source_level1_sha256` matches the uploaded Level 1 bytes exactly.
 
-Interpretation constraint: aggregate optical arrays are finite from 3.75 m AGL, but SPU near-field geometrical overlap is not characterized in the product/configuration. That lower edge is **not** accepted as validated quantitative aerosol support.
+Interpretation constraint: aggregate optical arrays are finite from 3.75 m AGL, but SPU near-field geometrical overlap is not experimentally characterized. That lower edge is **not** accepted as validated quantitative aerosol support.
 
 ## P3.6 — FAIR license + CF validation — BLOCKING P3 COMPLETION
 
-- [ ] Choose an explicit software license according to project/institution policy and add a root `LICENSE`.
-- [ ] Add matching software-license identity to `CITATION.cff` / package metadata where appropriate.
+- [x] Provisional software-license family selected: **BSD-3-Clause**.
+- [ ] Confirm the legal copyright holder / institutional approval, then add the root `LICENSE` and matching identity to `CITATION.cff` / package metadata. Do not invent the holder.
 - [ ] Keep software, documentation and data licensing separate where their terms differ.
 - [x] Representative CF-validation product selected: method-v3 `20251107sapm` Level 2 from revision `842389a...`.
 - [x] Preliminary structural inspection completed; the current file has no global `Conventions` declaration, therefore MILGRAU does **not** claim CF compliance yet.
 - [ ] Run an actual CF/compliance checker, record checker + CF version, fix genuine schema issues and document justified exceptions.
 
-P3 acceptance gate: **open only on license + recorded CF validation evidence.**
+P3 acceptance gate: **open on copyright-holder/institutional license completion + recorded CF validation evidence.**
 
 ## P4 — instrument characterization / observational validation — ACTIVE IN PARALLEL
 
 Evidence tasks may finish as `characterized/enabled`, `insufficient evidence/provisional`, or `rejected`. No invented constant closes P4.
 
+### P4 overlap — diagnostic model implemented; experimental characterization open
+
+- [x] Add generic `coaxial_uniform_disk_geometric_v1` first-order overlap physics in `milgrau.physics.overlap`.
+- [x] Keep all SPU-specific receiver/transmitter values and their uncertainty/status in `station.yaml`; no SPU numerical geometry is embedded in Python.
+- [x] Support a profile-specific transmitter geometry with an explicit station fallback when that profile lacks geometry; record which source was resolved.
+- [x] Keep the current model diagnostic only: `correction_policy=diagnostic_only_no_correction`; no Level 0/1 signal is divided by the model curve.
+- [x] Preserve the current discrepancy rather than tuning parameters: with provisional 30 cm telescope, ~4 cm beam, 0.1 mrad FOV interpreted as full angle and 0.1 mrad divergence upper-bound value, the first-order model has no finite exact-full-overlap range and gives only ~0.028 overlap at the reported 500 m altitude.
+- [x] Document assumptions, equations, current diagnostic and campaign update path in `docs/overlap_model.md`.
+- [ ] Experimentally determine FOV convention/value, field-stop diameter, beam diameter convention, wavelength-dependent divergence, alignment/separation and overlap stability.
+- [ ] Use telecover/alignment mapping and preferably an independent horizontal/Raman-based method to validate the overlap curve and lower quantitative-support boundary.
+- [ ] Only after characterization decide whether a productive overlap correction is justified; if introduced, version the scientific method and propagate uncertainty/support explicitly.
+
+Other P4 evidence tasks:
+
 - [ ] Characterize physical photon-counting saturation under operational SPU conditions using AN/PC overlap and preferably controlled attenuation before defining a traceable `max_rate_mhz`.
 - [ ] Move any surviving provisional PC guard to raw observed Level 1 PC rate rather than a corrected/background-subtracted proxy.
 - [ ] Audit dark-current subtraction versus nonlinear dead-time correction with instrument evidence and quantify the practical difference over observed SPU regimes.
-- [ ] Characterize near-field geometrical overlap for productive elastic channel families, or establish a validated overlap-correction product; record the lowest altitude supporting quantitative optical retrieval without inventing a generic cutoff.
-- [ ] Until overlap is characterized, treat finite very-low-altitude KFS values as algorithmic output only, not validated aerosol support.
 - [ ] Characterize propagated-error SNR before enabling hard Rayleigh-window SNR rejection.
 - [ ] Validate cloud/layer screening before enabling it as productive reference-window rejection.
 - [ ] Quantify gluing slope/intercept uncertainty and covariance with overlap resampling/bootstrap/Monte Carlo; either justify continued exclusion from the declared partial budget or introduce a new versioned propagation model.
@@ -99,7 +112,7 @@ P4 acceptance gate: every instrument-dependent productive threshold/correction/s
 
 ## P5 — altitude-resolved support + high-column R&D — PENDING
 
-Start implementation after P3.6 closes. Evidence for P4 may continue in parallel, but P5 support semantics must honor any unresolved P4 limitations.
+Start implementation after P3.6 closes. P4 evidence may continue in parallel, but P5 support semantics must honor unresolved P4 limitations.
 
 ### P5.1 support semantics + synthetic truth
 
@@ -108,13 +121,15 @@ Frozen semantics:
 - `retrieval_support_flag(..., altitude)` means scientifically supported productive optical retrieval, not mere finiteness.
 - Upper support ends at the actual accepted inversion/reference boundary; no backward result exists above that boundary.
 - Lower support must respect validated overlap/instrument-correction domain; a finite KFS value below that domain has support 0.
+- A provisional modeled overlap curve is diagnostic evidence, not by itself a validated support flag.
 - Internal unsupported gaps are never bridged.
 - `retrieval_top_altitude_m` is the highest supported altitude; NaN when no supported bin exists.
+- The redesigned product must also expose the lower supported edge (for example `retrieval_bottom_altitude_m`) rather than describing support only by its top.
 
 To implement:
 
 - [ ] Add synthetic support tests covering upper boundary, lower overlap boundary, noisy tail, missing uncertainty and internal gaps.
-- [ ] Expose support/top only after those tests pass.
+- [ ] Expose altitude-resolved support and lower/upper bounds only after those tests pass.
 - [ ] QA must show the complete supported domain, including lower edge and upper top.
 
 Validation truth hierarchy:
@@ -177,21 +192,11 @@ Implement only if Decision gate A passes.
 - [ ] merge only accepted members/segments with documented weights;
 - [ ] treat covariance deliberately and verify uncertainty grows under reference/handoff ambiguity.
 
-### P5 product redesign
-
-- [ ] altitude-resolved support flag and retrieval top;
-- [ ] accepted reference-member diagnostics and ensemble-spread uncertainty;
-- [ ] clear separation of 20-min and long-mean/backbone products;
-- [ ] optional cascade diagnostics only if cascade exists;
-- [ ] explicit elastic-extinction LR dependence;
-- [ ] new method/schema identity when redesigned semantics enter production;
-- [ ] QA shows lower support edge, upper support top, reference choices and uncertainty without legitimizing unsupported near-field or upper tails.
-
 P5 merge criterion: **maximize validated vertical support and expose where support begins/ends. Reaching 20 km alone is not success.**
 
 ## P6 — release/publication readiness — PENDING
 
-- [ ] explicit software license reflected in citation/package metadata;
+- [ ] explicit BSD-3-Clause software license with confirmed holder reflected in citation/package metadata;
 - [ ] `CITATION.cff` version/date/DOI aligned with the actual release;
 - [ ] scientific method/schema changes summarized in release notes;
 - [ ] frozen reference scientific environment/constraints;
@@ -209,7 +214,8 @@ P6 acceptance gate: a third party can identify, install, cite and rerun the rele
 
 ## Immediate next gate
 
-1. Run a real CF/compliance checker against the uploaded `20251107sapm` method-v3 Level 2 and fix genuine schema issues; preliminary inspection already shows missing `Conventions` metadata.
-2. Resolve software-license policy; do not guess the license in code.
-3. Continue P4 with geometrical-overlap characterization as a newly explicit lower-support requirement, alongside PC saturation/dead-time/SNR/cloud/gluing-fit evidence.
-4. After P3.6 closes, begin P5 with synthetic lower+upper support tests and the Rayleigh candidate catalogue, then backbone and ensemble. Evaluate cascade only after Decision gate A.
+1. Let the new diagnostic overlap implementation pass the full cross-platform CI; fix any real regression before calling this implementation stable.
+2. Run a real CF/compliance checker against the uploaded `20251107sapm` method-v3 Level 2 and fix genuine schema issues.
+3. Confirm the copyright holder/institutional approval for BSD-3-Clause, then add the root license/CFF/package identity.
+4. Continue P4 overlap experimentally without blocking algorithm development; keep the model diagnostic-only until validated.
+5. After P3.6 closes, begin P5 with synthetic lower+upper support tests and the Rayleigh candidate catalogue, then backbone and ensemble. Evaluate cascade only after Decision gate A.
