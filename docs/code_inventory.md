@@ -1,6 +1,6 @@
 # MILGRAU code ownership inventory
 
-This document is the P2 code-use baseline. Its purpose is to record why code exists so accidental API, compatibility residue, duplicate ownership and dead helpers can be removed deliberately.
+This document is the P2 code-use baseline. It records why code exists so accidental API, compatibility residue, duplicate ownership, hidden scientific defaults and dead helpers can be removed deliberately.
 
 ## Classification
 
@@ -17,18 +17,16 @@ Compatibility without a named consumer is not a valid category.
 
 ## Package-level public surface
 
-The root package intentionally exposes only `__version__`; subpackages are explicit imports so `import milgrau` stays light. The supported `__all__` surface of `milgrau.io`, `level0`, `level1`, `level2`, `physics`, and `viz` is now regression-pinned exactly in `tests/test_imports.py`. New or removed package-level exports therefore require a deliberate API review instead of appearing by accident.
-
-Current decisions:
+The root package intentionally exposes only `__version__`; subpackages are explicit imports so `import milgrau` stays light. The supported `__all__` surface of `milgrau.io`, `level0`, `level1`, `level2`, `physics`, and `viz` is regression-pinned exactly in `tests/test_imports.py`. New or removed package-level exports therefore require deliberate API review.
 
 | Package | Role and API decision |
 | --- | --- |
 | `milgrau.cli` | Console-entry boundary from `pyproject.toml`; translates CLI arguments/results and owns no science. |
 | `milgrau.config` | Public `load_config`; stage policy belongs in strict stage config modules. |
-| `milgrau.io` | Shared reusable IO/contract/path/weather/radiosonde/Licel API; exact convenience exports are intentionally retained and pinned. |
+| `milgrau.io` | Shared reusable IO/contract/path/weather/radiosonde/Licel API; exact convenience exports are intentional. |
 | `milgrau.level0` | Productive L0 API centered on `process_level_0` plus documented reusable helpers. |
-| `milgrau.level1` | Productive L1 API; exports point directly to their canonical owner modules. |
-| `milgrau.level2` | Productive API plus explicit research/numerical kernels. Productive policy remains backward KFS. |
+| `milgrau.level1` | Productive L1 API; exports point directly to canonical owner modules. |
+| `milgrau.level2` | Productive API plus explicit research/numerical kernels; productive policy remains backward KFS. |
 | `milgrau.physics` | Shared pure scientific kernels; no filesystem/config-discovery policy. |
 | `milgrau.viz` | Optional presentation API; never feeds decisions back into retrieval. |
 | `milgrau.explorer` | Optional Streamlit UI. |
@@ -39,7 +37,7 @@ Current decisions:
 
 ## Canonical scientific ownership
 
-One productive scientific behavior should have one owner. Current canonical ownership is:
+Repository-wide P2 review found no second productive implementation for the behaviors below. Research kernels may expose extra modes, but productive policy has one owner.
 
 | Behavior | Canonical owner |
 | --- | --- |
@@ -58,7 +56,9 @@ One productive scientific behavior should have one owner. Current canonical owne
 | block→typed-result assembly | `milgrau.level2.result_assembly` |
 | NetCDF/schema materialization | `milgrau.level2.dataset` |
 
-P1 removed the duplicate `_retrieval_impl.py`, `level2.atmosphere`, `backward_retrieval.py`, and `scientific_policy.py`; no compatibility wrappers replaced them. The package-level `fernald_inversion`, `kfs_inversion_monte_carlo`, `slide_glue_signals`, and `propagate_glued_error` exports are retained intentionally as numerical/research APIs and do not define productive policy.
+P1 removed `_retrieval_impl.py`, `level2.atmosphere`, `backward_retrieval.py`, and `scientific_policy.py`; no compatibility wrappers replaced them. Package-level `fernald_inversion`, `kfs_inversion_monte_carlo`, `slide_glue_signals`, and `propagate_glued_error` remain intentionally as numerical/research APIs and do not define productive policy.
+
+The current gluing selector is residual-based. P2 removed `inversion.gluing.gaussian_threshold` because it was an inert historical knob: it reached diagnostics but did not participate in acceptance/ranking. Old configs containing it now fail explicitly instead of implying that the setting affects science. Active acceptance/ranking inputs remain explicit in `level2.gluing`; the score constants themselves are a P3 documentation/versioning task.
 
 ## Level 0 ownership
 
@@ -68,7 +68,7 @@ P1 removed the duplicate `_retrieval_impl.py`, `level2.atmosphere`, `backward_re
 | `level0.config` | strict productive L0 configuration |
 | `level0.inventory` | productive measurement inventory |
 | `level0.libids` | productive L0 orchestration |
-| `level0.netcdf` | productive L0 schema/materialization; cohesion review candidate |
+| `level0.netcdf` | productive L0 schema/materialization |
 | `level0.processing` | productive acquisition/signal processing |
 | `level0.quality` | productive acquisition QA |
 | `level0.time` | deterministic time classification |
@@ -94,7 +94,7 @@ Removed compatibility residue:
 - `level1.common.level1_output_path()` — orchestration uses `milgrau.io.paths.level1_output_path` directly.
 - `level1.common.get_channel_constant(..., logger)` — obsolete pre-resolver calibration helper; `resolve_channel_calibration()` owns current calibration resolution.
 
-The broad catch around each channel in `apply_all_physical_corrections()` is intentional: one failed channel is represented explicitly while valid channels may still form a Level 1 product. Outer file processing is an execution boundary.
+The broad catch around each channel in the correction orchestrator is intentional: one failed channel is represented explicitly while valid channels may still form a Level 1 product. In contrast, diagnostic reduction helpers inside `level1.corrections` now only contain expected conversion failures (`TypeError`, `ValueError`, `OverflowError`); unexpected runtime defects propagate and are regression-tested.
 
 ## Level 2 ownership
 
@@ -121,7 +121,7 @@ The broad catch around each channel in `apply_all_physical_corrections()` is int
 | `level2.signal_selection` | productive blocking/source selection/gluing/fallback |
 | `level2.time_window` | productive time-window filtering |
 
-`level2.lebear.attempt_wavelength()` intentionally contains failures per wavelength to support explicit partial-product diagnostics. Outer Level 2 containment is an execution boundary, not a silent scientific fallback.
+`level2.lebear.attempt_wavelength()` intentionally contains failures per wavelength to support explicit partial-product diagnostics. The outer file boundary converts failures into `ExecutionResult`; neither catch supplies alternate retrieval science.
 
 ## Compatibility decisions
 
@@ -129,28 +129,66 @@ The broad catch around each channel in `apply_all_physical_corrections()` is int
 - Historical/custom Licel files may lack valid channel `NShots` but carry the older file-level shot value. `_resolved_channel_shots()` gives channel `NShots` priority and uses the global value only as a named file-format compatibility fallback. Remove it only when those historical/custom files are explicitly unsupported or migrated.
 - Removed Level 1/2 compatibility paths are guarded against reintroduction in both package and tests.
 
+No other unnamed compatibility path was found in the final P2 audit.
+
 ## Configuration/default ownership
 
 Strict recipe resolvers are `level0/config.py`, `level1/config.py`, and `level2/config.py`. They may use structural absence sentinels during validation but may not invent scientific recipe values through local `.get(..., literal_default)`. AST regressions enforce this.
 
 The explicit Level 1 `neutral_with_warning` historical-calibration policy is not a hidden default: it must be configured, correction values are forced to exactly zero, and use is persisted/warned.
 
-## Exception-boundary policy
+## Exception-boundary policy — final P2 classification
 
-Broad exceptions are audited by role rather than mechanically banned.
+Broad exceptions are retained only where containment is itself part of the API contract:
 
-- **Retain** at outer CLI/file orchestration boundaries where failures become explicit execution results.
-- **Retain** per-wavelength L2 containment because partial multispectral products have an explicit failure contract.
-- **Retain** per-channel L1 containment where failed-channel state is persisted rather than silently accepted.
-- **Retain** filesystem action containment where the API returns explicit `ExecutionResult` failures.
-- **Retain** optional QA/UI containment when presentation failure cannot alter the saved scientific product.
-- **Narrow/remove** inside scientific/config/data parsers when broad catches can hide implementation defects.
+- outer CLI/file orchestration, where failures become explicit execution results;
+- per-wavelength L2 handling, where partial multispectral products have a failure contract;
+- per-channel L1 orchestration, where failed-channel state is persisted;
+- filesystem mutation boundaries (`quarantine_file`, `delete_file`), which return explicit failed `ExecutionResult` objects;
+- optional QA/UI presentation, whose failure cannot alter the already-saved scientific product;
+- product-currentness/integrity checks, where unreadable/invalid output is conservatively classified as not current.
 
-Completed narrowing includes Level 0 acquisition QA, station-config loading, Level 1 helpers, and Licel parsing. Licel inventory/group parsing now catches expected `OSError`/`ValueError` but explicitly allows unexpected `RuntimeError` to propagate; tests pin that boundary.
+Broad catches were removed/narrowed where they could hide implementation defects:
+
+- Level 0 acquisition QA and station config;
+- Licel parsing (`ValueError`/`OSError` only for malformed/IO input; unexpected `RuntimeError` propagates);
+- Open-Meteo cache/retry handling: retries only expected IO/payload failures, while unexpected runtime failures propagate;
+- Level 1 diagnostic min/max reduction helpers;
+- raw-tree path resolution: only expected `OSError`/`RuntimeError` resolution failures are contained.
+
+Optional plotting helpers such as `level2_qa` deliberately remain presentation-tolerant. Their broad catches are not used to select, modify, fill or validate scientific retrieval values.
+
+## Dead-code result
+
+P2 removed confirmed dead/obsolete code rather than preserving it for compatibility:
+
+- Level 2 monolith/compatibility modules listed above;
+- obsolete Level 1 wrappers;
+- Ruff-discovered unused imports;
+- `viz.level2_qa._legacy_ylim` and `_visual_scale_to_reference`, both definition-only;
+- inert `gaussian_threshold` configuration/API plumbing.
+
+`viz.level2_qa._legacy_scale_factor` remains because the gluing QA plot actively uses it as a display-only fallback when operational coefficients are unavailable.
+
+## Large-file cohesion review
+
+P2 reviewed the large-file list by responsibility rather than line count. No split is required merely to reduce LOC:
+
+- `explorer/streamlit_app.py` remains one optional UI application boundary;
+- `viz/level2_qa.py` remains one presentation domain and no longer contains the confirmed dead helpers;
+- `level2/signal_selection.py` remains cohesive around block preparation/source selection/gluing/fallback;
+- `level2/dataset.py` and `level0/netcdf.py` remain schema/materialization boundaries;
+- `level1/config.py` remains the strict L1 recipe/calibration resolver;
+- `level2/kfs.py` remains the numerical KFS research kernel;
+- `level2/contracts.py` remains typed Level 2 contracts;
+- `level1/lipancora.py` remains L1 file orchestration;
+- `config/station.py` remains station-catalog resolution/history ownership.
+
+Future splits should be triggered by a real second responsibility, not a line-count threshold.
 
 ## Static/test/CI guardrails
 
-Committed guardrails now include:
+Committed guardrails include:
 
 - exact package `__all__` surfaces for `io`, `level0`, `level1`, `level2`, `physics`, `viz`;
 - root API restricted to `__version__`;
@@ -160,16 +198,12 @@ Committed guardrails now include:
 - no local semantic-default fallbacks in strict stage resolvers/productive L2 mappings;
 - Ruff correctness/dead-code gate `E4,E7,E9,F` (`E731` excluded as style-only);
 - full pytest baseline;
-- GitHub Actions on push to `new-architecture` and pull requests.
+- GitHub Actions on pushes to `new-architecture` and pull requests, with Ruff plus pytest on Ubuntu/Windows × Python 3.12/3.14.
 
-Local baseline before the latest two Licel exception tests: Ruff clean, **347 passed / 0 failed** on Windows/Python 3.14. GitHub Actions run `34916492050` on `e0bed288e1d4829f0ffaa61647e1257b9b0ca5ab` passed Ruff and all pytest jobs on Ubuntu/Windows × Python 3.12/3.14.
+The local baseline reached **347 passed / 0 failed** before the final boundary-regression tests were added. CI repeatedly remained green through the P2 cleanup sequence. NumPy 2.5.3 + published netCDF4 1.7.4 is a supported environment; the visible `ndarray.shape` deprecation is a known upstream netCDF4 write-path warning and is not hidden by pinning NumPy backwards or filtering warnings.
 
-NumPy 2.5.3 + published netCDF4 1.7.4 remains a supported environment. The visible `ndarray.shape` deprecation is an upstream netCDF4 write-path warning; it is tracked rather than hidden or worked around by pinning NumPy backwards.
+## P2 closure status
 
-## Remaining P2 audit targets
+The code-use, ownership, duplicate-science, dead-helper, semantic-default and exception-boundary audits are complete. The only closure condition is a green CI run on the final tracker/documentation HEAD. Branch protection/required checks remains an optional repository-policy follow-up rather than a scientific/code-quality blocker.
 
-- Remove confirmed definition-only QA helpers `viz/level2_qa.py::_legacy_ylim` and `_visual_scale_to_reference`; `_legacy_scale_factor` is active and stays.
-- Finish a repository-wide duplicate-science review and record any newly found conflict; current productive owner table must stay one-owner-per-behavior.
-- Complete the final broad-exception classification; narrow only helper/parser catches that can hide defects.
-- Review large files by cohesion rather than line count: `explorer/streamlit_app.py`, `viz/level2_qa.py`, `level2/signal_selection.py`, `level2/dataset.py`, `level0/netcdf.py`, `level1/config.py`, `level2/kfs.py`, `level2/contracts.py`, `level1/lipancora.py`, `config/station.py`.
-- Rerun the same CI workflow after final P2 cleanup; mark P2 complete only on a green final HEAD.
+The next engineering/scientific phase is P3: make the Level 2 product schema and FAIR metadata self-describing without changing the already validated backward-KFS baseline as collateral work.
