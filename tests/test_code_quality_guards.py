@@ -24,6 +24,11 @@ LEVEL2_PRODUCTIVE_SCIENCE = (
     PACKAGE_ROOT / "level2" / "retrieval_input_qa.py",
     PACKAGE_ROOT / "level2" / "optical_retrieval.py",
 )
+STRICT_STAGE_CONFIGS = (
+    PACKAGE_ROOT / "level0" / "config.py",
+    PACKAGE_ROOT / "level1" / "config.py",
+    PACKAGE_ROOT / "level2" / "config.py",
+)
 SEMANTIC_MAPPING_NAMES = {
     "config",
     "inv_cfg",
@@ -32,10 +37,45 @@ SEMANTIC_MAPPING_NAMES = {
     "molecular_fit_config",
     "cloud_cfg",
 }
+STRICT_CONFIG_MAPPING_NAMES = SEMANTIC_MAPPING_NAMES | {
+    "atmosphere",
+    "calibration",
+    "calibrations",
+    "catalog",
+    "channels",
+    "directories",
+    "fit_cfg",
+    "gluing_cfg",
+    "level0",
+    "level1",
+    "neutral",
+    "pbl",
+    "photon",
+    "processing",
+    "profile",
+    "ratios",
+    "resolved_station",
+    "saturation",
+    "section",
+    "site",
+    "station",
+    "uncertainties",
+    "values",
+    "weather",
+}
 
 
 def _tree(path: Path) -> ast.AST:
     return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+
+
+def _is_structural_sentinel(node: ast.AST) -> bool:
+    """Return whether a ``dict.get`` fallback only represents absence/structure."""
+    if isinstance(node, ast.Constant):
+        return node.value is None or node.value == ""
+    if isinstance(node, (ast.Dict, ast.List, ast.Tuple)):
+        return not getattr(node, "elts", None) and not getattr(node, "keys", None)
+    return False
 
 
 def test_public_all_entries_are_real_bound_symbols() -> None:
@@ -78,5 +118,30 @@ def test_level2_productive_science_has_no_mapping_get_fallbacks() -> None:
                 )
     assert not offenders, (
         "Productive Level 2 science must not hide missing configuration behind local defaults: "
+        + ", ".join(offenders)
+    )
+
+
+def test_strict_stage_config_resolvers_have_no_semantic_literal_defaults() -> None:
+    """L0/L1/L2 strict resolvers may use absence sentinels, not recipe defaults."""
+    offenders: list[str] = []
+    for path in STRICT_STAGE_CONFIGS:
+        for node in ast.walk(_tree(path)):
+            if not isinstance(node, ast.Call) or len(node.args) < 2:
+                continue
+            function = node.func
+            if not isinstance(function, ast.Attribute) or function.attr != "get":
+                continue
+            owner = function.value
+            if not isinstance(owner, ast.Name) or owner.id not in STRICT_CONFIG_MAPPING_NAMES:
+                continue
+            fallback = node.args[1]
+            if not _is_structural_sentinel(fallback):
+                offenders.append(
+                    f"{path.relative_to(PACKAGE_ROOT.parent)}:{node.lineno} uses "
+                    f"{owner.id}.get(..., semantic fallback)"
+                )
+    assert not offenders, (
+        "Strict stage configuration must fail or use an absence sentinel rather than invent a recipe value: "
         + ", ".join(offenders)
     )
