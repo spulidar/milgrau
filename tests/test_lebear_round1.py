@@ -132,6 +132,7 @@ def test_level2_currentness_requires_complete_requested_wavelength_set(
     monkeypatch.setattr(lebear, "gluing_selection_score_metadata", lambda: {})
     monkeypatch.setattr(lebear, "validate_level2_contract", lambda _ds: None)
     monkeypatch.setattr(lebear, "output_is_current", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(lebear, "file_sha256", lambda _path: "")
 
     assert lebear.level2_output_is_current(level1, output, {})
 
