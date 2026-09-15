@@ -282,7 +282,7 @@ def discover_raw_files(
     ignored_dirs = _ignored_raw_scan_dirs(raw_scan_ignore_dirs, quarantine)
     try:
         quarantine_resolved = quarantine.resolve()
-    except Exception:
+    except (OSError, RuntimeError):
         quarantine_resolved = None
 
     for dirpath, dirnames, files in os.walk(raw_root):
@@ -296,7 +296,7 @@ def discover_raw_files(
                 try:
                     if Path(dirpath, dirname).resolve() == quarantine_resolved:
                         continue
-                except Exception:
+                except (OSError, RuntimeError):
                     pass
             retained_dirs.append(dirname)
         dirnames[:] = retained_dirs
