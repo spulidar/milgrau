@@ -28,7 +28,7 @@ This file is the active source of truth for current scientific/engineering gates
 | P2 | COMPLETE | engineering guardrails and cross-platform CI |
 | P3 | IN PROGRESS — LICENSE + METADATA QA | current-method scientific + FAIR hardening |
 | P4 | PARALLEL EVIDENCE WORK | instrument characterization / observational validation |
-| P5 | READY FOR SCIENTIFIC R&D | altitude-resolved support + high-column R&D |
+| P5 | IN PROGRESS — SUPPORT CONTRACT | altitude-resolved support + high-column R&D |
 | P6 | PENDING | reproducible release/publication process |
 
 ## Current productive baseline
@@ -89,10 +89,13 @@ Scientific P5 development may proceed in parallel with the unresolved P3 license
 
 ### P5.1 support semantics + synthetic truth
 
-- [ ] Add synthetic cases for upper inversion boundary, lower instrument/overlap boundary, noisy tail, missing uncertainty, and internal gaps.
-- [ ] `retrieval_support_flag(..., altitude)` must mean scientifically supported retrieval, not mere finiteness.
-- [ ] Expose both lower and upper supported bounds; internal unsupported gaps are never bridged.
-- [ ] Add pure-molecular and controlled aerosol-layer truth cases with explicit tolerances.
+- [x] Existing independent elastic forward-model tests already cover pure-molecular truth, nonzero controlled aerosol layers at 355/532 nm, variable lidar ratio, exact-boundary recovery and vertical-grid convergence with explicit numerical tolerances. These are synthetic truth tests, not observational golden-product checks.
+- [x] Add a pure backward-support contract in `milgrau.level2.support` without yet exposing new NetCDF schema fields.
+- [x] Synthetic support tests cover a known lower instrument boundary, upper inversion boundary, noisy/missing upper tail, missing uncertainty, negative uncertainty and internal value gaps.
+- [x] Frozen backward semantics: support is the contiguous valid path ending at the accepted upper inversion/reference boundary; an unsupported internal bin cannot be bridged to declare lower bins supported.
+- [x] Support requires finite value, finite non-negative uncertainty and any supplied validated instrument mask. `instrument_valid=None` is explicitly not a claim that overlap/instrument limits are characterized.
+- [ ] Integrate the tested support contract into productive Level 2 assembly only after CI is green and the exact block/aggregate support source is reviewed.
+- [ ] Expose `retrieval_support_flag(..., altitude)`, lower supported altitude and upper supported altitude only after productive integration tests demonstrate that schema output matches the frozen support semantics.
 
 ### P5.2 Rayleigh candidate catalogue
 
@@ -125,6 +128,7 @@ Scientific P5 development may proceed in parallel with the unresolved P3 license
 ## Immediate next gate
 
 1. Complete the `20251107sapm` real-data dead-time/dark-order comparison using newly preserved dark `NShots`; do not alter the productive correction order before that evidence exists.
-2. Begin P5 synthetic support/truth tests in parallel with P4 evidence work; license and metadata policy remain release gates rather than scientific-development blockers.
-3. Refactor Rayleigh selection into an all-candidates -> QA -> rank pipeline after the support/truth harness is established.
-4. Quantify gluing fit-parameter uncertainty, then proceed to long-mean backbone and multi-reference ensemble work.
+2. Let the new P4 diagnostics and P5 support-contract tests pass the full cross-platform CI; fix genuine regressions before product-schema integration.
+3. Integrate the support contract into Level 2 assembly and add schema/output tests before exposing support/bottom/top variables.
+4. Refactor Rayleigh selection into an all-candidates -> QA -> rank pipeline after the support contract is product-integrated.
+5. Quantify gluing fit-parameter uncertainty, then proceed to long-mean backbone and multi-reference ensemble work.
