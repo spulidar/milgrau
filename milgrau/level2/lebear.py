@@ -19,7 +19,11 @@ from milgrau.io.logging_utils import bind_log_context
 from milgrau.io.paths import level2_output_path, logging_save_id
 from milgrau.operations import ExecutionResult, ExecutionSummary
 from milgrau.provenance import write_netcdf_provenance
-from milgrau.scientific import LEVEL2_PRODUCT_SCHEMA_VERSION, elastic_inversion_algorithm_metadata
+from milgrau.scientific import (
+    LEVEL2_PRODUCT_SCHEMA_VERSION,
+    LEVEL2_RETRIEVAL_METHOD_VERSION,
+    elastic_inversion_algorithm_metadata,
+)
 from milgrau.level2.completeness import (
     Level2ProductContract,
     ProductCompleteness,
@@ -42,6 +46,7 @@ from milgrau.level2.config import (
 )
 from milgrau.level2.dataset import build_level2_dataset
 from milgrau.level2.discovery import discover_level1_files
+from milgrau.level2.gluing import gluing_selection_score_metadata
 from milgrau.level2.retrieval import RetrievalStageError, process_wavelength
 from milgrau.level2.qa import generate_level2_qa, level2_qa_enabled
 from milgrau.level2.time_window import subset_level1_time_window
@@ -63,11 +68,15 @@ def level2_output_is_current(
     requested = list(canonical_wavelengths(get_wavelengths_to_process(config)))
     expected_kfs_mode = get_kfs_mode(config)
     expected_algorithm_metadata = elastic_inversion_algorithm_metadata()
+    expected_gluing_metadata = gluing_selection_score_metadata()
     try:
         with xr.open_dataset(output) as ds:
             validate_level2_contract(ds)
             if (
-                str(ds.attrs.get("level2_product_schema_version", "")) != LEVEL2_PRODUCT_SCHEMA_VERSION
+                str(ds.attrs.get("level2_product_schema_version", ""))
+                != LEVEL2_PRODUCT_SCHEMA_VERSION
+                or str(ds.attrs.get("level2_retrieval_method_version", ""))
+                != LEVEL2_RETRIEVAL_METHOD_VERSION
                 or str(ds.attrs.get("product_completeness", "")) != "complete"
                 or str(ds.attrs.get("product_status", "")) != "success"
                 or "requested_wavelengths" not in ds
@@ -80,6 +89,11 @@ def level2_output_is_current(
             if any(
                 str(ds.attrs.get(key, "")) != str(value)
                 for key, value in expected_algorithm_metadata.items()
+            ):
+                return False
+            if any(
+                str(ds.attrs.get(key, "")) != str(value)
+                for key, value in expected_gluing_metadata.items()
             ):
                 return False
             requested_written = [
@@ -297,14 +311,24 @@ def process_single_level1_file(
             config,
             source_attrs=source_provenance,
             extra_attrs={
+                "level2_retrieval_method_version": LEVEL2_RETRIEVAL_METHOD_VERSION,
                 "monte_carlo_random_seed": int(kfs_cfg["random_seed"]),
                 "monte_carlo_iterations": int(kfs_cfg["monte_carlo_iterations"]),
+                "kfs_reference_boundary_model": (
+                    "beta_total_ref=beta_mol_ref*(1+aerosol_ref_fraction)"
+                ),
+                "kfs_aerosol_ref_fraction": float(kfs_cfg["aerosol_ref_fraction"]),
+                "kfs_beta_ref_relative_std": float(kfs_cfg["beta_ref_relative_std"]),
+                "kfs_min_lidar_ratio_sr": float(kfs_cfg["min_lidar_ratio_sr"]),
+                "kfs_allow_negative_aerosol": int(bool(kfs_cfg["allow_negative_aerosol"])),
                 "lidar_ratio_source": _lidar_ratio_source(config),
+                **gluing_selection_score_metadata(),
             },
         )
         bind_log_context(file_logger, stage="provenance").debug(
-            "MILGRAU=%s | profile=%s | calibration=%s | MC seed=%s | LR=%s",
+            "MILGRAU=%s | method=%s | profile=%s | calibration=%s | MC seed=%s | LR=%s",
             provenance_attrs.get("software_version", "-"),
+            provenance_attrs.get("level2_retrieval_method_version", "-"),
             provenance_attrs.get("station_profile_id", "-"),
             provenance_attrs.get("instrument_calibration_id", "-"),
             provenance_attrs.get("monte_carlo_random_seed", "-"),
