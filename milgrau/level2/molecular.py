@@ -13,8 +13,6 @@ from typing import Literal
 import numpy as np
 from scipy.integrate import cumulative_trapezoid
 
-from milgrau.level2.constants import RAYLEIGH_LIDAR_RATIO_SR
-
 _STANDARD_NUMBER_DENSITY_CM3 = 2.54743e19
 _STANDARD_PRESSURE_HPA = 1013.25
 _STANDARD_TEMPERATURE_K = 288.15
@@ -177,7 +175,6 @@ def linear_rayleigh_calibration_factor(
         return np.nan, np.nan, float(altitude[start]), float(altitude[stop - 1]), int(valid.sum())
     slope, intercept = np.polyfit(x[valid], y[valid], 1)
     return float(slope), float(intercept), float(altitude[start]), float(altitude[stop - 1]), int(valid.sum())
-
 
 def robust_rayleigh_calibration_factor(
     measured_signal: np.ndarray,
