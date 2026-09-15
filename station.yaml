@@ -9,6 +9,32 @@ station:
     station_altitude_m: 766.0
   lidar_geometry:
     pointing_angle_deg_from_zenith: 0.0
+  overlap:
+    # Diagnostic-only first-order geometry. These values are intentionally
+    # explicit estimates/assumptions pending an experimental overlap campaign.
+    # They must not be promoted to a productive signal correction as written.
+    model: "coaxial_uniform_disk_geometric_v1"
+    status: "estimated_unvalidated"
+    correction_policy: "diagnostic_only_no_correction"
+    receiver:
+      telescope_diameter_m: 0.30
+      focal_length_m: 1.50
+      field_of_view_full_angle_mrad: 0.10
+      field_of_view_status: "assumed_full_angle_unverified"
+    transmitter_fallback:
+      beam_diameter_m: 0.04
+      beam_diameter_status: "estimated_unverified"
+      divergence_full_angle_mrad: 0.10
+      divergence_status: "upper_bound_unverified_used_as_model_value"
+      axis_separation_m: 0.0
+      axis_tilt_mrad: 0.0
+      alignment_status: "assumed_coaxial_parallel"
+    reported_full_overlap:
+      altitude_m_agl: 500.0
+      status: "reported_unverified"
+      source: "operator-provided system description; experimental overlap campaign pending"
+    provenance:
+      source: "SPU nominal receiver description plus operator estimates recorded 2026-09-15"
   radiosonde:
     station_id: "83779"
     station_name: "SBMT Marte Civ"
@@ -254,6 +280,14 @@ profiles:
       manufacturer: "Quantel"
       model: "MerionC"
       repetition_rate_hz: 100
+      overlap_geometry:
+        beam_diameter_m: 0.04
+        beam_diameter_status: "estimated_unverified"
+        divergence_full_angle_mrad: 0.10
+        divergence_status: "upper_bound_unverified_used_as_model_value"
+        axis_separation_m: 0.0
+        axis_tilt_mrad: 0.0
+        alignment_status: "assumed_coaxial_parallel"
     scc:
       day:
         configuration_id: 1047
