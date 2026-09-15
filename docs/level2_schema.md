@@ -10,7 +10,7 @@ The product intentionally separates three kinds of identity:
 
 - package/software version: normal MILGRAU release identity;
 - `level2_product_schema_version = "1"`: storage names/dimensions/metadata contract;
-- `level2_retrieval_method_version = "2"`: productive L2 method identity independent of package CalVer and schema-only changes. Method v2 requires common value/uncertainty support during averaging and treats missing signal uncertainty as unsupported rather than as zero Monte Carlo noise.
+- `level2_retrieval_method_version = "3"`: productive L2 method identity independent of package CalVer and schema-only changes. Method v2 introduced common value/uncertainty support during averaging and rejected missing signal uncertainty instead of converting it to zero Monte Carlo noise. Method v3 keeps those rules and changes aggregate optical uncertainty so mixed block-level nuisance terms are not silently reduced as independent noise.
 
 Incremental reuse rejects a product whose schema version, retrieval-method version, productive KFS identity, Fernald scientific identity, or versioned gluing-selection score does not match the running code. Partial products are never incrementally reusable.
 
@@ -70,11 +70,24 @@ Selected lidar signals are deliberately **not** assigned invented SI units. Anal
 
 NaN is never filled or interpolated merely to extend retrieval coverage.
 
-For productive temporal/block averaging in method v2, a sample contributes to a reported signal mean only when both the signal and its one-sigma uncertainty are finite and the uncertainty is non-negative. The signal mean and propagated uncertainty therefore use one common mask and one common effective sample count. A finite signal with missing uncertainty is unsupported for that reduction; missing uncertainty is never interpreted as zero uncertainty.
+For productive temporal/block averaging, a sample contributes to a reported signal mean only when both the signal and its one-sigma uncertainty are finite and the uncertainty is non-negative. The signal mean and propagated uncertainty therefore use one common mask and one common effective sample count. A finite signal with missing uncertainty is unsupported for that reduction; missing uncertainty is never interpreted as zero uncertainty.
 
-For KFS Monte Carlo retrieval in method v2, non-finite `rcs_error` is preserved as unsupported. It is not replaced with zero before perturbation. A missing uncertainty sample on the requested backward integration support invalidates that productive branch, and invalid KFS blocks do not publish partial aerosol optical arrays as accepted block products.
+For KFS Monte Carlo retrieval, non-finite `rcs_error` is preserved as unsupported. It is not replaced with zero before perturbation. A missing uncertainty sample on the requested backward integration support invalidates that productive branch, and invalid KFS blocks do not publish partial aerosol optical arrays as accepted block products.
 
 For aerosol backscatter/extinction products, NaN means no accepted productive backward-retrieval support at that altitude. Internal unsupported gaps are not bridged. Aggregate products use only accepted retrieval blocks, and aggregate optical means/errors use the same finite value/uncertainty support at each altitude.
+
+### Uncertainty dependence and block aggregation
+
+Method v3 distinguishes two reduction levels instead of applying one independence assumption everywhere:
+
+- **profile -> temporal block:** current propagated signal uncertainty is treated as measurement noise independent between retained profiles, so quadrature reduction is used on the common signal/error support;
+- **retrieval block -> aggregate optical product:** each block KFS standard deviation mixes signal noise with aerosol-lidar-ratio and reference-boundary nuisance terms. The lidar-ratio perturbation is shared at wavelength/month recipe level, and the current reference-boundary uncertainty has not yet been decomposed into independently sampled and shared components. Therefore the total block uncertainty is **not** treated as independent across blocks.
+
+For an equally weighted aggregate with accepted common-support block uncertainties `sigma_i`, method v3 uses the conservative full-positive-correlation bound
+
+`sigma_mean = sum(sigma_i) / n_effective`.
+
+This is the maximum standard deviation of the equally weighted mean consistent with pairwise correlations bounded by +1. It deliberately gives no automatic `1/sqrt(N)` gain for the current mixed block-level uncertainty. A future component-resolved covariance model may replace this bound, but doing so would be another versioned scientific-method change.
 
 `scattering_ratio_mean` and `scattering_ratio_block` are measured-to-molecular diagnostics. They can remain finite above the productive backward KFS boundary; a finite scattering ratio is **not** evidence of supported aerosol retrieval.
 
@@ -123,6 +136,10 @@ The final NetCDF records stable machine-readable productive identity including:
 - `integration_mode = backward` and matching `KFS_Mode`;
 - Fernald implementation/scientific-change identity;
 - `uncertainty_method = Monte Carlo` and `uncertainty_scope = partial Monte Carlo dispersion; not a total uncertainty budget`;
+- `optical_block_uncertainty_correlation_policy = fully_correlated_upper_bound`;
+- `optical_block_uncertainty_aggregation_formula` with the exact common-support aggregation rule;
+- `uncertainty_component_dependence` describing profile-noise independence, shared lidar-ratio nuisance and unresolved reference-boundary dependence;
+- `gluing_uncertainty_scope = partial measurement-noise propagation; fitted gluing slope/intercept uncertainty excluded`;
 - Monte Carlo iteration count and random seed;
 - KFS reference-boundary model `beta_total_ref=beta_mol_ref*(1+aerosol_ref_fraction)`;
 - aerosol reference fraction and its relative uncertainty;
@@ -135,6 +152,10 @@ Gluing score v1 preserves the existing numerical rule exactly:
 `relative_rmse + abs(relative_bias) + 0.001*intercept_percent + 0.01*saturation_fraction`
 
 The weights are named constants in `milgrau.level2.gluing`; changing the formula/version makes existing products stale instead of silently reusing them.
+
+### Gluing uncertainty scope
+
+The current `propagate_glued_error` path propagates the Level 1 analog/photon-counting one-sigma measurement-noise terms through the fitted slope and fade weights. The fitted slope/intercept are treated as fixed coefficients in that propagation; their own fit uncertainty and covariance are **not** included. Method v3 does not claim those omitted terms are negligible. The current decision is to keep them outside the published partial measurement-noise component until their materiality is quantified with dedicated overlap/resampling evidence; if they are later added, the uncertainty method identity must change again.
 
 ## Completeness contract
 
@@ -165,7 +186,8 @@ Full local paths, secrets, transient cache paths, and operational tracebacks do 
 
 - Productive elastic inversion is backward KFS from one accepted Rayleigh reference toward lower altitude.
 - Aerosol extinction is conditional on assumed aerosol lidar ratio.
-- Current optical uncertainty remains a partial budget: signal Monte Carlo, scalar lidar-ratio perturbation and reference-boundary perturbation are represented, while correlation/systematic semantics and fitted gluing-coefficient uncertainty still require explicit characterization.
+- Current optical uncertainty remains a partial budget: signal Monte Carlo, scalar lidar-ratio perturbation and reference-boundary perturbation are represented. Aggregate block covariance is handled conservatively rather than assumed independent, but the components are not yet separately published.
+- Fitted gluing slope/intercept uncertainty is excluded from the current partial measurement-noise component and is not claimed negligible; materiality requires dedicated overlap/resampling evidence.
 - Physical photon-counting saturation is not characterized; the current dead-time occupancy guard is provisional and must not be described as a detector saturation limit.
 - Cloud screening is not yet a productive Rayleigh-reference rejection gate.
 - No hard propagated-error SNR gate is enabled without SPU evidence.
