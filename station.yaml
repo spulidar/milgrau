@@ -73,7 +73,7 @@ scc_policy:
     fixed_value: 1
     raman_companions_nm:
       "355": [387, 408]
-      "532": [530]
+      "532": [530, 607]
       "1064": []
 
 # Named instrument calibration sets. The historical repository documented only
