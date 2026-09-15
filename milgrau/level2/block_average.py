@@ -13,7 +13,7 @@ def nanmean_or_nan(matrix: np.ndarray, axis: int = 0) -> np.ndarray:
     arr = np.asarray(matrix, dtype=np.float64)
     valid = np.isfinite(arr)
     count = valid.sum(axis=axis)
-    total = np.nansum(arr, axis=axis)
+    total = np.where(valid, arr, 0.0).sum(axis=axis)
     return np.divide(
         total,
         count,
@@ -23,16 +23,59 @@ def nanmean_or_nan(matrix: np.ndarray, axis: int = 0) -> np.ndarray:
 
 
 def error_of_mean(error_matrix: np.ndarray) -> np.ndarray:
-    """Combine profile one-sigma errors into uncertainty of the temporal mean."""
+    """Combine finite non-negative one-sigma errors into uncertainty of a mean.
+
+    This helper is retained for uncertainty-only reductions. Productive means
+    with reported uncertainty should use :func:`mean_and_error_of_mean` so the
+    signal and uncertainty share one scientific support mask.
+    """
     errors = np.asarray(error_matrix, dtype=np.float64)
-    valid_count = np.sum(np.isfinite(errors), axis=0)
-    combined = np.sqrt(np.nansum(errors**2, axis=0))
+    valid = np.isfinite(errors) & (errors >= 0.0)
+    valid_count = valid.sum(axis=0)
+    combined = np.sqrt(np.where(valid, errors**2, 0.0).sum(axis=0))
     return np.divide(
         combined,
         valid_count,
         out=np.full_like(combined, np.nan, dtype=np.float64),
         where=valid_count > 0,
     )
+
+
+def mean_and_error_of_mean(
+    matrix: np.ndarray,
+    error_matrix: np.ndarray,
+    *,
+    axis: int = 0,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Reduce values and one-sigma errors with one common scientific mask.
+
+    A sample contributes only when the value is finite and its one-sigma
+    uncertainty is finite and non-negative. The returned ``n_effective`` is
+    the number of common-support samples entering both the mean and the
+    uncertainty denominator.
+    """
+    values = np.asarray(matrix, dtype=np.float64)
+    errors = np.asarray(error_matrix, dtype=np.float64)
+    if values.shape != errors.shape:
+        raise ValueError("matrix and error_matrix must have the same shape.")
+
+    valid = np.isfinite(values) & np.isfinite(errors) & (errors >= 0.0)
+    n_effective = valid.sum(axis=axis)
+    value_total = np.where(valid, values, 0.0).sum(axis=axis)
+    mean = np.divide(
+        value_total,
+        n_effective,
+        out=np.full_like(value_total, np.nan, dtype=np.float64),
+        where=n_effective > 0,
+    )
+    combined_error = np.sqrt(np.where(valid, errors**2, 0.0).sum(axis=axis))
+    mean_error = np.divide(
+        combined_error,
+        n_effective,
+        out=np.full_like(combined_error, np.nan, dtype=np.float64),
+        where=n_effective > 0,
+    )
+    return mean, mean_error, np.asarray(n_effective, dtype=np.int64)
 
 
 def valid_block_mean(block_matrix: np.ndarray, valid_block: np.ndarray) -> np.ndarray:
@@ -59,6 +102,34 @@ def valid_block_error(block_error_matrix: np.ndarray, valid_block: np.ndarray) -
     return np.full(errors.shape[-1], np.nan, dtype=np.float64)
 
 
+def valid_block_mean_and_error(
+    block_matrix: np.ndarray,
+    block_error_matrix: np.ndarray,
+    valid_block: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Aggregate accepted block values/errors with one common support mask."""
+    matrix = np.asarray(block_matrix, dtype=np.float64)
+    errors = np.asarray(block_error_matrix, dtype=np.float64)
+    valid = np.asarray(valid_block, dtype=bool)
+    if (
+        matrix.ndim != 2
+        or errors.shape != matrix.shape
+        or valid.ndim != 1
+        or valid.size != matrix.shape[0]
+    ):
+        raise ValueError(
+            "block matrices must be matching 2D arrays and valid_block must match their block axis."
+        )
+    if valid.any():
+        return mean_and_error_of_mean(matrix[valid, :], errors[valid, :], axis=0)
+    shape = matrix.shape[-1]
+    return (
+        np.full(shape, np.nan, dtype=np.float64),
+        np.full(shape, np.nan, dtype=np.float64),
+        np.zeros(shape, dtype=np.int64),
+    )
+
+
 def block_groups(time_values: np.ndarray, minutes: int) -> tuple[np.ndarray, list[np.ndarray]]:
     """Return block labels and index groups for temporal averaging."""
     times = pd.to_datetime(time_values)
@@ -74,8 +145,22 @@ def mean_by_groups(matrix: np.ndarray, groups: list[np.ndarray]) -> np.ndarray:
 
 
 def error_by_groups(error_matrix: np.ndarray, groups: list[np.ndarray]) -> np.ndarray:
-    """Calculate uncertainty of grouped means for a time x altitude error matrix."""
+    """Calculate uncertainty-only grouped means for a time x altitude error matrix."""
     return np.stack([error_of_mean(error_matrix[group, :]) for group in groups], axis=0)
+
+
+def mean_error_by_groups(
+    matrix: np.ndarray,
+    error_matrix: np.ndarray,
+    groups: list[np.ndarray],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Calculate grouped means/errors/counts with one common support mask."""
+    reduced = [
+        mean_and_error_of_mean(matrix[group, :], error_matrix[group, :], axis=0)
+        for group in groups
+    ]
+    means, errors, counts = zip(*reduced, strict=True)
+    return np.stack(means, axis=0), np.stack(errors, axis=0), np.stack(counts, axis=0)
 
 
 def mask_by_groups(mask_matrix: np.ndarray, groups: list[np.ndarray]) -> np.ndarray:
