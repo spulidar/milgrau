@@ -42,6 +42,7 @@ from milgrau.level2.config import (
 )
 from milgrau.level2.dataset import build_level2_dataset
 from milgrau.level2.discovery import discover_level1_files
+from milgrau.level2.metadata import apply_level2_variable_metadata
 from milgrau.level2.retrieval import RetrievalStageError, process_wavelength
 from milgrau.level2.qa import generate_level2_qa, level2_qa_enabled
 from milgrau.level2.time_window import subset_level1_time_window
@@ -245,6 +246,7 @@ def process_single_level1_file(
             results = [results_by_wavelength[wavelength] for wavelength in product_contract.processed_wavelengths]
             stage = "level2.dataset"
             ds_l2 = build_level2_dataset(ds_l1, results, altitude_m, nc_path, config, product_contract)
+            apply_level2_variable_metadata(ds_l2)
             stage = "level2.validation.output"
             validate_level2_contract(ds_l2)
 
