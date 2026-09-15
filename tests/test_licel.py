@@ -6,7 +6,9 @@ import logging
 from pathlib import Path
 
 import numpy as np
+import pytest
 
+import milgrau.io.licel as licel_module
 from milgrau.io.licel import parse_licel_group, parse_single_licel_file, read_licel_header
 
 
@@ -67,6 +69,22 @@ def test_read_licel_header_keeps_legacy_global_shot_fallback(tmp_path: Path) -> 
     assert laser_freq == 20
 
 
+def test_read_licel_header_contains_expected_io_failure(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.licel"
+    assert read_licel_header(str(missing), logger=logging.getLogger("test")) == (None, None, None, None, None)
+
+
+def test_read_licel_header_propagates_unexpected_runtime_failure(tmp_path: Path, monkeypatch) -> None:
+    path = _write_synthetic_licel_file(tmp_path / "runtime.licel")
+
+    def fail_parser(*_args, **_kwargs):
+        raise RuntimeError("synthetic parser defect")
+
+    monkeypatch.setattr(licel_module, "_parse_global_header_line", fail_parser)
+    with pytest.raises(RuntimeError, match="synthetic parser defect"):
+        read_licel_header(str(path), logger=logging.getLogger("test"))
+
+
 def test_parse_single_licel_file_converts_analog_with_full_adc_span(tmp_path: Path) -> None:
     path = _write_synthetic_licel_file(tmp_path / "single.licel")
     parsed = parse_single_licel_file(str(path))
@@ -119,3 +137,12 @@ def test_parse_licel_group_skips_incompatible_files(tmp_path: Path) -> None:
     assert parsed["channels"] == ["532.AN", "532.PC"]
     assert parsed["tensors"]["532.AN"].shape == (2, 4)
     assert parsed["laser_shots"].shape == (2, 2)
+
+
+def test_parse_licel_group_propagates_unexpected_runtime_failure(monkeypatch) -> None:
+    def fail_parser(_filepath: str):
+        raise RuntimeError("synthetic group parser defect")
+
+    monkeypatch.setattr(licel_module, "parse_single_licel_file", fail_parser)
+    with pytest.raises(RuntimeError, match="synthetic group parser defect"):
+        parse_licel_group(["synthetic.licel"], logging.getLogger("test"))
