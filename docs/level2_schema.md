@@ -20,7 +20,7 @@ Incremental reuse rejects a product whose schema version, retrieval-method versi
 | --- | --- | --- |
 | `time` | original Level 1 profile timestamps used for time-expanded diagnostics | datetime; productive inversion is not performed separately at every expanded timestamp |
 | `block_time` | start/floored timestamp of each configured retrieval block | datetime |
-| `wavelength` | successfully processed elastic wavelength | `nm` |
+| `wavelength` | successfully processed elastic lidar wavelength | `nm` |
 | `altitude` | altitude above station | `m`, positive upward |
 
 Dedicated `requested_wavelength`, `processed_wavelength`, and `failed_wavelength` dimensions belong to the multispectral completeness contract, not to the scientific wavelength coordinate. `wavelength` equals `processed_wavelengths` exactly.
@@ -178,11 +178,15 @@ The product favors readable, portable provenance while using content hashes only
 - stable station profile and instrument calibration IDs when available;
 - processing/station configuration filenames plus exact processing/station YAML snapshots stored in the product;
 - stable thermodynamic `provider/product/version_or_release` identity and composite `thermodynamic_profile_source_id`; ERA5 additionally retains its configured dataset identity and DOI when available;
+- `source_code_sha256` / `source_code_identity`, computed from the installed MILGRAU Python source tree with normalized line endings so equivalent Windows/Unix checkouts have one content identity;
+- optional `source_repository_revision` and its source when an explicit build revision or Git checkout is available;
 - software/method/schema identities described above.
 
 `source_level1_sha256` is compared against the current input before Level 2 incremental reuse. Therefore replacing or modifying a Level 1 file cannot be hidden merely by preserving an older/equal filesystem modification time. This content identity does **not** replace the readable Level 1 filename.
 
-Full local paths, secrets, transient cache/download filenames, and operational tracebacks do not belong in the scientific product. Configuration hashes remain intentionally absent: exact YAML plus stable station/calibration IDs are the readable configuration record. A distinct development/release source-code identity is still tracked in P3.4; package version alone is not treated as sufficient for materially different development code states that share the same CalVer.
+The source-code content identity distinguishes materially different development states even when they share the same package CalVer. It does not require a local `.git` directory, which keeps wheel/installed-product provenance usable; Git/build revision is supplementary when available. Tagged-release DOI/tag alignment remains a release-management responsibility under P6 rather than a prerequisite for identifying the bytes of a development code state.
+
+Full local paths, secrets, transient cache/download filenames, and operational tracebacks do not belong in the scientific product. Configuration hashes remain intentionally absent: exact YAML plus stable station/calibration IDs are the readable configuration record.
 
 ## Known limitations
 
@@ -193,7 +197,6 @@ Full local paths, secrets, transient cache/download filenames, and operational t
 - Physical photon-counting saturation is not characterized; the current dead-time occupancy guard is provisional and must not be described as a detector saturation limit.
 - Cloud screening is not yet a productive Rayleigh-reference rejection gate.
 - No hard propagated-error SNR gate is enabled without SPU evidence.
-- Development/source-code revision identity remains to be finalized under P3.4 for code states sharing the same package version.
 - Current NumPy 2.5/netCDF4 1.7.4 write-time deprecation warnings are tracked as an upstream dependency interaction; they are not hidden by pinning NumPy backwards.
 
 ## Deferred high-column schema
