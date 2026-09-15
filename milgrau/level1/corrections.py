@@ -46,6 +46,12 @@ def _fraction_over_range(mask: xr.DataArray) -> xr.DataArray:
     return mask.mean(dim="range", skipna=True)
 
 
+def _max_over_range(data: xr.DataArray) -> xr.DataArray:
+    if "range" not in data.dims:
+        raise ValueError("Diagnostic data must contain a 'range' dimension.")
+    return data.max(dim="range", skipna=True)
+
+
 def _shot_scale(shots: float | np.ndarray | xr.DataArray, sig: xr.DataArray) -> float | xr.DataArray:
     """Validate scalar or per-profile laser shots and return a broadcastable scale."""
     if isinstance(shots, xr.DataArray):
@@ -94,11 +100,17 @@ def apply_instrumental_corrections(
 ) -> tuple[xr.DataArray, xr.DataArray, xr.DataArray, xr.DataArray] | tuple[xr.DataArray, xr.DataArray, xr.DataArray, xr.DataArray, dict[str, Any]]:
     """Apply Level 1 corrections, accepting SCC Laser_Shots per profile.
 
-    For photon-counting channels, the Poisson term is calculated from the
-    observed accumulated counts *before* dark-current subtraction. The
-    uncertainty of the estimated dark-current profile is treated as an
-    independent term and combined in quadrature after both are converted to
-    MHz.
+    For photon-counting channels, the observed rate diagnostic is calculated
+    directly from acquired counts and laser shots before dark-current
+    subtraction. The current productive correction order remains unchanged:
+    dark current is subtracted in native counts before the non-paralyzable
+    dead-time correction. This order is under explicit instrument review and
+    must not be changed without quantified real-data evidence.
+
+    The Poisson term is calculated from observed accumulated counts before
+    dark-current subtraction. The uncertainty of the estimated dark-current
+    profile is treated as an independent term and combined in quadrature after
+    both are converted to MHz.
 
     Numerical dead-time clipping and physical detector saturation are distinct
     diagnostics. A channel without a characterized physical saturation rate is
@@ -127,11 +139,13 @@ def apply_instrumental_corrections(
             err_dc = dc_err
 
     deadtime_clipped_mask = xr.zeros_like(sig_dc, dtype=bool)
-    pc_saturation_mask = xr.zeros_like(sig_dc, dtype=bool)
-    photon_rate_mhz_max = np.nan
+    raw_deadtime_clipped_mask = xr.zeros_like(sig, dtype=bool)
+    pc_saturation_mask = xr.zeros_like(sig, dtype=bool)
+    pc_observed_rate_mhz_max = xr.full_like(sig.isel(range=0), np.nan, dtype=np.float64)
     pc_saturation_rate_limit_mhz = np.nan
     pc_saturation_characterized = False
     deadtime_denominator_min = np.nan
+    raw_deadtime_denominator_min = np.nan
 
     if not is_photon:
         if pc_saturation_max_rate_mhz is not None:
@@ -142,8 +156,9 @@ def apply_instrumental_corrections(
         if dc_prof is not None and dc_err is not None:
             err_dt = np.sqrt(err_dt**2 + err_dc**2)
     else:
+        observed_rate_mhz = sig / rate_scale
+        pc_observed_rate_mhz_max = _max_over_range(observed_rate_mhz)
         sig_mhz = sig_dc / rate_scale
-        photon_rate_mhz_max = _safe_nanmax_xarray(sig_mhz)
 
         # Raw-count shot noise belongs to the observed counts N, not to the
         # dark-subtracted counts N-D. The estimated dark-current uncertainty
@@ -162,9 +177,13 @@ def apply_instrumental_corrections(
                 raise ValueError("pc_saturation_max_rate_mhz must be positive and finite when characterized.")
             pc_saturation_rate_limit_mhz = saturation_limit
             pc_saturation_characterized = True
-            pc_saturation_mask = sig_mhz >= saturation_limit
+            pc_saturation_mask = observed_rate_mhz >= saturation_limit
 
         if deadtime > 0.0:
+            raw_denom = 1.0 - (observed_rate_mhz * deadtime)
+            raw_deadtime_clipped_mask = raw_denom < deadtime_min_denominator
+            raw_deadtime_denominator_min = _safe_nanmin_xarray(raw_denom)
+
             denom = 1.0 - (sig_mhz * deadtime)
             deadtime_clipped_mask = denom < deadtime_min_denominator
             deadtime_denominator_min = _safe_nanmin_xarray(denom)
@@ -177,6 +196,7 @@ def apply_instrumental_corrections(
     sig_shift = _shift_with_nan(sig_dt, shift)
     err_shift = _shift_with_nan(err_dt, shift)
     deadtime_clipped_mask_shift = _shift_mask_with_false(deadtime_clipped_mask, shift)
+    raw_deadtime_clipped_mask_shift = _shift_mask_with_false(raw_deadtime_clipped_mask, shift)
     pc_saturation_mask_shift = _shift_mask_with_false(pc_saturation_mask, shift)
     bin_shift_invalid_mask = _invalid_shift_mask(sig_dt, shift)
     bg_mean = sig_shift.where(bg_mask).mean(dim="range", skipna=True) - bg_offset
@@ -190,13 +210,16 @@ def apply_instrumental_corrections(
         return sig_c, err_c, rcs, err_rcs
     diagnostics = {
         "deadtime_clipped_mask": deadtime_clipped_mask_shift,
+        "deadtime_raw_clipped_mask": raw_deadtime_clipped_mask_shift,
         "pc_saturation_mask": pc_saturation_mask_shift,
         "deadtime_clipping_fraction": _fraction_over_range(deadtime_clipped_mask_shift),
+        "deadtime_raw_clipping_fraction": _fraction_over_range(raw_deadtime_clipped_mask_shift),
         "pc_saturation_fraction": _fraction_over_range(pc_saturation_mask_shift),
         "deadtime_min_denominator_observed": deadtime_denominator_min,
+        "deadtime_raw_min_denominator_observed": raw_deadtime_denominator_min,
         "deadtime_min_denominator_allowed": deadtime_min_denominator,
         "deadtime_correction_applied": bool(is_photon and deadtime > 0.0),
-        "photon_rate_mhz_max": photon_rate_mhz_max,
+        "pc_observed_rate_mhz_max": pc_observed_rate_mhz_max,
         "pc_saturation_characterized": bool(pc_saturation_characterized),
         "pc_saturation_rate_limit_mhz": pc_saturation_rate_limit_mhz,
         "bin_shift_bins": shift,
