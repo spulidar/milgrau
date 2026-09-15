@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -13,15 +14,17 @@ from milgrau.level1.corrections import apply_instrumental_corrections
 from milgrau.level1.ingestion import load_and_prepare_level0
 
 
-class _ListLogger:
+class _ListLogger(logging.Logger):
+    """Capture stdlib-compatible logger messages without global configuration."""
+
     def __init__(self) -> None:
+        super().__init__("test.level1.ingestion", level=logging.DEBUG)
         self.messages: list[str] = []
-    def info(self, message: str) -> None:
-        self.messages.append(f"INFO: {message}")
-    def warning(self, message: str) -> None:
-        self.messages.append(f"WARNING: {message}")
-    def error(self, message: str) -> None:
-        self.messages.append(f"ERROR: {message}")
+        self.propagate = False
+
+    def _log(self, level, msg, args, exc_info=None, extra=None, stack_info=False, stacklevel=1):  # noqa: D401
+        rendered = str(msg) % args if args else str(msg)
+        self.messages.append(f"{logging.getLevelName(level)}: {rendered}")
 
 
 def _write_level0(path: Path, resolutions: np.ndarray) -> Path:
@@ -56,7 +59,7 @@ def test_load_and_prepare_level0_decodes_time_and_center_bin_coordinates(tmp_pat
         np.testing.assert_array_equal(ds.time.values, pd.to_datetime(["2024-01-01T00:00:00", "2024-01-01T00:01:00"]).values)
         assert ds["Raw_Lidar_Data"].dims == ("time", "channel", "altitude")
         assert ds.altitude.attrs == {"units": "m", "long_name": "Altitude above station (range-bin centers)"}
-        assert any("2 profiles, 2 channels, 4 bins" in message for message in logger.messages)
+        assert any("2 profiles | 2 channels | 4 bins" in message for message in logger.messages)
     finally:
         ds.close()
 
@@ -68,7 +71,7 @@ def test_load_and_prepare_level0_uses_finest_resolution_and_preserves_native_val
     try:
         np.testing.assert_array_equal(altitude, np.array([3.75, 11.25, 18.75, 26.25]))
         np.testing.assert_array_equal(ds["Raw_Data_Range_Resolution"].values, np.array([15.0, 7.5]))
-        assert any("different native range resolutions" in message for message in logger.messages)
+        assert any("mixed native range resolution" in message for message in logger.messages)
     finally:
         ds.close()
 
@@ -78,7 +81,7 @@ def test_load_and_prepare_level0_rejects_nonfinite_resolution(tmp_path: Path) ->
     logger = _ListLogger()
     with pytest.raises(ValueError, match="Range_Resolution"):
         load_and_prepare_level0(path, logger)
-    assert any(message.startswith(f"ERROR:   -> Failed to ingest Level 0 file {path}") for message in logger.messages)
+    assert any(f"ERROR: failed | {path.name} |" in message for message in logger.messages)
 
 
 @pytest.mark.parametrize(("shots", "bin_time_us", "message"), [(0.0, 0.05, "Invalid laser shots value"), (1200.0, 0.0, "Invalid bin_time_us value")])
@@ -90,6 +93,7 @@ def test_apply_instrumental_corrections_rejects_invalid_acquisition_scale(shots:
         apply_instrumental_corrections(
             sig=sig, z_da=altitude, shots=shots, bin_time_us=bin_time_us,
             deadtime=0.0, shift=0, bg_offset=0.0, is_photon=True, bg_mask=background_mask,
+            deadtime_min_denominator=0.05, pc_saturation_max_rate_mhz=None,
         )
 
 
@@ -101,5 +105,6 @@ def test_apply_instrumental_corrections_uses_per_profile_laser_shots() -> None:
     corrected, _, _, _ = apply_instrumental_corrections(
         sig=sig, z_da=altitude, shots=shots, bin_time_us=0.05,
         deadtime=0.0, shift=0, bg_offset=0.0, is_photon=True, bg_mask=background_mask,
+        deadtime_min_denominator=0.05, pc_saturation_max_rate_mhz=None,
     )
     np.testing.assert_allclose(corrected.isel(range=0).values, np.array([20.0, 10.0]))
