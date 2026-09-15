@@ -18,9 +18,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from milgrau.level2.atmosphere import get_standard_atmosphere
 from milgrau.level2.constants import RAYLEIGH_LIDAR_RATIO_SR
 from milgrau.level2.molecular import calculate_molecular_profile
+from milgrau.physics.atmosphere import get_standard_atmosphere
 
 
 @dataclass(frozen=True, slots=True)
