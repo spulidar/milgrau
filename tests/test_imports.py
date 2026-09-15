@@ -28,6 +28,91 @@ def test_core_package_imports() -> None:
     assert isinstance(milgrau.__version__, str)
 
 
+def test_subpackage_public_surfaces_are_explicit_and_stable() -> None:
+    """Supported convenience/research APIs must change only by deliberate review."""
+    expected = {
+        "milgrau.io": {
+            "ensure_directories",
+            "fetch_era5_pressure_level_profile",
+            "fetch_surface_weather",
+            "fetch_wyoming_radiosonde",
+            "level0_output_path",
+            "level1_output_path",
+            "level2_output_path",
+            "log_output_root",
+            "measurement_save_id",
+            "parse_licel_group",
+            "processed_data_root",
+            "radiosonde_cache_dir",
+            "read_licel_header",
+            "raw_data_root",
+            "scan_raw_files",
+            "setup_logger",
+            "surface_weather_cache_dir",
+            "validate_level0_contract",
+            "validate_level1_contract",
+            "validate_level2_contract",
+        },
+        "milgrau.level0": {
+            "build_level0_netcdf",
+            "build_measurement_inventory",
+            "classify_period",
+            "filter_laser_shots",
+            "get_night_date",
+            "process_level_0",
+            "validate_lidar_tensors",
+        },
+        "milgrau.level1": {
+            "apply_all_physical_corrections",
+            "apply_instrumental_corrections",
+            "calculate_pbl_height_gradient",
+            "calculate_tropopause_heights",
+            "estimate_pbl_timeseries",
+            "integrate_thermodynamics",
+            "load_and_prepare_level0",
+            "process_level_1",
+            "process_single_file",
+        },
+        "milgrau.level2": {
+            "LEVEL2_SUFFIX",
+            "Level2ProductContract",
+            "ProductCompleteness",
+            "ProductStatus",
+            "RetrievalInputInvalidReason",
+            "SignalSource",
+            "WavelengthFailureCode",
+            "WavelengthFailureStage",
+            "WavelengthRetrievalResult",
+            "calculate_molecular_profile",
+            "cloud_screening_config",
+            "detect_anomalous_layer_mask",
+            "detect_reference_contamination",
+            "discover_level1_files",
+            "find_optimal_reference_altitude",
+            "fernald_inversion",
+            "kfs_inversion_monte_carlo",
+            "process_level_2",
+            "process_single_level1_file",
+            "propagate_glued_error",
+            "slide_glue_signals",
+        },
+        "milgrau.physics": {
+            "geometric_to_geopotential_altitude",
+            "get_standard_atmosphere",
+        },
+        "milgrau.viz": {
+            "plot_all_level2_qa",
+            "plot_global_mean_rcs",
+            "plot_quicklook",
+        },
+    }
+
+    for module_name, expected_names in expected.items():
+        module = importlib.import_module(module_name)
+        assert set(module.__all__) == expected_names
+        assert all(hasattr(module, name) for name in expected_names)
+
+
 def test_level1_public_exports_use_canonical_owners() -> None:
     """Package-level Level 1 helpers must come directly from their owner modules."""
     import milgrau.level1 as level1
