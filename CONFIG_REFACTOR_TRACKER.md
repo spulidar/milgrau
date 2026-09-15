@@ -31,7 +31,7 @@ This file is the source of truth for preparing a concise, scientifically defensi
 | **P0** | **COMPLETE** | truthful backward-KFS identity, output/currentness consistency, remove redundant QA TXT, freeze support semantics |
 | **P1** | **COMPLETE + REAL-DATA VALIDATED** | remove import-order behavior, duplicate Level 2 science, monoliths and obsolete compatibility |
 | **P2** | **COMPLETE** | code-use audit, deliberate API, dead compatibility/helpers, exception/default guardrails, Ruff/full tests/CI |
-| **P3** | **NEXT** | Level 2 schema/FAIR metadata, method/schema identity and focused documentation |
+| **P3** | **IN PROGRESS** | Level 2 schema/FAIR metadata, method/schema identity, provenance and focused documentation |
 | **P4** | parallel evidence work | PC saturation, correction order, SNR/cloud validation, external comparison |
 | **P5** | pending | recreate `fixing_l2` and implement scientifically validated high-column retrieval |
 
@@ -143,47 +143,52 @@ Full-suite progression:
 
 P2 acceptance gate: **passed — deliberate public API, no known unused compatibility/dead helpers, no productive hidden semantic defaults, justified exception boundaries, one canonical owner per productive scientific behavior, local baseline and cross-platform CI guardrails.**
 
-## 6. P3 — Level 2 schema / FAIR metadata / focused docs — NEXT
+## 6. P3 — Level 2 schema / FAIR metadata / focused docs — IN PROGRESS
 
-P3 must improve product interpretation and provenance without changing the already validated backward-KFS numerical baseline as collateral work.
+P3 improves product interpretation and provenance without changing the validated backward-KFS numerical baseline as collateral work. `docs/level2_schema.md` documents the current storage/support semantics; `milgrau.level2.metadata` is the canonical variable-metadata registry.
 
-### P3.1 — canonical Level 2 schema names
+### P3.1 — canonical Level 2 schema names — COMPLETE
 
-- [ ] Inventory every L2 data variable/coordinate/global attribute written by `level2.dataset`.
-- [ ] Choose canonical aggregate names and migration policy for `aerosol_backscatter[_mean]` and `aerosol_extinction[_mean]` aliases.
-- [ ] Identify any duplicate variables that encode the same quantity under different names; retain compatibility only with an explicit migration window.
-- [ ] Separate block-resolved quantities from aggregate/mean quantities in names and dimensions.
-- [ ] Preserve frozen support semantics: do not create `retrieval_support_flag` / `retrieval_top_altitude_m` until their synthetic tests exist.
+- [x] Inventoried every current L2 data-variable family, coordinate, completeness field and method/provenance group written by `level2.dataset`.
+- [x] Schema v1 makes `aerosol_backscatter_mean`, `aerosol_backscatter_mean_error`, `aerosol_extinction_mean`, and `aerosol_extinction_mean_error` the canonical aggregate names.
+- [x] Removed the four exact unsuffixed duplicate NetCDF aliases instead of retaining indefinite compatibility arrays; older/unversioned products are reprocessed.
+- [x] Aggregate, block and time-expanded roles are explicit in names/dimensions; runtime dataclass field names are not treated as storage aliases.
+- [x] Frozen support semantics remain deferred: `retrieval_support_flag` / `retrieval_top_altitude_m` are still absent until their synthetic tests exist.
 
-### P3.2 — units, dimensions and missing-value semantics
+### P3.2 — units, dimensions and missing-value semantics — COMPLETE
 
-- [ ] Audit every L2 physical variable for dimensions, units, `long_name`/description and NaN/unsupported semantics.
-- [ ] Add explicit backscatter/extinction uncertainty units where currently implied.
-- [ ] Verify altitude/time/wavelength coordinates and units are unambiguous.
-- [ ] Ensure unsupported retrieval bins remain NaN and metadata never implies finite coverage where backward support ends.
-- [ ] Audit numeric flag metadata for CF-compatible `flag_values` / `flag_meanings` representation where appropriate.
-- [ ] Distinguish missing/not-computed/not-supported/failure states when one flag cannot truthfully encode all of them.
+- [x] Added one exact metadata registry for every current L2 coordinate/data variable; dataset assembly fails if the emitted variable inventory and registry diverge.
+- [x] Physical backscatter/extinction and their uncertainties have explicit SI units; lidar ratio is `sr`, dimensionless diagnostics are `1`, altitude diagnostics are `m`.
+- [x] Source-dependent selected/glued signals and calibration/gluing coefficients deliberately use descriptive `unit_status` instead of fabricated absolute SI units.
+- [x] `time`, `block_time`, `wavelength`, and `altitude` semantics are explicit; altitude is meters above station and positive upward.
+- [x] Aerosol optical metadata states that unsupported backward bins remain NaN and are never filled/bridged; finite scattering ratio is explicitly not an altitude-support contract.
+- [x] Numeric flags use integer `flag_values` arrays plus stable `flag_meanings`; aggregate/block forms share mappings.
+- [x] Ambiguous zero states are documented where one bit cannot distinguish not-attempted from failed/rejected; dedicated source/input/reference/KFS diagnostics carry the stage information.
+- [x] End-to-end NetCDF regression pins the exact variable inventory, units, long names, support wording and representative flag mappings.
 
-### P3.3 — method/schema identity and algorithm provenance
+### P3.3 — method/schema identity and algorithm provenance — COMPLETE
 
-- [ ] Introduce independent product schema/method version if schema/method evolution requires more than package CalVer.
-- [ ] Define stale-product/currentness behavior for future schema/method version changes.
-- [ ] Name/version/document gluing selection-score constants (`RMSE + |bias| + intercept/saturation terms`); no anonymous algorithmic weights in a FAIR method description.
-- [ ] Record productive KFS integration direction, reference assumption, LR source and uncertainty method in stable machine-readable metadata.
-- [ ] Ensure method metadata cannot describe a different branch than the one that produced the variables.
+- [x] `level2_product_schema_version = "1"` and independent `level2_retrieval_method_version = "1"` are separate from package CalVer.
+- [x] Incremental currentness rejects stale/missing schema identity, method identity, productive KFS/Fernald identity or gluing-score identity.
+- [x] Gluing selection score v1 is named/versioned with exact unchanged rule `relative_rmse + abs(relative_bias) + 0.001*intercept_percent + 0.01*saturation_fraction`; all four weights are named constants and persisted metadata.
+- [x] Product provenance records productive backward integration, Monte Carlo uncertainty identity, exact reference-boundary model and parameters, LR source, iteration count/random seed, and negative-aerosol/minimum-LR policy.
+- [x] Metadata consistency regressions prevent a product from being considered current if method/branch/score identity differs from the code that would produce it.
+- [x] P3.3 code gate passed on CI run 46: Ruff + full pytest on Ubuntu/Windows × Python 3.12/3.14.
 
-### P3.4 — provenance/input manifest
+### P3.4 — provenance/input manifest — IN PROGRESS
 
-- [ ] Decide readable immutable input-manifest policy: source L1 path/name, relevant hashes/identifiers, station profile, calibration ID and config provenance without embedding secrets/local machine noise.
-- [ ] Verify provenance fields remain comparable across Windows/Linux paths.
-- [ ] Define which external atmosphere source identifiers/caches belong in the product versus logs.
+- [x] Chosen policy is readable/portable provenance: source Level 1 filename, stable station profile/calibration IDs, config filenames, exact processing/station YAML snapshots, and method/schema/software identity; no secrets, transient cache paths or host-specific absolute paths.
+- [x] Existing provenance deliberately omits opaque configuration/Git SHA attributes; exact YAML plus stable IDs are the current reproducibility record. A future source-content hash requires a named consumer/use case rather than being added cosmetically.
+- [ ] Pin an explicit cross-platform regression that the Level 2 input manifest stores the L1 filename rather than an absolute local path and that config provenance remains filename-based.
+- [ ] Define and document which external atmosphere source identifiers belong in the scientific product and which cache/download details remain logs only.
 
-### P3.5 — focused documentation
+### P3.5 — focused documentation — IN PROGRESS
 
-- [ ] Create focused docs for processing levels, config/station ownership, L2 products, retrieval methods, provenance, flags, limitations and validation.
-- [ ] Shorten README into an entry point after focused docs exist; avoid duplicating mutable scientific detail across many files.
+- [x] `docs/level2_schema.md` now documents schema v1, method v1, units, flags, support/NaN semantics, gluing score identity, provenance boundary and current scientific limitations.
+- [ ] Create/refresh focused docs for processing levels and config/station ownership without duplicating mutable scientific detail.
+- [ ] Shorten README into an entry point after focused docs exist.
 - [ ] Build a verified primary-source bibliography for methods actually implemented; distinguish historical inspiration from equations actually used.
-- [ ] Document known limitations explicitly: provisional PC saturation guard, assumed aerosol LR, backward support ending at the reference, cloud screening not yet productive, and current warning/dependency caveat where relevant.
+- [x] Documented known limitations: provisional PC saturation guard, assumed aerosol LR, backward support ending at the reference, cloud screening not yet productive, no unvalidated hard SNR gate, and current NumPy/netCDF4 warning caveat.
 
 P3 acceptance gate: **one Level 2 NetCDF is scientifically interpretable without reading implementation source and cannot describe a different method/support domain from the one actually used.**
 
@@ -335,10 +340,10 @@ Merge criterion: **maximize validated vertical support, expose where support end
 - [x] Productive scientific behaviors have one canonical owner; retained research kernels are explicitly nonproductive policy surfaces.
 - [x] Remaining broad exceptions are deliberate containment boundaries; helper/parser catches that could hide defects were narrowed and regression-tested.
 
-## 10. Immediate next gate — P3 lot 1
+## 10. Immediate next gate — P3 provenance and focused docs
 
-1. Inventory the exact current L2 NetCDF schema emitted by `level2.dataset` and classify every variable as block, aggregate, diagnostic, flag, coordinate or provenance.
-2. Resolve `aerosol_backscatter[_mean]` / `aerosol_extinction[_mean]` alias semantics and define a migration policy before renaming anything.
-3. Audit units/dimensions/NaN semantics and flag metadata without changing retrieval equations.
-4. Add schema/method-version tests before introducing new support variables.
-5. Keep P4 evidence items parallel and do not recreate `fixing_l2` until the P3 schema can represent support/ensemble/cascade truthfully.
+1. Pin the portable L1 input/config manifest in cross-platform tests: filenames and stable IDs only, no machine-local absolute paths.
+2. Define which thermodynamic source identifiers are scientific product provenance and keep external cache/download mechanics in logs.
+3. Create focused processing-level and config/station-ownership docs, then make README an entry point rather than a second mutable scientific specification.
+4. Build a verified primary-source bibliography for the methods actually implemented.
+5. Keep P4 evidence items parallel and do not create `retrieval_support_flag` / `retrieval_top_altitude_m` or recreate `fixing_l2` before their synthetic semantics/tests are ready.
