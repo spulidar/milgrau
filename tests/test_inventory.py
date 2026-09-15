@@ -13,6 +13,11 @@ from milgrau.level0.inventory import build_measurement_inventory
 
 def _config(*, incremental: bool = False, max_association_hours: float = 12.0) -> dict:
     return {
+        "directories": {
+            "raw_data": "raw",
+            "processed_data": "processed",
+            "log_dir": "logs",
+        },
         "_station_catalog": {
             "station": {
                 "timezone": "America/Sao_Paulo",
@@ -26,7 +31,12 @@ def _config(*, incremental: bool = False, max_association_hours: float = 12.0) -
             "dark_current": {"max_association_hours": max_association_hours},
             "surface_weather": {"missing_policy": "nan"},
         },
-        "processing": {"incremental": incremental},
+        "processing": {
+            "incremental": incremental,
+            "spurious_extensions": [],
+            "raw_scan_ignore_dirs": [],
+            "quarantine_dir": "quarantine",
+        },
     }
 
 
@@ -108,7 +118,7 @@ def test_inventory_keeps_incremental_decision_out_of_inventory(tmp_path: Path, m
     monkeypatch.setattr(inventory_module, "read_licel_header", fake_read_licel_header)
 
     config = _config(incremental=True)
-    config["directories"] = {"processed_data": str(tmp_path / "processed")}
+    config["directories"]["processed_data"] = str(tmp_path / "processed")
     df = build_measurement_inventory(str(tmp_path), config, logging.getLogger("test"))
 
     assert len(df) == 1
