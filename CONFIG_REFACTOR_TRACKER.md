@@ -119,10 +119,10 @@ Completed:
 - [x] LIRACOS and LEBEAR synthetic fixtures now materialize the canonical Level 1 atmosphere and complete strict recipes instead of bypassing current product/config contracts.
 - [x] Human-readable `ExecutionResult` log paths use POSIX separators for stable cross-platform diagnostics while stored `Path` semantics remain unchanged.
 - [x] SCC `LR_Input` station policy now recognizes historical 607 nm as a Raman companion of 532 nm in addition to 530 nm, matching the APEL SCC channel inventory and the catalog's stated Raman-companion policy.
+- [x] Full local rerun after the repair batch: Ruff **all checks passed** and `pytest -q` **347 passed / 0 failed** on Windows/Python 3.14.
 
 Still open in lot 4:
 
-- [ ] Rerun Ruff + **full `pytest -q`** after the classified failure-repair batch; do not call the suite clean until reproduced locally.
 - [ ] Finish deliberate package-public-surface decisions for `io`, `level0`, `level1`, `level2`, `physics`, `viz`; avoid accidental breaking changes to plausible external/research APIs.
 - [ ] Finish compatibility/deprecation audit outside cleaned L1/L2 and require named consumers/removal criteria.
 - [ ] Search repository-wide for duplicated **scientific equations/selection rules** and retain one canonical implementation; do not over-abstract tiny generic utilities.
@@ -130,19 +130,22 @@ Still open in lot 4:
 - [ ] Remove confirmed dead QA/display helpers. Current private candidates: `viz/level2_qa.py::_legacy_ylim` and `_visual_scale_to_reference`; edit separately because the plotting module is large.
 - [ ] Review large files by cohesion, not line count: `explorer/streamlit_app.py`, `viz/level2_qa.py`, `level2/signal_selection.py`, `level2/dataset.py`, `level0/netcdf.py`, `level1/config.py`, `level2/kfs.py`, `level2/contracts.py`, `level1/lipancora.py`, `config/station.py`.
 
-### Lot 5 — full suite and CI — PENDING
+### Lot 5 — full suite and CI — IN PROGRESS
 
-First full-suite baseline on the P2 cleanup branch:
+Full-suite progression on the P2 cleanup branch:
 
 - [x] Ruff: **all checks passed**.
 - [x] `pytest -q` reached the complete suite after obsolete collection imports were removed.
-- [x] Baseline result recorded rather than hidden: **324 passed, 23 failed, 266 warnings**.
+- [x] First complete baseline recorded rather than hidden: **324 passed, 23 failed, 266 warnings**.
 - [x] All 23 failures were classified before changes: mostly stale tests/fixtures after strict contracts/canonical-owner cleanup, plus a Windows-path portability issue and a real historical SCC Raman-companion mapping inconsistency.
 - [x] Repair batch implemented without restoring hidden defaults/compatibility paths.
-- [ ] Reproduce the full suite after the repair batch and classify any residual failures.
-- [ ] Classify warning baseline separately from test correctness: third-party xarray/netCDF4↔NumPy 2.5 warnings versus MILGRAU-owned `level0/netcdf.py` assignment deprecations.
-- [ ] Establish clean full local pytest baseline in the dev environment.
-- [ ] Add CI for Ruff, architecture/static guards and full pytest.
+- [x] Residual inventory failures classified as stale mocks of the old `scan_raw_files` call signature and corrected in tests only.
+- [x] Clean functional baseline reproduced locally: **347 passed, 0 failed, 346 warnings** in 39.06 s; focused inventory suite **4 passed**; Ruff remained clean.
+- [x] Warning baseline classified: all 346 instances are the same NumPy 2.5 `ndarray.shape` deprecation emitted by `netCDF4`; 285 surface through xarray's netCDF4 backend and 61 surface at MILGRAU Level-0 writer assignment call sites. The latter are not a separate MILGRAU deprecation.
+- [x] Upstream `netCDF4` 1.7.4.1 fixes this NumPy >=2.5 deprecation; MILGRAU now requires `netCDF4>=1.7.4.1` instead of hiding it with a pytest warning filter or rewriting correct NetCDF assignments around an upstream bug.
+- [ ] Reinstall/update the dev environment to the new dependency floor and reproduce Ruff + full pytest; expected result is 347 passed with the shape-deprecation warning removed.
+- [x] Establish clean full local pytest correctness baseline in the dev environment.
+- [ ] Add CI for Ruff, architecture/static guards and full pytest after the dependency-floor rerun.
 - [ ] Only after stable CI, consider branch protection/required checks.
 
 P2 acceptance gate: **no known unused compatibility code, intentional public API, no productive hidden semantic defaults, justified exception boundaries, and automated checks preventing regression.**
@@ -304,24 +307,28 @@ Merge criterion: **maximize validated vertical support, expose where support end
 - [x] Numerical KFS/gluing/molecular kernels do not own filesystem policy.
 - [x] QA/visualization does not feed back into retrieval decisions.
 - [x] Cross-platform human-readable execution logs do not depend on host path separator.
-- [ ] Confirm the classified full-suite repair batch with full pytest, then add CI.
+- [x] Full local correctness baseline is clean: Ruff passed and all 347 tests passed.
+- [ ] Reproduce the clean suite under the corrected `netCDF4>=1.7.4.1` dependency floor, then add CI.
 
 ## 10. Immediate next gate
 
-The first complete full-suite run after collection cleanup produced **324 passed / 23 failed / 266 warnings** while Ruff remained clean. The failures were classified and repaired without restoring obsolete APIs or semantic defaults; the current repair batch now needs reproduction.
+The full local suite is now functionally green: **Ruff clean, 347 passed, 0 failed**. The remaining 346 warnings were traced to one upstream compatibility issue: `netCDF4` versions before 1.7.4.1 mutate `numpy.ndarray.shape` internally, which NumPy 2.5 deprecates. Warnings shown at `milgrau/level0/netcdf.py` are caller locations for that dependency warning, not separate MILGRAU-owned deprecated assignments.
 
-Run:
+MILGRAU now requires `netCDF4>=1.7.4.1`. Reinstall/update the environment and reproduce:
 
 ```bash
+python -m pip install -e ".[dev]"
+python -c "import netCDF4; print(netCDF4.__version__)"
 ruff check milgrau tests
 pytest -q
 ```
 
-Expected handling:
+Expected gate:
 
-- Ruff must remain clean for the configured gate.
-- Any residual pytest failure is classified before another code change: real regression, stale test/contract, optional-dependency isolation, platform portability, or test defect.
-- Warnings are tracked separately from correctness. Third-party xarray/netCDF4↔NumPy 2.5 deprecations must not be confused with MILGRAU-owned `level0/netcdf.py` deprecation sites.
-- Do **not** call the repository globally green until this full-suite gate is clean and subsequently reproduced in CI.
+- `netCDF4` is at least 1.7.4.1.
+- Ruff remains clean.
+- Full pytest remains **347 passed / 0 failed**.
+- The NumPy 2.5 `Setting the shape on a NumPy array...` warning is gone; do not hide it with a warning filter.
+- Do **not** call repository CI green until these checks are reproduced by GitHub Actions.
 
-After a clean full-suite baseline, finish the remaining public-surface/QA-helper/duplicate-rule audit, then implement lot 5 CI.
+After this dependency-floor rerun, finish the remaining public-surface/QA-helper/duplicate-rule audit and implement lot 5 CI.
