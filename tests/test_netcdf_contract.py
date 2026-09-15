@@ -10,6 +10,7 @@ import pandas as pd
 import xarray as xr
 
 from milgrau.level2.lebear import process_single_level1_file
+from milgrau.level2.metadata import LEVEL2_METADATA_VARIABLE_NAMES
 from milgrau.operations import ExecutionStatus
 from milgrau.physics.atmosphere import get_standard_atmosphere
 from milgrau.scientific import LEVEL2_PRODUCT_SCHEMA_VERSION
@@ -174,3 +175,50 @@ def test_lebear_uses_level1_atmosphere_and_generates_level2(tmp_path: Path) -> N
             "aerosol_extinction_error",
         }
         assert legacy_duplicate_aliases.isdisjoint(ds_l2.data_vars)
+
+        assert set(ds_l2.data_vars) == set(LEVEL2_METADATA_VARIABLE_NAMES)
+        assert all(str(ds_l2[name].attrs.get("long_name", "")).strip() for name in ds_l2.data_vars)
+        assert ds_l2["altitude"].attrs["units"] == "m"
+        assert ds_l2["altitude"].attrs["reference"] == "above_station"
+        assert ds_l2["wavelength"].attrs["units"] == "nm"
+
+        assert ds_l2["molecular_backscatter"].attrs["units"] == "m-1 sr-1"
+        assert ds_l2["molecular_extinction"].attrs["units"] == "m-1"
+        assert ds_l2["aerosol_backscatter_mean"].attrs["units"] == "m-1 sr-1"
+        assert ds_l2["aerosol_backscatter_mean_error"].attrs["units"] == "m-1 sr-1"
+        assert ds_l2["aerosol_extinction_mean"].attrs["units"] == "m-1"
+        assert ds_l2["aerosol_extinction_mean_error"].attrs["units"] == "m-1"
+        assert ds_l2["lidar_ratio_assumed_sr"].attrs["units"] == "sr"
+
+        assert "units" not in ds_l2["glued_corrected_signal"].attrs
+        assert (
+            ds_l2["glued_corrected_signal"].attrs["unit_status"]
+            == "source_dependent_channel_native_corrected"
+        )
+        assert "unsupported bins are never filled or bridged" in ds_l2[
+            "aerosol_backscatter_mean"
+        ].attrs["missing_value_semantics"]
+        assert "not supported aerosol retrieval" in ds_l2["scattering_ratio_mean"].attrs[
+            "description"
+        ]
+
+        for name in (
+            "gluing_merge_source_flag",
+            "retrieval_success_flag",
+            "rayleigh_reference_success_flag_block",
+            "kfs_branch_block",
+            "signal_source_flag_block",
+            "retrieval_input_invalid_reason_block",
+            "failed_wavelength_stage",
+            "failed_wavelength_code",
+        ):
+            flag_values = np.asarray(ds_l2[name].attrs["flag_values"])
+            assert flag_values.dtype.kind in {"i", "u"}
+            assert flag_values.ndim == 1
+            assert str(ds_l2[name].attrs["flag_meanings"]).strip()
+
+        assert np.asarray(ds_l2["signal_source_flag"].attrs["flag_values"]).tolist() == [0, 1, 2, 3]
+        assert np.asarray(ds_l2["retrieval_input_invalid_reason"].attrs["flag_values"]).tolist() == list(
+            range(11)
+        )
+        assert "not requested" in ds_l2["kfs_forward_valid_flag"].attrs["description"]
