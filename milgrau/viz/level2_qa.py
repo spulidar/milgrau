@@ -155,51 +155,6 @@ def _legacy_scale_factor(analog: np.ndarray, photon: np.ndarray, start: int = 10
     return float(numer / denom), (start, stop)
 
 
-def _legacy_ylim(*profiles: np.ndarray, fallback: tuple[float, float] = (-1e8, 4e8)) -> tuple[float, float]:
-    """Return legacy-like RCS y-limits without letting very high-altitude noise dominate."""
-    vals = np.concatenate([np.asarray(profile, dtype=np.float64).ravel() for profile in profiles])
-    vals = vals[np.isfinite(vals)]
-    if vals.size < 5:
-        return fallback
-    low = float(np.nanpercentile(vals, 1.0))
-    high = float(np.nanpercentile(vals, 99.0))
-    if not np.isfinite(low) or not np.isfinite(high) or low == high:
-        return fallback
-    pad = 0.08 * (high - low)
-    return low - pad, high + pad
-
-
-def _visual_scale_to_reference(
-    lower_signal: np.ndarray,
-    upper_signal: np.ndarray,
-    altitude_km: np.ndarray,
-    min_alt_km: float = 1.5,
-    max_alt_km: float = 12.0,
-) -> tuple[float, float, str]:
-    """Scale one signal to another for diagnostic display.
-
-    The fit is used only for visualization when operational gluing coefficients
-    are unavailable.  A clean gluing region should make the two detector modes
-    nearly linearly related after this transformation.
-    """
-    lower = np.asarray(lower_signal, dtype=np.float64)
-    upper = np.asarray(upper_signal, dtype=np.float64)
-    alt = np.asarray(altitude_km, dtype=np.float64)
-    valid = (
-        np.isfinite(lower)
-        & np.isfinite(upper)
-        & np.isfinite(alt)
-        & (alt >= min_alt_km)
-        & (alt <= max_alt_km)
-        & (lower > 0.0)
-        & (upper > 0.0)
-    )
-    if valid.sum() < 10:
-        return 1.0, 0.0, "unscaled AN"
-    slope, intercept = np.polyfit(lower[valid], upper[valid], 1)
-    return float(slope), float(intercept), "AN scaled for display"
-
-
 def add_atmospheric_boundaries(ax: Any, ds: xr.Dataset, max_alt_km: float) -> bool:
     """Add PBL and tropopause reference lines to an axis when available."""
     has_legend = False
