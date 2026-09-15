@@ -517,7 +517,6 @@ def glue_signal_blocks(
                     search_min_idx=gluing_config["search_min_idx"],
                     search_max_idx=gluing_config["search_max_idx"],
                     intercept_threshold=gluing_config["intercept_threshold"],
-                    gaussian_threshold=gluing_config["gaussian_threshold"],
                     minmax_threshold=gluing_config["minmax_threshold"],
                     max_relative_rmse=gluing_config["max_relative_rmse"],
                     max_relative_bias=gluing_config["max_relative_bias"],
