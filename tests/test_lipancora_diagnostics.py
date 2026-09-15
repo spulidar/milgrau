@@ -178,6 +178,11 @@ def test_apply_all_physical_corrections_persists_distinct_diagnostics() -> None:
             "background": {"start_altitude_m": 18.0, "stop_altitude_m": 34.0},
             "photon_counting": {"deadtime_min_denominator": 0.05},
             "pbl": {"reference_channel": "532.AN", "min_search_altitude_m": 5.0, "max_search_altitude_m": 30.0, "smooth_bins": 3},
+            "missing_channel_calibration": {"policy": "error"},
+            "atmosphere": {
+                "source_priority": ["ussa76"],
+                "external_profile_outside_coverage": "ussa76",
+            },
         },
         "_resolved_station": {
             "calibration_id": "test-calibration",
