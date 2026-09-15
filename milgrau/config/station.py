@@ -9,6 +9,8 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
+from milgrau.config.overlap import resolve_overlap_context, validate_overlap_catalog
+
 
 def _mapping(value: Any, label: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
@@ -185,7 +187,7 @@ def validate_station_config(catalog: Mapping[str, Any]) -> None:
 
     station = _mapping(catalog.get("station"), "station")
     required_station = {"id", "name", "institution", "timezone", "site", "radiosonde", "lidar_geometry"}
-    optional_station = {"lidar_ratio_climatology"}
+    optional_station = {"lidar_ratio_climatology", "overlap"}
     missing_station = sorted(required_station - set(station))
     unknown_station = sorted(set(station) - required_station - optional_station)
     if missing_station or unknown_station:
@@ -221,6 +223,7 @@ def validate_station_config(catalog: Mapping[str, Any]) -> None:
     _text(radiosonde["station_id"], "station.radiosonde.station_id")
     _text(radiosonde["station_name"], "station.radiosonde.station_name")
 
+    validate_overlap_catalog(catalog)
     _validate_scc_policy(catalog)
     _validate_calibrations(catalog)
     calibration_ids = set(catalog["calibrations"])
@@ -332,6 +335,7 @@ def resolve_station_context(
         "mode": mode,
         "site": resolved_site,
         "laser": deepcopy(profile.get("laser", {})),
+        "overlap": resolve_overlap_context(catalog, profile),
         "selected_channels": available,
     }
     if "scc" not in profile:
