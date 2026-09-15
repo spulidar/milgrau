@@ -43,6 +43,7 @@ MILGRAU should be FAIR, concise, testable and easy to audit.
 - [x] Redundant Level 2 QA product-status TXT is removed.
 - [x] QA sparse-support statistics no longer emit all-NaN/low-DOF warnings; unsupported bins remain NaN.
 - [x] P1 real-data baseline is reproduced after deleting the legacy Level 2 monolith.
+- [x] Focused P2 import/static guard tests passed locally: 11/11.
 - [ ] No CI/status checks are attached to this branch; do not claim the complete suite is green until CI/full pytest exists.
 
 ## 3. Priority order
@@ -118,7 +119,7 @@ P1 acceptance gate: **passed.** The exercised real-data path confirms `PC guard 
 
 A module/API ownership baseline now lives in `docs/code_inventory.md`.
 
-#### Lot 4 — public API / inventory / static guardrails — STARTED
+#### Lot 4 — public API / inventory / static guardrails — IN PROGRESS
 
 - [x] Added an explicit code-role taxonomy: productive public, productive internal, research/diagnostic, optional UI, compatibility, unused.
 - [x] Added a repository module-ownership baseline and detailed Level 2 module inventory in `docs/code_inventory.md`.
@@ -127,9 +128,13 @@ A module/API ownership baseline now lives in `docs/code_inventory.md`.
 - [x] Added regression that every advertised `__all__` symbol resolves to a real bound object.
 - [x] Added repository AST regression rejecting wildcard imports under `milgrau/`.
 - [x] Added productive-Level-2 AST regression rejecting `.get(..., fallback)` on scientific/config mappings in retrieval/selection/input-QA/optical orchestration.
-- [x] Added Ruff as a development dependency with a deliberately neutral initial rule set: `E4`, `E7`, `E9`, `F`.
+- [x] Added Ruff as a development dependency with a deliberately narrow initial rule set: `E4`, `E7`, `E9`, `F`.
+- [x] First local Ruff pass completed and every finding was classified: 8 real `F401` dead imports and 3 `E731` lambda-style findings.
+- [x] `E731` is explicitly ignored in the initial gate because lambda-vs-def is stylistic and not part of the current correctness/dead-code objective; `E4`, other `E7`, `E9` and `F` remain enabled.
+- [x] Removed all 8 dead imports reported by the first Ruff pass: Level 0 QA, Level 1 orchestration, Level 2 orchestration/molecular code, Level 2 QA plotting and LIRACOS visualization.
+- [x] Focused P2 tests passed locally: `pytest -q tests/test_imports.py tests/test_code_quality_guards.py tests/test_level2_p1_cleanup.py` = 11 passed.
 - [x] Identified first-pass cohesion-review candidates by responsibility/size; no file is split merely for being large.
-- [ ] Run Ruff on the current branch and classify every finding before enabling it in CI.
+- [ ] Re-run Ruff after the dead-import cleanup and require a clean result for the configured initial rule set.
 - [ ] Complete per-symbol consumer audit for package re-exports in `io`, `level0`, `level1`, `level2` and `viz`; retain documented public/research APIs and remove accidental exports only with an explicit API decision.
 - [ ] Audit compatibility/deprecation paths outside Level 2 and require a named consumer + removal criterion.
 - [ ] Extend semantic-default audit beyond the canonical L2 scientific path to remaining L0/L1/auxiliary config interpretation.
@@ -140,7 +145,7 @@ A module/API ownership baseline now lives in `docs/code_inventory.md`.
 
 #### Lot 5 — CI and cleanup findings — PENDING
 
-- [ ] Fix/justify Ruff findings from lot 4.
+- [ ] Confirm configured Ruff gate is clean after lot-4 cleanup.
 - [ ] Run focused + full pytest in a reproducible environment.
 - [ ] Add CI for import smoke tests, Ruff/static guards and full pytest.
 - [ ] Add branch protection only after CI is stable enough not to create false confidence/noise.
@@ -241,14 +246,16 @@ P1-specific guards cover:
 - [x] Current L2 atmosphere boundary rejects old L1 files without materialized canonical thermodynamics.
 - [x] Post-lot-3 real baseline: 355 ref 5749 m, 532 ref 5816 m, 5/5 backward blocks each, product written, zero runtime errors.
 
-P2 guardrails already committed:
+P2 guardrails and local evidence:
 
 - [x] Root API is explicit/minimal.
 - [x] Package `__all__` entries must resolve.
 - [x] Wildcard imports under `milgrau/` are rejected.
 - [x] Canonical productive L2 scientific mappings may not use local `.get(..., fallback)` semantics.
 - [x] Ruff configuration/dependency is present.
-- [ ] Ruff clean run is not yet established.
+- [x] Focused import/static/P1-cleanup test set passed locally: 11 tests.
+- [x] First Ruff report was fully classified; its 8 dead-import findings were removed and its 3 `E731` style-only findings were intentionally excluded from the initial gate.
+- [ ] Post-cleanup Ruff rerun still required.
 - [ ] Full pytest/static suite in CI is not yet established.
 
 Until the last two items exist, do not label the repository globally green.
@@ -390,7 +397,8 @@ Merge criterion: **maximize validated vertical support, expose where support end
 - [x] Current tests point to canonical owner modules rather than removed compatibility adapters.
 - [x] P1 reduced conceptual and physical duplication rather than moving the monolith.
 - [x] New Level 2 boundaries correspond to real responsibilities: source selection, optical retrieval and result assembly.
-- [ ] Ruff/full pytest clean baseline and CI pending.
+- [x] First Ruff pass was fully classified and all dead-import findings were removed.
+- [ ] Post-cleanup Ruff/full pytest clean baseline and CI pending.
 
 ## 8. Recommended batches from here
 
@@ -398,8 +406,8 @@ Merge criterion: **maximize validated vertical support, expose where support end
 2. [x] **P1 lot 2 — remove monkey patches/wildcard behavior and direct-wire supported-domain QA/backward aggregation.**
 3. [x] **P1 lot 3 — delete retrieval monolith/atmosphere alias, move responsibilities to canonical owners, remove local scientific defaults.**
 4. [x] **P1 lot 3 validation — `20251107sapm` reproduced the baseline and completed with zero errors.**
-5. [ ] **P2 lot 4 — IN PROGRESS: module/API inventory + public-surface cleanup + Ruff/static semantic-default guardrails + consumer audit.**
-6. [ ] **P2 lot 5 — fix static findings + CI/full pytest.**
+5. [ ] **P2 lot 4 — IN PROGRESS: module/API inventory + public-surface cleanup + Ruff/static semantic-default guardrails + consumer audit. First Ruff findings are already classified/cleaned; rerun pending.**
+6. [ ] **P2 lot 5 — full pytest + CI after lot-4 consumer/default/exception cleanup.**
 7. [ ] **P3 — L2 schema aliases/units/flags/method version + focused docs.**
 8. [ ] **Validation baseline — synthetic vertical-support tests + machine-readable real-case summary.**
 9. [ ] **Recreate `fixing_l2` from the cleaned base and start candidate-catalogue/high-column work.**
@@ -440,9 +448,9 @@ P4 physical PC/SNR/cloud evidence work can proceed in parallel.
 
 ### 2026-09-14 — P2 lot 4 start
 
-- Added `docs/code_inventory.md` with code-role taxonomy, package ownership, detailed Level 2 module roles, known removed compatibility paths and first-pass large-module review candidates.
-- Corrected root `milgrau.__all__` to expose only `__version__`; explicit subpackages remain importable without making root import eager/heavy.
-- Documented Level 2 package exports as productive API versus intentionally retained numerical/research kernels.
-- Added AST regression that all advertised package exports resolve, rejects wildcard imports, and rejects scientific mapping fallbacks in canonical productive L2 orchestration.
-- Added Ruff to the development extra and configured a neutral `E4/E7/E9/F` first pass.
-- No Ruff/full-pytest/CI green claim is made yet; those are the next P2 gates.
+- Added repository/module role inventory and explicit public/internal/research/compatibility taxonomy.
+- Minimized the root package public surface and added guards for valid `__all__`, no wildcard imports and no local productive-L2 semantic defaults.
+- Added a deliberately narrow Ruff gate and ran the first local audit.
+- Local focused guard suite passed 11/11.
+- Ruff reported 8 true dead imports and 3 `E731` lambda-style findings. The style-only rule is explicitly ignored in this first gate; all 8 dead imports were removed manually from their actual owner modules.
+- A post-cleanup Ruff rerun is the immediate next validation step before moving deeper into per-symbol consumer/default/exception audit.
