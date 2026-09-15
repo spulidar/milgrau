@@ -55,8 +55,7 @@ def test_repository_level0_recipe_is_explicit() -> None:
     assert resolved.acquisition_qa.licel_header_time_jitter_s == 1.0
     assert resolved.dark_current.max_association_hours == 12.0
     assert resolved.surface_weather.missing_policy == "nan"
-    assert "default_surface_temp_c" not in config["physics"]
-    assert "default_surface_pressure_hpa" not in config["physics"]
+    assert "physics" not in config
 
 
 def test_level0_recipe_rejects_missing_and_unknown_fields() -> None:
