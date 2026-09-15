@@ -48,6 +48,55 @@ def _write_level0(path: Path, resolutions: np.ndarray) -> Path:
     return path
 
 
+def _station_config(
+    day_channels: dict[str, int],
+    night_channels: dict[str, int] | None = None,
+    *,
+    day_configuration_id: int = 10,
+    night_configuration_id: int = 11,
+) -> dict:
+    return {
+        "_station_catalog": {
+            "profiles": [
+                {
+                    "id": "test-profile",
+                    "valid_from": "2020-01-01",
+                    "valid_to": None,
+                    "scc": {
+                        "day": {
+                            "configuration_id": day_configuration_id,
+                            "channels": day_channels,
+                        },
+                        "night": {
+                            "configuration_id": night_configuration_id,
+                            "channels": day_channels if night_channels is None else night_channels,
+                        },
+                    },
+                }
+            ]
+        }
+    }
+
+
+def _write_scc_id_level0(
+    source: Path,
+    destination: Path,
+    channel_ids: np.ndarray,
+    *,
+    keep_channel_string: bool = False,
+    attrs: dict[str, object] | None = None,
+) -> Path:
+    with xr.open_dataset(source) as opened:
+        ds = opened.load()
+    if not keep_channel_string:
+        ds = ds.drop_vars("channel_string")
+    ds["channel_ID"] = xr.DataArray(np.asarray(channel_ids, dtype=np.int32), dims=("channels",))
+    if attrs:
+        ds.attrs.update(attrs)
+    ds.to_netcdf(destination)
+    return destination
+
+
 def test_load_and_prepare_level0_decodes_time_and_center_bin_coordinates(tmp_path: Path) -> None:
     path = _write_level0(tmp_path / "level0.nc", np.array([7.5, 7.5]))
     logger = _ListLogger()
@@ -82,6 +131,90 @@ def test_load_and_prepare_level0_rejects_nonfinite_resolution(tmp_path: Path) ->
     with pytest.raises(ValueError, match="Range_Resolution"):
         load_and_prepare_level0(path, logger)
     assert any(f"ERROR: failed | {path.name} |" in message for message in logger.messages)
+
+
+def test_scc_raw_channel_ids_are_canonicalized_from_station_mapping(tmp_path: Path) -> None:
+    source = _write_level0(tmp_path / "canonical.nc", np.array([7.5, 7.5]))
+    path = _write_scc_id_level0(source, tmp_path / "external_scc.nc", np.array([4069, 4070]))
+    logger = _ListLogger()
+    config = _station_config({"532.AN": 4069, "532.PC": 4070})
+
+    ds, _ = load_and_prepare_level0(path, logger, config=config)
+    try:
+        np.testing.assert_array_equal(ds.channel.values.astype(str), np.array(["532.AN", "532.PC"]))
+        assert ds.attrs["milgrau_level0_input_schema"] == "scc_raw_channel_ID_canonicalized"
+        assert ds.attrs["milgrau_channel_identity_source"] == "station.yaml_scc_channel_ID_mapping"
+        assert ds.attrs["milgrau_scc_mapping_modes"] == "day,night"
+    finally:
+        ds.close()
+
+
+def test_milgrau_scc_file_cross_checks_channel_string_against_channel_id(tmp_path: Path) -> None:
+    source = _write_level0(tmp_path / "canonical.nc", np.array([7.5, 7.5]))
+    path = _write_scc_id_level0(
+        source,
+        tmp_path / "20240101sapm_scc.nc",
+        np.array([4069, 4070]),
+        keep_channel_string=True,
+        attrs={"Measurement_ID": "20240101sapm", "SCC_Configuration_ID": 10},
+    )
+    logger = _ListLogger()
+    config = _station_config({"532.AN": 4069, "532.PC": 4070})
+
+    ds, _ = load_and_prepare_level0(path, logger, config=config)
+    try:
+        np.testing.assert_array_equal(ds.channel.values.astype(str), np.array(["532.AN", "532.PC"]))
+        assert ds.attrs["milgrau_channel_identity_source"] == "channel_string_verified_against_station_scc_channel_ID"
+        assert ds.attrs["milgrau_scc_mapping_modes"] == "day"
+    finally:
+        ds.close()
+
+
+def test_scc_channel_id_mapping_rejects_unknown_id(tmp_path: Path) -> None:
+    source = _write_level0(tmp_path / "canonical.nc", np.array([7.5, 7.5]))
+    path = _write_scc_id_level0(source, tmp_path / "external_scc.nc", np.array([4069, 9999]))
+    logger = _ListLogger()
+    config = _station_config({"532.AN": 4069, "532.PC": 4070})
+
+    with pytest.raises(ValueError, match="do not resolve"):
+        load_and_prepare_level0(path, logger, config=config)
+
+
+def test_scc_channel_id_mapping_rejects_ambiguous_day_night_identity(tmp_path: Path) -> None:
+    source = _write_level0(tmp_path / "canonical.nc", np.array([7.5, 7.5]))
+    path = _write_scc_id_level0(source, tmp_path / "external_scc.nc", np.array([20, 21]))
+    logger = _ListLogger()
+    config = _station_config(
+        {"532.AN": 20, "532.PC": 21},
+        {"355.AN": 20, "355.PC": 21},
+    )
+
+    with pytest.raises(ValueError, match="ambiguous"):
+        load_and_prepare_level0(path, logger, config=config)
+
+
+def test_scc_configuration_id_disambiguates_channel_identity(tmp_path: Path) -> None:
+    source = _write_level0(tmp_path / "canonical.nc", np.array([7.5, 7.5]))
+    path = _write_scc_id_level0(
+        source,
+        tmp_path / "external_scc.nc",
+        np.array([20, 21]),
+        attrs={"SCC_Configuration_ID": 10},
+    )
+    logger = _ListLogger()
+    config = _station_config(
+        {"532.AN": 20, "532.PC": 21},
+        {"355.AN": 20, "355.PC": 21},
+        day_configuration_id=10,
+        night_configuration_id=11,
+    )
+
+    ds, _ = load_and_prepare_level0(path, logger, config=config)
+    try:
+        np.testing.assert_array_equal(ds.channel.values.astype(str), np.array(["532.AN", "532.PC"]))
+        assert ds.attrs["milgrau_scc_mapping_configuration_ids"] == "10"
+    finally:
+        ds.close()
 
 
 @pytest.mark.parametrize(("shots", "bin_time_us", "message"), [(0.0, 0.05, "Invalid laser shots value"), (1200.0, 0.0, "Invalid bin_time_us value")])
