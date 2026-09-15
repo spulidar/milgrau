@@ -126,7 +126,7 @@ P3 freezes a scientifically defensible baseline before high-column R&D. It may c
 - [x] Product provenance records productive backward integration, Monte Carlo identity, reference-boundary model, LR source, iteration count/random seed and current negative-aerosol/minimum-LR policies.
 - [x] Gluing score identity and weights are named/versioned.
 
-### P3.3 — current-method uncertainty/support hardening — BLOCKING
+### P3.3 — current-method uncertainty/support hardening — COMPLETE
 
 This subsection addresses issues in the present productive method; it must not be deferred to the future high-column redesign.
 
@@ -136,35 +136,37 @@ This subsection addresses issues in the present productive method; it must not b
 - [x] Remove the rule that converts non-finite `rcs_error` to `0.0` inside KFS Monte Carlo.
 - [x] Define the current productive backward retrieval/error support as the physically sampled branch on which signal and molecular backscatter are finite/positive and signal uncertainty is finite/non-negative; missing uncertainty on that sampled path invalidates the productive branch.
 - [x] Add synthetic tests where missing uncertainty inside the integration path causes explicit unsupported/rejected output rather than zero-noise Monte Carlo perturbation, and distinguish explicit `sigma=0` from missing uncertainty.
-- [ ] Define which current uncertainty components are independent per block and which represent shared/correlated/systematic nuisance parameters.
-- [ ] Review aggregate block uncertainty so LR/reference/model components are not blindly reduced as `sqrt(sum(sigma_i^2))/N` unless independence is justified.
+- [x] Define the current dependence model explicitly: retained profile measurement noise is treated independent within temporal block means; aerosol lidar-ratio nuisance is shared across blocks; reference-boundary dependence is not decomposed and therefore remains part of a mixed block-level uncertainty.
+- [x] Replace blind independent block reduction for aggregate optical errors with the conservative full-positive-correlation bound `sigma_mean=sum(sigma_block)/n_effective` on common value/error support. No automatic `1/sqrt(N)` gain is claimed for the current mixed KFS uncertainty.
 - [x] State explicitly that current gluing propagated uncertainty is a partial measurement-noise propagation and excludes fitted slope/intercept uncertainty; it is not a total uncertainty budget.
-- [ ] Decide whether gluing regression-parameter uncertainty is material for the productive budget; if implemented, validate with synthetic/Monte Carlo tests.
-- [x] Because accepted-output/uncertainty semantics changed, increment `level2_retrieval_method_version` to `2`; incremental currentness makes pre-v2 products stale and method provenance records the change identity.
+- [x] Freeze the current productive gluing policy: fitted slope/intercept uncertainty remains outside the partial measurement-noise component and is **not** claimed negligible. Its materiality must be quantified under P4 before any versioned propagation is added.
+- [x] Because accepted-output/uncertainty semantics changed, increment `level2_retrieval_method_version` to `3`; method v2 introduced common support/missing-error rejection, and method v3 introduced conservative correlated aggregate optical uncertainty. Incremental currentness makes older methods stale.
 
-Method-v2 hardening gate: **Ruff plus full pytest passed on Ubuntu/Windows x Python 3.12/3.14 (CI run 57).**
+Method-v3 hardening gate: **Ruff plus full pytest passed on Ubuntu/Windows x Python 3.12/3.14; the complete method-v3/content-provenance baseline is green in CI run 71.**
 
-Acceptance gate remains open: **for every productive optical value with reported uncertainty, support and uncertainty semantics are internally consistent; missing uncertainty never means zero uncertainty; aggregation assumptions are explicit and tested.** The remaining blockers are the shared/correlated uncertainty model and the decision on fitted gluing-parameter uncertainty.
+Acceptance gate: **passed for the declared partial uncertainty budget.** Productive values/errors now share support, missing uncertainty cannot become zero noise, aggregate covariance is not silently treated as independent, and omitted gluing-fit uncertainty is explicitly outside scope rather than assumed absent.
 
 ### P3.4 — provenance/input identity — IN PROGRESS
 
-Readable provenance remains primary, but the audit now has concrete consumers for content identity: incremental cache correctness and scientific input lineage.
+Readable provenance remains primary, but content identity now has named consumers: incremental cache correctness, exact Level 1 lineage and distinction of scientific source families.
 
 - [x] Keep source Level 1 filename, stable station profile/calibration IDs, config filenames, exact processing/station YAML snapshots, method/schema/software identity and portable scientific source metadata.
 - [x] Do not persist secrets, transient cache paths or host-specific absolute paths.
-- [ ] Add `source_level1_sha256` (or an equivalently explicit content identity) to Level 2 provenance.
-- [ ] Make incremental reuse compare the stored Level 1 content identity with the current input rather than relying on mtime alone for input correctness.
-- [ ] Pin cross-platform tests that provenance stores portable filenames/IDs plus content identity, never machine-local source paths.
-- [ ] Define stable thermodynamic source identifiers (`provider/product/version_or_release`) separately from cache filenames/download mechanics.
-- [ ] Persist the stable thermodynamic source identifier and appropriate DOI/dataset identity when available.
-- [ ] Define source-code identity policy: tagged scientific releases may use package version + release DOI/tag as primary identity; non-release/development products must additionally expose a repository/build revision sufficient to distinguish materially different code states sharing the same package version.
-- [ ] Keep exact YAML snapshots as the human-readable configuration record; do not replace them with hashes.
+- [x] Add `source_level1_sha256` as the SHA-256 identity of the exact Level 1 file bytes used to generate Level 2.
+- [x] Make Level 2 incremental reuse compare the stored Level 1 content identity with the current input; changed/replaced bytes are stale even when source mtime is preserved.
+- [x] Pin cross-platform regressions for the content-identity/currentness contract and preserve portable filenames/IDs rather than machine-local paths.
+- [x] Define stable thermodynamic source identifiers as `provider/product/version_or_release`, separate from cache/download mechanics.
+- [x] Persist `thermodynamic_profile_source_id` plus provider/product/release metadata in Level 2 provenance; ERA5 uses the configured dataset and DOI when available, radiosonde identifies the Wyoming upper-air service family, and USSA76 records edition 1976.
+- [ ] Define and implement source-code identity policy: tagged scientific releases may use package version + release DOI/tag as primary identity; non-release/development products must additionally expose a repository/build/content revision sufficient to distinguish materially different code states sharing the same package version.
+- [x] Keep exact YAML snapshots as the human-readable configuration record; do not replace them with configuration hashes.
 
-Acceptance gate: **a product can identify the exact Level 1 content, scientific configuration and software/release state needed to distinguish one scientific run from another without embedding machine-local paths.**
+P3.4 implementation gate through thermodynamic identity: **green in CI run 71 on Ruff plus Ubuntu/Windows x Python 3.12/3.14.**
+
+Acceptance gate remains open only on code-state identity: **a product already identifies exact Level 1 content, scientific configuration and thermodynamic source without machine-local paths; development/release code identity still needs to distinguish different source states sharing one package CalVer.**
 
 ### P3.5 — focused documentation and scientific traceability — IN PROGRESS
 
-- [x] `docs/level2_schema.md` documents schema v1, method v2 identity, units, flags, joint signal/error support, missing-uncertainty semantics, gluing score identity, provenance boundary and current scientific limitations.
+- [x] `docs/level2_schema.md` documents schema v1, method v3 identity, units, flags, joint signal/error support, missing-uncertainty semantics, conservative correlated block aggregation, gluing uncertainty scope, Level 1 content identity, thermodynamic source identity and current scientific limitations.
 - [ ] Create/refresh focused docs for processing levels and config/station ownership without duplicating mutable scientific detail.
 - [ ] Shorten README into an entry point after focused docs exist.
 - [ ] Build a verified primary-source bibliography for methods actually implemented; distinguish historical inspiration from equations actually used.
@@ -203,6 +205,7 @@ P4 is evidence-first. A scientifically honest result may be a characterized para
 - [ ] Quantify the practical difference between plausible correction orders over the observed SPU count-rate/dark-rate/dead-time regime.
 - [ ] Characterize propagated-error SNR on SPU data before adding a hard Rayleigh-window SNR gate.
 - [ ] Validate cloud/layer screening on SPU observations before enabling it as productive reference-window rejection.
+- [ ] Quantify fitted gluing slope/intercept uncertainty and covariance with overlap resampling/bootstrap/Monte Carlo evidence; either justify its continued exclusion as immaterial for the declared partial budget or add a new versioned propagation model.
 - [ ] Compare representative real retrievals with LPP where practical and with SCC/ELDA methodological expectations without claiming numerical identity.
 - [ ] Evaluate current elastic-extinction presentation against SCC/ACTRIS semantics and retain explicit dependence on assumed lidar ratio.
 
@@ -413,9 +416,9 @@ P6 acceptance gate: **a third party can identify, install, cite and rerun the re
 
 - [x] Signal/error averaging uses common support semantics.
 - [x] Missing uncertainty cannot become zero-noise Monte Carlo support.
-- [ ] Aggregate uncertainty states independence/correlation assumptions explicitly.
+- [x] Aggregate uncertainty states independence/correlation assumptions explicitly and does not reduce mixed nuisance terms as independent noise.
 - [x] Gluing uncertainty scope is explicit and not described as total uncertainty while fitted regression-parameter uncertainty is excluded.
-- [ ] Product provenance identifies exact Level 1 content.
+- [x] Product provenance identifies exact Level 1 content and incremental reuse verifies it.
 - [ ] Development/release code identity is unambiguous.
 - [ ] Scientific traceability matrix exists.
 - [ ] Primary-source bibliography is verified.
@@ -423,16 +426,14 @@ P6 acceptance gate: **a third party can identify, install, cite and rerun the re
 
 ## 11. Immediate next gate
 
-Completed in method v2: joint signal/error averaging, `n_effective`, missing-uncertainty rejection in KFS, synthetic regressions, common-support aggregate optical reduction, method-version bump and stale-product enforcement.
+Completed across method v2/v3 and P3.4 provenance hardening: joint signal/error averaging, `n_effective`, missing-uncertainty rejection in KFS, conservative correlated aggregate optical uncertainty, explicit partial gluing scope, method-version/stale-product enforcement, exact Level 1 SHA-256 lineage/currentness, and stable thermodynamic provider/product/release identity.
 
 Do these before recreating high-column `fixing_l2` work:
 
-1. Define the current uncertainty-component model: which terms are independent acquisition noise and which LR/reference/model terms are shared or correlated across blocks.
-2. Replace or qualify aggregate uncertainty reduction accordingly; add tests for shared versus independent nuisance components.
-3. Decide whether fitted gluing slope/intercept uncertainty is material enough to propagate; keep the current scope explicitly partial until then.
-4. Add Level 1 content identity to provenance and incremental currentness; keep paths portable.
-5. Define stable thermodynamic source identifiers and non-release source-code revision identity.
-6. Build the scientific traceability matrix and verified bibliography.
-7. Add explicit software licensing and prepare CF validation criteria.
-8. Keep P4 instrument characterization parallel and evidence-first.
-9. Only after that, start P5 with synthetic support tests, observational regression baseline, Rayleigh candidate catalogue, backbone and ensemble. Evaluate cascade only after Decision gate A.
+1. Implement portable development/release source-code identity so materially different code states sharing the same package CalVer remain distinguishable.
+2. Build the scientific traceability matrix and verified primary-source bibliography; keep implemented equations distinct from historical inspiration.
+3. Finish focused processing/config/station documentation and then shorten README into an entry point.
+4. Add explicit software licensing according to project/institution policy and prepare CF validation criteria.
+5. Keep P4 instrument characterization parallel and evidence-first, including photon-counting saturation/dead-time order, SNR/cloud gates and gluing-fit parameter uncertainty materiality.
+6. Freeze the observational `20251107sapm` regression summary after the current method-v3 real-data run is reviewed; label it regression evidence, not truth.
+7. Only after the P3 baseline is accepted, start P5 with synthetic support tests, Rayleigh candidate catalogue, backbone and ensemble. Evaluate cascade only after Decision gate A.
