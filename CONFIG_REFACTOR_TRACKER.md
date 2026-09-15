@@ -21,7 +21,7 @@ This file is the source of truth for preparing a concise, scientifically defensi
 - Cleanup must not silently alter equations, thresholds, calibration assumptions or uncertainty models.
 - Missing scientific/instrument settings fail early unless an explicit unavailable/legacy policy exists.
 - Unsupported data remain unsupported/NaN; no filling/interpolation is introduced merely to extend retrieval coverage.
-- Tests must exercise current canonical owners/contracts; obsolete tests are not a reason to restore compatibility code or hidden defaults.
+- Tests exercise current canonical owners/contracts; obsolete tests are not a reason to restore compatibility code or hidden defaults.
 - A successful real-data run validates the exercised path, not the full scientific method or repository test suite.
 
 ## 2. Priority/status overview
@@ -30,7 +30,7 @@ This file is the source of truth for preparing a concise, scientifically defensi
 | --- | --- | --- |
 | **P0** | **COMPLETE** | truthful backward-KFS identity, output/currentness consistency, remove redundant QA TXT, freeze support semantics |
 | **P1** | **COMPLETE + REAL-DATA VALIDATED** | remove import-order behavior, duplicate Level 2 science, monoliths and obsolete compatibility |
-| **P2** | **IN PROGRESS** | repository code-use audit, public API ownership, dead compatibility, exception/default guardrails, Ruff/full tests/CI |
+| **P2** | **IN PROGRESS; LOCAL + CI BASELINES GREEN** | code-use audit, deliberate API, dead compatibility, exception/default guardrails, Ruff/full tests/CI |
 | **P3** | pending | Level 2 schema/FAIR metadata and focused documentation |
 | **P4** | parallel evidence work | PC saturation, correction order, SNR/cloud validation, external comparison |
 | **P5** | pending | recreate `fixing_l2` and implement scientifically validated high-column retrieval |
@@ -89,72 +89,63 @@ Detailed ownership decisions live in `docs/code_inventory.md`.
 
 - [x] Added role taxonomy and repository/module ownership inventory.
 - [x] Root `milgrau.__all__` reduced to the real lightweight root API: `__version__`.
-- [x] Regression requires every advertised `__all__` symbol to resolve.
 - [x] AST regression rejects wildcard imports under `milgrau/`.
 - [x] Productive Level 2 mappings cannot use `.get(..., scientific_literal_default)`.
-- [x] Ruff added to dev dependencies with initial correctness/dead-code set `E4`, `E7`, `E9`, `F`.
-- [x] First Ruff pass classified: 8 real `F401` dead imports removed; 3 `E731` lambda-style findings intentionally excluded from this correctness gate.
-- [x] User-confirmed Ruff rerun after cleanup: **all checks passed**.
-- [x] Focused architecture/cleanup tests passed locally before this sublot (`11 passed`).
+- [x] Strict `level0/config.py`, `level1/config.py`, `level2/config.py` are guarded against semantic literal `.get` fallbacks.
+- [x] Ruff added to dev dependencies with correctness/dead-code rules `E4`, `E7`, `E9`, `F`; `E731` remains deliberately excluded as style-only.
+- [x] First Ruff pass removed 8 real `F401` imports; reruns stayed clean.
 
-### Lot 4B — ownership/compatibility/default/exception cleanup — IN PROGRESS
+### Lot 4B — ownership/compatibility/default/exception cleanup — FINAL AUDIT IN PROGRESS
 
 Completed:
 
-- [x] Level 1 package exports now point directly to canonical owners rather than re-exporting helpers indirectly through `lipancora`.
-- [x] Regression pins Level 1 package exports to `ingestion`, `pbl`, `thermodynamics` and other actual owners.
-- [x] Removed one-line `level1.common.level1_output_path()` compatibility alias; LIPANCORA imports canonical `milgrau.io.paths.level1_output_path` directly.
-- [x] Removed obsolete `level1.common.get_channel_constant(..., logger)` compatibility helper; current calibration ownership is `resolve_channel_calibration()`.
-- [x] Regression pins both removed Level 1 compatibility helpers absent.
-- [x] Narrowed `level0.quality` group containment to malformed-data exceptions (`KeyError`, `TypeError`, `ValueError`); unexpected runtime/programming failures now propagate.
-- [x] Added regression proving an unexpected Level 0 QA `RuntimeError` is not silently converted into ordinary data rejection.
-- [x] Narrowed station-config loader wrapping to expected configuration errors (`TypeError`, `ValueError`); unexpected validator failures propagate unchanged.
-- [x] Added regression proving unexpected station-validator `RuntimeError` is not reclassified as bad YAML/config.
-- [x] Narrowed `level1.common.finite_or_fill` and dark-current availability catches to expected conversion/index failures.
-- [x] Extended semantic-default AST guard to strict `level0/config.py`, `level1/config.py`, `level2/config.py`: structural absence sentinels are allowed; recipe defaults are not.
-- [x] Compatibility-import AST guard covers both package and tests, preventing reintroduction of removed Level 1/2 aliases.
-- [x] Broad exception policy documented: retain explicit outer orchestration/partial-product/optional-QA containment; narrow helper-level catches that can hide defects.
-- [x] Full-suite stale references to removed `level2.atmosphere`, `get_channel_constant`, top-level `physics`, private `lebear` gluing/Rayleigh helpers and pre-strict configuration fixtures were migrated to canonical owners/contracts rather than restoring compatibility.
-- [x] Level 1 ingestion tests now use stdlib-compatible loggers and explicitly provide dead-time/saturation policy arguments; no kernel defaults were reintroduced for test convenience.
-- [x] LIRACOS and LEBEAR synthetic fixtures now materialize the canonical Level 1 atmosphere and complete strict recipes instead of bypassing current product/config contracts.
-- [x] Human-readable `ExecutionResult` log paths use POSIX separators for stable cross-platform diagnostics while stored `Path` semantics remain unchanged.
-- [x] SCC `LR_Input` station policy now recognizes historical 607 nm as a Raman companion of 532 nm in addition to 530 nm, matching the APEL SCC channel inventory and the catalog's stated Raman-companion policy.
-- [x] Full local rerun after the repair batch: Ruff **all checks passed** and `pytest -q` **347 passed / 0 failed** on Windows/Python 3.14.
+- [x] Level 1 package exports point directly to canonical owners; obsolete one-line compatibility wrappers are gone.
+- [x] `level1.common.level1_output_path()` removed; canonical owner is `milgrau.io.paths.level1_output_path`.
+- [x] `level1.common.get_channel_constant(..., logger)` removed; calibration owner is `resolve_channel_calibration()`.
+- [x] Compatibility-import AST guard prevents tests/package code from reintroducing removed Level 1/2 paths.
+- [x] Full-suite stale imports/fixtures were migrated to current owners/contracts instead of restoring compatibility.
+- [x] Level 0 acquisition QA and station-config loading now contain only expected malformed-data/config errors; unexpected runtime defects propagate.
+- [x] Level 1 helper catches were narrowed where broad containment could hide defects.
+- [x] Licel header/group parsing now contains malformed-file/IO failures (`ValueError`, `OSError`) but propagates unexpected `RuntimeError`; regressions pin both behaviors.
+- [x] Broad catches intentionally retained at outer execution boundaries, per-wavelength partial-product handling, per-channel L1 containment, filesystem action boundaries, and optional QA/UI presentation boundaries.
+- [x] Human-readable `ExecutionResult` paths are stable across Windows/Linux separators.
+- [x] SCC `LR_Input` policy recognizes historical 607 nm as Raman companion of 532 nm as well as 530 nm.
+- [x] Exact supported `__all__` surfaces for `io`, `level0`, `level1`, `level2`, `physics`, and `viz` are now regression-pinned. New/removal exports require deliberate review instead of becoming accidental API.
+- [x] `config.loader` creates no legacy `site`/`hardware`/`physics.channels` compatibility structures; station-owned LR climatology materialization is an intentional productive data view, not an alias.
+- [x] Historical Licel file-level laser-shot fallback is retained deliberately as a file-format compatibility path: channel `NShots` has priority; fallback remains only while historical/custom SPU Licel files requiring it are supported.
+- [x] Local functional baseline: Ruff clean and `pytest -q` **347 passed / 0 failed** on Windows/Python 3.14 before the final two Licel exception tests were added.
 
-Still open in lot 4:
+Still open before calling lot 4 complete:
 
-- [ ] Finish deliberate package-public-surface decisions for `io`, `level0`, `level1`, `level2`, `physics`, `viz`; avoid accidental breaking changes to plausible external/research APIs.
-- [ ] Finish compatibility/deprecation audit outside cleaned L1/L2 and require named consumers/removal criteria.
-- [ ] Search repository-wide for duplicated **scientific equations/selection rules** and retain one canonical implementation; do not over-abstract tiny generic utilities.
-- [ ] Finish broad-exception review in processing helpers; retained broad catches require an explicit orchestration/partial-product/UI rationale.
-- [ ] Remove confirmed dead QA/display helpers. Current private candidates: `viz/level2_qa.py::_legacy_ylim` and `_visual_scale_to_reference`; edit separately because the plotting module is large.
-- [ ] Review large files by cohesion, not line count: `explorer/streamlit_app.py`, `viz/level2_qa.py`, `level2/signal_selection.py`, `level2/dataset.py`, `level0/netcdf.py`, `level1/config.py`, `level2/kfs.py`, `level2/contracts.py`, `level1/lipancora.py`, `config/station.py`.
+- [ ] Remove confirmed dead QA/display helpers `viz/level2_qa.py::_legacy_ylim` and `_visual_scale_to_reference` (definition-only; `_legacy_scale_factor` remains used).
+- [ ] Finish repository-wide duplicate **scientific equation/selection-rule** audit and record canonical owners; do not over-abstract generic utilities.
+- [ ] Final pass over remaining `except Exception` sites: classify each as orchestration/filesystem/optional-UI containment or narrow it if it can hide a programming defect.
+- [ ] Review large files by cohesion, not line count; split only where responsibility actually improves: `explorer/streamlit_app.py`, `viz/level2_qa.py`, `level2/signal_selection.py`, `level2/dataset.py`, `level0/netcdf.py`, `level1/config.py`, `level2/kfs.py`, `level2/contracts.py`, `level1/lipancora.py`, `config/station.py`.
 
-### Lot 5 — full suite and CI — IN PROGRESS
+### Lot 5 — full suite and CI — GREEN BASELINE ESTABLISHED
 
-Full-suite progression on the P2 cleanup branch:
+Full-suite progression:
 
-- [x] Ruff: **all checks passed**.
-- [x] `pytest -q` reached the complete suite after obsolete collection imports were removed.
-- [x] First complete baseline recorded rather than hidden: **324 passed, 23 failed, 266 warnings**.
-- [x] All 23 failures were classified before changes: mostly stale tests/fixtures after strict contracts/canonical-owner cleanup, plus a Windows-path portability issue and a real historical SCC Raman-companion mapping inconsistency.
-- [x] Repair batch implemented without restoring hidden defaults/compatibility paths.
-- [x] Residual inventory failures classified as stale mocks of the old `scan_raw_files` call signature and corrected in tests only.
-- [x] Clean functional baseline reproduced locally: **347 passed, 0 failed, 346 warnings** in 39.06 s; focused inventory suite **4 passed**; Ruff remained clean.
-- [x] Warning baseline classified: NumPy 2.5 emits the `ndarray.shape` deprecation when the currently published `netCDF4` 1.7.4 write path uses that deprecated operation internally; 285 warnings surface through xarray's netCDF4 backend and 61 at MILGRAU Level-0 writer call sites. The latter are caller locations, not a separate MILGRAU deprecation.
-- [x] Upstream `netCDF4` source changelog lists a 1.7.4.1 fix for this NumPy >=2.5 deprecation, but PyPI currently publishes only through 1.7.4. An attempted `netCDF4>=1.7.4.1` floor therefore broke installation and was reverted immediately.
-- [x] MILGRAU now requires the latest published floor `netCDF4>=1.7.4`; do not pin NumPy below 2.5 or hide this known upstream warning merely to make the warning count zero.
-- [ ] Reinstall the dev environment after the corrected published dependency floor and confirm editable installation succeeds; warnings may remain until an upstream release containing the fix is available from PyPI.
-- [x] Establish clean full local pytest correctness baseline in the dev environment.
-- [ ] Add CI for Ruff, architecture/static guards and full pytest after the installability check.
-- [ ] Only after stable CI, consider branch protection/required checks.
+- [x] First complete baseline: **324 passed, 23 failed, 266 warnings**.
+- [x] All 23 failures classified before repair; mostly stale contracts/fixtures plus Windows path portability and historical SCC Raman mapping.
+- [x] Repair batch implemented without restoring hidden defaults/compatibility.
+- [x] Residual inventory failures were stale mocks only and fixed in tests.
+- [x] Clean local baseline reproduced: **347 passed, 0 failed, 346 warnings**, Ruff clean.
+- [x] Warning baseline classified: all 346 are the NumPy 2.5 `ndarray.shape` deprecation triggered inside the published netCDF4 1.7.4 write path. 285 surface through xarray's backend and 61 at MILGRAU caller lines; the latter are not a separate MILGRAU deprecation.
+- [x] Upstream source changelog lists a 1.7.4.1 fix, but PyPI currently publishes through 1.7.4 only. The invalid `>=1.7.4.1` floor was reverted immediately after pip rejected it.
+- [x] MILGRAU requires the latest published floor `netCDF4>=1.7.4`; do not pin NumPy backwards or suppress the known upstream warning merely to get warning count zero.
+- [x] User-confirmed environment: NumPy **2.5.3**, netCDF4 **1.7.4**.
+- [x] GitHub Actions CI added: Ruff on Ubuntu/Python 3.12 plus full pytest matrix on Ubuntu/Windows × Python 3.12/3.14.
+- [x] CI run `34916492050` on commit `e0bed288e1d4829f0ffaa61647e1257b9b0ca5ab` completed **success**: Ruff passed and every pytest matrix job passed.
+- [ ] After final lot-4 cleanup commits, require the same CI workflow to remain green on the new HEAD.
+- [ ] Branch protection/required checks is optional follow-up only after the final P2 HEAD is stable; branch is currently unprotected.
 
-P2 acceptance gate: **no known unused compatibility code, intentional public API, no productive hidden semantic defaults, justified exception boundaries, and automated checks preventing regression.**
+P2 acceptance gate: **intentional public API, no known unused compatibility code, no productive hidden semantic defaults, justified exception boundaries, one canonical owner per scientific behavior, and local + CI guardrails preventing regression.**
 
 ## 6. P3 — Level 2 schema / FAIR metadata / focused docs — PENDING
 
 - [ ] Choose canonical aggregate names and migration policy for `aerosol_backscatter[_mean]` / `aerosol_extinction[_mean]` aliases.
-- [ ] Audit every L2 physical variable for units, dimensions, long_name/description and missing/NaN semantics.
+- [ ] Audit every L2 physical variable for units, dimensions, `long_name`/description and missing/NaN semantics.
 - [ ] Add explicit backscatter/extinction uncertainty units where currently implied.
 - [ ] Audit numeric flag metadata for CF-compatible representation.
 - [ ] Introduce independent product-schema/method version if method/schema evolution requires more than package CalVer.
@@ -295,44 +286,27 @@ Merge criterion: **maximize validated vertical support, expose where support end
 
 ## 9. Current code-organization acceptance checklist
 
-- [ ] Every retained symbol/module has a real consumer or documented productive/research role; module inventory exists, per-symbol/API audit continues.
+- [ ] Every retained symbol/module has a real consumer or documented productive/research role; final private-helper/duplicate audit remains.
 - [x] Root package exports only a real lightweight bound symbol.
+- [x] Supported subpackage public surfaces are exact and regression-pinned.
 - [x] No productive scientific behavior is installed by import side effect.
 - [x] No wildcard import defines productive behavior.
 - [x] No legacy Level 2 retrieval monolith/atmosphere compatibility alias remains.
 - [x] Removed known Level 1 compatibility helpers with no remaining productive responsibility.
 - [x] Tests are guarded against imports from known removed compatibility paths.
-- [ ] Package/public aliases are intentional or have an explicit deprecation/API decision.
 - [x] Canonical productive L2 and strict stage configs are guarded against local semantic defaults.
-- [ ] Auxiliary config interpretation outside strict stage resolvers still needs final audit.
 - [x] Numerical KFS/gluing/molecular kernels do not own filesystem policy.
 - [x] QA/visualization does not feed back into retrieval decisions.
 - [x] Cross-platform human-readable execution logs do not depend on host path separator.
-- [x] Full local correctness baseline is clean: Ruff passed and all 347 tests passed.
-- [ ] Confirm editable install under the published `netCDF4>=1.7.4` floor, then add CI.
+- [x] Published dependency floor installs with NumPy 2.5.3 + netCDF4 1.7.4.
+- [x] Full local correctness baseline is green.
+- [x] GitHub Actions CI baseline is green across Ruff + Linux/Windows × Python 3.12/3.14.
+- [ ] Final cleanup HEAD must rerun the same CI green before P2 is marked complete.
 
 ## 10. Immediate next gate
 
-The full local suite is functionally green: **Ruff clean, 347 passed, 0 failed**. The remaining 346 warnings are one upstream compatibility issue: NumPy 2.5 emits a deprecation because the currently published netCDF4 1.7.4 write path still uses direct `ndarray.shape` assignment internally. Warnings shown at `milgrau/level0/netcdf.py` are caller locations for that dependency behavior, not separate MILGRAU-owned deprecated assignments.
-
-The upstream source changelog already lists a 1.7.4.1 fix, but that version is not currently available from PyPI. MILGRAU therefore requires the latest published `netCDF4>=1.7.4` and keeps the warning visible rather than pinning NumPy backwards or suppressing it.
-
-Reinstall/update the environment and reproduce installability:
-
-```bash
-python -m pip install -e ".[dev]"
-python -c "import netCDF4; print(netCDF4.__version__)"
-ruff check milgrau tests
-pytest -q
-```
-
-Expected gate:
-
-- editable install succeeds using a published netCDF4 release;
-- `netCDF4` is at least 1.7.4;
-- Ruff remains clean;
-- full pytest remains **347 passed / 0 failed**;
-- the NumPy 2.5 shape-deprecation warning may remain until a PyPI netCDF4 release containing the upstream fix exists; it is tracked, not hidden;
-- do **not** call repository CI green until these checks are reproduced by GitHub Actions.
-
-After this installability check, finish the remaining public-surface/QA-helper/duplicate-rule audit and implement lot 5 CI.
+1. Remove the two confirmed dead private Level 2 QA display helpers only; do not touch active `_legacy_scale_factor` behavior.
+2. Finish scientific-duplicate and broad-exception classification and update `docs/code_inventory.md` with canonical owners/removal criteria.
+3. Run/observe CI on the final cleanup HEAD.
+4. Mark P2 complete only when the final HEAD stays green; branch protection remains a separate optional repository-policy choice.
+5. Then move to P3 FAIR/schema work; do not begin the high-column P5 redesign before P2 is closed.
