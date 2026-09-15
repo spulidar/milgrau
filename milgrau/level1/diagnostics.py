@@ -34,8 +34,9 @@ def finalize_correction_dataset(
         {
             "long_name": "Photon-counting physical saturation mask",
             "description": (
-                "1 only where the photon-counting rate exceeds a characterized detector saturation limit after bin-shift alignment; "
-                "0 elsewhere. A zero mask is not evidence of unsaturated operation when pc_saturation_characterized=0."
+                "1 only where the observed photon-counting rate before dark-current subtraction exceeds a characterized "
+                "detector saturation limit after bin-shift alignment; 0 elsewhere. A zero mask is not evidence of "
+                "unsaturated operation when pc_saturation_characterized=0."
             ),
             "flag_values": "0, 1",
             "flag_meanings": "not_flagged physically_saturated",
@@ -73,6 +74,11 @@ def finalize_correction_dataset(
         dims=["channel"],
         coords={"channel": final_channels},
     ).astype(np.float32)
+    final_ds["deadtime_raw_min_denominator_observed"] = xr.DataArray(
+        [diag_by_channel[ch]["deadtime_raw_min_denominator_observed"] for ch in final_channels],
+        dims=["channel"],
+        coords={"channel": final_channels},
+    ).astype(np.float32)
     final_ds["deadtime_min_denominator_allowed"] = xr.DataArray(
         [diag_by_channel[ch]["deadtime_min_denominator_allowed"] for ch in final_channels],
         dims=["channel"],
@@ -95,10 +101,22 @@ def finalize_correction_dataset(
     ).astype(np.int16)
 
     deadtime_fraction = np.stack([np.asarray(diag_by_channel[ch]["deadtime_clipping_fraction"].values) for ch in final_channels], axis=1)
+    raw_deadtime_fraction = np.stack([np.asarray(diag_by_channel[ch]["deadtime_raw_clipping_fraction"].values) for ch in final_channels], axis=1)
+    observed_rate_max = np.stack([np.asarray(diag_by_channel[ch]["pc_observed_rate_mhz_max"].values) for ch in final_channels], axis=1)
     pc_saturation_fraction = np.stack([np.asarray(diag_by_channel[ch]["pc_saturation_fraction"].values) for ch in final_channels], axis=1)
     bin_shift_fraction = np.stack([np.asarray(diag_by_channel[ch]["bin_shift_invalid_fraction"].values) for ch in final_channels], axis=1)
     final_ds["deadtime_clipping_fraction"] = xr.DataArray(
         deadtime_fraction,
+        dims=["time", "channel"],
+        coords={"time": final_ds.time, "channel": final_channels},
+    ).astype(np.float32)
+    final_ds["deadtime_raw_clipping_fraction"] = xr.DataArray(
+        raw_deadtime_fraction,
+        dims=["time", "channel"],
+        coords={"time": final_ds.time, "channel": final_channels},
+    ).astype(np.float32)
+    final_ds["pc_observed_rate_mhz_max"] = xr.DataArray(
+        observed_rate_max,
         dims=["time", "channel"],
         coords={"time": final_ds.time, "channel": final_channels},
     ).astype(np.float32)
@@ -124,7 +142,42 @@ def finalize_correction_dataset(
         }
     )
     final_ds["deadtime_clipping_fraction"].attrs.update(
-        {"units": "1", "description": "Fraction of altitude bins where the non-paralyzable dead-time denominator was numerically clipped."}
+        {
+            "units": "1",
+            "description": (
+                "Fraction of altitude bins where the non-paralyzable dead-time denominator was numerically clipped in "
+                "the current productive path after native dark-current subtraction."
+            ),
+        }
+    )
+    final_ds["deadtime_raw_clipping_fraction"].attrs.update(
+        {
+            "units": "1",
+            "description": (
+                "Diagnostic fraction of altitude bins where the non-paralyzable denominator would fall below the numerical "
+                "floor using the directly observed photon-counting rate before dark-current subtraction. This does not by "
+                "itself define physical detector saturation."
+            ),
+        }
+    )
+    final_ds["deadtime_raw_min_denominator_observed"].attrs.update(
+        {
+            "units": "1",
+            "description": (
+                "Minimum non-paralyzable dead-time denominator evaluated from the directly observed photon-counting rate "
+                "before dark-current subtraction; NaN for non-PC channels or when dead-time correction is disabled."
+            ),
+        }
+    )
+    final_ds["pc_observed_rate_mhz_max"].attrs.update(
+        {
+            "units": "MHz",
+            "description": (
+                "Per-profile maximum photon-counting rate calculated directly from acquired counts, Laser_Shots, and native "
+                "bin time before dark-current subtraction, dead-time correction, bin shift, or background subtraction; NaN "
+                "for non-PC channels."
+            ),
+        }
     )
     final_ds["pc_saturation_characterized"].attrs.update(
         {
