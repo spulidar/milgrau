@@ -19,7 +19,7 @@ from milgrau.io.logging_utils import bind_log_context
 from milgrau.io.paths import level2_output_path, logging_save_id
 from milgrau.operations import ExecutionResult, ExecutionSummary
 from milgrau.provenance import write_netcdf_provenance
-from milgrau.scientific import elastic_inversion_algorithm_metadata
+from milgrau.scientific import LEVEL2_PRODUCT_SCHEMA_VERSION, elastic_inversion_algorithm_metadata
 from milgrau.level2.completeness import (
     Level2ProductContract,
     ProductCompleteness,
@@ -67,7 +67,8 @@ def level2_output_is_current(
         with xr.open_dataset(output) as ds:
             validate_level2_contract(ds)
             if (
-                str(ds.attrs.get("product_completeness", "")) != "complete"
+                str(ds.attrs.get("level2_product_schema_version", "")) != LEVEL2_PRODUCT_SCHEMA_VERSION
+                or str(ds.attrs.get("product_completeness", "")) != "complete"
                 or str(ds.attrs.get("product_status", "")) != "success"
                 or "requested_wavelengths" not in ds
                 or "processed_wavelengths" not in ds
