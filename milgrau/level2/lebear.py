@@ -42,12 +42,7 @@ from milgrau.level2.config import (
 )
 from milgrau.level2.dataset import build_level2_dataset
 from milgrau.level2.discovery import discover_level1_files
-from milgrau.level2.retrieval import (
-    RetrievalStageError,
-    evaluate_rayleigh_reference as _evaluate_rayleigh_reference,
-    process_wavelength,
-    propagate_glued_error as _propagate_glued_error,
-)
+from milgrau.level2.retrieval import RetrievalStageError, process_wavelength
 from milgrau.level2.qa import generate_level2_qa, level2_qa_enabled
 from milgrau.level2.time_window import subset_level1_time_window
 
