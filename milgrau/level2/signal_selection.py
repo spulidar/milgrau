@@ -11,9 +11,8 @@ import xarray as xr
 
 from milgrau.level2.block_average import (
     block_groups,
-    error_by_groups,
     mask_by_groups,
-    mean_by_groups,
+    mean_error_by_groups,
 )
 from milgrau.level2.config import (
     get_block_average_minutes,
@@ -50,6 +49,8 @@ class WavelengthBlockInputs:
     photon_error_block: np.ndarray | None
     photon_mask_block: np.ndarray | None
     photon_correction_valid: bool
+    analog_n_effective_block: np.ndarray | None = None
+    photon_n_effective_block: np.ndarray | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,8 +204,11 @@ def prepare_wavelength_blocks(
         photon_error = corrected_error.sel(channel=photon_channel).values.astype(
             np.float64
         )
-        photon_block = mean_by_groups(photon_signal, groups)
-        photon_error_block = error_by_groups(photon_error, groups)
+        (
+            photon_block,
+            photon_error_block,
+            photon_n_effective_block,
+        ) = mean_error_by_groups(photon_signal, photon_error, groups)
         if "pc_saturation_mask" in ds_l1:
             photon_mask = ds_l1["pc_saturation_mask"].sel(
                 channel=photon_channel
@@ -216,18 +220,23 @@ def prepare_wavelength_blocks(
     else:
         photon_block = None
         photon_error_block = None
+        photon_n_effective_block = None
         photon_mask_block = None
         photon_correction_valid = False
 
     if analog_channel is not None:
         analog_signal = corrected.sel(channel=analog_channel).values.astype(np.float64)
         analog_error = corrected_error.sel(channel=analog_channel).values.astype(np.float64)
-        analog_block = mean_by_groups(analog_signal, groups)
-        analog_error_block = error_by_groups(analog_error, groups)
+        (
+            analog_block,
+            analog_error_block,
+            analog_n_effective_block,
+        ) = mean_error_by_groups(analog_signal, analog_error, groups)
         analog_correction_valid = _channel_correction_valid(ds_l1, analog_channel)
     else:
         analog_block = None
         analog_error_block = None
+        analog_n_effective_block = None
         analog_correction_valid = False
 
     return WavelengthBlockInputs(
@@ -247,6 +256,8 @@ def prepare_wavelength_blocks(
         photon_error_block=photon_error_block,
         photon_mask_block=photon_mask_block,
         photon_correction_valid=photon_correction_valid,
+        analog_n_effective_block=analog_n_effective_block,
+        photon_n_effective_block=photon_n_effective_block,
     )
 
 
