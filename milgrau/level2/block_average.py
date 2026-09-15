@@ -25,9 +25,11 @@ def nanmean_or_nan(matrix: np.ndarray, axis: int = 0) -> np.ndarray:
 def error_of_mean(error_matrix: np.ndarray) -> np.ndarray:
     """Combine finite non-negative one-sigma errors into uncertainty of a mean.
 
-    This helper is retained for uncertainty-only reductions. Productive means
-    with reported uncertainty should use :func:`mean_and_error_of_mean` so the
-    signal and uncertainty share one scientific support mask.
+    This helper assumes independent sample errors and is retained for
+    measurement-noise reductions such as profile-to-block averaging.
+    Productive means with reported uncertainty should use
+    :func:`mean_and_error_of_mean` so the value and uncertainty share one
+    scientific support mask.
     """
     errors = np.asarray(error_matrix, dtype=np.float64)
     valid = np.isfinite(errors) & (errors >= 0.0)
@@ -47,12 +49,14 @@ def mean_and_error_of_mean(
     *,
     axis: int = 0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Reduce values and one-sigma errors with one common scientific mask.
+    """Reduce values/errors with common support and independent-noise quadrature.
 
     A sample contributes only when the value is finite and its one-sigma
     uncertainty is finite and non-negative. The returned ``n_effective`` is
     the number of common-support samples entering both the mean and the
-    uncertainty denominator.
+    uncertainty denominator. This reduction assumes the retained errors are
+    independent; it is appropriate for the current profile-to-block
+    measurement-noise model, not for mixed block-level model uncertainty.
     """
     values = np.asarray(matrix, dtype=np.float64)
     errors = np.asarray(error_matrix, dtype=np.float64)
@@ -78,6 +82,49 @@ def mean_and_error_of_mean(
     return mean, mean_error, np.asarray(n_effective, dtype=np.int64)
 
 
+def mean_and_correlated_error_bound(
+    matrix: np.ndarray,
+    error_matrix: np.ndarray,
+    *,
+    axis: int = 0,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Reduce values/errors with common support and a full-correlation bound.
+
+    For an equally weighted mean with individual one-sigma uncertainties
+    ``sigma_i`` and unknown covariance, the maximum variance permitted by
+    pairwise correlations in [-1, 1] is obtained for rho_ij = +1.  The
+    resulting conservative bound is ``sigma_mean = sum(sigma_i) / N``.
+
+    MILGRAU uses this bound for block-to-aggregate optical products because the
+    current block KFS Monte Carlo mixes independent signal noise with shared or
+    unresolved nuisance terms (notably lidar-ratio and reference-boundary
+    uncertainty). It therefore must not receive an automatic 1/sqrt(N)
+    reduction until those components are explicitly decomposed.
+    """
+    values = np.asarray(matrix, dtype=np.float64)
+    errors = np.asarray(error_matrix, dtype=np.float64)
+    if values.shape != errors.shape:
+        raise ValueError("matrix and error_matrix must have the same shape.")
+
+    valid = np.isfinite(values) & np.isfinite(errors) & (errors >= 0.0)
+    n_effective = valid.sum(axis=axis)
+    value_total = np.where(valid, values, 0.0).sum(axis=axis)
+    mean = np.divide(
+        value_total,
+        n_effective,
+        out=np.full_like(value_total, np.nan, dtype=np.float64),
+        where=n_effective > 0,
+    )
+    correlated_error_sum = np.where(valid, errors, 0.0).sum(axis=axis)
+    mean_error = np.divide(
+        correlated_error_sum,
+        n_effective,
+        out=np.full_like(correlated_error_sum, np.nan, dtype=np.float64),
+        where=n_effective > 0,
+    )
+    return mean, mean_error, np.asarray(n_effective, dtype=np.int64)
+
+
 def valid_block_mean(block_matrix: np.ndarray, valid_block: np.ndarray) -> np.ndarray:
     """Average a block x altitude product using only accepted retrieval blocks."""
     matrix = np.asarray(block_matrix, dtype=np.float64)
@@ -90,7 +137,12 @@ def valid_block_mean(block_matrix: np.ndarray, valid_block: np.ndarray) -> np.nd
 
 
 def valid_block_error(block_error_matrix: np.ndarray, valid_block: np.ndarray) -> np.ndarray:
-    """Combine block uncertainties using only accepted retrieval blocks."""
+    """Combine block uncertainties using only accepted retrieval blocks.
+
+    This legacy helper retains independent-error quadrature. Productive optical
+    aggregation uses :func:`valid_block_mean_and_error`, whose policy is the
+    conservative full-correlation bound for the current mixed KFS uncertainty.
+    """
     errors = np.asarray(block_error_matrix, dtype=np.float64)
     valid = np.asarray(valid_block, dtype=bool)
     if errors.ndim != 2 or valid.ndim != 1 or valid.size != errors.shape[0]:
@@ -107,7 +159,7 @@ def valid_block_mean_and_error(
     block_error_matrix: np.ndarray,
     valid_block: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Aggregate accepted block values/errors with one common support mask."""
+    """Aggregate accepted optical blocks using the conservative correlation bound."""
     matrix = np.asarray(block_matrix, dtype=np.float64)
     errors = np.asarray(block_error_matrix, dtype=np.float64)
     valid = np.asarray(valid_block, dtype=bool)
@@ -121,7 +173,9 @@ def valid_block_mean_and_error(
             "block matrices must be matching 2D arrays and valid_block must match their block axis."
         )
     if valid.any():
-        return mean_and_error_of_mean(matrix[valid, :], errors[valid, :], axis=0)
+        return mean_and_correlated_error_bound(
+            matrix[valid, :], errors[valid, :], axis=0
+        )
     shape = matrix.shape[-1]
     return (
         np.full(shape, np.nan, dtype=np.float64),
