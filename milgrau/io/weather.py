@@ -9,13 +9,24 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from milgrau.io.paths import surface_weather_cache_dir
 
 
+_EXPECTED_WEATHER_FAILURES = (
+    OSError,
+    UnicodeError,
+    json.JSONDecodeError,
+    KeyError,
+    IndexError,
+    TypeError,
+    ValueError,
+)
+
+
 def return_none_on_failure(retry_state):
-    """Tenacity callback used by API functions to fail gracefully."""
+    """Tenacity callback used by API functions to fail gracefully after expected failures."""
     return None
 
 
@@ -53,6 +64,7 @@ def _extract_surface_weather_from_payload(payload: dict, target_time: str) -> Op
 
 
 @retry(
+    retry=retry_if_exception_type(_EXPECTED_WEATHER_FAILURES),
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=2, max=10),
     retry_error_callback=return_none_on_failure,
@@ -80,7 +92,7 @@ def fetch_surface_weather(
                 if logger:
                     logger.debug("Open-Meteo cache hit: %s", cache_file.name)
                 return weather
-        except Exception as exc:
+        except _EXPECTED_WEATHER_FAILURES as exc:
             if logger:
                 logger.warning("Open-Meteo cache unreadable: %s | %s", cache_file, exc)
 
