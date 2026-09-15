@@ -12,7 +12,7 @@ The product intentionally separates three kinds of identity:
 - `level2_product_schema_version = "1"`: storage names/dimensions/metadata contract;
 - `level2_retrieval_method_version = "3"`: productive L2 method identity independent of package CalVer and schema-only changes. Method v2 introduced common value/uncertainty support during averaging and rejected missing signal uncertainty instead of converting it to zero Monte Carlo noise. Method v3 keeps those rules and changes aggregate optical uncertainty so mixed block-level nuisance terms are not silently reduced as independent noise.
 
-Incremental reuse rejects a product whose schema version, retrieval-method version, productive KFS identity, Fernald scientific identity, or versioned gluing-selection score does not match the running code. Partial products are never incrementally reusable.
+Incremental reuse rejects a product whose schema version, retrieval-method version, productive KFS identity, Fernald scientific identity, versioned gluing-selection score, or exact Level 1 source-content identity does not match the running input/method. Partial products are never incrementally reusable.
 
 ## Coordinates and time model
 
@@ -171,16 +171,18 @@ A wavelength is in the scientific `wavelength` coordinate only when it produced 
 
 ## Provenance boundary
 
-The product currently favors readable, portable provenance over host-specific paths or opaque hashes:
+The product favors readable, portable provenance while using content hashes only where they have an explicit scientific/operational consumer:
 
-- source Level 1 **filename**, not an absolute local path;
+- source Level 1 **filename**, never an absolute local source path;
+- `source_level1_sha256`, the SHA-256 of the exact Level 1 file bytes used for scientific lineage and incremental cache correctness;
 - stable station profile and instrument calibration IDs when available;
-- processing/station configuration filenames;
-- exact processing/station YAML snapshots stored in the product;
-- thermodynamic source identity inherited/materialized from Level 1;
+- processing/station configuration filenames plus exact processing/station YAML snapshots stored in the product;
+- stable thermodynamic `provider/product/version_or_release` identity and composite `thermodynamic_profile_source_id`; ERA5 additionally retains its configured dataset identity and DOI when available;
 - software/method/schema identities described above.
 
-Full local paths, secrets, transient cache paths, and operational tracebacks do not belong in the scientific product. Current provenance intentionally does not publish configuration/Git SHA attributes merely for appearance of reproducibility; exact YAML plus stable IDs are the readable configuration record. A Level 1 source-content identity is tracked separately in the roadmap because cache correctness and scientific lineage are now named consumers; it is not claimed as implemented until the provenance/currentness code and tests land.
+`source_level1_sha256` is compared against the current input before Level 2 incremental reuse. Therefore replacing or modifying a Level 1 file cannot be hidden merely by preserving an older/equal filesystem modification time. This content identity does **not** replace the readable Level 1 filename.
+
+Full local paths, secrets, transient cache/download filenames, and operational tracebacks do not belong in the scientific product. Configuration hashes remain intentionally absent: exact YAML plus stable station/calibration IDs are the readable configuration record. A distinct development/release source-code identity is still tracked in P3.4; package version alone is not treated as sufficient for materially different development code states that share the same CalVer.
 
 ## Known limitations
 
@@ -191,6 +193,7 @@ Full local paths, secrets, transient cache paths, and operational tracebacks do 
 - Physical photon-counting saturation is not characterized; the current dead-time occupancy guard is provisional and must not be described as a detector saturation limit.
 - Cloud screening is not yet a productive Rayleigh-reference rejection gate.
 - No hard propagated-error SNR gate is enabled without SPU evidence.
+- Development/source-code revision identity remains to be finalized under P3.4 for code states sharing the same package version.
 - Current NumPy 2.5/netCDF4 1.7.4 write-time deprecation warnings are tracked as an upstream dependency interaction; they are not hidden by pinning NumPy backwards.
 
 ## Deferred high-column schema
