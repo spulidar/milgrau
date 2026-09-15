@@ -177,4 +177,6 @@ def test_level2_saves_rayleigh_reference_qa_variables(tmp_path: Path) -> None:
         assert ds.attrs["KFS_Mode"] == "backward"
         assert ds.attrs["integration_mode"] == "backward"
         assert "backward" in ds.attrs["KFS_Mode_Description"].lower()
-        assert "productive backward KFS branch" in ds["retrieval_success_flag"].attrs["description"]
+        description = ds["retrieval_success_flag"].attrs["description"]
+        assert "backward KFS" in description
+        assert "not attempted or rejected" in description
