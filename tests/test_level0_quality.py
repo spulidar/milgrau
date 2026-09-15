@@ -5,7 +5,9 @@ from __future__ import annotations
 import logging
 
 import pandas as pd
+import pytest
 
+import milgrau.level0.quality as quality
 from milgrau.level0.quality import filter_laser_shots
 
 
@@ -110,3 +112,18 @@ def test_header_jitter_tolerance_is_not_hardcoded() -> None:
     )
 
     assert list(good["filepath"]) == ["m1"]
+
+
+def test_unexpected_qa_runtime_failure_is_not_silently_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Programming/runtime defects must fail outward instead of looking like bad data."""
+    df = pd.DataFrame(
+        [_row(filepath="m1", meas_type="measurements", nshots=3000, duration=30)]
+    )
+
+    def fail_unexpectedly(_values) -> float:
+        raise RuntimeError("synthetic implementation failure")
+
+    monkeypatch.setattr(quality, "safe_mode", fail_unexpectedly)
+
+    with pytest.raises(RuntimeError, match="synthetic implementation failure"):
+        filter_laser_shots(df, logging.getLogger("test"), **QA)
