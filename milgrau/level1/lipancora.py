@@ -143,8 +143,11 @@ def _channel_diagnostic_record(ds: xr.Dataset, channel_name: str, diagnostics: M
         "channel": channel_name,
         "deadtime_correction_applied": int(diagnostics["deadtime_correction_applied"]),
         "deadtime_clipping_fraction": diagnostic_vector(diagnostics, "deadtime_clipping_fraction", ds.time),
+        "deadtime_raw_clipping_fraction": diagnostic_vector(diagnostics, "deadtime_raw_clipping_fraction", ds.time),
+        "pc_observed_rate_mhz_max": diagnostic_vector(diagnostics, "pc_observed_rate_mhz_max", ds.time),
         "pc_saturation_fraction": diagnostic_vector(diagnostics, "pc_saturation_fraction", ds.time),
         "deadtime_min_denominator_observed": float(diagnostics["deadtime_min_denominator_observed"]),
+        "deadtime_raw_min_denominator_observed": float(diagnostics["deadtime_raw_min_denominator_observed"]),
         "deadtime_min_denominator_allowed": float(diagnostics["deadtime_min_denominator_allowed"]),
         "pc_saturation_characterized": int(diagnostics["pc_saturation_characterized"]),
         "pc_saturation_rate_limit_mhz": float(diagnostics["pc_saturation_rate_limit_mhz"]),
@@ -195,10 +198,11 @@ def _correct_single_channel(
 def _processing_metadata(input_file: Path) -> dict[str, str]:
     return {
         "Processing_level": (
-            "Level 1: PC counts->MHz using Laser_Shots(time,channel), calibrated DeadTime, explicit numerical clipping QA, "
-            "physical PC saturation only when characterized, Dark Current, Bin Shift, configured Background subtraction, "
-            "native-grid correction and common-grid interpolation, corrected signal, Range Corrected Signal, uncertainty "
-            "propagation, PBL, canonical thermodynamic atmosphere, Tropopause"
+            "Level 1: raw PC observed-rate QA from acquired counts and Laser_Shots(time,channel); current productive PC order "
+            "Dark Current then calibrated DeadTime with explicit numerical clipping QA; physical PC saturation only when "
+            "characterized; then Bin Shift, configured Background subtraction, native-grid correction and common-grid "
+            "interpolation, corrected signal, Range Corrected Signal, uncertainty propagation, PBL, canonical thermodynamic "
+            "atmosphere, Tropopause"
         ),
         "Pipeline": "MILGRAU/LIPANCORA",
         "Input_Level0_File": input_file.name,
