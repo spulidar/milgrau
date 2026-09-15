@@ -6,12 +6,16 @@ import numpy as np
 import pytest
 
 from milgrau.level2.block_average import (
+    mean_and_correlated_error_bound,
     mean_and_error_of_mean,
     mean_error_by_groups,
     valid_block_mean_and_error,
 )
 from milgrau.level2.kfs import kfs_inversion_monte_carlo
-from milgrau.scientific import LEVEL2_RETRIEVAL_METHOD_VERSION
+from milgrau.scientific import (
+    LEVEL2_RETRIEVAL_METHOD_VERSION,
+    elastic_inversion_algorithm_metadata,
+)
 from tests.kfs_forward_model import make_elastic_case
 
 
@@ -65,7 +69,31 @@ def test_grouped_reduction_exposes_effective_sample_count() -> None:
     assert np.all(np.isfinite(mean_errors))
 
 
-def test_aggregate_value_and_error_share_block_support() -> None:
+def test_correlated_error_bound_does_not_gain_inverse_sqrt_n() -> None:
+    """Unknown/shared block covariance must not be silently reduced as independent noise."""
+    values = np.array([[10.0], [12.0], [14.0]])
+    errors = np.array([[2.0], [2.0], [2.0]])
+
+    mean, mean_error, n_effective = mean_and_correlated_error_bound(values, errors)
+
+    assert mean[0] == pytest.approx(12.0)
+    assert mean_error[0] == pytest.approx(2.0)
+    assert mean_error[0] > pytest.approx(2.0 / np.sqrt(3.0))
+    assert n_effective[0] == 3
+
+
+def test_correlated_error_bound_uses_common_value_error_support() -> None:
+    values = np.array([[10.0], [100.0], [14.0]])
+    errors = np.array([[1.0], [np.nan], [3.0]])
+
+    mean, mean_error, n_effective = mean_and_correlated_error_bound(values, errors)
+
+    assert mean[0] == pytest.approx(12.0)
+    assert mean_error[0] == pytest.approx(2.0)
+    assert n_effective[0] == 2
+
+
+def test_aggregate_value_and_error_share_block_support_and_correlation_policy() -> None:
     values = np.array([[10.0], [100.0], [14.0]])
     errors = np.array([[1.0], [np.nan], [1.0]])
     accepted = np.array([True, True, True])
@@ -75,7 +103,7 @@ def test_aggregate_value_and_error_share_block_support() -> None:
     )
 
     assert mean[0] == pytest.approx(12.0)
-    assert mean_error[0] == pytest.approx(np.sqrt(2.0) / 2.0)
+    assert mean_error[0] == pytest.approx(1.0)
     assert n_effective[0] == 2
 
 
@@ -136,5 +164,22 @@ def test_zero_uncertainty_is_supported_and_distinct_from_missing_uncertainty() -
     assert np.all(np.isfinite(beta_std[: case.reference_index + 1]))
 
 
-def test_uncertainty_semantics_are_versioned_as_level2_method_v2() -> None:
-    assert LEVEL2_RETRIEVAL_METHOD_VERSION == "2"
+def test_uncertainty_dependence_policy_is_machine_readable() -> None:
+    metadata = elastic_inversion_algorithm_metadata()
+
+    assert metadata["optical_block_uncertainty_correlation_policy"] == (
+        "fully_correlated_upper_bound"
+    )
+    assert metadata["optical_block_uncertainty_aggregation_formula"] == (
+        "sigma_mean=sum(sigma_block)/n_effective on common value/error support"
+    )
+    assert "lidar-ratio nuisance shared across blocks" in metadata[
+        "uncertainty_component_dependence"
+    ]
+    assert "slope/intercept uncertainty excluded" in metadata[
+        "gluing_uncertainty_scope"
+    ]
+
+
+def test_uncertainty_semantics_are_versioned_as_level2_method_v3() -> None:
+    assert LEVEL2_RETRIEVAL_METHOD_VERSION == "3"
