@@ -141,11 +141,12 @@ Full-suite progression on the P2 cleanup branch:
 - [x] Repair batch implemented without restoring hidden defaults/compatibility paths.
 - [x] Residual inventory failures classified as stale mocks of the old `scan_raw_files` call signature and corrected in tests only.
 - [x] Clean functional baseline reproduced locally: **347 passed, 0 failed, 346 warnings** in 39.06 s; focused inventory suite **4 passed**; Ruff remained clean.
-- [x] Warning baseline classified: all 346 instances are the same NumPy 2.5 `ndarray.shape` deprecation emitted by `netCDF4`; 285 surface through xarray's netCDF4 backend and 61 surface at MILGRAU Level-0 writer assignment call sites. The latter are not a separate MILGRAU deprecation.
-- [x] Upstream `netCDF4` 1.7.4.1 fixes this NumPy >=2.5 deprecation; MILGRAU now requires `netCDF4>=1.7.4.1` instead of hiding it with a pytest warning filter or rewriting correct NetCDF assignments around an upstream bug.
-- [ ] Reinstall/update the dev environment to the new dependency floor and reproduce Ruff + full pytest; expected result is 347 passed with the shape-deprecation warning removed.
+- [x] Warning baseline classified: NumPy 2.5 emits the `ndarray.shape` deprecation when the currently published `netCDF4` 1.7.4 write path uses that deprecated operation internally; 285 warnings surface through xarray's netCDF4 backend and 61 at MILGRAU Level-0 writer call sites. The latter are caller locations, not a separate MILGRAU deprecation.
+- [x] Upstream `netCDF4` source changelog lists a 1.7.4.1 fix for this NumPy >=2.5 deprecation, but PyPI currently publishes only through 1.7.4. An attempted `netCDF4>=1.7.4.1` floor therefore broke installation and was reverted immediately.
+- [x] MILGRAU now requires the latest published floor `netCDF4>=1.7.4`; do not pin NumPy below 2.5 or hide this known upstream warning merely to make the warning count zero.
+- [ ] Reinstall the dev environment after the corrected published dependency floor and confirm editable installation succeeds; warnings may remain until an upstream release containing the fix is available from PyPI.
 - [x] Establish clean full local pytest correctness baseline in the dev environment.
-- [ ] Add CI for Ruff, architecture/static guards and full pytest after the dependency-floor rerun.
+- [ ] Add CI for Ruff, architecture/static guards and full pytest after the installability check.
 - [ ] Only after stable CI, consider branch protection/required checks.
 
 P2 acceptance gate: **no known unused compatibility code, intentional public API, no productive hidden semantic defaults, justified exception boundaries, and automated checks preventing regression.**
@@ -308,13 +309,15 @@ Merge criterion: **maximize validated vertical support, expose where support end
 - [x] QA/visualization does not feed back into retrieval decisions.
 - [x] Cross-platform human-readable execution logs do not depend on host path separator.
 - [x] Full local correctness baseline is clean: Ruff passed and all 347 tests passed.
-- [ ] Reproduce the clean suite under the corrected `netCDF4>=1.7.4.1` dependency floor, then add CI.
+- [ ] Confirm editable install under the published `netCDF4>=1.7.4` floor, then add CI.
 
 ## 10. Immediate next gate
 
-The full local suite is now functionally green: **Ruff clean, 347 passed, 0 failed**. The remaining 346 warnings were traced to one upstream compatibility issue: `netCDF4` versions before 1.7.4.1 mutate `numpy.ndarray.shape` internally, which NumPy 2.5 deprecates. Warnings shown at `milgrau/level0/netcdf.py` are caller locations for that dependency warning, not separate MILGRAU-owned deprecated assignments.
+The full local suite is functionally green: **Ruff clean, 347 passed, 0 failed**. The remaining 346 warnings are one upstream compatibility issue: NumPy 2.5 emits a deprecation because the currently published netCDF4 1.7.4 write path still uses direct `ndarray.shape` assignment internally. Warnings shown at `milgrau/level0/netcdf.py` are caller locations for that dependency behavior, not separate MILGRAU-owned deprecated assignments.
 
-MILGRAU now requires `netCDF4>=1.7.4.1`. Reinstall/update the environment and reproduce:
+The upstream source changelog already lists a 1.7.4.1 fix, but that version is not currently available from PyPI. MILGRAU therefore requires the latest published `netCDF4>=1.7.4` and keeps the warning visible rather than pinning NumPy backwards or suppressing it.
+
+Reinstall/update the environment and reproduce installability:
 
 ```bash
 python -m pip install -e ".[dev]"
@@ -325,10 +328,11 @@ pytest -q
 
 Expected gate:
 
-- `netCDF4` is at least 1.7.4.1.
-- Ruff remains clean.
-- Full pytest remains **347 passed / 0 failed**.
-- The NumPy 2.5 `Setting the shape on a NumPy array...` warning is gone; do not hide it with a warning filter.
-- Do **not** call repository CI green until these checks are reproduced by GitHub Actions.
+- editable install succeeds using a published netCDF4 release;
+- `netCDF4` is at least 1.7.4;
+- Ruff remains clean;
+- full pytest remains **347 passed / 0 failed**;
+- the NumPy 2.5 shape-deprecation warning may remain until a PyPI netCDF4 release containing the upstream fix exists; it is tracked, not hidden;
+- do **not** call repository CI green until these checks are reproduced by GitHub Actions.
 
-After this dependency-floor rerun, finish the remaining public-surface/QA-helper/duplicate-rule audit and implement lot 5 CI.
+After this installability check, finish the remaining public-surface/QA-helper/duplicate-rule audit and implement lot 5 CI.
