@@ -74,7 +74,12 @@ def filter_laser_shots(
     tolerance_fraction: float,
     header_time_jitter_s: float,
 ) -> pd.DataFrame:
-    """Apply explicitly configured acquisition QA to measurements and dark currents."""
+    """Apply explicitly configured acquisition QA to measurements and dark currents.
+
+    Malformed acquisition groups are rejected locally. Unexpected implementation
+    failures propagate so programming/runtime defects cannot silently masquerade
+    as ordinary measurement rejection.
+    """
     good_groups = []
 
     for meas_id, group in df_raw.groupby("meas_id"):
@@ -124,9 +129,9 @@ def filter_laser_shots(
             good_group = pd.concat([good_meas, good_dc], ignore_index=True)
             if not good_group.empty:
                 good_groups.append(good_group)
-        except Exception as exc:
-            qa_logger.warning("quality evaluation failed: %s", exc)
-            qa_logger.debug("quality failure details", exc_info=True)
+        except (KeyError, TypeError, ValueError) as exc:
+            qa_logger.warning("invalid acquisition group rejected: %s", exc)
+            qa_logger.debug("quality rejection details", exc_info=True)
 
     if not good_groups:
         return pd.DataFrame()
