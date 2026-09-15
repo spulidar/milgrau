@@ -495,6 +495,49 @@ def _write_dark_current_time_axes(
         ds.setncatts(normalization_attrs)
 
 
+def _write_dark_current_laser_shots(
+    ds: nc.Dataset,
+    dc_data: Mapping[str, Any],
+    channels: list[str],
+    num_time_bck: int,
+    logger: logging.Logger,
+) -> None:
+    """Persist parsed dark-acquisition NShots without inventing missing values."""
+    raw_shots = dc_data.get("laser_shots")
+    dc_channels = [str(name) for name in dc_data.get("channels", [])]
+    if raw_shots is None or not dc_channels:
+        logger.warning("  -> Dark-current NShots unavailable; Background_Laser_Shots will not be written.")
+        return
+    shots = np.asarray(raw_shots, dtype=np.float64)
+    if shots.ndim != 2 or shots.shape[0] < num_time_bck or shots.shape[1] != len(dc_channels):
+        logger.warning(
+            "  -> Dark-current laser_shots shape %s is not conformable with %d profiles and %d parsed channels; "
+            "Background_Laser_Shots will not be written.",
+            shots.shape,
+            num_time_bck,
+            len(dc_channels),
+        )
+        return
+    stacked_shots = np.full((num_time_bck, len(channels)), np.nan, dtype=np.float64)
+    source_index = {name: index for index, name in enumerate(dc_channels)}
+    for target_index, channel_name in enumerate(channels):
+        if channel_name not in source_index:
+            continue
+        values = shots[:num_time_bck, source_index[channel_name]]
+        valid = np.isfinite(values) & (values > 0.0)
+        stacked_shots[valid, target_index] = values[valid]
+        if not np.all(valid):
+            logger.warning("  -> Dark-current NShots contains invalid values for channel %s; preserving them as missing.", channel_name)
+    variable = ds.createVariable("Background_Laser_Shots", "f8", ("time_bck", "channels"), zlib=True)
+    variable.long_name = "Laser shots accumulated for each dark-current profile and channel"
+    variable.units = "shots"
+    variable.description = (
+        "Parsed Licel NShots for the dark acquisition. Preserved separately from measurement Laser_Shots so photon-counting "
+        "dark rates can be normalized independently before evaluating nonlinear dead-time correction order."
+    )
+    variable[:] = stacked_shots
+
+
 def write_dark_current_profile(
     ds: nc.Dataset,
     group_df: pd.DataFrame,
@@ -539,6 +582,7 @@ def write_dark_current_profile(
         stacked_dc[:n_copy, i, :] = dc_tensor[:n_copy, :]
         availability[i] = 1
     bck_prof[:] = stacked_dc
+    _write_dark_current_laser_shots(ds, dc_data, channels, num_time_bck, logger)
     _write_dark_current_time_axes(ds, df_dc, num_time_bck, config or {}, logger)
     _write_dark_current_availability(ds, availability)
     logger.info(f"  -> Successfully injected Dark Current matrix ({num_time_bck} profiles).")
