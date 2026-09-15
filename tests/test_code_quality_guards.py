@@ -182,3 +182,26 @@ def test_strict_stage_config_resolvers_have_no_semantic_literal_defaults() -> No
         "Strict stage configuration must fail or use an absence sentinel rather than invent a recipe value: "
         + ", ".join(offenders)
     )
+
+
+def test_inert_gaussian_gluing_knob_only_exists_as_explicit_rejection() -> None:
+    """The removed no-op threshold must not survive in recipe or processing fixtures."""
+    config_text = (PACKAGE_ROOT.parent / "config.yaml").read_text(encoding="utf-8")
+    assert "gaussian_threshold" not in config_text
+
+    offenders: list[str] = []
+    allowed = {
+        PACKAGE_ROOT / "level2" / "config.py",
+        TEST_ROOT / "test_code_quality_guards.py",
+        TEST_ROOT / "test_level2_strict_config.py",
+    }
+    for root in (PACKAGE_ROOT, TEST_ROOT):
+        for path in root.rglob("*.py"):
+            if path in allowed:
+                continue
+            if "gaussian_threshold" in path.read_text(encoding="utf-8"):
+                offenders.append(str(path.relative_to(PACKAGE_ROOT.parent)))
+    assert not offenders, (
+        "The inert gaussian_threshold setting must not remain outside its explicit rejection path: "
+        + ", ".join(offenders)
+    )
