@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -26,6 +27,18 @@ YAML_DOCUMENT_VARIABLES: tuple[str, str] = (
     "processing_configuration_yaml",
     "station_configuration_yaml",
 )
+
+
+def file_sha256(path: str | Path, *, chunk_size: int = 1024 * 1024) -> str:
+    """Return the lowercase SHA-256 identity of one file's exact byte content."""
+    source = Path(path)
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be positive.")
+    digest = hashlib.sha256()
+    with source.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(chunk_size), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _source_path(config: Mapping[str, Any], key: str, label: str) -> Path | None:
@@ -139,13 +152,13 @@ def write_netcdf_provenance(
     source_attrs: Mapping[str, Any] | None = None,
     extra_attrs: Mapping[str, str | int | float] | None = None,
 ) -> dict[str, str | int | float]:
-    """Persist readable metadata and exact YAML recipes inside one NetCDF.
+    """Persist readable metadata, exact YAML recipes and named content identities.
 
-    SHA hashes and Git commit identifiers are deliberately not exposed in the
-    scientific product. Reproducibility is provided by the release version,
-    resolved station/calibration IDs, and exact YAML text used for processing.
-    Legacy SHA attributes inherited from older products are removed when a file
-    is regenerated under this provenance policy.
+    Exact YAML remains the human-readable configuration record, so legacy
+    processing/station configuration hashes are not restored. Content hashes
+    may be supplied in ``extra_attrs`` when they have a documented consumer,
+    such as ``source_level1_sha256`` for Level 2 lineage and incremental cache
+    correctness. Host-specific absolute paths are not written.
     """
     attrs: dict[str, str | int | float] = inherited_provenance(source_attrs or {})
     attrs.update(configuration_provenance(config))
