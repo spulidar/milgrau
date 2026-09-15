@@ -1,10 +1,15 @@
-"""Simple timestamp-based incremental product reuse.
+"""Shared incremental product-reuse checks.
 
-MILGRAU deliberately keeps incremental processing lightweight: an output may be
+The generic reuse layer remains intentionally lightweight: an output may be
 reused when it exists, is non-empty, passes its optional integrity check, and is
 not older than any of its inputs, configuration files, extra dependencies, or
 installed MILGRAU Python sources. Published NetCDF products must also contain the
-current readable FAIR provenance. No hashes or sidecar manifests are written.
+current readable FAIR provenance.
+
+Stage-specific currentness may add stronger identities before calling this
+helper. In particular, Level 2 compares the stored ``source_level1_sha256`` with
+the exact current Level 1 bytes so a replaced input cannot be reused merely
+because its mtime was preserved. No sidecar manifests are required.
 """
 from __future__ import annotations
 
@@ -58,9 +63,10 @@ def output_is_current(
 ) -> bool:
     """Return whether an existing output is safe to reuse incrementally.
 
-    This intentionally uses filesystem mtimes plus an optional product contract.
+    The shared layer uses filesystem mtimes plus an optional product contract.
     Any missing dependency makes the output stale. NetCDF products additionally
-    require the current embedded MILGRAU provenance schema before reuse.
+    require the current embedded MILGRAU provenance schema before reuse. Callers
+    may enforce stronger content identities before reaching this helper.
     """
     output = Path(output_path).expanduser()
     try:
