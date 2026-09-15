@@ -11,11 +11,7 @@ import numpy as np
 import xarray as xr
 from scipy.signal import savgol_filter
 
-from milgrau.viz.quicklooks import (
-    extract_datetime_strings,
-    safe_error_of_mean,
-    safe_time_mean,
-)
+from milgrau.viz.quicklooks import extract_datetime_strings, safe_time_mean
 from milgrau.viz.style import add_footer_and_logos, channel_color, get_output_settings
 
 
