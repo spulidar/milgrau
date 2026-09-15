@@ -42,7 +42,6 @@ from milgrau.level2.config import (
 )
 from milgrau.level2.dataset import build_level2_dataset
 from milgrau.level2.discovery import discover_level1_files
-from milgrau.level2.metadata import apply_level2_variable_metadata
 from milgrau.level2.retrieval import RetrievalStageError, process_wavelength
 from milgrau.level2.qa import generate_level2_qa, level2_qa_enabled
 from milgrau.level2.time_window import subset_level1_time_window
@@ -78,11 +77,20 @@ def level2_output_is_current(
                 return False
             if str(ds.attrs.get("KFS_Mode", "")).strip().lower() != expected_kfs_mode:
                 return False
-            if any(str(ds.attrs.get(key, "")) != str(value) for key, value in expected_algorithm_metadata.items()):
+            if any(
+                str(ds.attrs.get(key, "")) != str(value)
+                for key, value in expected_algorithm_metadata.items()
+            ):
                 return False
-            requested_written = [int(value) for value in np.asarray(ds["requested_wavelengths"].values).tolist()]
-            processed_written = [int(value) for value in np.asarray(ds["processed_wavelengths"].values).tolist()]
-            failed_written = [int(value) for value in np.asarray(ds["failed_wavelengths"].values).tolist()]
+            requested_written = [
+                int(value) for value in np.asarray(ds["requested_wavelengths"].values).tolist()
+            ]
+            processed_written = [
+                int(value) for value in np.asarray(ds["processed_wavelengths"].values).tolist()
+            ]
+            failed_written = [
+                int(value) for value in np.asarray(ds["failed_wavelengths"].values).tolist()
+            ]
             if requested_written != requested or processed_written != requested or failed_written != []:
                 return False
     except Exception:
@@ -95,7 +103,11 @@ def level2_output_is_current(
     )
 
 
-def _write_level2_atomically(ds: xr.Dataset, output_path: Path, encoding: Mapping[str, Mapping[str, int | bool]]) -> None:
+def _write_level2_atomically(
+    ds: xr.Dataset,
+    output_path: Path,
+    encoding: Mapping[str, Mapping[str, int | bool]],
+) -> None:
     """Write beside the destination and atomically replace it only after success."""
     ensure_directories(output_path.parent)
     descriptor, temporary_name = tempfile.mkstemp(
@@ -117,7 +129,9 @@ def _lidar_ratio_source(config: Mapping[str, Any]) -> str:
     catalog = config.get("_station_catalog")
     if isinstance(catalog, Mapping):
         station = catalog.get("station")
-        if isinstance(station, Mapping) and isinstance(station.get("lidar_ratio_climatology"), Mapping):
+        if isinstance(station, Mapping) and isinstance(
+            station.get("lidar_ratio_climatology"), Mapping
+        ):
             filename = str(config.get("_station_config_file", "station.yaml"))
             return f"{filename}: station.lidar_ratio_climatology"
     filename = Path(str(config.get("_config_file", "config.yaml"))).name
@@ -146,7 +160,9 @@ def attempt_wavelength(
         return WavelengthAttempt.fatal_failure(diagnostic)
     except Exception as exc:
         retrieval_stage = exc.stage if isinstance(exc, RetrievalStageError) else None
-        diagnostic = diagnostic_from_exception(wavelength_nm, exc, retrieval_stage=retrieval_stage)
+        diagnostic = diagnostic_from_exception(
+            wavelength_nm, exc, retrieval_stage=retrieval_stage
+        )
         wavelength_logger.warning(
             "failed at %s (%s): %s",
             diagnostic.stage.name.lower(),
@@ -168,9 +184,13 @@ def attempt_wavelength(
         )
         wavelength_logger.warning("no valid retrieval blocks")
         return WavelengthAttempt.recoverable_failure(diagnostic)
-    fallback_blocks = int(np.asarray(result.gluing.single_channel_fallback_flag_block, dtype=np.int8).sum())
+    fallback_blocks = int(
+        np.asarray(result.gluing.single_channel_fallback_flag_block, dtype=np.int8).sum()
+    )
     if fallback_blocks:
-        wavelength_logger.warning("single-channel fallback used | blocks=%d/%d", fallback_blocks, total_blocks)
+        wavelength_logger.warning(
+            "single-channel fallback used | blocks=%d/%d", fallback_blocks, total_blocks
+        )
     wavelength_logger.info("retrieval blocks=%d/%d", valid_blocks, total_blocks)
     return WavelengthAttempt.success(result)
 
@@ -219,7 +239,9 @@ def process_single_level1_file(
             attempts: list[WavelengthAttempt] = []
             stage = "level2.retrieval"
             for wavelength in wavelengths:
-                attempt = attempt_wavelength(ds_l1, wavelength, altitude_m, config, file_logger)
+                attempt = attempt_wavelength(
+                    ds_l1, wavelength, altitude_m, config, file_logger
+                )
                 attempts.append(attempt)
                 if attempt.status is WavelengthAttemptStatus.FATAL_FAILURE:
                     assert attempt.diagnostic is not None
@@ -227,26 +249,38 @@ def process_single_level1_file(
             product_contract = Level2ProductContract.from_attempts(wavelengths, attempts)
             if product_contract.completeness is ProductCompleteness.FAILED:
                 diagnostics = "; ".join(
-                    f"{item.wavelength_nm} nm: {item.code.name.lower()}" for item in product_contract.failure_diagnostics
+                    f"{item.wavelength_nm} nm: {item.code.name.lower()}"
+                    for item in product_contract.failure_diagnostics
                 )
                 return ExecutionSummary.from_results(
-                    [ExecutionResult.failure(
-                        "level2.retrieval",
-                        f"No requested wavelength produced a usable optical product ({diagnostics}).",
-                        input_path=nc_path,
-                        duration_seconds=time.perf_counter() - started_at,
-                        metadata={"pipeline": "L2", "save_id": save_id, **product_contract.execution_metadata()},
-                    )]
+                    [
+                        ExecutionResult.failure(
+                            "level2.retrieval",
+                            f"No requested wavelength produced a usable optical product ({diagnostics}).",
+                            input_path=nc_path,
+                            duration_seconds=time.perf_counter() - started_at,
+                            metadata={
+                                "pipeline": "L2",
+                                "save_id": save_id,
+                                **product_contract.execution_metadata(),
+                            },
+                        )
+                    ]
                 )
             results_by_wavelength = {
                 attempt.wavelength_nm: attempt.result
                 for attempt in attempts
-                if attempt.status is WavelengthAttemptStatus.SUCCESS and attempt.result is not None
+                if attempt.status is WavelengthAttemptStatus.SUCCESS
+                and attempt.result is not None
             }
-            results = [results_by_wavelength[wavelength] for wavelength in product_contract.processed_wavelengths]
+            results = [
+                results_by_wavelength[wavelength]
+                for wavelength in product_contract.processed_wavelengths
+            ]
             stage = "level2.dataset"
-            ds_l2 = build_level2_dataset(ds_l1, results, altitude_m, nc_path, config, product_contract)
-            apply_level2_variable_metadata(ds_l2)
+            ds_l2 = build_level2_dataset(
+                ds_l1, results, altitude_m, nc_path, config, product_contract
+            )
             stage = "level2.validation.output"
             validate_level2_contract(ds_l2)
 
@@ -285,14 +319,20 @@ def process_single_level1_file(
                 output_path.name,
                 duration,
             )
-            product_results = [ExecutionResult.success(
-                "level2.complete",
-                "Complete Level 2 generated",
-                input_path=nc_path,
-                output_path=output_path,
-                duration_seconds=duration,
-                metadata={"pipeline": "L2", "save_id": save_id, **product_contract.execution_metadata()},
-            )]
+            product_results = [
+                ExecutionResult.success(
+                    "level2.complete",
+                    "Complete Level 2 generated",
+                    input_path=nc_path,
+                    output_path=output_path,
+                    duration_seconds=duration,
+                    metadata={
+                        "pipeline": "L2",
+                        "save_id": save_id,
+                        **product_contract.execution_metadata(),
+                    },
+                )
+            ]
         else:
             bind_log_context(file_logger, stage="done").warning(
                 "partial wavelengths=%d/%d | failed=%s | %s | %.1f s",
@@ -309,7 +349,11 @@ def process_single_level1_file(
                     input_path=nc_path,
                     output_path=output_path,
                     duration_seconds=duration,
-                    metadata={"pipeline": "L2", "save_id": save_id, **product_contract.execution_metadata()},
+                    metadata={
+                        "pipeline": "L2",
+                        "save_id": save_id,
+                        **product_contract.execution_metadata(),
+                    },
                 ),
                 ExecutionResult.failure(
                     "level2.partial",
@@ -318,11 +362,20 @@ def process_single_level1_file(
                     input_path=nc_path,
                     output_path=output_path,
                     duration_seconds=duration,
-                    metadata={"pipeline": "L2", "save_id": save_id, **product_contract.execution_metadata()},
+                    metadata={
+                        "pipeline": "L2",
+                        "save_id": save_id,
+                        **product_contract.execution_metadata(),
+                    },
                 ),
             ]
         if level2_qa_enabled(config):
-            qa_result = generate_level2_qa(nc_path, output_path, config, bind_log_context(file_logger, stage="qa"))
+            qa_result = generate_level2_qa(
+                nc_path,
+                output_path,
+                config,
+                bind_log_context(file_logger, stage="qa"),
+            )
         else:
             qa_result = ExecutionResult.skipped(
                 "level2.qa",
@@ -346,20 +399,25 @@ def process_single_level1_file(
             "level2.validation.output",
             "level2.write",
         }
-        bind_log_context(file_logger, stage=stage.removeprefix("level2.")).error("processing failed: %s", exc)
+        bind_log_context(file_logger, stage=stage.removeprefix("level2.")).error(
+            "processing failed: %s", exc
+        )
         file_logger.debug("Level 2 failure traceback", exc_info=True)
         return ExecutionSummary.from_results(
-            [ExecutionResult.failure(
-                stage,
-                "Level 2 processing failed",
-                fatal=isinstance(exc, FatalWavelengthProcessingError) or stage in fatal_stages,
-                input_path=nc_path,
-                output_path=output_path,
-                cause=exc,
-                include_traceback=True,
-                duration_seconds=time.perf_counter() - started_at,
-                metadata={"pipeline": "L2", "save_id": save_id},
-            )]
+            [
+                ExecutionResult.failure(
+                    stage,
+                    "Level 2 processing failed",
+                    fatal=isinstance(exc, FatalWavelengthProcessingError)
+                    or stage in fatal_stages,
+                    input_path=nc_path,
+                    output_path=output_path,
+                    cause=exc,
+                    include_traceback=True,
+                    duration_seconds=time.perf_counter() - started_at,
+                    metadata={"pipeline": "L2", "save_id": save_id},
+                )
+            ]
         )
 
 
@@ -369,7 +427,11 @@ def process_level_2(config: Mapping[str, Any], logger: logging.Logger) -> Execut
     if not files:
         bind_log_context(logger, stage="discovery").warning("no Level 1 files found")
         return ExecutionSummary.from_results(
-            [ExecutionResult.skipped("level2.discovery", "No Level 1 files found", metadata={"pipeline": "L2"})]
+            [
+                ExecutionResult.skipped(
+                    "level2.discovery", "No Level 1 files found", metadata={"pipeline": "L2"}
+                )
+            ]
         )
 
     incremental = incremental_enabled(config)
@@ -380,7 +442,9 @@ def process_level_2(config: Mapping[str, Any], logger: logging.Logger) -> Execut
         file_logger = bind_log_context(logger, save_id=save_id)
         output_path = level2_output_path(file_path)
         if incremental and level2_output_is_current(file_path, output_path, config):
-            bind_log_context(file_logger, stage="skip").info("up to date | %s", output_path.name)
+            bind_log_context(file_logger, stage="skip").info(
+                "up to date | %s", output_path.name
+            )
             skipped_results.append(
                 ExecutionResult.skipped(
                     "level2.incremental",
@@ -391,7 +455,14 @@ def process_level_2(config: Mapping[str, Any], logger: logging.Logger) -> Execut
                 )
             )
             if level2_qa_enabled(config):
-                skipped_results.append(generate_level2_qa(file_path, output_path, config, bind_log_context(file_logger, stage="qa")))
+                skipped_results.append(
+                    generate_level2_qa(
+                        file_path,
+                        output_path,
+                        config,
+                        bind_log_context(file_logger, stage="qa"),
+                    )
+                )
             continue
         files_to_process.append(file_path)
 
@@ -399,10 +470,14 @@ def process_level_2(config: Mapping[str, Any], logger: logging.Logger) -> Execut
         bind_log_context(logger, stage="summary").info("all Level 2 products are current")
         return ExecutionSummary.from_results(skipped_results)
 
-    bind_log_context(logger, stage="queue").info("%d files to process | %d skipped", len(files_to_process), len(skipped_results))
+    bind_log_context(logger, stage="queue").info(
+        "%d files to process | %d skipped", len(files_to_process), len(skipped_results)
+    )
     results = list(skipped_results)
     for file_path in files_to_process:
         save_id = logging_save_id(file_path)
-        file_summary = process_single_level1_file(file_path, config, bind_log_context(logger, save_id=save_id))
+        file_summary = process_single_level1_file(
+            file_path, config, bind_log_context(logger, save_id=save_id)
+        )
         results.extend(file_summary.results)
     return ExecutionSummary.from_results(results)
