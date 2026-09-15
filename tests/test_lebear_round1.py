@@ -44,7 +44,11 @@ def _write_completeness_shell(
             "processed_wavelengths": (("processed_wavelength",), np.asarray(processed, dtype=np.int32)),
             "failed_wavelengths": (("failed_wavelength",), np.asarray(failed, dtype=np.int32)),
         },
-        attrs={"product_completeness": completeness, "product_status": status},
+        attrs={
+            "product_completeness": completeness,
+            "product_status": status,
+            "KFS_Mode": "backward",
+        },
     ).to_netcdf(path)
     return path
 
@@ -103,6 +107,8 @@ def test_level2_currentness_requires_complete_requested_wavelength_set(tmp_path:
     )
 
     monkeypatch.setattr(lebear, "get_wavelengths_to_process", lambda _config: [355, 532])
+    monkeypatch.setattr(lebear, "get_kfs_mode", lambda _config: "backward")
+    monkeypatch.setattr(lebear, "elastic_inversion_algorithm_metadata", lambda: {})
     monkeypatch.setattr(lebear, "validate_level2_contract", lambda _ds: None)
     monkeypatch.setattr(lebear, "output_is_current", lambda *_args, **_kwargs: True)
 
