@@ -18,6 +18,7 @@ import xarray as xr
 from milgrau.level2 import lebear
 from milgrau.level2.completeness import WavelengthAttemptStatus, WavelengthFailureCode
 from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary, ExitCode
+from milgrau.scientific import LEVEL2_PRODUCT_SCHEMA_VERSION
 
 
 def _logger(name: str = "test.lebear.orchestration") -> logging.Logger:
@@ -45,6 +46,7 @@ def _write_completeness_shell(
             "failed_wavelengths": (("failed_wavelength",), np.asarray(failed, dtype=np.int32)),
         },
         attrs={
+            "level2_product_schema_version": LEVEL2_PRODUCT_SCHEMA_VERSION,
             "product_completeness": completeness,
             "product_status": status,
             "KFS_Mode": "backward",
