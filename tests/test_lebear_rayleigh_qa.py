@@ -11,6 +11,7 @@ import xarray as xr
 
 from milgrau.io.paths import level2_output_path
 from milgrau.level2 import lebear
+from milgrau.level2.optical_retrieval import evaluate_rayleigh_reference
 from milgrau.operations import ExecutionStatus
 
 
@@ -33,7 +34,7 @@ def test_rayleigh_reference_qa_accepts_flat_ratio() -> None:
         "min_valid_fraction": 0.50,
     }
 
-    qa = lebear._evaluate_rayleigh_reference(
+    qa = evaluate_rayleigh_reference(
         measured_signal=measured,
         simulated_molecular_signal=simulated,
         altitude_m=altitude,
@@ -59,7 +60,7 @@ def test_rayleigh_reference_qa_rejects_sloped_ratio() -> None:
         "min_valid_fraction": 0.50,
     }
 
-    qa = lebear._evaluate_rayleigh_reference(
+    qa = evaluate_rayleigh_reference(
         measured_signal=measured,
         simulated_molecular_signal=simulated,
         altitude_m=altitude,
@@ -141,7 +142,7 @@ def _config(tmp_path: Path) -> dict:
                 "search_max_idx": 120,
                 "intercept_threshold": 5.0,
                 "gaussian_threshold": 1.0,
-                "minmax_threshold": 1.0,
+                "minmax_threshold": 0.05,
                 "max_relative_rmse": 1.0,
                 "max_relative_bias": 1.0,
                 "min_valid_fraction": 0.50,
