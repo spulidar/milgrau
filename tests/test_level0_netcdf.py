@@ -194,7 +194,15 @@ def test_missing_surface_weather_is_persisted_as_nan_without_25_940_fallback(tmp
 
 def test_build_level0_netcdf_writes_dark_current_scc_times_and_provenance(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import milgrau.level0.netcdf as netcdf_module
-    monkeypatch.setattr(netcdf_module, "parse_licel_group", lambda files, logger: {"channels": ["532.AN", "532.PC"], "tensors": {"532.AN": np.ones((1, 4)) * 0.1, "532.PC": np.ones((1, 4)) * 0.2}})
+    monkeypatch.setattr(
+        netcdf_module,
+        "parse_licel_group",
+        lambda files, logger: {
+            "channels": ["532.AN", "532.PC"],
+            "tensors": {"532.AN": np.ones((1, 4)) * 0.1, "532.PC": np.ones((1, 4)) * 0.2},
+            "laser_shots": np.array([[111, 222]], dtype=np.int32),
+        },
+    )
     output_path = tmp_path / "level0.nc"
     build_level0_netcdf(
         str(output_path), "20240101sant", "nt", _lidar_data(), _group_df(tmp_path, True),
@@ -207,11 +215,20 @@ def test_build_level0_netcdf_writes_dark_current_scc_times_and_provenance(tmp_pa
         assert ds.attrs["RawBck_Stop_Time_UT"] == "234500"
         assert ds.attrs["Dark_Current_Source_File_Count"] == 1
         assert np.array_equal(ds["Background_Profile_Available"].values, np.array([1, 1], dtype=np.int8))
+        np.testing.assert_allclose(ds["Background_Laser_Shots"].values, np.array([[111.0, 222.0]]))
 
 
 def test_build_level0_netcdf_flags_missing_dark_current_channel(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import milgrau.level0.netcdf as netcdf_module
-    monkeypatch.setattr(netcdf_module, "parse_licel_group", lambda files, logger: {"channels": ["532.AN"], "tensors": {"532.AN": np.ones((1, 4)) * 0.1}})
+    monkeypatch.setattr(
+        netcdf_module,
+        "parse_licel_group",
+        lambda files, logger: {
+            "channels": ["532.AN"],
+            "tensors": {"532.AN": np.ones((1, 4)) * 0.1},
+            "laser_shots": np.array([[111]], dtype=np.int32),
+        },
+    )
     output_path = tmp_path / "level0_missing_dc_channel.nc"
     build_level0_netcdf(
         str(output_path), "20240101sant", "nt", _lidar_data(), _group_df(tmp_path, True),
@@ -221,6 +238,8 @@ def test_build_level0_netcdf_flags_missing_dark_current_channel(tmp_path: Path, 
         validate_level0_contract(ds)
         assert np.array_equal(ds["Background_Profile_Available"].values, np.array([1, 0], dtype=np.int8))
         assert np.all(np.isnan(ds["Background_Profile"].isel(channels=1).values))
+        assert float(ds["Background_Laser_Shots"].isel(channels=0).values[0]) == 111.0
+        assert np.isnan(float(ds["Background_Laser_Shots"].isel(channels=1).values[0]))
 
 
 def test_build_level0_netcdf_without_dark_current_writes_unavailable_flags(tmp_path: Path) -> None:
@@ -232,4 +251,5 @@ def test_build_level0_netcdf_without_dark_current_writes_unavailable_flags(tmp_p
     with xr.open_dataset(output_path) as ds:
         validate_level0_contract(ds)
         assert "Background_Profile" not in ds
+        assert "Background_Laser_Shots" not in ds
         assert np.array_equal(ds["Background_Profile_Available"].values, np.array([0, 0], dtype=np.int8))
