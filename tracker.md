@@ -65,7 +65,8 @@ P3 acceptance gate: **open on deliberate software-license selection plus a recor
 - [x] Reject unknown IDs, duplicate IDs and genuinely ambiguous day/night/configuration mappings; optional `Measurement_ID` and `SCC_Configuration_ID` hints may disambiguate without guessing.
 - [x] Wire the station catalog into the productive LIPANCORA ingestion path.
 - [x] Preserve default discovery behavior so a colocated full Level 0 and `_scc.nc` are not both processed automatically. The SCC subset is an explicit input when both products coexist.
-- [ ] Validate MILGRAU's own newly generated `*_scc.nc` through an end-to-end explicit LIPANCORA run on real `20251107sapm` data.
+- [x] Keep canonical `*_scc.nc` Level 1 output inside the original measurement directory; do not create a separate `_scc` measurement tree. Explicit non-canonical external SCC files write Level 1 beside the source rather than deriving a fake date hierarchy from the filename.
+- [x] Validate MILGRAU's own `20251107sapm_scc.nc` through an end-to-end explicit LIPANCORA run. The resulting five-channel Level 1 product (`532.AN`, `532.PC`, `1064.AN`, `355.PC`, `355.AN`) is exactly equal, channel-for-channel, to the corresponding arrays/diagnostics in the full-channel Level 1 product, including corrected signal/error, RCS/error, PC masks and rate/clipping diagnostics, bin-shift diagnostics, PBL, altitude/time coordinates, and thermodynamic profiles. This is regression/behavior evidence for the MILGRAU SCC path, not proof that arbitrary SCC converters are equivalent.
 - [ ] Add broader external-converter fixtures only from real SCC raw files. `channel_string_ID` remains outside the productive mapping path until a traceable station-owned use case requires it.
 - [ ] External SCC dark profiles that lack `Background_Laser_Shots` remain usable by the current productive dark-profile path, but cannot support separately shot-normalized dark dead-time diagnostics without another traceable dark-shot source.
 
@@ -142,8 +143,7 @@ Scientific P5 development may proceed in parallel with the unresolved P3 license
 
 ## Immediate next gate
 
-1. Let the SCC-ingestion and P5 support-contract tests pass the full cross-platform CI; fix genuine regressions before product-schema integration.
-2. Validate the newly generated `20251107sapm_scc.nc` as an explicit real LIPANCORA input and compare the five-channel SCC-derived Level 1 output with the corresponding channels of the full-channel Level 1 product.
-3. Integrate the support contract into Level 2 assembly and add schema/output tests before exposing support/bottom/top variables.
-4. Refactor Rayleigh selection into an all-candidates -> QA -> rank pipeline after the support contract is product-integrated.
-5. Quantify gluing fit-parameter uncertainty, then proceed to long-mean backbone and multi-reference ensemble work.
+1. Let the SCC-output-path and P5 support-contract tests pass the full cross-platform CI; fix genuine regressions before product-schema integration.
+2. Integrate the tested support contract into Level 2 assembly and add schema/output tests before exposing support/bottom/top variables.
+3. Refactor Rayleigh selection into an all-candidates -> QA -> rank pipeline after the support contract is product-integrated.
+4. Quantify gluing fit-parameter uncertainty, then proceed to long-mean backbone and multi-reference ensemble work.
