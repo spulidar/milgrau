@@ -64,7 +64,9 @@ def test_support_reports_altitude_resolved_block_count_and_distinct_block_tops()
 
     support = assemble_level2_inversion_support([result], altitude)
 
-    assert LEVEL2_PRODUCT_SCHEMA_VERSION == "2"
+    # Schema 3 retains the schema-2 inversion-support semantics and adds the
+    # auditable Rayleigh candidate catalogue without changing this contract.
+    assert LEVEL2_PRODUCT_SCHEMA_VERSION == "3"
     assert support.flag.shape == (1, 6)
     assert support.flag_block.shape == (2, 1, 6)
     assert support.flag[0].tolist() == [1, 1, 1, 1, 1, 0]
