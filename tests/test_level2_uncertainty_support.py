@@ -181,5 +181,16 @@ def test_uncertainty_dependence_policy_is_machine_readable() -> None:
     ]
 
 
-def test_uncertainty_semantics_are_versioned_as_level2_method_v3() -> None:
-    assert LEVEL2_RETRIEVAL_METHOD_VERSION == "3"
+def test_method_v4_preserves_v3_uncertainty_semantics_and_versions_rayleigh_selection() -> None:
+    metadata = elastic_inversion_algorithm_metadata()
+
+    assert LEVEL2_RETRIEVAL_METHOD_VERSION == "4"
+    assert metadata["optical_block_uncertainty_correlation_policy"] == (
+        "fully_correlated_upper_bound"
+    )
+    assert "enumerate complete candidates" in metadata[
+        "rayleigh_reference_selection_policy"
+    ]
+    assert metadata["rayleigh_reference_snr_policy"] == (
+        "diagnostic_only_no_hard_threshold"
+    )
