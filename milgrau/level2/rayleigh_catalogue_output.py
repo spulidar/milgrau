@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 import numpy as np
+import xarray as xr
 
 from milgrau.level2.config import get_molecular_fit_config
 from milgrau.level2.rayleigh_candidates import (
@@ -186,7 +187,10 @@ def assemble_rayleigh_candidate_output(
         ]
 
         raw_best = minimum_cost_rayleigh_candidate(catalogue)
-        unfiltered_min[block_index, wavelength_index, raw_best.center_index == center_index] = 1
+        raw_match = np.flatnonzero(center_index == int(raw_best.center_index))
+        if raw_match.size != 1:
+            raise ValueError("Unfiltered minimum-cost candidate is absent from common candidate geometry.")
+        unfiltered_min[block_index, wavelength_index, int(raw_match[0])] = 1
 
         result = results[wavelength_index]
         if int(result.rayleigh.reference_success_flag_block[block_index]) == 1:
@@ -222,3 +226,40 @@ def assemble_rayleigh_candidate_output(
         unfiltered_min_cost_flag=unfiltered_min,
         selected_flag=selected,
     )
+
+
+def attach_rayleigh_candidate_catalogue(
+    ds: xr.Dataset,
+    results: Sequence[Any],
+    altitude_m: np.ndarray,
+    config: Mapping[str, Any],
+) -> None:
+    """Attach the full auditable candidate catalogue to a Level 2 dataset in place."""
+    catalogue = assemble_rayleigh_candidate_output(results, altitude_m, config)
+    candidate_dim = "rayleigh_candidate"
+    block_dims = ("block_time", "wavelength", candidate_dim)
+    ds.coords[candidate_dim] = np.arange(catalogue.center_index.size, dtype=np.int32)
+    ds["rayleigh_candidate_center_index"] = ((candidate_dim,), catalogue.center_index)
+    ds["rayleigh_candidate_center_altitude_m"] = ((candidate_dim,), catalogue.center_altitude_m)
+    ds["rayleigh_candidate_start_altitude_m"] = ((candidate_dim,), catalogue.start_altitude_m)
+    ds["rayleigh_candidate_stop_altitude_m"] = ((candidate_dim,), catalogue.stop_altitude_m)
+    ds["rayleigh_candidate_evaluated_flag"] = (block_dims, catalogue.evaluated_flag)
+    ds["rayleigh_candidate_valid_bins"] = (block_dims, catalogue.valid_bins)
+    ds["rayleigh_candidate_valid_fraction"] = (block_dims, catalogue.valid_fraction)
+    ds["rayleigh_candidate_relative_slope"] = (block_dims, catalogue.relative_slope)
+    ds["rayleigh_candidate_relative_variance"] = (block_dims, catalogue.relative_variance)
+    ds["rayleigh_candidate_calibration_factor"] = (block_dims, catalogue.calibration_factor)
+    ds["rayleigh_candidate_free_intercept"] = (block_dims, catalogue.free_intercept)
+    ds["rayleigh_candidate_uncertainty_snr_median"] = (
+        block_dims, catalogue.uncertainty_snr_median
+    )
+    ds["rayleigh_candidate_uncertainty_snr_valid_bins"] = (
+        block_dims, catalogue.uncertainty_snr_valid_bins
+    )
+    ds["rayleigh_candidate_diagnostic_cost"] = (block_dims, catalogue.diagnostic_cost)
+    ds["rayleigh_candidate_rejection_mask"] = (block_dims, catalogue.rejection_mask)
+    ds["rayleigh_candidate_accepted_flag"] = (block_dims, catalogue.accepted_flag)
+    ds["rayleigh_candidate_unfiltered_min_cost_flag"] = (
+        block_dims, catalogue.unfiltered_min_cost_flag
+    )
+    ds["rayleigh_candidate_selected_flag"] = (block_dims, catalogue.selected_flag)
