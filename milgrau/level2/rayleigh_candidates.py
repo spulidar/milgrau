@@ -41,6 +41,8 @@ class RayleighReferenceCandidate:
     relative_variance: float
     calibration_factor: float
     free_intercept: float
+    uncertainty_snr_median: float
+    uncertainty_snr_valid_bins: int
     diagnostic_cost: float
     rejection_mask: int
 
@@ -69,8 +71,14 @@ def evaluate_rayleigh_candidate(
     max_relative_slope: float,
     max_relative_variance: float,
     min_valid_fraction: float,
+    measured_signal_error: np.ndarray | None = None,
 ) -> RayleighReferenceCandidate:
-    """Evaluate one window without selecting or ranking it."""
+    """Evaluate one window without selecting or ranking it.
+
+    When propagated signal uncertainty is supplied, a median positive-signal
+    SNR diagnostic is recorded.  It is intentionally diagnostic-only here: no
+    hard SNR threshold is enabled until SPU evidence justifies one.
+    """
     measured = np.asarray(measured_signal, dtype=np.float64)
     simulated = np.asarray(simulated_molecular_signal, dtype=np.float64)
     altitude = np.asarray(altitude_m, dtype=np.float64)
@@ -78,6 +86,15 @@ def evaluate_rayleigh_candidate(
         raise ValueError("measured_signal, simulated_molecular_signal, and altitude_m must be 1D.")
     if not (measured.shape == simulated.shape == altitude.shape):
         raise ValueError("Rayleigh candidate inputs must have identical shapes.")
+
+    error: np.ndarray | None
+    if measured_signal_error is None:
+        error = None
+    else:
+        error = np.asarray(measured_signal_error, dtype=np.float64)
+        if error.ndim != 1 or error.shape != measured.shape:
+            raise ValueError("measured_signal_error must be 1D and match measured_signal.")
+
     if altitude.size < 3 or not np.all(np.isfinite(altitude)) or not np.all(np.diff(altitude) > 0.0):
         raise ValueError("altitude_m must be finite, strictly increasing, and contain at least three bins.")
     window = int(window_bins)
@@ -118,6 +135,15 @@ def evaluate_rayleigh_candidate(
             span = max(float(np.max(z[valid]) - np.min(z[valid])), 1.0)
             relative_slope = float(abs(slope) * span / mean_ratio)
 
+    snr_median = np.nan
+    snr_valid_bins = 0
+    if error is not None:
+        window_error = error[start:stop]
+        snr_valid = valid & np.isfinite(window_error) & (window_error > 0.0)
+        snr_valid_bins = int(snr_valid.sum())
+        if snr_valid_bins:
+            snr_median = float(np.median(y[snr_valid] / window_error[snr_valid]))
+
     rejection = RayleighCandidateRejection.NONE
     if valid_fraction < float(min_valid_fraction):
         rejection |= RayleighCandidateRejection.INSUFFICIENT_VALID_FRACTION
@@ -147,6 +173,8 @@ def evaluate_rayleigh_candidate(
         relative_variance=float(relative_variance),
         calibration_factor=float(factor),
         free_intercept=float(intercept),
+        uncertainty_snr_median=float(snr_median),
+        uncertainty_snr_valid_bins=snr_valid_bins,
         diagnostic_cost=cost,
         rejection_mask=int(rejection),
     )
@@ -163,6 +191,7 @@ def catalogue_rayleigh_candidates(
     max_relative_slope: float,
     max_relative_variance: float,
     min_valid_fraction: float,
+    measured_signal_error: np.ndarray | None = None,
 ) -> tuple[RayleighReferenceCandidate, ...]:
     """Return every fully contained candidate in the configured search interval.
 
@@ -177,6 +206,9 @@ def catalogue_rayleigh_candidates(
         raise ValueError("Rayleigh catalogue inputs must be one-dimensional.")
     if not (measured.shape == simulated.shape == altitude.shape):
         raise ValueError("Rayleigh catalogue inputs must have identical shapes.")
+    error = None if measured_signal_error is None else np.asarray(measured_signal_error, dtype=np.float64)
+    if error is not None and (error.ndim != 1 or error.shape != measured.shape):
+        raise ValueError("measured_signal_error must be 1D and match measured_signal.")
     if not np.all(np.isfinite(altitude)) or not np.all(np.diff(altitude) > 0.0):
         raise ValueError("altitude_m must be finite and strictly increasing.")
     lower = float(min_altitude_m)
@@ -203,6 +235,7 @@ def catalogue_rayleigh_candidates(
                 max_relative_slope=max_relative_slope,
                 max_relative_variance=max_relative_variance,
                 min_valid_fraction=min_valid_fraction,
+                measured_signal_error=error,
             )
         )
     if not candidates:
