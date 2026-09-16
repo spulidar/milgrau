@@ -18,7 +18,10 @@ def _clean_profiles() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return altitude, measured, molecular
 
 
-def _catalogue(measured: np.ndarray) -> tuple:
+def _catalogue(
+    measured: np.ndarray,
+    measured_error: np.ndarray | None = None,
+) -> tuple:
     altitude, _, molecular = _clean_profiles()
     return catalogue_rayleigh_candidates(
         measured,
@@ -30,6 +33,7 @@ def _catalogue(measured: np.ndarray) -> tuple:
         max_relative_slope=0.08,
         max_relative_variance=0.01,
         min_valid_fraction=0.80,
+        measured_signal_error=measured_error,
     )
 
 
@@ -46,8 +50,20 @@ def test_clean_molecular_scaling_keeps_all_complete_windows_auditable_and_accept
     assert all(candidate.valid_fraction == 1.0 for candidate in catalogue)
     assert all(np.isclose(candidate.calibration_factor, 2.5) for candidate in catalogue)
     assert all(np.isclose(candidate.free_intercept, 0.0, atol=1.0e-12) for candidate in catalogue)
+    assert all(np.isnan(candidate.uncertainty_snr_median) for candidate in catalogue)
     assert catalogue[0].center_altitude_m < catalogue[-1].center_altitude_m
     assert altitude[catalogue[0].center_index] == catalogue[0].center_altitude_m
+
+
+def test_uncertainty_snr_is_recorded_but_not_used_as_an_unvalidated_gate() -> None:
+    _, measured, _ = _clean_profiles()
+    measured_error = measured / 2.0
+
+    catalogue = _catalogue(measured, measured_error)
+
+    assert all(candidate.accepted for candidate in catalogue)
+    assert all(np.isclose(candidate.uncertainty_snr_median, 2.0) for candidate in catalogue)
+    assert all(candidate.uncertainty_snr_valid_bins == candidate.total_bins for candidate in catalogue)
 
 
 def test_high_altitude_ratio_gradient_is_rejected_without_hiding_lower_clean_candidates() -> None:
