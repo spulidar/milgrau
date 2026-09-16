@@ -24,6 +24,7 @@ def _known_layer_case() -> tuple[
     np.ndarray,
     np.ndarray,
     np.ndarray,
+    np.ndarray,
     int,
 ]:
     """Return a known aerosol layer with a clean molecular reference window."""
@@ -126,9 +127,7 @@ def test_clean_window_fit_reduces_single_bin_boundary_noise_without_moving_bound
         molecular_rcs[in_window],
         np.full(int(in_window.sum()), 1.0),
     )
-    fitted_boundary_signal = (
-        fit.calibration_factor * molecular_rcs[reference_index]
-    )
+    fitted_boundary_signal = fit.calibration_factor * molecular_rcs[reference_index]
     fitted_rcs = noisy_rcs.copy()
     fitted_rcs[reference_index] = fitted_boundary_signal
 
@@ -189,9 +188,7 @@ def test_clean_window_fit_reduces_distributed_zero_mean_reference_window_noise()
         np.full(int(in_window.sum()), 1.0),
     )
     fitted_rcs = noisy_rcs.copy()
-    fitted_rcs[reference_index] = (
-        fit.calibration_factor * molecular_rcs[reference_index]
-    )
+    fitted_rcs[reference_index] = fit.calibration_factor * molecular_rcs[reference_index]
 
     exact_noisy = _backward_inversion(
         noisy_rcs,
@@ -224,7 +221,7 @@ def test_contaminated_window_biases_fitted_boundary_even_when_reference_bin_is_c
         _beta_aerosol,
         aerosol_lidar_ratio,
         _true_rcs,
-        molecular_rcs,
+        _molecular_rcs,
         reference_index,
     ) = _known_layer_case()
 
