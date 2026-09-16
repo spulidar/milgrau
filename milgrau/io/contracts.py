@@ -26,9 +26,13 @@ LEVEL2_REQUIRED_VARIABLES: Final[tuple[str, ...]] = (
     "aerosol_backscatter_mean", "aerosol_extinction_mean", "gluing_attempted_flag",
     "gluing_success_flag", "single_channel_fallback_flag", "signal_source_flag",
     "retrieval_input_valid_flag", "retrieval_input_invalid_reason", "retrieval_success_flag",
-    "retrieval_success_fraction", "requested_wavelengths", "processed_wavelengths",
-    "failed_wavelengths", "failed_wavelength_stage", "failed_wavelength_code",
-    "failed_wavelength_message", "failed_wavelength_cause",
+    "retrieval_success_fraction", "retrieval_inversion_support_flag",
+    "retrieval_inversion_support_flag_block", "retrieval_inversion_effective_block_count",
+    "retrieval_bottom_altitude_m", "retrieval_top_altitude_m",
+    "retrieval_bottom_altitude_m_block", "retrieval_top_altitude_m_block",
+    "requested_wavelengths", "processed_wavelengths", "failed_wavelengths",
+    "failed_wavelength_stage", "failed_wavelength_code", "failed_wavelength_message",
+    "failed_wavelength_cause",
 )
 LEVEL0_RAW_DATA_DIMS: Final[tuple[str, ...]] = ("time", "channels", "points")
 LEVEL0_TIME_SCALE_DIMS: Final[tuple[str, ...]] = ("time", "nb_of_time_scales")
@@ -41,6 +45,10 @@ LEVEL1_CORE_DIMS: Final[tuple[str, ...]] = ("time", "channel", "altitude")
 LEVEL2_GLUED_SIGNAL_DIMS: Final[tuple[str, ...]] = ("time", "wavelength", "altitude")
 LEVEL2_TIME_STATE_DIMS: Final[tuple[str, ...]] = ("time", "wavelength")
 LEVEL2_BLOCK_STATE_DIMS: Final[tuple[str, ...]] = ("block_time", "wavelength")
+LEVEL2_ALTITUDE_STATE_DIMS: Final[tuple[str, ...]] = ("wavelength", "altitude")
+LEVEL2_BLOCK_ALTITUDE_STATE_DIMS: Final[tuple[str, ...]] = (
+    "block_time", "wavelength", "altitude"
+)
 
 
 def _missing_names(ds: xr.Dataset, names: Iterable[str]) -> list[str]:
@@ -183,6 +191,96 @@ def validate_level1_contract(ds: xr.Dataset) -> None:
     _validate_level1_atmosphere(ds)
 
 
+def _validate_support_interval(
+    flag: np.ndarray,
+    altitude: np.ndarray,
+    bottom: float,
+    top: float,
+    *,
+    label: str,
+) -> None:
+    supported = np.flatnonzero(flag == 1)
+    if supported.size == 0:
+        if np.isfinite(bottom) or np.isfinite(top):
+            raise ValueError(f"{label} with no supported bins must have NaN bottom/top altitudes.")
+        return
+    if supported[-1] - supported[0] + 1 != supported.size:
+        raise ValueError(f"{label} support must be one contiguous altitude interval.")
+    expected_bottom = float(altitude[supported[0]])
+    expected_top = float(altitude[supported[-1]])
+    if not np.isclose(bottom, expected_bottom, rtol=0.0, atol=1.0e-9):
+        raise ValueError(f"{label} bottom altitude does not match its support flag.")
+    if not np.isclose(top, expected_top, rtol=0.0, atol=1.0e-9):
+        raise ValueError(f"{label} top altitude does not match its support flag.")
+
+
+def _validate_level2_inversion_support(ds: xr.Dataset) -> None:
+    """Require internally consistent altitude-resolved backward support fields."""
+    _require_exact_dims(
+        ds["retrieval_inversion_support_flag"],
+        LEVEL2_ALTITUDE_STATE_DIMS,
+        "Level 2 retrieval_inversion_support_flag",
+    )
+    _require_exact_dims(
+        ds["retrieval_inversion_support_flag_block"],
+        LEVEL2_BLOCK_ALTITUDE_STATE_DIMS,
+        "Level 2 retrieval_inversion_support_flag_block",
+    )
+    _require_exact_dims(
+        ds["retrieval_inversion_effective_block_count"],
+        LEVEL2_ALTITUDE_STATE_DIMS,
+        "Level 2 retrieval_inversion_effective_block_count",
+    )
+    for name in ("retrieval_bottom_altitude_m", "retrieval_top_altitude_m"):
+        _require_exact_dims(ds[name], ("wavelength",), f"Level 2 {name}")
+    for name in ("retrieval_bottom_altitude_m_block", "retrieval_top_altitude_m_block"):
+        _require_exact_dims(ds[name], LEVEL2_BLOCK_STATE_DIMS, f"Level 2 {name}")
+
+    aggregate_flag = np.asarray(ds["retrieval_inversion_support_flag"].values, dtype=np.int8)
+    block_flag = np.asarray(ds["retrieval_inversion_support_flag_block"].values, dtype=np.int8)
+    if not np.isin(aggregate_flag, (0, 1)).all() or not np.isin(block_flag, (0, 1)).all():
+        raise ValueError("Level 2 inversion-support flags must contain only 0 or 1.")
+
+    observed_count = np.asarray(
+        ds["retrieval_inversion_effective_block_count"].values, dtype=np.int64
+    )
+    expected_count = block_flag.sum(axis=0, dtype=np.int64)
+    if not np.array_equal(observed_count, expected_count):
+        raise ValueError(
+            "retrieval_inversion_effective_block_count must equal the sum of block support flags."
+        )
+    if np.any((aggregate_flag == 1) & (observed_count <= 0)):
+        raise ValueError("Aggregate inversion support requires at least one supporting block.")
+
+    altitude = np.asarray(ds["altitude"].values, dtype=np.float64)
+    bottom = np.asarray(ds["retrieval_bottom_altitude_m"].values, dtype=np.float64)
+    top = np.asarray(ds["retrieval_top_altitude_m"].values, dtype=np.float64)
+    bottom_block = np.asarray(
+        ds["retrieval_bottom_altitude_m_block"].values, dtype=np.float64
+    )
+    top_block = np.asarray(ds["retrieval_top_altitude_m_block"].values, dtype=np.float64)
+
+    for wavelength_index in range(ds.sizes.get("wavelength", 0)):
+        _validate_support_interval(
+            aggregate_flag[wavelength_index],
+            altitude,
+            bottom[wavelength_index],
+            top[wavelength_index],
+            label=f"Level 2 wavelength index {wavelength_index} aggregate inversion",
+        )
+    for block_index in range(ds.sizes.get("block_time", 0)):
+        for wavelength_index in range(ds.sizes.get("wavelength", 0)):
+            _validate_support_interval(
+                block_flag[block_index, wavelength_index],
+                altitude,
+                bottom_block[block_index, wavelength_index],
+                top_block[block_index, wavelength_index],
+                label=(
+                    f"Level 2 block {block_index} wavelength index {wavelength_index} inversion"
+                ),
+            )
+
+
 def validate_level2_contract(ds: xr.Dataset) -> None:
     _require_variables(ds, LEVEL2_REQUIRED_VARIABLES, "Level 2 file")
     _require_coords(ds, ("wavelength", "altitude"), "Level 2 file")
@@ -191,6 +289,7 @@ def validate_level2_contract(ds: xr.Dataset) -> None:
         _require_exact_dims(ds[name], LEVEL2_TIME_STATE_DIMS, f"Level 2 {name}")
     _require_exact_dims(ds["retrieval_success_flag"], LEVEL2_BLOCK_STATE_DIMS, "Level 2 retrieval_success_flag")
     _require_exact_dims(ds["retrieval_success_fraction"], ("wavelength",), "Level 2 retrieval_success_fraction")
+    _validate_level2_inversion_support(ds)
     _validate_level2_completeness(ds)
 
 
