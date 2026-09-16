@@ -59,6 +59,21 @@ def test_level_product_paths_are_canonical(tmp_path: Path) -> None:
     assert level2 == level0.parent / "20240101sant_level2_optical.nc"
 
 
+def test_scc_level0_keeps_level1_in_canonical_measurement_directory(tmp_path: Path) -> None:
+    config = _config()
+    measurement_dir = measurement_product_dir("20240101sant", config, root_dir=tmp_path)
+    scc = measurement_dir / "20240101sant_scc.nc"
+    level1 = level1_output_path(scc, config, root_dir=tmp_path)
+    assert level1 == measurement_dir / "20240101sant_scc_level1_rcs.nc"
+
+
+def test_noncanonical_external_level0_writes_level1_beside_source(tmp_path: Path) -> None:
+    config = _config()
+    external = tmp_path / "imports" / "foreign_station_scc_raw.nc"
+    level1 = level1_output_path(external, config, root_dir=tmp_path)
+    assert level1 == external.parent / "foreign_station_scc_raw_level1_rcs.nc"
+
+
 def test_level2_output_path_supports_variant_tags(tmp_path: Path) -> None:
     config = _config()
     level0 = level0_output_path("20240101nt", config, root_dir=tmp_path)
