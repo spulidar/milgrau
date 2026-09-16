@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from milgrau.level2.temporal_support import (
+    candidate_altitude_persistence_diagnostics,
     contiguous_subwindow_diagnostics,
     temporal_support_diagnostics,
 )
@@ -106,6 +107,62 @@ def test_contiguous_subwindows_expose_early_late_state_change() -> None:
     np.testing.assert_allclose(diagnostic.supporting_weight_fraction[:, 0], 1.0)
 
 
+def test_candidate_altitude_persistence_reports_all_blocks_without_accepting_target() -> None:
+    centers = np.array([5_000.0, 15_000.0, 20_000.0])
+    accepted = np.array(
+        [
+            [1, 1, 1],
+            [1, 1, 0],
+            [1, 0, 1],
+        ]
+    )
+    weights = np.array([2.0, 3.0, 5.0])
+
+    diagnostic = candidate_altitude_persistence_diagnostics(
+        centers,
+        accepted,
+        weights,
+        target_altitude_m=15_000.0,
+    )
+
+    assert diagnostic.accepted_candidate_count_at_or_above_target.tolist() == [2, 1, 1]
+    assert diagnostic.block_has_accepted_candidate.tolist() == [1, 1, 1]
+    np.testing.assert_allclose(
+        diagnostic.highest_accepted_candidate_altitude_m,
+        [20_000.0, 15_000.0, 20_000.0],
+    )
+    assert diagnostic.supporting_block_count == 3
+    assert diagnostic.supporting_block_weight_fraction == 1.0
+
+
+def test_candidate_altitude_persistence_exposes_transient_first_block_only() -> None:
+    centers = np.array([6_000.0, 15_000.0, 21_000.0])
+    accepted = np.array(
+        [
+            [1, 1, 1],
+            [1, 0, 0],
+            [1, 0, 0],
+        ]
+    )
+    weights = np.array([37.0, 40.0, 28.0])
+
+    diagnostic = candidate_altitude_persistence_diagnostics(
+        centers,
+        accepted,
+        weights,
+        target_altitude_m=15_000.0,
+    )
+
+    assert diagnostic.accepted_candidate_count_at_or_above_target.tolist() == [2, 0, 0]
+    assert diagnostic.block_has_accepted_candidate.tolist() == [1, 0, 0]
+    np.testing.assert_allclose(
+        diagnostic.highest_accepted_candidate_altitude_m,
+        [21_000.0, 6_000.0, 6_000.0],
+    )
+    assert diagnostic.supporting_block_count == 1
+    assert diagnostic.supporting_block_weight_fraction == pytest.approx(37.0 / 105.0)
+
+
 def test_temporal_diagnostics_reject_hidden_or_invalid_weight_policy() -> None:
     signal = np.ones((2, 3))
     error = np.ones_like(signal)
@@ -117,4 +174,29 @@ def test_temporal_diagnostics_reject_hidden_or_invalid_weight_policy() -> None:
             error,
             np.ones(2),
             window_blocks=3,
+        )
+
+
+def test_candidate_altitude_persistence_validates_shape_flags_and_weights() -> None:
+    centers = np.array([5_000.0, 15_000.0])
+    with pytest.raises(ValueError, match="dimensions"):
+        candidate_altitude_persistence_diagnostics(
+            centers,
+            np.ones((2, 3), dtype=np.int8),
+            np.ones(2),
+            target_altitude_m=15_000.0,
+        )
+    with pytest.raises(ValueError, match="binary"):
+        candidate_altitude_persistence_diagnostics(
+            centers,
+            np.array([[1, 2]], dtype=np.int8),
+            np.ones(1),
+            target_altitude_m=15_000.0,
+        )
+    with pytest.raises(ValueError, match="strictly positive"):
+        candidate_altitude_persistence_diagnostics(
+            centers,
+            np.ones((2, 2), dtype=np.int8),
+            np.array([1.0, 0.0]),
+            target_altitude_m=15_000.0,
         )
