@@ -1,6 +1,6 @@
 """Pure temporal-support diagnostics for future high-column backbone R&D.
 
-These helpers do not accept/reject a backbone and do not perform KFS.  They
+These helpers do not accept/reject a backbone and do not perform KFS. They
 quantify whether altitude-resolved information is temporally represented across
 explicitly weighted retrieval blocks, so a long mean cannot hide that its
 far-range signal comes predominantly from a short subperiod.
@@ -37,6 +37,18 @@ class ContiguousSubwindowDiagnostics:
     weighted_mean_signal: np.ndarray
 
 
+@dataclass(frozen=True, slots=True)
+class CandidateAltitudePersistenceDiagnostics:
+    """Temporal persistence of accepted candidate availability above one altitude."""
+
+    target_altitude_m: float
+    accepted_candidate_count_at_or_above_target: np.ndarray
+    block_has_accepted_candidate: np.ndarray
+    highest_accepted_candidate_altitude_m: np.ndarray
+    supporting_block_count: int
+    supporting_block_weight_fraction: float
+
+
 def _validate_inputs(
     block_signal: np.ndarray,
     block_error: np.ndarray,
@@ -58,6 +70,15 @@ def _validate_inputs(
     return signal, error, weights
 
 
+def _validate_block_weights(block_weights: np.ndarray, n_block: int) -> np.ndarray:
+    weights = np.asarray(block_weights, dtype=np.float64)
+    if weights.shape != (n_block,):
+        raise ValueError("block_weights must contain exactly one weight per block.")
+    if not np.all(np.isfinite(weights)) or np.any(weights <= 0.0):
+        raise ValueError("block_weights must be finite and strictly positive.")
+    return weights
+
+
 def temporal_support_diagnostics(
     block_signal: np.ndarray,
     block_error: np.ndarray,
@@ -66,12 +87,12 @@ def temporal_support_diagnostics(
     """Quantify temporal support and absolute signal contribution by altitude.
 
     A block/altitude sample is supported only when signal and one-sigma error are
-    finite and the error is non-negative.  ``block_weights`` is explicit so
+    finite and the error is non-negative. ``block_weights`` is explicit so
     unequal profile counts/durations are never silently treated as equal.
 
-    Contribution fractions use ``weight * abs(signal)``.  They are a dominance
+    Contribution fractions use ``weight * abs(signal)``. They are a dominance
     diagnostic, not a physical signed-source decomposition and not an
-    uncertainty weight.  No acceptance threshold is applied here.
+    uncertainty weight. No acceptance threshold is applied here.
     """
     signal, error, weights = _validate_inputs(block_signal, block_error, block_weights)
     valid = np.isfinite(signal) & np.isfinite(error) & (error >= 0.0)
@@ -131,7 +152,7 @@ def contiguous_subwindow_diagnostics(
     """Return support and weighted means for every contiguous block window.
 
     ``window_blocks`` is explicit and therefore belongs to an experiment/design
-    choice, not a hidden constant.  The helper reports diagnostics only; it does
+    choice, not a hidden constant. The helper reports diagnostics only; it does
     not choose a preferred window or define a productive stability threshold.
     """
     signal, error, weights = _validate_inputs(block_signal, block_error, block_weights)
@@ -162,9 +183,7 @@ def contiguous_subwindow_diagnostics(
             np.where(valid, sub_weights[:, np.newaxis] * sub_signal, 0.0), axis=0
         )
         has_support = supported_weight > 0.0
-        mean[window_index, has_support] = (
-            weighted_sum[has_support] / supported_weight[has_support]
-        )
+        mean[window_index, has_support] = weighted_sum[has_support] / supported_weight[has_support]
 
     return ContiguousSubwindowDiagnostics(
         start_block_index=starts,
@@ -172,4 +191,59 @@ def contiguous_subwindow_diagnostics(
         supporting_block_count=count,
         supporting_weight_fraction=fraction,
         weighted_mean_signal=mean,
+    )
+
+
+def candidate_altitude_persistence_diagnostics(
+    candidate_center_altitude_m: np.ndarray,
+    accepted_flag_block: np.ndarray,
+    block_weights: np.ndarray,
+    *,
+    target_altitude_m: float,
+) -> CandidateAltitudePersistenceDiagnostics:
+    """Report whether accepted high-altitude candidates persist across blocks.
+
+    This helper deliberately does not decide that a target altitude is valid for
+    KFS. It only asks, for an explicit target altitude, how many independently
+    weighted temporal blocks contain at least one already-accepted Rayleigh
+    candidate at or above that target. Candidate acceptance remains owned by the
+    Rayleigh QA contract supplied by the caller.
+    """
+    centers = np.asarray(candidate_center_altitude_m, dtype=np.float64)
+    accepted = np.asarray(accepted_flag_block)
+    target = float(target_altitude_m)
+    if centers.ndim != 1 or centers.size < 1:
+        raise ValueError("candidate_center_altitude_m must be a non-empty 1-D array.")
+    if not np.all(np.isfinite(centers)):
+        raise ValueError("candidate_center_altitude_m must be finite.")
+    if accepted.ndim != 2 or accepted.shape[1] != centers.size or accepted.shape[0] < 1:
+        raise ValueError("accepted_flag_block must have dimensions (block, candidate).")
+    if not np.all(np.isin(accepted, [0, 1, False, True])):
+        raise ValueError("accepted_flag_block must be binary.")
+    if not np.isfinite(target):
+        raise ValueError("target_altitude_m must be finite.")
+
+    weights = _validate_block_weights(block_weights, accepted.shape[0])
+    accepted_bool = accepted.astype(bool)
+    at_or_above = centers >= target
+    accepted_count = np.sum(accepted_bool[:, at_or_above], axis=1, dtype=np.int32)
+    has_candidate = accepted_count > 0
+
+    highest = np.full(accepted.shape[0], np.nan, dtype=np.float64)
+    for block_index in range(accepted.shape[0]):
+        block_indices = np.flatnonzero(accepted_bool[block_index])
+        if block_indices.size:
+            highest[block_index] = float(np.max(centers[block_indices]))
+
+    supporting_count = int(np.sum(has_candidate))
+    supporting_weight_fraction = float(
+        np.sum(weights[has_candidate]) / np.sum(weights)
+    )
+    return CandidateAltitudePersistenceDiagnostics(
+        target_altitude_m=target,
+        accepted_candidate_count_at_or_above_target=accepted_count,
+        block_has_accepted_candidate=has_candidate.astype(np.int8),
+        highest_accepted_candidate_altitude_m=highest,
+        supporting_block_count=supporting_count,
+        supporting_block_weight_fraction=supporting_weight_fraction,
     )
