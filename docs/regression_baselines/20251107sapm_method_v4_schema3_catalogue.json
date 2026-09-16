@@ -1,0 +1,91 @@
+{
+  "measurement_id": "20251107sapm",
+  "evidence_type": "observational_regression_not_ground_truth",
+  "level2_file_sha256": "32b793fc7874f850ee38273f7073c957194f87dd08fed1c340e96b976917a212",
+  "source_repository_revision": "b68e4d812a37c2a003e49e30c15c2e112e4c8360",
+  "source_code_sha256": "49559cabe9e98e198fed41bccc7e460a41ca11656a31f0d30946f854d7c489fc",
+  "source_level1_sha256": "52663cbfd7863db6d38bc6596616c672c573c19bc55a3c5e72403abbc4ba0b3f",
+  "software_version": "2026.9",
+  "level2_product_schema_version": "3",
+  "level2_retrieval_method_version": "4",
+  "product_status": "success",
+  "candidate_geometry": {
+    "catalogue_candidate_count": 2534,
+    "center_altitude_min_m": 5501.25,
+    "center_altitude_max_m": 24498.75,
+    "center_spacing_m": 7.5,
+    "search_min_altitude_m": 5000.0,
+    "search_max_altitude_m": 25000.0,
+    "configured_window_width_m": 1000.0,
+    "persisted_start_stop_center_difference_m": 990.0
+  },
+  "catalogue_invariants": {
+    "total_block_wavelength_cases": 10,
+    "total_candidate_slots": 25340,
+    "total_candidates_evaluated": 25340,
+    "all_slots_evaluated": true,
+    "accepted_flag_exactly_matches_zero_rejection_mask": true,
+    "one_unfiltered_minimum_per_case": true,
+    "one_productive_selection_per_case": true,
+    "selected_is_accepted_in_all_cases": true,
+    "selected_matches_minimum_cost_among_accepted_in_all_cases": true,
+    "selected_altitude_matches_persisted_block_reference_in_all_cases": true,
+    "unfiltered_minimum_equals_selected_in_all_cases": true
+  },
+  "aggregate_reference_and_support": {
+    "355": {
+      "aggregate_reference_altitude_m": 5748.75,
+      "aggregate_inversion_top_altitude_m": 6101.25
+    },
+    "532": {
+      "aggregate_reference_altitude_m": 5816.25,
+      "aggregate_inversion_top_altitude_m": 6318.75
+    }
+  },
+  "rejection_mask_definitions": {
+    "1": "insufficient_valid_fraction",
+    "2": "invalid_calibration",
+    "4": "excess_relative_slope",
+    "8": "excess_relative_variance"
+  },
+  "rejection_mask_aggregate_counts": {
+    "0": {"count": 16224, "meanings": []},
+    "1": {"count": 127, "meanings": ["insufficient_valid_fraction"]},
+    "4": {"count": 3991, "meanings": ["excess_relative_slope"]},
+    "5": {"count": 72, "meanings": ["insufficient_valid_fraction", "excess_relative_slope"]},
+    "8": {"count": 2155, "meanings": ["excess_relative_variance"]},
+    "9": {"count": 120, "meanings": ["insufficient_valid_fraction", "excess_relative_variance"]},
+    "12": {"count": 2479, "meanings": ["excess_relative_slope", "excess_relative_variance"]},
+    "13": {"count": 172, "meanings": ["insufficient_valid_fraction", "excess_relative_slope", "excess_relative_variance"]}
+  },
+  "block_wavelength_records": [
+    {"block_index":0,"wavelength_nm":355,"candidate_count_evaluated":2534,"candidate_count_accepted":1563,"candidate_count_rejected":971,"selected_reference_altitude_m":5748.75,"persisted_block_reference_altitude_m":5748.75,"unfiltered_minimum_altitude_m":5748.75,"unfiltered_minimum_accepted":true,"highest_accepted_candidate_altitude_m":23576.25,"selected_relative_slope":3.867684230316086e-05,"selected_relative_variance":0.002002471165909142,"selected_uncertainty_snr_median":27.49664116973732,"accepted_candidates_ge_10km":963,"accepted_candidates_ge_15km":365,"accepted_candidates_ge_20km":113},
+    {"block_index":0,"wavelength_nm":532,"candidate_count_evaluated":2534,"candidate_count_accepted":1646,"candidate_count_rejected":888,"selected_reference_altitude_m":5793.75,"persisted_block_reference_altitude_m":5793.75,"unfiltered_minimum_altitude_m":5793.75,"unfiltered_minimum_accepted":true,"highest_accepted_candidate_altitude_m":24348.75,"selected_relative_slope":0.0017951774987993432,"selected_relative_variance":0.0020856138303852576,"selected_uncertainty_snr_median":28.660113791344383,"accepted_candidates_ge_10km":1046,"accepted_candidates_ge_15km":437,"accepted_candidates_ge_20km":195},
+    {"block_index":1,"wavelength_nm":355,"candidate_count_evaluated":2534,"candidate_count_accepted":1597,"candidate_count_rejected":937,"selected_reference_altitude_m":5606.25,"persisted_block_reference_altitude_m":5606.25,"unfiltered_minimum_altitude_m":5606.25,"unfiltered_minimum_accepted":true,"highest_accepted_candidate_altitude_m":24033.75,"selected_relative_slope":3.895910669519329e-05,"selected_relative_variance":0.0007726806403057826,"selected_uncertainty_snr_median":39.99007928309137,"accepted_candidates_ge_10km":997,"accepted_candidates_ge_15km":360,"accepted_candidates_ge_20km":3},
+    {"block_index":1,"wavelength_nm":532,"candidate_count_evaluated":2534,"candidate_count_accepted":2053,"candidate_count_rejected":481,"selected_reference_altitude_m":5816.25,"persisted_block_reference_altitude_m":5816.25,"unfiltered_minimum_altitude_m":5816.25,"unfiltered_minimum_accepted":true,"highest_accepted_candidate_altitude_m":24363.75,"selected_relative_slope":0.0001980783317537137,"selected_relative_variance":0.0008698487885066518,"selected_uncertainty_snr_median":39.49633190471352,"accepted_candidates_ge_10km":1453,"accepted_candidates_ge_15km":802,"accepted_candidates_ge_20km":322},
+    {"block_index":2,"wavelength_nm":355,"candidate_count_evaluated":2534,"candidate_count_accepted":1556,"candidate_count_rejected":978,"selected_reference_altitude_m":6101.25,"persisted_block_reference_altitude_m":6101.25,"unfiltered_minimum_altitude_m":6101.25,"unfiltered_minimum_accepted":true,"highest_accepted_candidate_altitude_m":24498.75,"selected_relative_slope":7.819630465696411e-05,"selected_relative_variance":0.0019139281252675339,"selected_uncertainty_snr_median":28.863193702849025,"accepted_candidates_ge_10km":956,"accepted_candidates_ge_15km":370,"accepted_candidates_ge_20km":36},
+    {"block_index":2,"wavelength_nm":532,"candidate_count_evaluated":2534,"candidate_count_accepted":1583,"candidate_count_rejected":951,"selected_reference_altitude_m":5748.75,"persisted_block_reference_altitude_m":5748.75,"unfiltered_minimum_altitude_m":5748.75,"unfiltered_minimum_accepted":true,"highest_accepted_candidate_altitude_m":24123.75,"selected_relative_slope":0.000115378225040374,"selected_relative_variance":0.0010140666080952262,"selected_uncertainty_snr_median":35.89081916376879,"accepted_candidates_ge_10km":983,"accepted_candidates_ge_15km":360,"accepted_candidates_ge_20km":112},
+    {"block_index":3,"wavelength_nm":355,"candidate_count_evaluated":2534,"candidate_count_accepted":1588,"candidate_count_rejected":946,"selected_reference_altitude_m":5996.25,"persisted_block_reference_altitude_m":5996.25,"unfiltered_minimum_altitude_m":5996.25,"unfiltered_minimum_accepted":true,"highest_accepted_candidate_altitude_m":24461.25,"selected_relative_slope":6.964510877406949e-05,"selected_relative_variance":0.0012436531481356514,"selected_uncertainty_snr_median":34.4403312258986,"accepted_candidates_ge_10km":988,"accepted_candidates_ge_15km":450,"accepted_candidates_ge_20km":47},
+    {"block_index":3,"wavelength_nm":532,"candidate_count_evaluated":2534,"candidate_count_accepted":1528,"candidate_count_rejected":1006,"selected_reference_altitude_m":5861.25,"persisted_block_reference_altitude_m":5861.25,"unfiltered_minimum_altitude_m":5861.25,"unfiltered_minimum_accepted":true,"highest_accepted_candidate_altitude_m":23748.75,"selected_relative_slope":0.0004829992123230463,"selected_relative_variance":0.0008056222824799833,"selected_uncertainty_snr_median":39.20062064931857,"accepted_candidates_ge_10km":928,"accepted_candidates_ge_15km":474,"accepted_candidates_ge_20km":102},
+    {"block_index":4,"wavelength_nm":355,"candidate_count_evaluated":2534,"candidate_count_accepted":1520,"candidate_count_rejected":1014,"selected_reference_altitude_m":5621.25,"persisted_block_reference_altitude_m":5621.25,"unfiltered_minimum_altitude_m":5621.25,"unfiltered_minimum_accepted":true,"highest_accepted_candidate_altitude_m":24453.75,"selected_relative_slope":0.0002548253849989415,"selected_relative_variance":0.0013743666807832758,"selected_uncertainty_snr_median":32.32008915419254,"accepted_candidates_ge_10km":920,"accepted_candidates_ge_15km":366,"accepted_candidates_ge_20km":112},
+    {"block_index":4,"wavelength_nm":532,"candidate_count_evaluated":2534,"candidate_count_accepted":1590,"candidate_count_rejected":944,"selected_reference_altitude_m":6318.75,"persisted_block_reference_altitude_m":6318.75,"unfiltered_minimum_altitude_m":6318.75,"unfiltered_minimum_accepted":true,"highest_accepted_candidate_altitude_m":24356.25,"selected_relative_slope":0.0002691156281006318,"selected_relative_variance":0.0014317031071957627,"selected_uncertainty_snr_median":28.413759349718596,"accepted_candidates_ge_10km":990,"accepted_candidates_ge_15km":523,"accepted_candidates_ge_20km":163}
+  ],
+  "accepted_candidate_snr_by_altitude_band": [
+    {"wavelength_nm":355,"altitude_band":"5-10 km","accepted_candidate_count":3000,"snr_median":14.76785863779795,"snr_p10":7.822249268570131,"snr_p90":30.532414390652737,"fraction_snr_lt_1":0.0,"fraction_snr_lt_3":0.0,"fraction_snr_lt_5":0.0},
+    {"wavelength_nm":355,"altitude_band":"10-15 km","accepted_candidate_count":2913,"snr_median":3.134035089726323,"snr_p10":1.7716571727597402,"snr_p90":5.702349216716487,"fraction_snr_lt_1":0.0,"fraction_snr_lt_3":0.473738414005836,"fraction_snr_lt_5":0.8314452454514246},
+    {"wavelength_nm":355,"altitude_band":"15-20 km","accepted_candidate_count":1600,"snr_median":1.203656534618122,"snr_p10":0.9583714481923218,"snr_p90":1.576534226625662,"fraction_snr_lt_1":0.168125,"fraction_snr_lt_3":1.0,"fraction_snr_lt_5":1.0},
+    {"wavelength_nm":355,"altitude_band":"20-25 km","accepted_candidate_count":311,"snr_median":0.9008719468178068,"snr_p10":0.7673467289163063,"snr_p90":1.1434176176483072,"fraction_snr_lt_1":0.7234726688102894,"fraction_snr_lt_3":1.0,"fraction_snr_lt_5":1.0},
+    {"wavelength_nm":532,"altitude_band":"5-10 km","accepted_candidate_count":3000,"snr_median":15.928117347515233,"snr_p10":8.715513378394824,"snr_p90":33.22575914750874,"fraction_snr_lt_1":0.0,"fraction_snr_lt_3":0.0,"fraction_snr_lt_5":0.0},
+    {"wavelength_nm":532,"altitude_band":"10-15 km","accepted_candidate_count":2804,"snr_median":3.593918071690815,"snr_p10":2.004942541691474,"snr_p90":6.708811028162759,"fraction_snr_lt_1":0.0,"fraction_snr_lt_3":0.3687589158345221,"fraction_snr_lt_5":0.7196861626248217},
+    {"wavelength_nm":532,"altitude_band":"15-20 km","accepted_candidate_count":1702,"snr_median":1.3222529937945717,"snr_p10":1.0245318049195114,"snr_p90":1.709589151595289,"fraction_snr_lt_1":0.0881316098707403,"fraction_snr_lt_3":1.0,"fraction_snr_lt_5":1.0},
+    {"wavelength_nm":532,"altitude_band":"20-25 km","accepted_candidate_count":894,"snr_median":0.8720368472171337,"snr_p10":0.7949519869833667,"snr_p90":1.0387713789005282,"fraction_snr_lt_1":0.8366890380313199,"fraction_snr_lt_3":1.0,"fraction_snr_lt_5":1.0}
+  ],
+  "interpretation_notes": [
+    "This file is observational regression/behavior evidence, not ground truth.",
+    "The schema-3 catalogue is internally consistent for all 10 block/wavelength cases.",
+    "The unfiltered minimum-cost candidate is already QA-accepted in all 10 cases, so method-v4 QA-first ordering does not change the selected references for this measurement.",
+    "Many high-altitude candidates pass the current minimum shape/valid-fraction QA, including candidates above 20 km.",
+    "Accepted-candidate propagated-uncertainty SNR falls strongly with altitude; current SNR remains diagnostic-only and no hard threshold is inferred from this case.",
+    "High-altitude candidate existence is not evidence of supported aerosol optical retrieval above each exact accepted KFS boundary."
+  ]
+}
