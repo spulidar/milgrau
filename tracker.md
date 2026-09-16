@@ -10,8 +10,9 @@ Current productive code identity:
 - Level 2 retrieval method: **v4** — QA-first Rayleigh candidate selection with the established method-v3 uncertainty/support semantics;
 - productive inversion: backward Klett–Fernald–Sasano;
 - schema-v3 catalogue code gate: CI green at `72133cfc446ad5b23ac1de5d9242af2d44cab9e0` on Ubuntu/Windows, Python 3.12/3.14, Ruff + full pytest matrix;
-- temporal-support diagnostic R&D gate: CI green at `ffa2b0e97cdee4262727a077e0897e7136f369f0` on the same cross-platform matrix;
-- current observational schema-v3 evidence: `docs/regression_baselines/20251107sapm_method_v4_schema3_catalogue.json`.
+- temporal-support/candidate-persistence R&D gate: CI green at `831c5e7eead3bceb00830312bfae72109ecaa506` on the same cross-platform matrix;
+- current observational schema-v3 evidence: `docs/regression_baselines/20251107sapm_method_v4_schema3_catalogue.json`;
+- current temporal evidence: `docs/regression_baselines/20251107sapm_temporal_support_preliminary.json` and `docs/regression_baselines/high_column_candidate_persistence_comparison.json`.
 
 Frozen method-v3 comparison baseline remains `docs/regression_baselines/20251107sapm_method_v3.json`. Observational files are regression/behavior evidence, not ground truth.
 
@@ -46,7 +47,7 @@ Frozen method-v3 comparison baseline remains `docs/regression_baselines/20251107
 | P5.1 | COMPLETE + REAL-DATA CHECKED | altitude-resolved inversion support |
 | P5.2 | COMPLETE + REAL-DATA CHECKED | QA-first Rayleigh catalogue + auditable selection |
 | P5.3 | IN PROGRESS | real-data candidate interpretation |
-| P5.4 | IN PROGRESS — TEMPORAL DIAGNOSTICS | temporally honest high-column backbone R&D |
+| P5.4 | IN PROGRESS — REAL TEMPORAL EVIDENCE | temporally honest high-column backbone R&D |
 | P5.5+ | PENDING / DEFERRED | ensemble, optional cascade, merge, uncertainty extension |
 | P6 | PENDING | reproducible release/publication process |
 
@@ -109,7 +110,7 @@ P3 blocks release/FAIR completion; it does not block scientific P4/P5 developmen
 - [x] Internal unsupported gaps cannot be bridged.
 - [x] No validated lower instrument/overlap mask is claimed.
 
-Real method-v4/schema-2 check for `20251107sapm`:
+Real method-v4 check for `20251107sapm`:
 
 - 355 nm aggregate inversion top = **6101.25 m**; 5/5 blocks support through **5606.25 m**, final tail supported by one block;
 - 532 nm aggregate inversion top = **6318.75 m**; 5/5 blocks support through **5748.75 m**, final tail supported by one block;
@@ -139,7 +140,7 @@ Real schema-v3 check from uploaded `20251107sapm_level2_optical.nc`:
 - every selected candidate is accepted, is the minimum diagnostic cost among accepted candidates and exactly equals the persisted block KFS reference altitude;
 - the unfiltered minimum is already accepted and equals the productive selection in all 10 cases, so QA-first ordering does not change this measurement's references;
 - aggregate references remain **5748.75 m (355)** and **5816.25 m (532)**; aggregate inversion tops remain **6101.25 m** and **6318.75 m**;
-- machine-readable evidence frozen in `docs/regression_baselines/20251107sapm_method_v4_schema3_catalogue.json`.
+- evidence frozen in `docs/regression_baselines/20251107sapm_method_v4_schema3_catalogue.json`.
 
 Remaining catalogue R&D is not required to close P5.2:
 
@@ -159,25 +160,41 @@ Remaining catalogue R&D is not required to close P5.2:
 - [ ] Separate future high-column limitation into propagated-SNR, temporal representativeness and cloud/layer contamination before enabling any new productive gate.
 - [ ] Compare a future redesigned lower-column solution against the frozen method-v3 baseline when a higher-boundary method becomes productive.
 
-Historical `20241219nt` stress evidence remains the temporal counterexample: early high-altitude information can dominate a long mean even when later blocks no longer support it. Whole-measurement averaging therefore cannot establish representative full-interval support by itself.
-
-## P5.4 — high-column backbone — TEMPORAL DIAGNOSTICS IN PROGRESS
+## P5.4 — high-column backbone — REAL TEMPORAL EVIDENCE IN PROGRESS
 
 Do not implement a naive whole-measurement mean as a productive retrieval.
 
-- [x] Pure temporal-support/stability diagnostic contract implemented before productive backbone retrieval.
-- [x] Quantify altitude-resolved supporting-block count and explicit supported-weight fraction on common finite signal/non-negative uncertainty support.
-- [x] Quantify per-block absolute signal-contribution fractions, dominant contribution fraction and dominant block index as diagnostics only.
-- [x] Add explicit contiguous-subwindow diagnostics without automatically choosing a preferred window.
-- [x] Synthetic tests cover stable blocks, unequal explicit weights, transient far-range support, full-support-but-single-block-dominated signal, missing uncertainty and early/late state change.
-- [x] Cross-platform temporal-diagnostic gate green at `ffa2b0e97cdee4262727a077e0897e7136f369f0`.
-- [ ] Derive real block weights from explicit contributing profile counts/durations and expose start/stop/effective duration.
-- [ ] Apply the diagnostics offline to `20251107sapm` and `20241219nt`.
-- [ ] Define an evidence-backed reject/split criterion for temporally non-representative far-range information.
-- [ ] Only after those gates, add a distinct long-mean/high-column retrieval input with explicit duration/provenance and common signal/error support.
+Implemented diagnostics:
+
+- [x] Pure signal/error temporal-support diagnostics with explicit block weights.
+- [x] Altitude-resolved supporting-block count and supported-weight fraction on common finite signal/non-negative uncertainty support.
+- [x] Per-block absolute signal-contribution fractions, dominant contribution fraction/index and contiguous-subwindow state diagnostics.
+- [x] Explicit high-altitude candidate-persistence diagnostic: for a caller-specified target altitude, report accepted-candidate counts per block, block availability, highest accepted candidate and weighted block-persistence fraction without declaring the target scientifically valid.
+- [x] Synthetic tests cover stable blocks, unequal weights, transient-only support, single-block dominance, missing uncertainty, early/late state change and first-block-only high-candidate persistence.
+- [x] Cross-platform CI green for the candidate-persistence extension at `831c5e7eead3bceb00830312bfae72109ecaa506`.
+
+Real `20251107sapm` temporal diagnostic with explicit profile-count weights `[23, 39, 39, 40, 26]`:
+
+- [x] All five blocks have finite RCS and finite non-negative propagated error through the inspected <30 km domain at both wavelengths; finite/error support therefore does **not** explain why productive KFS stops near 6 km.
+- [x] Below 10 km the dominant block contribution is well balanced: median dominant fraction ~0.25–0.26 and no bins exceed 50% single-block contribution.
+- [x] At 15–20 km median dominant fraction rises to ~0.385 (355/532), with ~13–14% of bins exceeding 50% single-block contribution but <1% exceeding 70%.
+- [x] Two-/three-block subwindows diverge much more around 15–18 km than around 10 km, consistent with increasing noise and/or temporal variability; no acceptance tolerance is inferred from that alone.
+- [x] Evidence frozen in `docs/regression_baselines/20251107sapm_temporal_support_preliminary.json`.
+
+Comparative high-candidate persistence evidence:
+
+- [x] For `20251107sapm`, every one of the five current blocks contains at least one already-accepted Rayleigh candidate at or above **15 km** and **20 km** for both 355 and 532 nm; profile-count-weight persistence is 1.0.
+- [x] For historical `20241219nt`, only the first of three 20-minute blocks contains accepted candidates at or above 15/20 km; later blocks collapse to highest accepted candidates near 6.4 and 5.5 km. The legacy profile-count-weight persistence is 37/105 ≈ 0.352.
+- [x] This contrast is frozen in `docs/regression_baselines/high_column_candidate_persistence_comparison.json`.
+- [x] Candidate persistence is therefore an auditable temporal-representativeness observable, but **not yet a productive acceptance criterion**. Historical uncertainty is also not numerically identical to the current propagated-uncertainty model.
+
+Remaining backbone gate:
+
+- [ ] Combine persistence, propagated-SNR behavior, contribution dominance and subwindow disagreement into an evidence-backed experimental decision rule without tuning it to a desired top altitude.
+- [ ] Validate that rule on more synthetic boundary cases and at least additional observational regimes before making it productive.
+- [ ] Only then add a distinct long-mean/high-column retrieval input with explicit duration/provenance and common signal/error support.
 - [ ] Preserve original-resolution/block signals; backbone is additional state, not a destructive replacement.
 - [ ] Evaluate vertical aggregation only if needed and validate its bias with synthetic truth.
-- [ ] `target_top_altitude_m` may later be an R&D objective, never permission to extrapolate or weaken QA.
 
 P5.4 acceptance: longer averaging must demonstrably increase usable high-altitude information without materially biasing the lower column or hiding temporal nonstationarity.
 
@@ -228,7 +245,8 @@ Synthetic established:
 - [x] Vertical-grid convergence.
 - [x] Missing uncertainty/internal invalid gaps fail support explicitly.
 - [x] Candidate catalogue retains accepted/rejected windows and QA-first selection.
-- [x] Temporally heterogeneous synthetic sequence exposes transient-only far-range support and single-block dominance; no productive reject threshold is claimed yet.
+- [x] Temporally heterogeneous synthetic sequence exposes transient-only far-range support and single-block dominance.
+- [x] Candidate-persistence synthetic cases distinguish persistent high-candidate availability from first-block-only availability without applying an acceptance threshold.
 - [ ] Evidence-backed backbone reject/split criterion on temporal non-representativeness.
 - [ ] Multiple valid high references -> ensemble stability and reference-sensitivity uncertainty.
 - [ ] Biased/contaminated candidate -> rejection or visible uncertainty impact.
@@ -240,6 +258,8 @@ Real SPU:
 
 - [x] Current method-v4 `20251107sapm` behavior checked: complete 355/532 retrieval, unchanged lower references and ~6.1/~6.3 km aggregate inversion tops.
 - [x] Schema-3 persisted real catalogue validated and frozen as machine-readable observational evidence.
+- [x] Preliminary real temporal support/contribution/subwindow diagnostics recorded for `20251107sapm`.
+- [x] Candidate-persistence contrast recorded between `20251107sapm` and historical `20241219nt`.
 - [ ] Extend defensible 355/532 support materially above current tops only when evidence supports it.
 - [ ] Evaluate whether 15 km is supportable for representative measurements.
 - [ ] Attempt 20 km target only when trustworthy boundary/support exists at or above the needed altitude.
@@ -263,8 +283,8 @@ P5 success criterion: **maximize defensible inversion-supported vertical coverag
 
 ## Immediate next gate
 
-1. Apply the temporal-support diagnostics offline to `20251107sapm` using explicit real profile-count/duration weights; do not assume equal temporal evidence merely because retrieval blocks are nominally similar.
-2. Apply the same diagnostics to the historical `20241219nt` stress evidence and quantify the observable signatures of transient-only far-range information.
-3. From synthetic + both observational cases, define and test a backbone accept/split criterion without tuning it to a desired top altitude.
+1. Design an **experimental**, non-productive backbone decision rule using the four observed dimensions now available: propagated candidate SNR, high-candidate temporal persistence, altitude-resolved contribution dominance and contiguous-subwindow disagreement.
+2. Stress that rule synthetically, including persistent-low-SNR, transient-high-SNR, temporally changing aerosol/cloud and internal-gap cases; do not tune thresholds to 15/20 km.
+3. Seek at least one additional real SPU case with materially different temporal/high-altitude behavior before promoting any threshold to production.
 4. Audit molecular-lidar-ratio consistency and gluing fit-parameter uncertainty in parallel.
 5. Only after those gates, introduce a productive long-mean/high-column backbone and later a multi-reference ensemble if they demonstrably extend support without hiding temporal nonstationarity or boundary ambiguity.
