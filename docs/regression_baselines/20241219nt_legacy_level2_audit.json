@@ -1,0 +1,120 @@
+{
+  "evidence_kind": "legacy_observational_audit",
+  "ground_truth": false,
+  "archive_sha256": "b40895501375566d78c9051100d257b94a8ad1af3dc3f3f8120e6665f3271b29",
+  "case_id": "20241219nt",
+  "measurement": {
+    "profiles": 105,
+    "profile_nominal_duration_s": 30,
+    "start_utc": "2024-12-20T05:21:13",
+    "stop_utc": "2024-12-20T06:14:39",
+    "duration_minutes": 53.43333333333333,
+    "vertical_resolution_m": 7.5,
+    "bins": 4000
+  },
+  "legacy_reconstruction": {
+    "channel": "355.PC",
+    "aerosol_lidar_ratio_sr": 99.3530907245606,
+    "molecular_lidar_ratio_sr_hardcoded": 8.377580409572781,
+    "reference_interval_nominal_m": [5000, 25000],
+    "reference_center_m": 15000,
+    "reference_half_range_bins": 1333,
+    "beta_aerosol_reference_configured": 0.0,
+    "post_inversion_savgol_bins": 15,
+    "post_inversion_savgol_span_m": 112.5,
+    "saved_backscatter_reproduction": {
+      "pearson_correlation": 0.999958207017999,
+      "rmse_m_inv_sr_inv": 4.8417104950737933e-08,
+      "relative_l2": 0.010945818892673128,
+      "max_abs_difference_m_inv_sr_inv": 1.384215857105728e-07
+    }
+  },
+  "boundary_consistency": {
+    "smoothed_broad_reference_rcs": 333048.9144568583,
+    "exact_rcs_at_15km": 400068.8906380952,
+    "broad_to_exact_ratio": 0.8324789111336738,
+    "beta_molecular_at_15km_m_inv_sr_inv": 1.1564618645456243e-06,
+    "unsmoothed_retrieved_beta_aerosol_at_reference_m_inv_sr_inv": 2.3271670692202877e-07,
+    "unsmoothed_reference_aerosol_fraction_of_beta_mol": 0.20123163076671233,
+    "saved_smoothed_beta_aerosol_at_reference_m_inv_sr_inv": 8.024427158164412e-08,
+    "saved_smoothed_reference_aerosol_fraction_of_beta_mol": 0.06938773689106663
+  },
+  "saved_high_altitude_behavior": {
+    "negative_fraction_15_20km": 0.6611694152923538,
+    "negative_fraction_20_25km": 0.8050974512743628,
+    "negative_fraction_25_30km": 0.9415292353823088,
+    "fraction_below_plot_xmin_15_20km": 0.527736131934033,
+    "fraction_below_plot_xmin_20_25km": 0.6266866566716641,
+    "fraction_below_plot_xmin_25_30km": 0.7976011994002998
+  },
+  "empirical_long_mean_candidate_experiment": {
+    "note": "Exploratory diagnostic using temporal standard error from the 105 legacy corrected 355.PC profiles; not equivalent to current propagated Level 1 uncertainty.",
+    "full_mean": {
+      "candidate_count": 2535,
+      "accepted_current_shape_qa_count": 1873,
+      "best_cost_altitude_m": 7710.0,
+      "highest_accepted_altitude_m": 24502.5,
+      "candidate_at_15km": {
+        "altitude_m": 15000.0,
+        "snr_median": 3.1475488843380526,
+        "relative_variance": 0.0698494591890909,
+        "relative_slope": 0.01766723072339176
+      },
+      "best_accepted_at_or_above_20km": {
+        "altitude_m": 20047.5,
+        "snr_median": 1.7695901901046798,
+        "relative_variance": 0.26361288483044165,
+        "relative_slope": 0.0060832376716206905,
+        "valid_fraction": 0.9849624060150376,
+        "diagnostic_cost": 0.2696961225020623
+      }
+    },
+    "20min_blocks": [
+      {
+        "start_utc": "2024-12-20T05:20:00",
+        "profiles": 37,
+        "accepted_current_shape_qa_count": 1877,
+        "highest_accepted_altitude_m": 24487.5,
+        "best_cost_altitude_m": 7710.0,
+        "accepted_at_or_above_15km": 1028,
+        "accepted_at_or_above_20km": 402
+      },
+      {
+        "start_utc": "2024-12-20T05:40:00",
+        "profiles": 40,
+        "accepted_current_shape_qa_count": 44,
+        "highest_accepted_altitude_m": 6435.0,
+        "best_cost_altitude_m": 6307.5,
+        "accepted_at_or_above_15km": 0,
+        "accepted_at_or_above_20km": 0
+      },
+      {
+        "start_utc": "2024-12-20T06:00:00",
+        "profiles": 28,
+        "accepted_current_shape_qa_count": 3,
+        "highest_accepted_altitude_m": 5512.5,
+        "best_cost_altitude_m": 5512.5,
+        "accepted_at_or_above_15km": 0,
+        "accepted_at_or_above_20km": 0
+      }
+    ]
+  },
+  "molecular_lidar_ratio_consistency": {
+    "current_constant_8pi_over_3_sr": 8.377580409572781,
+    "bucholtz_phase_consistent_sr": {
+      "355": 8.503662994736853,
+      "532": 8.49662582719281
+    },
+    "relative_difference": {
+      "355": 0.01505,
+      "532": 0.01421
+    },
+    "note": "Current molecular beta uses the depolarization-aware Rayleigh phase function, while productive KFS defaults to 8*pi/3. Verify total-vs-Cabannes detected molecular component before changing the productive method."
+  },
+  "interpretation_notes": [
+    "Legacy apparent 30 km numerical coverage came from a whole-measurement mean, a nominal 15 km reference, a very broad 5-25 km reference-signal median, and two-sided KFS including the forward branch above the reference.",
+    "Finite legacy output above 15 km is not equivalent to validated support; most saved high-altitude backscatter bins are negative.",
+    "The broad reference-signal median does not preserve the configured beta_aerosol_reference=0 at the exact reference bin.",
+    "The long mean can hide temporal loss of high-altitude signal and therefore needs explicit temporal support/stability diagnostics in any modern backbone."
+  ]
+}
