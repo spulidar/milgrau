@@ -18,6 +18,7 @@ from milgrau.level2.config import (
 )
 from milgrau.level2.contracts import WavelengthRetrievalResult, validate_retrieval_results
 from milgrau.level2.metadata import apply_level2_variable_metadata
+from milgrau.level2.rayleigh_catalogue_dataset import attach_rayleigh_candidate_catalogue
 from milgrau.level2.support import assemble_level2_inversion_support
 from milgrau.scientific import (
     LEVEL2_PRODUCT_SCHEMA_CHANGE,
@@ -565,4 +566,5 @@ def build_level2_dataset(
         }
     )
     apply_level2_variable_metadata(ds_l2)
+    ds_l2 = attach_rayleigh_candidate_catalogue(ds_l2, results, altitude_m, config)
     return ds_l2
