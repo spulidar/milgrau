@@ -9,7 +9,8 @@ Current productive code identity:
 - Level 2 schema: **v3** — `auditable_rayleigh_candidate_catalogue`;
 - Level 2 retrieval method: **v4** — QA-first Rayleigh candidate selection with the established method-v3 uncertainty/support semantics;
 - productive inversion: backward Klett–Fernald–Sasano;
-- code gate for schema-v3 catalogue integration: CI green at `72133cfc446ad5b23ac1de5d9242af2d44cab9e0` on Ubuntu/Windows, Python 3.12/3.14, Ruff + full pytest matrix.
+- schema-v3 catalogue code gate: CI green at `72133cfc446ad5b23ac1de5d9242af2d44cab9e0` on Ubuntu/Windows, Python 3.12/3.14, Ruff + full pytest matrix;
+- temporal-support diagnostic R&D gate: CI green at `ffa2b0e97cdee4262727a077e0897e7136f369f0` on the same cross-platform matrix.
 
 Frozen observational comparison baseline remains method v3:
 `docs/regression_baselines/20251107sapm_method_v3.json`.
@@ -31,7 +32,7 @@ It is regression/behavior evidence, not ground truth.
 - A KFS member is tied to the signal/molecular state at its exact local boundary.
 - Elastic extinction remains conditional on the assumed aerosol lidar ratio.
 - Diagnostic instrument models never silently become productive corrections.
-- No physical PC saturation threshold, overlap cutoff, SNR threshold, cloud threshold or scientific tolerance is invented merely to close a gate.
+- No physical PC saturation threshold, overlap cutoff, SNR threshold, cloud threshold, temporal-stability threshold or scientific tolerance is invented merely to close a gate.
 - NetCDF products should be readable and self-describing, but MILGRAU currently makes no formal external metadata-convention conformance claim.
 
 ## Status overview
@@ -47,7 +48,7 @@ It is regression/behavior evidence, not ground truth.
 | P5.1 | COMPLETE + REAL-DATA CHECKED | altitude-resolved inversion support |
 | P5.2 | CODE COMPLETE — SCHEMA-3 REAL CHECK PENDING | QA-first Rayleigh catalogue + auditable selection |
 | P5.3 | IN PROGRESS | real-data candidate experiments / interpretation |
-| P5.4 | NEXT R&D GATE | temporally honest high-column backbone |
+| P5.4 | IN PROGRESS — TEMPORAL DIAGNOSTICS | temporally honest high-column backbone R&D |
 | P5.5+ | PENDING / DEFERRED | ensemble, optional cascade, merge, uncertainty extension |
 | P6 | PENDING | reproducible release/publication process |
 
@@ -170,15 +171,18 @@ Historical `20241219nt` stress case:
 - [x] Whole ~53 min averaging can make high-altitude candidates reappear because the early interval dominates far-range contribution.
 - [x] Treat this as direct motivation for temporal-support/stability diagnostics; a long mean alone cannot establish representative full-interval support.
 
-## P5.4 — high-column backbone — NEXT R&D GATE
+## P5.4 — high-column backbone — TEMPORAL DIAGNOSTICS IN PROGRESS
 
 Do not implement a naive whole-measurement mean as a productive retrieval.
 
-- [ ] Add a pure temporal-support/stability diagnostic contract before adding productive backbone retrieval.
-- [ ] Quantify contributing profile/block count, start/stop, effective duration and altitude-resolved contribution/support fraction.
-- [ ] Add sensitivity to contiguous subwindows so a transient early high-altitude contribution is visible.
+- [x] Add a pure temporal-support/stability diagnostic contract before any productive backbone retrieval.
+- [x] Quantify altitude-resolved supporting-block count and explicit supported-weight fraction on common finite signal/non-negative uncertainty support.
+- [x] Quantify per-block absolute signal-contribution fractions, dominant contribution fraction and dominant block index as **diagnostics only**, not uncertainty weights or physical signed-source decomposition.
+- [x] Add explicit contiguous-subwindow diagnostics; the helper reports all windows of a requested block length and does not choose a preferred window.
+- [x] Synthetic tests cover temporally stable blocks, unequal explicit block weights, transient far-range support, full-support-but-single-block-dominated signal, missing uncertainty and early/late subwindow state change.
+- [x] Cross-platform temporal-diagnostic code gate green at `ffa2b0e97cdee4262727a077e0897e7136f369f0`.
+- [ ] For real backbone experiments, derive block weights from explicit contributing profile counts/durations rather than assuming equal blocks; expose start/stop/effective duration as part of the experiment/provenance.
 - [ ] Define an auditable criterion for rejecting/splitting a backbone when far-range information is temporally non-representative; criterion must be evidence-backed, not invented to hit a target altitude.
-- [ ] Test the diagnostics on synthetic temporally stable and transient cases.
 - [ ] Apply the diagnostic offline to `20251107sapm` and `20241219nt` before any productive long-mean KFS.
 - [ ] Only after those gates, add a distinct long-mean/high-column retrieval input with explicit duration/provenance and common signal/error support.
 - [ ] Preserve original-resolution/block signals; backbone is additional state, not a destructive replacement.
@@ -229,6 +233,7 @@ Implement only if multiple accepted solutions actually need stitching. Merge wei
 - [x] Schema 3 adds auditable Rayleigh candidate catalogue without changing method-v4 physics.
 - [x] Currentness/provenance separates package version, product schema and retrieval-method identity.
 - [x] Generic schema-3 contract validates the candidate catalogue rather than trusting the version attribute alone.
+- [x] `docs/level2_schema.md` documents schema 3 / method 4, the modular candidate metadata contract and the diagnostic-only SNR policy.
 - [ ] Update QA plots to show effective optical retrieval top/support and selected/accepted candidate locations; finite scattering ratio must not visually imply aerosol retrieval.
 - [ ] Add temporal-support panel only when backbone diagnostics become productive.
 - [ ] Add ensemble/cascade panels only if those algorithms become productive.
@@ -242,7 +247,8 @@ Synthetic already established:
 - [x] Vertical-grid convergence.
 - [x] Missing uncertainty/internal invalid gaps fail support explicitly.
 - [x] Candidate catalogue retains accepted/rejected windows and QA-first selection.
-- [ ] Temporally heterogeneous sequence exposes/rejects transient-only backbone support.
+- [x] Temporally heterogeneous synthetic sequence visibly exposes transient-only far-range support and single-block dominance; no productive reject threshold is claimed yet.
+- [ ] Evidence-backed backbone reject/split criterion on temporal non-representativeness.
 - [ ] Multiple valid high references -> ensemble stability and reference-sensitivity uncertainty.
 - [ ] Biased/contaminated candidate -> rejection or visible uncertainty impact.
 - [ ] Upper-tail noise -> supported top falls gracefully under the future high-column method.
@@ -276,9 +282,10 @@ P5 success criterion: **maximize defensible inversion-supported vertical coverag
 
 ## Immediate next gate
 
-1. Run `milgrau-lebear -i 20251107sapm --force` once from schema-3 HEAD and inspect the resulting Level 2 candidate catalogue; only the new NetCDF is required unless QA plots change unexpectedly.
+1. Run `milgrau-lebear -i 20251107sapm --force` once from the current schema-3 HEAD and inspect the resulting Level 2 candidate catalogue; only the new NetCDF is required unless QA plots change unexpectedly.
 2. Freeze/record that real schema-3 catalogue evidence and close the remaining observational P5.2 check.
-3. Implement **temporal-support/stability diagnostics first**, with synthetic stable/transient tests, before any productive high-column backbone.
-4. Apply those temporal diagnostics to `20251107sapm` and historical `20241219nt` evidence; only then decide backbone averaging strategy.
-5. Audit molecular-lidar-ratio consistency and gluing fit-parameter uncertainty in parallel.
-6. Proceed to productive backbone and later multi-reference ensemble only from evidence that they extend support without hiding temporal nonstationarity or boundary ambiguity.
+3. Use explicit real block/profile-count weights to apply the new temporal-support diagnostics to `20251107sapm`; do not assume equal temporal evidence merely because block durations were nominally configured alike.
+4. Apply the same temporal concept to the historical `20241219nt` stress evidence and determine what observable separates representative long averaging from transient-only far-range information.
+5. Define a productive backbone accept/split criterion only from those synthetic + observational diagnostics; then test it before introducing long-mean KFS.
+6. Audit molecular-lidar-ratio consistency and gluing fit-parameter uncertainty in parallel.
+7. Proceed to productive backbone and later multi-reference ensemble only from evidence that they extend support without hiding temporal nonstationarity or boundary ambiguity.
