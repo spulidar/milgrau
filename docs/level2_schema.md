@@ -2,15 +2,17 @@
 
 This document describes the current versioned LEBEAR NetCDF contract on `new-architecture`. It is descriptive, not a second source of scientific constants: equations remain owned by the numerical modules, variable metadata by `milgrau.level2.metadata`, and schema assembly by `milgrau.level2.dataset`.
 
-The validated productive numerical baseline remains backward Klett–Fernald–Sasano retrieval. Schema/metadata work in P3 does not authorize extrapolation, filling unsupported bins, changing reference QA, changing lidar-ratio assumptions, or enabling cloud/SNR gates.
+The productive numerical method remains backward Klett–Fernald–Sasano retrieval. Schema 2 adds altitude-resolved inversion-support diagnostics; it does **not** authorize extrapolation, filling unsupported bins, changing Rayleigh QA, changing lidar-ratio assumptions, or claiming a validated lower overlap/instrument boundary.
 
 ## Product identities
 
 The product intentionally separates three kinds of identity:
 
 - package/software version: normal MILGRAU release identity;
-- `level2_product_schema_version = "1"`: storage names/dimensions/metadata contract;
-- `level2_retrieval_method_version = "3"`: productive L2 method identity independent of package CalVer and schema-only changes. Method v2 introduced common value/uncertainty support during averaging and rejected missing signal uncertainty instead of converting it to zero Monte Carlo noise. Method v3 keeps those rules and changes aggregate optical uncertainty so mixed block-level nuisance terms are not silently reduced as independent noise.
+- `level2_product_schema_version = "2"`: storage names/dimensions/metadata contract. Schema 2 adds altitude-resolved backward inversion-support/top/bottom/effective-block diagnostics;
+- `level2_retrieval_method_version = "3"`: productive L2 retrieval-method identity independent of package CalVer and schema-only changes. Method v2 introduced common value/uncertainty support during averaging and rejected missing signal uncertainty instead of converting it to zero Monte Carlo noise. Method v3 keeps those rules and changes aggregate optical uncertainty so mixed block-level nuisance terms are not silently reduced as independent noise.
+
+The schema change is recorded as `level2_product_schema_change = altitude_resolved_backward_inversion_support_diagnostics`. No KFS equation, Rayleigh-selection policy or aerosol lidar-ratio assumption was changed by schema 2.
 
 Incremental reuse rejects a product whose schema version, retrieval-method version, productive KFS identity, Fernald scientific identity, versioned gluing-selection score, or exact Level 1 source-content identity does not match the running input/method. Partial products are never incrementally reusable.
 
@@ -27,14 +29,14 @@ Dedicated `requested_wavelength`, `processed_wavelength`, and `failed_wavelength
 
 ## Canonical aggregate/block naming
 
-Schema v1 stores exactly one aggregate aerosol optical product per quantity:
+Schema 2 keeps exactly one aggregate aerosol optical product per quantity:
 
 - `aerosol_backscatter_mean(wavelength, altitude)`
 - `aerosol_backscatter_mean_error(wavelength, altitude)`
 - `aerosol_extinction_mean(wavelength, altitude)`
 - `aerosol_extinction_mean_error(wavelength, altitude)`
 
-The former unsuffixed NetCDF aliases `aerosol_backscatter`, `aerosol_backscatter_error`, `aerosol_extinction`, and `aerosol_extinction_error` were exact duplicate arrays and are not part of schema v1. Older/unversioned products are reprocessed instead of retaining permanent duplicate compatibility variables.
+The former unsuffixed NetCDF aliases `aerosol_backscatter`, `aerosol_backscatter_error`, `aerosol_extinction`, and `aerosol_extinction_error` were exact duplicate arrays and are not part of the versioned schema. Older/unversioned products are reprocessed instead of retaining permanent duplicate compatibility variables.
 
 Block products remain explicit:
 
@@ -62,7 +64,8 @@ Physical units are explicit where the quantity is physically calibrated:
 | aerosol extinction and one-sigma uncertainty | `m-1` |
 | aerosol lidar ratio and its configured standard deviation | `sr` |
 | scattering ratio, correlations, relative errors/fractions/SNR diagnostics | `1` |
-| reference/gluing altitudes | `m` |
+| inversion-support flags and effective-block counts | `1` |
+| reference/gluing/retrieval support altitudes | `m` |
 
 Selected lidar signals are deliberately **not** assigned invented SI units. Analog and photon-counting channels enter the selected/glued signal in source-dependent instrumental spaces. These fields therefore carry explicit `unit_status` metadata such as `source_dependent_channel_native_corrected` or `source_dependent_relative_range_squared` instead of a false absolute radiometric unit. Rayleigh calibration and gluing coefficients are documented the same way when their units depend on the selected source space.
 
@@ -75,6 +78,24 @@ For productive temporal/block averaging, a sample contributes to a reported sign
 For KFS Monte Carlo retrieval, non-finite `rcs_error` is preserved as unsupported. It is not replaced with zero before perturbation. A missing uncertainty sample on the requested backward integration support invalidates that productive branch, and invalid KFS blocks do not publish partial aerosol optical arrays as accepted block products.
 
 For aerosol backscatter/extinction products, NaN means no accepted productive backward-retrieval support at that altitude. Internal unsupported gaps are not bridged. Aggregate products use only accepted retrieval blocks, and aggregate optical means/errors use the same finite value/uncertainty support at each altitude.
+
+### Schema 2 inversion-support diagnostics
+
+Schema 2 makes the productive backward inversion domain explicit without claiming that near-field instrument validity has been characterized.
+
+- `retrieval_inversion_support_flag(wavelength, altitude)`: aggregate algorithmic backward-inversion support;
+- `retrieval_inversion_support_flag_block(block_time, wavelength, altitude)`: block-level algorithmic backward-inversion support;
+- `retrieval_inversion_effective_block_count(wavelength, altitude)`: number of successful block retrievals whose contiguous backward support includes the altitude bin;
+- `retrieval_bottom_altitude_m(wavelength)` / `retrieval_top_altitude_m(wavelength)`: aggregate contiguous inversion-domain bounds;
+- `retrieval_bottom_altitude_m_block(block_time, wavelength)` / `retrieval_top_altitude_m_block(block_time, wavelength)`: corresponding block bounds.
+
+A block support flag is true only on the contiguous path ending at that block's accepted **exact Rayleigh boundary bin**, with common finite backscatter/extinction values and finite non-negative uncertainties. A missing internal bin breaks the backward path; the algorithm never jumps across the gap to relabel lower bins as supported.
+
+Aggregate inversion support is also contiguous and requires at least one supporting successful block at every retained altitude. `retrieval_inversion_effective_block_count` is intentionally separate: the aggregate top may be supported by only one block even when most of the lower column is supported by all blocks.
+
+These variables describe **inversion support**, not full scientific/instrument support. No validated lower overlap/instrument mask is currently applied. Therefore a very low `retrieval_bottom_altitude_m` is an algorithmic-domain diagnostic only and must not be interpreted as evidence that the lidar has quantitatively valid aerosol retrieval down to that altitude. The global attributes `retrieval_inversion_support_scope` and `retrieval_inversion_support_instrument_mask = not_applied_uncharacterized` make this limitation explicit.
+
+A future stricter `retrieval_support_flag` is reserved for the conjunction of inversion support and an evidence-backed instrument-validity domain. It is intentionally absent until that lower boundary is characterized.
 
 ### Uncertainty dependence and block aggregation
 
@@ -93,8 +114,6 @@ This is the maximum standard deviation of the equally weighted mean consistent w
 
 `retrieval_success_flag(block_time, wavelength)` is a block-level acceptance flag. It is not altitude-resolved support. A zero can include a block that was not attempted or that was rejected at input, Rayleigh QA, or KFS; dedicated source/input/reference/KFS diagnostics provide the stage information.
 
-The future variables `retrieval_support_flag(..., altitude)` and `retrieval_top_altitude_m` remain intentionally absent until their frozen semantics have dedicated synthetic tests.
-
 ## Flags
 
 Numeric state fields use integer `flag_values` arrays and stable `flag_meanings`, rather than comma-separated textual value lists. Aggregate and block variants share the same mapping.
@@ -105,9 +124,10 @@ Important interpretations:
 - `retrieval_input_invalid_reason`: stable reason enum; zero means valid input;
 - `gluing_merge_source_flag`: photon-counting / blend / analog / invalid per altitude bin;
 - `retrieval_success_flag`: not successful / successful at block level;
+- `retrieval_inversion_support_flag*`: not supported / supported for the algorithmic backward inversion domain; not a validated overlap/instrument flag;
 - `rayleigh_reference_success_flag[_block]`: reference QA not passed / passed; zero can include not attempted;
 - `kfs_backward_valid_flag*` and `kfs_forward_valid_flag*`: branch diagnostic only; zero can mean unrequested or invalid, so `KFS_Mode` / `integration_mode` identifies the productive branch;
-- `kfs_branch*`: location relative to the reference bin, not a replacement for future retrieval-support semantics;
+- `kfs_branch*`: location relative to the reference bin, not a replacement for inversion-support semantics;
 - failed-wavelength stage/code: stable numeric failure identity independent of Python exception strings.
 
 Human-readable failure messages/cause summaries remain supplementary; program logic uses stable numeric stage/code fields.
@@ -119,6 +139,7 @@ The full exact variable-name registry lives in `milgrau.level2.metadata`. The st
 - molecular fields: `(wavelength, altitude)` plus block-scaled molecular RCS;
 - selected/glued signal: time-expanded `(time, wavelength, altitude)`, block `(block_time, wavelength, altitude)`, and aggregate `(wavelength, altitude)` forms where appropriate;
 - optical products: aggregate `(wavelength, altitude)` and block `(block_time, wavelength, altitude)`;
+- inversion-support diagnostics: aggregate `(wavelength, altitude)`, block `(block_time, wavelength, altitude)`, effective-block counts, and scalar top/bottom bounds;
 - Rayleigh calibration/reference diagnostics: aggregate `(wavelength)` plus block `(block_time, wavelength)`;
 - KFS branch diagnostics: aggregate `(wavelength, altitude)` plus block `(block_time, wavelength, altitude)` and branch-validity vectors;
 - gluing/source/input diagnostics: time-expanded plus block forms;
@@ -130,6 +151,7 @@ Time-expanded gluing/source diagnostics repeat block decisions on the original L
 
 The final NetCDF records stable machine-readable productive identity including:
 
+- `level2_product_schema_version` and `level2_product_schema_change`;
 - `level2_retrieval_method_version`;
 - `level2_retrieval_method_change`;
 - `elastic_backscatter_inversion_method`;
@@ -157,7 +179,7 @@ The weights are named constants in `milgrau.level2.gluing`; changing the formula
 
 The current `propagate_glued_error` path propagates the Level 1 analog/photon-counting one-sigma measurement-noise terms through the fitted slope and fade weights. The fitted slope/intercept are treated as fixed coefficients in that propagation; their own fit uncertainty and covariance are **not** included. Method v3 does not claim those omitted terms are negligible. The current decision is to keep them outside the published partial measurement-noise component until their materiality is quantified with dedicated overlap/resampling evidence; if they are later added, the uncertainty method identity must change again.
 
-## Completeness contract
+## Completeness and integrity contract
 
 Every publishable Level 2 product stores:
 
@@ -168,6 +190,8 @@ Every publishable Level 2 product stores:
 - `product_completeness` and `product_status`.
 
 A wavelength is in the scientific `wavelength` coordinate only when it produced a usable scientific result. A file may be written as partial for diagnosis, but partial products are deliberately not reused incrementally.
+
+The NetCDF contract validator additionally checks the schema-2 inversion-support fields. It requires exact named dimensions, binary flags, `retrieval_inversion_effective_block_count` equal to the sum of block support flags, contiguous aggregate/block support intervals, and top/bottom altitudes that match the actual first/last supported grid bins. A corrupted support summary therefore cannot pass currentness simply because the variables exist.
 
 ## Provenance boundary
 
@@ -188,17 +212,16 @@ The source-code content identity distinguishes materially different development 
 
 Full local paths, secrets, transient cache/download filenames, and operational tracebacks do not belong in the scientific product. Configuration hashes remain intentionally absent: exact YAML plus stable station/calibration IDs are the readable configuration record.
 
-## Known limitations
+## Known limitations and deferred high-column work
 
-- Productive elastic inversion is backward KFS from one accepted Rayleigh reference toward lower altitude.
+- Productive elastic inversion is still backward KFS from one accepted Rayleigh reference toward lower altitude.
+- Schema 2 makes inversion support measurable but does not itself extend the retrieval top.
+- The lower instrument/overlap support boundary remains uncharacterized; schema 2 therefore deliberately avoids a stronger generic `retrieval_support_flag` claim.
 - Aerosol extinction is conditional on assumed aerosol lidar ratio.
 - Current optical uncertainty remains a partial budget: signal Monte Carlo, scalar lidar-ratio perturbation and reference-boundary perturbation are represented. Aggregate block covariance is handled conservatively rather than assumed independent, but the components are not yet separately published.
 - Fitted gluing slope/intercept uncertainty is excluded from the current partial measurement-noise component and is not claimed negligible; materiality requires dedicated overlap/resampling evidence.
 - Physical photon-counting saturation is not characterized; the current dead-time occupancy guard is provisional and must not be described as a detector saturation limit.
 - Cloud screening is not yet a productive Rayleigh-reference rejection gate.
 - No hard propagated-error SNR gate is enabled without SPU evidence.
+- High-column Rayleigh catalogue, backbone, ensemble/cascade and temporal-support products remain P5 work and will receive their own versioned method/schema changes when they become productive.
 - Current NumPy 2.5/netCDF4 1.7.4 write-time deprecation warnings are tracked as an upstream dependency interaction; they are not hidden by pinning NumPy backwards.
-
-## Deferred high-column schema
-
-The high-column redesign remains outside schema v1. Before adding altitude-resolved support/top, ensemble members, cascade handoffs or backbone products, P5 must supply their synthetic acceptance tests and preserve the frozen rule that the target altitude is never permission to extrapolate or fabricate support.
