@@ -243,6 +243,48 @@ LEVEL2_DATA_VARIABLE_METADATA["retrieval_success_fraction"] = _attrs(
     description="Successful-block fraction per processed wavelength; it does not encode altitude-resolved support.",
 )
 
+_inversion_support_flag = _flag_attrs(
+    [0, 1],
+    "not_supported supported",
+    description=(
+        "Algorithmic backward-inversion support on common aerosol backscatter/extinction value and "
+        "non-negative uncertainty support. The flag is bounded by accepted exact Rayleigh references "
+        "and does not include a validated lower instrument/overlap mask."
+    ),
+)
+LEVEL2_DATA_VARIABLE_METADATA["retrieval_inversion_support_flag"] = {
+    "long_name": "Aggregate backward inversion-support flag",
+    **_inversion_support_flag,
+}
+LEVEL2_DATA_VARIABLE_METADATA["retrieval_inversion_support_flag_block"] = {
+    "long_name": "Block backward inversion-support flag",
+    **_inversion_support_flag,
+}
+LEVEL2_DATA_VARIABLE_METADATA["retrieval_inversion_effective_block_count"] = _attrs(
+    "Number of successful block retrievals supporting each aggregate altitude bin",
+    units="1",
+    description=(
+        "Count derived from block inversion-support flags. It exposes when aggregate high-altitude "
+        "coverage is supported by only a subset of successful retrieval blocks."
+    ),
+)
+for name, long_name in (
+    ("retrieval_bottom_altitude_m", "Aggregate algorithmic backward-inversion bottom altitude"),
+    ("retrieval_top_altitude_m", "Aggregate algorithmic backward-inversion top altitude"),
+    ("retrieval_bottom_altitude_m_block", "Block algorithmic backward-inversion bottom altitude"),
+    ("retrieval_top_altitude_m_block", "Block algorithmic backward-inversion top altitude"),
+):
+    LEVEL2_DATA_VARIABLE_METADATA[name] = _attrs(
+        long_name,
+        units="m",
+        description=(
+            "Altitude derived from the contiguous backward inversion-support flag. The lower bound "
+            "is an algorithmic domain diagnostic only while near-field overlap/instrument validity "
+            "remains uncharacterized."
+        ),
+        missing_value_semantics="NaN when no accepted contiguous backward inversion support exists.",
+    )
+
 
 for suffix, qualifier in (("", "Median over successful block Rayleigh references"), ("_block", "Block Rayleigh reference")):
     LEVEL2_DATA_VARIABLE_METADATA[f"rayleigh_reference_altitude_m{suffix}"] = _attrs(
