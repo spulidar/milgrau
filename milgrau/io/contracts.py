@@ -281,6 +281,20 @@ def _validate_level2_inversion_support(ds: xr.Dataset) -> None:
             )
 
 
+def _validate_level2_rayleigh_catalogue_if_required(ds: xr.Dataset) -> None:
+    """Require the auditable candidate catalogue for schema 3 and later products."""
+    raw_version = str(ds.attrs.get("level2_product_schema_version", "")).strip()
+    try:
+        schema_version = int(raw_version)
+    except ValueError:
+        return
+    if schema_version < 3:
+        return
+    from milgrau.level2.rayleigh_catalogue_dataset import validate_rayleigh_candidate_catalogue
+
+    validate_rayleigh_candidate_catalogue(ds)
+
+
 def validate_level2_contract(ds: xr.Dataset) -> None:
     _require_variables(ds, LEVEL2_REQUIRED_VARIABLES, "Level 2 file")
     _require_coords(ds, ("wavelength", "altitude"), "Level 2 file")
@@ -291,6 +305,7 @@ def validate_level2_contract(ds: xr.Dataset) -> None:
     _require_exact_dims(ds["retrieval_success_fraction"], ("wavelength",), "Level 2 retrieval_success_fraction")
     _validate_level2_inversion_support(ds)
     _validate_level2_completeness(ds)
+    _validate_level2_rayleigh_catalogue_if_required(ds)
 
 
 def _validate_level2_completeness(ds: xr.Dataset) -> None:
