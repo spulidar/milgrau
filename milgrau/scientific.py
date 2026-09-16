@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Final
 
-LEVEL2_PRODUCT_SCHEMA_VERSION: Final[str] = "2"
-LEVEL2_PRODUCT_SCHEMA_CHANGE: Final[str] = "altitude_resolved_backward_inversion_support_diagnostics"
+LEVEL2_PRODUCT_SCHEMA_VERSION: Final[str] = "3"
+LEVEL2_PRODUCT_SCHEMA_CHANGE: Final[str] = "auditable_rayleigh_candidate_catalogue"
 LEVEL2_RETRIEVAL_METHOD_VERSION: Final[str] = "4"
 LEVEL2_RETRIEVAL_METHOD_CHANGE: Final[str] = (
     "qa_first_rayleigh_candidate_selection_with_method_v3_uncertainty_support"
