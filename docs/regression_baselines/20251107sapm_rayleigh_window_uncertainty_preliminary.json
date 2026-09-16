@@ -1,0 +1,65 @@
+{
+  "evidence_kind": "rayleigh_window_calibration_uncertainty_rnd_observational_diagnostic",
+  "ground_truth": false,
+  "case_id": "20251107sapm",
+  "source_level2_sha256": "32b793fc7874f850ee38273f7073c957194f87dd08fed1c340e96b976917a212",
+  "source_repository_revision": "b68e4d812a37c2a003e49e30c15c2e112e4c8360",
+  "level2_schema_version": "3",
+  "level2_retrieval_method_version": "4",
+  "rayleigh_window_nominal_width_m": 1000.0,
+  "diagnostic_definition": {
+    "calibration_factor": "C = sum(x*y)/sum(x^2), where x is molecular RCS and y is measured glued RCS on the candidate window",
+    "uncertainty_models": [
+      "propagated per-bin error with independent altitude bins",
+      "perfect positive correlation of every valid altitude bin",
+      "stationary lag-correlation model estimated from block-demeaned uncertainty-scaled Level-1 PC residuals"
+    ],
+    "important_boundary_caveat": "Productive KFS method v4 still uses the exact measured RCS at one reference bin as X_ref. This window-fit uncertainty diagnostic does not change the productive boundary condition."
+  },
+  "accepted_candidate_window_factor_snr": {
+    "15000_20000_m": {
+      "355": {
+        "accepted_candidate_count": 1600,
+        "median_snr_independent": 13.0373,
+        "median_snr_fully_correlated": 1.32437,
+        "median_snr_empirical_autocorrelation": 9.07466,
+        "p25_snr_empirical_autocorrelation": 8.1283,
+        "p75_snr_empirical_autocorrelation": 10.6189
+      },
+      "532": {
+        "accepted_candidate_count": 1702,
+        "median_snr_independent": 14.8718,
+        "median_snr_fully_correlated": 1.40933,
+        "median_snr_empirical_autocorrelation": 10.4326,
+        "p25_snr_empirical_autocorrelation": 9.2567,
+        "p75_snr_empirical_autocorrelation": 11.9833
+      }
+    },
+    "20000_25000_m": {
+      "355": {
+        "accepted_candidate_count": 311,
+        "median_snr_independent": 8.77906,
+        "median_snr_fully_correlated": 1.00033,
+        "median_snr_empirical_autocorrelation": 6.30462,
+        "p25_snr_empirical_autocorrelation": 5.88343,
+        "p75_snr_empirical_autocorrelation": 7.01698
+      },
+      "532": {
+        "accepted_candidate_count": 894,
+        "median_snr_independent": 8.90027,
+        "median_snr_fully_correlated": 0.98867,
+        "median_snr_empirical_autocorrelation": 6.90717,
+        "p25_snr_empirical_autocorrelation": 6.42249,
+        "p75_snr_empirical_autocorrelation": 7.46504
+      }
+    }
+  },
+  "interpretation_notes": [
+    "The existing candidate uncertainty_snr_median is a median bin-wise signal/error diagnostic and is not the same quantity as uncertainty of the fitted molecular scale over the full reference window.",
+    "For this measurement the full local Rayleigh window contains substantially more calibration-scale information than the bin-wise SNR alone suggests under the empirical short-range covariance model.",
+    "The large separation between independent-bin and fully-correlated limits demonstrates that altitude-bin dependence must remain explicit; the favorable model cannot be selected merely to extend retrieval altitude.",
+    "A future R&D path is to compare the current exact noisy-bin X_ref boundary against a window-fitted local boundary estimate at the same center altitude using synthetic truth and contaminated-window cases.",
+    "Any productive use of a fitted boundary would change retrieval-method semantics and require a method-version change plus explicit uncertainty propagation.",
+    "This evidence does not authorize a higher Rayleigh reference, a hard SNR threshold, productive smoothing, or a 15/20 km support claim."
+  ]
+}
