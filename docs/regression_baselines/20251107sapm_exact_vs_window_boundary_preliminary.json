@@ -1,0 +1,52 @@
+{
+  "evidence_kind": "exact_single_bin_vs_window_fitted_rayleigh_boundary_observational_diagnostic",
+  "ground_truth": false,
+  "case_id": "20251107sapm",
+  "source_level2_sha256": "32b793fc7874f850ee38273f7073c957194f87dd08fed1c340e96b976917a212",
+  "source_repository_revision": "b68e4d812a37c2a003e49e30c15c2e112e4c8360",
+  "level2_schema_version": "3",
+  "level2_retrieval_method_version": "4",
+  "definition": {
+    "exact_boundary_signal": "measured glued RCS at the candidate center bin",
+    "window_fitted_boundary_signal": "candidate origin-constrained calibration factor multiplied by simulated molecular RCS at the same exact center bin",
+    "ratio": "exact_boundary_signal / window_fitted_boundary_signal",
+    "scope": "all accepted schema-v3 Rayleigh candidates in each altitude band"
+  },
+  "accepted_candidate_exact_to_window_fit_statistics": {
+    "355": {
+      "5000_10000_m": {"n": 3000, "median_ratio": 1.0003344, "median_absolute_fractional_deviation": 0.0489453, "p75_absolute_fractional_deviation": 0.0959962, "p90_absolute_fractional_deviation": 0.1554213, "p95_absolute_fractional_deviation": 0.2011188},
+      "10000_15000_m": {"n": 2844, "median_ratio": 1.0011872, "median_absolute_fractional_deviation": 0.2328765, "p75_absolute_fractional_deviation": 0.4334823, "p90_absolute_fractional_deviation": 0.6627431, "p95_absolute_fractional_deviation": 0.8043516},
+      "15000_20000_m": {"n": 1202, "median_ratio": 0.9187165, "median_absolute_fractional_deviation": 0.4729439, "p75_absolute_fractional_deviation": 0.7298281, "p90_absolute_fractional_deviation": 0.9576252, "p95_absolute_fractional_deviation": 1.1925293},
+      "20000_25000_m": {"n": 178, "median_ratio": 0.8696702, "median_absolute_fractional_deviation": 0.4736385, "p75_absolute_fractional_deviation": 0.7234092, "p90_absolute_fractional_deviation": 1.0333618, "p95_absolute_fractional_deviation": 1.2946696}
+    },
+    "532": {
+      "5000_10000_m": {"n": 3000, "median_ratio": 1.0011940, "median_absolute_fractional_deviation": 0.0416783, "p75_absolute_fractional_deviation": 0.0789936, "p90_absolute_fractional_deviation": 0.1308594, "p95_absolute_fractional_deviation": 0.1722704},
+      "10000_15000_m": {"n": 2779, "median_ratio": 0.9924274, "median_absolute_fractional_deviation": 0.1891413, "p75_absolute_fractional_deviation": 0.3555623, "p90_absolute_fractional_deviation": 0.5721301, "p95_absolute_fractional_deviation": 0.7317148},
+      "15000_20000_m": {"n": 1414, "median_ratio": 0.9353022, "median_absolute_fractional_deviation": 0.4343845, "p75_absolute_fractional_deviation": 0.7227615, "p90_absolute_fractional_deviation": 0.9341221, "p95_absolute_fractional_deviation": 1.1118002},
+      "20000_25000_m": {"n": 539, "median_ratio": 0.9234558, "median_absolute_fractional_deviation": 0.5003575, "p75_absolute_fractional_deviation": 0.7680179, "p90_absolute_fractional_deviation": 0.9581274, "p95_absolute_fractional_deviation": 1.2043256}
+    }
+  },
+  "currently_selected_low_reference_candidates": {
+    "355": [
+      {"block": 0, "altitude_m": 5748.75, "exact_to_fit_ratio": 0.9855870, "absolute_fractional_deviation": 0.0144130},
+      {"block": 1, "altitude_m": 5606.25, "exact_to_fit_ratio": 0.9643291, "absolute_fractional_deviation": 0.0356709},
+      {"block": 2, "altitude_m": 6101.25, "exact_to_fit_ratio": 0.9488815, "absolute_fractional_deviation": 0.0511185},
+      {"block": 3, "altitude_m": 5996.25, "exact_to_fit_ratio": 1.0260171, "absolute_fractional_deviation": 0.0260171},
+      {"block": 4, "altitude_m": 5621.25, "exact_to_fit_ratio": 0.9712068, "absolute_fractional_deviation": 0.0287932}
+    ],
+    "532": [
+      {"block": 0, "altitude_m": 5793.75, "exact_to_fit_ratio": 1.0336817, "absolute_fractional_deviation": 0.0336817},
+      {"block": 1, "altitude_m": 5816.25, "exact_to_fit_ratio": 1.0074053, "absolute_fractional_deviation": 0.0074053},
+      {"block": 2, "altitude_m": 5748.75, "exact_to_fit_ratio": 1.0051077, "absolute_fractional_deviation": 0.0051077},
+      {"block": 3, "altitude_m": 5861.25, "exact_to_fit_ratio": 0.9805172, "absolute_fractional_deviation": 0.0194828},
+      {"block": 4, "altitude_m": 6318.75, "exact_to_fit_ratio": 0.9237233, "absolute_fractional_deviation": 0.0762767}
+    ]
+  },
+  "interpretation_notes": [
+    "At the currently selected low references the exact-bin RCS is close to the local molecular-window fit, consistent with their much stronger bin-wise SNR.",
+    "For accepted candidates above 15 km, the exact center bin commonly differs from the local window-fitted molecular scale by tens of percent even though the window-level calibration-factor diagnostic remains substantially more precise under the empirical short-range covariance model.",
+    "This supports testing whether a local fitted signal boundary at the same exact altitude can reduce KFS boundary noise without globally smoothing the profile.",
+    "The result does not prove the window is aerosol/cloud free and therefore cannot itself authorize a fitted boundary, a higher reference, or a productive method change.",
+    "Synthetic contaminated-window tests are required because a non-molecular layer can bias the fitted scale even when the exact center bin is aerosol-free."
+  ]
+}
