@@ -93,6 +93,8 @@ def _level2(glued_dims: tuple[str, ...]) -> xr.Dataset:
     sizes = {"time": 2, "wavelength": 1, "altitude": 4}
     glued_shape = tuple(sizes[dim] for dim in glued_dims)
     time_state = np.ones((2, 1), dtype=np.int8)
+    support = np.array([[1, 1, 1, 0]], dtype=np.int8)
+    support_block = support[np.newaxis, :, :]
     return xr.Dataset(
         data_vars={
             "molecular_backscatter": (("wavelength", "altitude"), np.ones((1, 4))),
@@ -108,6 +110,21 @@ def _level2(glued_dims: tuple[str, ...]) -> xr.Dataset:
             "retrieval_input_invalid_reason": (("time", "wavelength"), np.zeros_like(time_state)),
             "retrieval_success_flag": (("block_time", "wavelength"), np.ones((1, 1), dtype=np.int8)),
             "retrieval_success_fraction": (("wavelength",), np.ones(1)),
+            "retrieval_inversion_support_flag": (("wavelength", "altitude"), support),
+            "retrieval_inversion_support_flag_block": (
+                ("block_time", "wavelength", "altitude"), support_block
+            ),
+            "retrieval_inversion_effective_block_count": (
+                ("wavelength", "altitude"), support.astype(np.int16)
+            ),
+            "retrieval_bottom_altitude_m": (("wavelength",), np.array([0.0])),
+            "retrieval_top_altitude_m": (("wavelength",), np.array([2.0])),
+            "retrieval_bottom_altitude_m_block": (
+                ("block_time", "wavelength"), np.array([[0.0]])
+            ),
+            "retrieval_top_altitude_m_block": (
+                ("block_time", "wavelength"), np.array([[2.0]])
+            ),
             "requested_wavelengths": (("requested_wavelength",), np.array([532], dtype=np.int32)),
             "processed_wavelengths": (("processed_wavelength",), np.array([532], dtype=np.int32)),
             "failed_wavelengths": (("failed_wavelength",), np.array([], dtype=np.int32)),
@@ -133,3 +150,17 @@ def test_validate_level2_contract_rejects_wrong_glued_signal_dims() -> None:
 
 def test_validate_level2_contract_accepts_minimal_optical_dataset() -> None:
     validate_level2_contract(_level2(("time", "wavelength", "altitude")))
+
+
+def test_validate_level2_contract_rejects_wrong_effective_support_count() -> None:
+    ds = _level2(("time", "wavelength", "altitude"))
+    ds["retrieval_inversion_effective_block_count"][0, 1] = 0
+    with pytest.raises(ValueError, match="effective_block_count"):
+        validate_level2_contract(ds)
+
+
+def test_validate_level2_contract_rejects_support_gap() -> None:
+    ds = _level2(("time", "wavelength", "altitude"))
+    ds["retrieval_inversion_support_flag"][0, :] = np.array([1, 0, 1, 0], dtype=np.int8)
+    with pytest.raises(ValueError, match="contiguous"):
+        validate_level2_contract(ds)
