@@ -94,7 +94,8 @@ def _level2(glued_dims: tuple[str, ...]) -> xr.Dataset:
     glued_shape = tuple(sizes[dim] for dim in glued_dims)
     time_state = np.ones((2, 1), dtype=np.int8)
     support = np.array([[1, 1, 1, 0]], dtype=np.int8)
-    support_block = support[np.newaxis, :, :]
+    support_block = support[np.newaxis, :, :].copy()
+    effective_count = support.astype(np.int16, copy=True)
     return xr.Dataset(
         data_vars={
             "molecular_backscatter": (("wavelength", "altitude"), np.ones((1, 4))),
@@ -110,12 +111,14 @@ def _level2(glued_dims: tuple[str, ...]) -> xr.Dataset:
             "retrieval_input_invalid_reason": (("time", "wavelength"), np.zeros_like(time_state)),
             "retrieval_success_flag": (("block_time", "wavelength"), np.ones((1, 1), dtype=np.int8)),
             "retrieval_success_fraction": (("wavelength",), np.ones(1)),
-            "retrieval_inversion_support_flag": (("wavelength", "altitude"), support),
+            "retrieval_inversion_support_flag": (
+                ("wavelength", "altitude"), support.copy()
+            ),
             "retrieval_inversion_support_flag_block": (
                 ("block_time", "wavelength", "altitude"), support_block
             ),
             "retrieval_inversion_effective_block_count": (
-                ("wavelength", "altitude"), support.astype(np.int16)
+                ("wavelength", "altitude"), effective_count
             ),
             "retrieval_bottom_altitude_m": (("wavelength",), np.array([0.0])),
             "retrieval_top_altitude_m": (("wavelength",), np.array([2.0])),
