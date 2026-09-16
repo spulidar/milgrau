@@ -147,8 +147,21 @@ def level1_output_path(
     config: Mapping[str, Any],
     root_dir: str | Path | None = None,
 ) -> Path:
-    stem = Path(level0_file).stem
-    return measurement_product_dir(stem, config, root_dir=root_dir) / f"{stem}{LEVEL1_SUFFIX}"
+    """Return a predictable Level 1 path for canonical or explicit external Level 0 input.
+
+    Canonical MILGRAU inputs, including ``*_scc.nc``, stay inside the canonical
+    measurement directory while preserving their input stem in the output name.
+    An explicitly supplied non-canonical external Level 0/SCC file is written
+    beside that source file rather than inventing a date/product tree from its
+    filename.
+    """
+    source = Path(level0_file)
+    stem = source.stem
+    try:
+        save_id = product_save_id(source)
+    except ValueError:
+        return source.with_name(f"{stem}{LEVEL1_SUFFIX}")
+    return measurement_product_dir(save_id, config, root_dir=root_dir) / f"{stem}{LEVEL1_SUFFIX}"
 
 
 def level2_output_path(level1_file: str | Path, variant_tag: str | None = None) -> Path:
