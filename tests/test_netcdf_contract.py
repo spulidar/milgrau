@@ -11,6 +11,7 @@ import xarray as xr
 
 from milgrau.level2.lebear import process_single_level1_file
 from milgrau.level2.metadata import LEVEL2_METADATA_VARIABLE_NAMES
+from milgrau.level2.rayleigh_catalogue_dataset import RAYLEIGH_CANDIDATE_VARIABLES
 from milgrau.operations import ExecutionStatus
 from milgrau.physics.atmosphere import get_standard_atmosphere
 from milgrau.scientific import (
@@ -236,7 +237,10 @@ def test_lebear_uses_level1_atmosphere_and_generates_level2(tmp_path: Path) -> N
         }
         assert legacy_duplicate_aliases.isdisjoint(ds_l2.data_vars)
 
-        assert set(ds_l2.data_vars) == set(LEVEL2_METADATA_VARIABLE_NAMES)
+        expected_metadata_variables = set(LEVEL2_METADATA_VARIABLE_NAMES) | set(
+            RAYLEIGH_CANDIDATE_VARIABLES
+        )
+        assert set(ds_l2.data_vars) == expected_metadata_variables
         assert all(
             str(ds_l2[name].attrs.get("long_name", "")).strip()
             for name in ds_l2.data_vars
@@ -269,6 +273,8 @@ def test_lebear_uses_level1_atmosphere_and_generates_level2(tmp_path: Path) -> N
             "gluing_merge_source_flag",
             "retrieval_success_flag",
             "rayleigh_reference_success_flag_block",
+            "rayleigh_candidate_accepted_flag",
+            "rayleigh_candidate_selected_flag",
             "kfs_branch_block",
             "signal_source_flag_block",
             "retrieval_input_invalid_reason_block",
