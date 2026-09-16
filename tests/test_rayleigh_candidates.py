@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
+import pytest
 
 from milgrau.level2.rayleigh_candidates import (
     RayleighCandidateRejection,
     accepted_rayleigh_candidates,
     catalogue_rayleigh_candidates,
+    minimum_cost_rayleigh_candidate,
+    select_minimum_cost_accepted_candidate,
 )
 
 
@@ -122,3 +127,54 @@ def test_catalogue_keeps_rejected_candidates_instead_of_returning_only_one_best_
     assert [candidate.center_index for candidate in catalogue] == sorted(
         candidate.center_index for candidate in catalogue
     )
+
+
+def test_qa_first_ranking_never_selects_lower_cost_rejected_candidate() -> None:
+    _, measured, _ = _clean_profiles()
+    catalogue = _catalogue(measured)
+    accepted_candidate = replace(catalogue[3], diagnostic_cost=0.20)
+    rejected_candidate = replace(
+        catalogue[2],
+        diagnostic_cost=0.01,
+        rejection_mask=int(RayleighCandidateRejection.EXCESS_RELATIVE_VARIANCE),
+    )
+
+    assert minimum_cost_rayleigh_candidate((rejected_candidate, accepted_candidate)) is rejected_candidate
+    assert select_minimum_cost_accepted_candidate((rejected_candidate, accepted_candidate)) is accepted_candidate
+
+
+def test_qa_first_ranking_minimizes_historical_cost_among_passers() -> None:
+    _, measured, _ = _clean_profiles()
+    catalogue = _catalogue(measured)
+    higher_cost = replace(catalogue[1], diagnostic_cost=0.20)
+    lower_cost = replace(catalogue[5], diagnostic_cost=0.05)
+
+    selected = select_minimum_cost_accepted_candidate((higher_cost, lower_cost))
+
+    assert selected is lower_cost
+
+
+def test_qa_first_ranking_tie_is_deterministic_without_altitude_preference() -> None:
+    _, measured, _ = _clean_profiles()
+    catalogue = _catalogue(measured)
+    lower_center = replace(catalogue[2], diagnostic_cost=0.10)
+    higher_center = replace(catalogue[6], diagnostic_cost=0.10)
+
+    selected = select_minimum_cost_accepted_candidate((higher_center, lower_center))
+
+    assert selected.center_index == min(lower_center.center_index, higher_center.center_index)
+
+
+def test_qa_first_ranking_fails_explicitly_when_no_candidate_passes() -> None:
+    _, measured, _ = _clean_profiles()
+    catalogue = _catalogue(measured)
+    rejected = tuple(
+        replace(
+            candidate,
+            rejection_mask=int(RayleighCandidateRejection.EXCESS_RELATIVE_SLOPE),
+        )
+        for candidate in catalogue[:2]
+    )
+
+    with pytest.raises(ValueError, match="passes configured minimum QA"):
+        select_minimum_cost_accepted_candidate(rejected)
