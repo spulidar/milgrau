@@ -1,0 +1,69 @@
+{
+  "evidence_type": "comparative_observational_r_and_d_not_productive_acceptance",
+  "targets_m": [15000.0, 20000.0],
+  "purpose": "Compare temporal persistence of already-accepted high-altitude Rayleigh candidates across blocks without declaring either target scientifically supportable for productive KFS.",
+  "current_case_20251107sapm": {
+    "source": "schema-3 method-v4 persisted candidate catalogue",
+    "level2_file_sha256": "32b793fc7874f850ee38273f7073c957194f87dd08fed1c340e96b976917a212",
+    "block_profile_count_weights": [23, 39, 39, 40, 26],
+    "355": {
+      "15000": {
+        "accepted_candidate_count_per_block": [365, 360, 370, 450, 366],
+        "block_has_accepted_candidate": [1, 1, 1, 1, 1],
+        "supporting_block_count": 5,
+        "supporting_profile_count_weight_fraction": 1.0,
+        "highest_accepted_altitude_m_per_block": [23576.25, 24033.75, 24498.75, 24461.25, 24453.75]
+      },
+      "20000": {
+        "accepted_candidate_count_per_block": [113, 3, 36, 47, 112],
+        "block_has_accepted_candidate": [1, 1, 1, 1, 1],
+        "supporting_block_count": 5,
+        "supporting_profile_count_weight_fraction": 1.0,
+        "highest_accepted_altitude_m_per_block": [23576.25, 24033.75, 24498.75, 24461.25, 24453.75]
+      }
+    },
+    "532": {
+      "15000": {
+        "accepted_candidate_count_per_block": [437, 802, 360, 474, 523],
+        "block_has_accepted_candidate": [1, 1, 1, 1, 1],
+        "supporting_block_count": 5,
+        "supporting_profile_count_weight_fraction": 1.0,
+        "highest_accepted_altitude_m_per_block": [24348.75, 24363.75, 24123.75, 23748.75, 24356.25]
+      },
+      "20000": {
+        "accepted_candidate_count_per_block": [195, 322, 112, 102, 163],
+        "block_has_accepted_candidate": [1, 1, 1, 1, 1],
+        "supporting_block_count": 5,
+        "supporting_profile_count_weight_fraction": 1.0,
+        "highest_accepted_altitude_m_per_block": [24348.75, 24363.75, 24123.75, 23748.75, 24356.25]
+      }
+    }
+  },
+  "historical_stress_case_20241219nt": {
+    "source": "legacy observational audit empirical 20-minute candidate experiment",
+    "channel": "355.PC",
+    "block_profile_count_weights": [37, 40, 28],
+    "uncertainty_caveat": "The historical experiment used temporal standard error from legacy corrected profiles and is not numerically equivalent to the current propagated Level 1 uncertainty model.",
+    "15000": {
+      "accepted_candidate_count_per_block": [1028, 0, 0],
+      "block_has_accepted_candidate": [1, 0, 0],
+      "supporting_block_count": 1,
+      "supporting_profile_count_weight_fraction": 0.3523809523809524,
+      "highest_accepted_altitude_m_per_block": [24487.5, 6435.0, 5512.5]
+    },
+    "20000": {
+      "accepted_candidate_count_per_block": [402, 0, 0],
+      "block_has_accepted_candidate": [1, 0, 0],
+      "supporting_block_count": 1,
+      "supporting_profile_count_weight_fraction": 0.3523809523809524,
+      "highest_accepted_altitude_m_per_block": [24487.5, 6435.0, 5512.5]
+    }
+  },
+  "interpretation_notes": [
+    "Candidate persistence is a diagnostic of temporal representativeness, not a productive KFS support flag.",
+    "For 20251107sapm, every current 20-minute block contains at least one shape-QA-accepted candidate at or above 15 km and 20 km for both 355 and 532 nm, although propagated SNR at those altitudes is weak.",
+    "For historical 20241219nt, only the first 20-minute block contains any accepted candidate at or above 15 km or 20 km; later blocks collapse to highest accepted altitudes near 6.4 and 5.5 km.",
+    "The contrast supports candidate-availability persistence as an auditable observable for future backbone design, but it does not define an acceptance fraction or threshold.",
+    "Numerical candidate counts between the two cases are not directly comparable because the historical uncertainty experiment differs from the current propagated uncertainty model."
+  ]
+}
