@@ -54,7 +54,7 @@ def _group_mean(values: np.ndarray, group_size: int) -> np.ndarray:
 
 
 def _integrated_column(values: np.ndarray, altitude_m: np.ndarray, mask: np.ndarray) -> float:
-    return float(np.trapz(values[mask], altitude_m[mask]))
+    return float(np.trapezoid(values[mask], altitude_m[mask]))
 
 
 @pytest.mark.parametrize("group_size", [2, 4, 8, 16, 32])
