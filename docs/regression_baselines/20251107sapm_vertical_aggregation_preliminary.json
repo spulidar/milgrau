@@ -1,0 +1,109 @@
+{
+  "evidence_kind": "vertical_aggregation_rnd_observational_diagnostic",
+  "ground_truth": false,
+  "case_id": "20251107sapm",
+  "source_level1_sha256": "52663cbfd7863db6d38bc6596616c672c573c19bc55a3c5e72403abbc4ba0b3f",
+  "source_level2_sha256": "32b793fc7874f850ee38273f7073c957194f87dd08fed1c340e96b976917a212",
+  "source_repository_revision": "b68e4d812a37c2a003e49e30c15c2e112e4c8360",
+  "level2_schema_version": "3",
+  "level2_retrieval_method_version": "4",
+  "native_vertical_spacing_m": 7.5,
+  "high_altitude_selected_signal_source_flags": {
+    "355": {"15000_20000": {"0": 3335}, "20000_25000": {"0": 3330}},
+    "532": {"15000_20000": {"0": 3335}, "20000_25000": {"0": 3330}}
+  },
+  "flag_meanings": {"0": "photon_counting", "1": "blend", "2": "analog", "3": "invalid"},
+  "residual_correlation_method": {
+    "channels": ["355.PC", "532.PC"],
+    "description": "Within each 20-minute block, subtract the per-altitude block mean from Level-1 profile RCS, divide residuals by the per-profile propagated RCS error, then pool altitude-lag correlations inside each altitude band.",
+    "caveat": "Residual correlation can include unresolved atmospheric variability; it is diagnostic evidence, not proof of pure detector-noise covariance."
+  },
+  "vertical_residual_correlation_and_implied_equal_variance_mean_gain": {
+    "355": {
+      "15000_20000": {
+        "lag1": 0.1343383502323912,
+        "lag2": 0.008575568452454878,
+        "lag4": 0.012072668007799778,
+        "lag8": 0.00540395787063688,
+        "mean_lag1_8": 0.024216835393971257,
+        "gains": {
+          "2": {"width_m": 15.0, "sqrtN_independent": 1.4142135623730951, "autocorrelation_adjusted": 1.3278337108400728},
+          "4": {"width_m": 30.0, "sqrtN_independent": 2.0, "autocorrelation_adjusted": 1.814929284385379},
+          "8": {"width_m": 60.0, "sqrtN_independent": 2.8284271247461903, "autocorrelation_adjusted": 2.4950781787909913},
+          "16": {"width_m": 120.0, "sqrtN_independent": 4.0, "autocorrelation_adjusted": 3.4183080269456627},
+          "32": {"width_m": 240.0, "sqrtN_independent": 5.656854249492381, "autocorrelation_adjusted": 4.565390051952268}
+        }
+      },
+      "20000_25000": {
+        "lag1": 0.13464299183392608,
+        "lag2": 0.016030217217182632,
+        "lag4": 0.009110536130051238,
+        "lag8": 0.01157940032034033,
+        "mean_lag1_8": 0.027299278085505925,
+        "gains": {
+          "2": {"width_m": 15.0, "sqrtN_independent": 1.4142135623730951, "autocorrelation_adjusted": 1.3276554430735306},
+          "4": {"width_m": 30.0, "sqrtN_independent": 2.0, "autocorrelation_adjusted": 1.807160823694563},
+          "8": {"width_m": 60.0, "sqrtN_independent": 2.8284271247461903, "autocorrelation_adjusted": 2.4763112328204},
+          "16": {"width_m": 120.0, "sqrtN_independent": 4.0, "autocorrelation_adjusted": 3.370274321471107},
+          "32": {"width_m": 240.0, "sqrtN_independent": 5.656854249492381, "autocorrelation_adjusted": 4.505491258953223}
+        }
+      }
+    },
+    "532": {
+      "15000_20000": {
+        "lag1": 0.096229528121975,
+        "lag2": 0.014628166145642978,
+        "lag4": 0.010144982289911847,
+        "lag8": 0.012689488474248643,
+        "mean_lag1_8": 0.021760301474478775,
+        "gains": {
+          "2": {"width_m": 15.0, "sqrtN_independent": 1.4142135623730951, "autocorrelation_adjusted": 1.350716638917922},
+          "4": {"width_m": 30.0, "sqrtN_independent": 2.0, "autocorrelation_adjusted": 1.8535812066184205},
+          "8": {"width_m": 60.0, "sqrtN_independent": 2.8284271247461903, "autocorrelation_adjusted": 2.5517400805531185},
+          "16": {"width_m": 120.0, "sqrtN_independent": 4.0, "autocorrelation_adjusted": 3.4823410487496944},
+          "32": {"width_m": 240.0, "sqrtN_independent": 5.656854249492381, "autocorrelation_adjusted": 4.697706218242946}
+        }
+      },
+      "20000_25000": {
+        "lag1": 0.09797822347794223,
+        "lag2": 0.01165180824076716,
+        "lag4": 0.003126610239734684,
+        "lag8": 0.009175135228321814,
+        "mean_lag1_8": 0.01944790201537617,
+        "gains": {
+          "2": {"width_m": 15.0, "sqrtN_independent": 1.4142135623730951, "autocorrelation_adjusted": 1.3496406006734378},
+          "4": {"width_m": 30.0, "sqrtN_independent": 2.0, "autocorrelation_adjusted": 1.8550082020367167},
+          "8": {"width_m": 60.0, "sqrtN_independent": 2.8284271247461903, "autocorrelation_adjusted": 2.5650234367424627},
+          "16": {"width_m": 120.0, "sqrtN_independent": 4.0, "autocorrelation_adjusted": 3.5229115104541036},
+          "32": {"width_m": 240.0, "sqrtN_independent": 5.656854249492381, "autocorrelation_adjusted": 4.759899236316858}
+        }
+      }
+    }
+  },
+  "block_level_vertical_aggregation_snr_bracket": {
+    "10000_15000": {
+      "1": {"width_m": 7.5, "355": {"median_snr_independent_error_assumption": 3.2444992959077426, "median_snr_fully_correlated_error_assumption": 3.2444992959077426}, "532": {"median_snr_independent_error_assumption": 3.7530670149295617, "median_snr_fully_correlated_error_assumption": 3.7530670149295617}},
+      "8": {"width_m": 60.0, "355": {"median_snr_independent_error_assumption": 8.72189233620487, "median_snr_fully_correlated_error_assumption": 3.0838349937417866}, "532": {"median_snr_independent_error_assumption": 9.982066565028742, "median_snr_fully_correlated_error_assumption": 3.5293573622335153}},
+      "16": {"width_m": 120.0, "355": {"median_snr_independent_error_assumption": 12.293362604080981, "median_snr_fully_correlated_error_assumption": 3.0735937815297643}, "532": {"median_snr_independent_error_assumption": 14.863456476443865, "median_snr_fully_correlated_error_assumption": 3.71604202091624}}
+    },
+    "15000_20000": {
+      "1": {"width_m": 7.5, "355": {"median_snr_independent_error_assumption": 1.143371597058195, "median_snr_fully_correlated_error_assumption": 1.143371597058195}, "532": {"median_snr_independent_error_assumption": 1.242628549554038, "median_snr_fully_correlated_error_assumption": 1.242628549554038}},
+      "8": {"width_m": 60.0, "355": {"median_snr_independent_error_assumption": 2.2456649917680935, "median_snr_fully_correlated_error_assumption": 0.7941085334104909}, "532": {"median_snr_independent_error_assumption": 2.7231120474829256, "median_snr_fully_correlated_error_assumption": 0.9627831817483394}},
+      "16": {"width_m": 120.0, "355": {"median_snr_independent_error_assumption": 2.940446194825155, "median_snr_fully_correlated_error_assumption": 0.7351643903787891}, "532": {"median_snr_independent_error_assumption": 3.839244178332393, "median_snr_fully_correlated_error_assumption": 0.9598348423067468}},
+      "32": {"width_m": 240.0, "355": {"median_snr_independent_error_assumption": 4.154723161911249, "median_snr_fully_correlated_error_assumption": 0.7345281711735939}, "532": {"median_snr_independent_error_assumption": 5.333996595343586, "median_snr_fully_correlated_error_assumption": 0.9429784865744403}}
+    },
+    "20000_25000": {
+      "1": {"width_m": 7.5, "355": {"median_snr_independent_error_assumption": 0.8410562618378236, "median_snr_fully_correlated_error_assumption": 0.8410562618378236}, "532": {"median_snr_independent_error_assumption": 0.8336561725085436, "median_snr_fully_correlated_error_assumption": 0.8336561725085436}},
+      "8": {"width_m": 60.0, "355": {"median_snr_independent_error_assumption": 1.1617513761127471, "median_snr_fully_correlated_error_assumption": 0.4107475945113609}, "532": {"median_snr_independent_error_assumption": 1.1743589361068658, "median_snr_fully_correlated_error_assumption": 0.4152099135445357}},
+      "16": {"width_m": 120.0, "355": {"median_snr_independent_error_assumption": 1.3898913150822967, "median_snr_fully_correlated_error_assumption": 0.3475003481495783}, "532": {"median_snr_independent_error_assumption": 1.2595132419170056, "median_snr_fully_correlated_error_assumption": 0.31488901519423285}},
+      "32": {"width_m": 240.0, "355": {"median_snr_independent_error_assumption": 1.5777052159475855, "median_snr_fully_correlated_error_assumption": 0.278924181260666}, "532": {"median_snr_independent_error_assumption": 1.7747012498858057, "median_snr_fully_correlated_error_assumption": 0.31374419193835146}}
+    }
+  },
+  "interpretation_notes": [
+    "Non-overlapping vertical aggregation can improve random-noise SNR only to the extent that range-bin errors are not fully correlated.",
+    "For this case, lag-1 residual correlation is modest (~0.10-0.13 for the high-altitude PC channels) and longer lags are near zero, so an empirical stationary equal-variance model predicts substantial but sub-sqrt(N) gain.",
+    "At 15-20 km, 60-120 m aggregation can raise the median block-level SNR above the native-grid value under an independence-like model, but there is essentially no gain under the fully-correlated uncertainty limit.",
+    "At 20-25 km even aggressive aggregation remains weak in this case; smoothing cannot manufacture trustworthy information where the underlying signal is too weak.",
+    "This experiment does not authorize productive smoothing, a new SNR threshold, or a higher KFS boundary. Synthetic bias/resolution tests and broader observational evidence are required."
+  ]
+}
