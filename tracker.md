@@ -11,8 +11,10 @@ Current productive code identity:
 - productive inversion: backward Klett–Fernald–Sasano;
 - schema-v3 catalogue code gate: CI green at `72133cfc446ad5b23ac1de5d9242af2d44cab9e0` on Ubuntu/Windows, Python 3.12/3.14, Ruff + full pytest matrix;
 - temporal-support/candidate-persistence R&D gate: CI green at `831c5e7eead3bceb00830312bfae72109ecaa506` on the same cross-platform matrix;
+- vertical-aggregation uncertainty/covariance R&D gate: CI green at `360f8d7bf4a445b878f939135b44bc2cdb80c04a` on the same cross-platform matrix;
 - current observational schema-v3 evidence: `docs/regression_baselines/20251107sapm_method_v4_schema3_catalogue.json`;
-- current temporal evidence: `docs/regression_baselines/20251107sapm_temporal_support_preliminary.json` and `docs/regression_baselines/high_column_candidate_persistence_comparison.json`.
+- current temporal evidence: `docs/regression_baselines/20251107sapm_temporal_support_preliminary.json` and `docs/regression_baselines/high_column_candidate_persistence_comparison.json`;
+- current vertical-aggregation evidence: `docs/regression_baselines/20251107sapm_vertical_aggregation_preliminary.json`.
 
 Frozen method-v3 comparison baseline remains `docs/regression_baselines/20251107sapm_method_v3.json`. Observational files are regression/behavior evidence, not ground truth.
 
@@ -27,6 +29,8 @@ Frozen method-v3 comparison baseline remains `docs/regression_baselines/20251107
 - The lower scientific-support boundary requires evidence-backed instrument validity; finite near-range KFS output alone is insufficient while overlap remains uncharacterized.
 - A high-altitude target is an objective, not permission to extrapolate or weaken QA.
 - Long averaging must expose temporal contribution/stability and must not let a transient interval silently define an entire measurement.
+- Vertical smoothing/aggregation is a resolution trade, not new information; its effective resolution and uncertainty dependence model must be explicit.
+- Post-retrieval cosmetic smoothing must never be used to claim additional inversion support.
 - Multiple accepted reference solutions are sensitivity/ensemble evidence, not independent truths; their disagreement must remain visible.
 - A KFS member is tied to the signal/molecular state at its exact local boundary.
 - Elastic extinction remains conditional on the assumed aerosol lidar ratio.
@@ -47,7 +51,7 @@ Frozen method-v3 comparison baseline remains `docs/regression_baselines/20251107
 | P5.1 | COMPLETE + REAL-DATA CHECKED | altitude-resolved inversion support |
 | P5.2 | COMPLETE + REAL-DATA CHECKED | QA-first Rayleigh catalogue + auditable selection |
 | P5.3 | IN PROGRESS | real-data candidate interpretation |
-| P5.4 | IN PROGRESS — REAL TEMPORAL EVIDENCE | temporally honest high-column backbone R&D |
+| P5.4 | IN PROGRESS — TEMPORAL + VERTICAL-SNR R&D | temporally honest high-column backbone R&D |
 | P5.5+ | PENDING / DEFERRED | ensemble, optional cascade, merge, uncertainty extension |
 | P6 | PENDING | reproducible release/publication process |
 
@@ -160,11 +164,11 @@ Remaining catalogue R&D is not required to close P5.2:
 - [ ] Separate future high-column limitation into propagated-SNR, temporal representativeness and cloud/layer contamination before enabling any new productive gate.
 - [ ] Compare a future redesigned lower-column solution against the frozen method-v3 baseline when a higher-boundary method becomes productive.
 
-## P5.4 — high-column backbone — REAL TEMPORAL EVIDENCE IN PROGRESS
+## P5.4 — high-column backbone — TEMPORAL + VERTICAL-SNR R&D
 
-Do not implement a naive whole-measurement mean as a productive retrieval.
+Do not implement a naive whole-measurement mean or cosmetic post-retrieval smoothing as a productive retrieval.
 
-Implemented diagnostics:
+Implemented temporal diagnostics:
 
 - [x] Pure signal/error temporal-support diagnostics with explicit block weights.
 - [x] Altitude-resolved supporting-block count and supported-weight fraction on common finite signal/non-negative uncertainty support.
@@ -188,15 +192,31 @@ Comparative high-candidate persistence evidence:
 - [x] This contrast is frozen in `docs/regression_baselines/high_column_candidate_persistence_comparison.json`.
 - [x] Candidate persistence is therefore an auditable temporal-representativeness observable, but **not yet a productive acceptance criterion**. Historical uncertainty is also not numerically identical to the current propagated-uncertainty model.
 
+Vertical aggregation / smoothing R&D:
+
+- [x] Add pure **non-overlapping vertical aggregation** diagnostics on a uniform grid; no productive signal is changed.
+- [x] Preserve strict support: one missing/invalid source bin invalidates its aggregate; no interpolation or gap bridging is allowed.
+- [x] Carry both independent-bin uncertainty and perfect-positive-correlation uncertainty explicitly instead of silently claiming a `sqrt(N)` gain.
+- [x] Add empirical block-demeaned, uncertainty-scaled vertical residual autocorrelation and a stationary autocorrelation-adjusted theoretical SNR-gain diagnostic.
+- [x] Synthetic tests verify identity at one bin, expected independent/correlated limits, missing-bin rejection, linear-profile center preservation, no edge padding and correlated-residual detection.
+- [x] Cross-platform CI green for vertical-aggregation diagnostics at `360f8d7bf4a445b878f939135b44bc2cdb80c04a`.
+- [x] In real `20251107sapm` far-range selected signal, the gluing source is PC in the inspected 15–25 km bands. Level-1 PC residual lag-1 correlation is modest (~0.13 at 355 nm and ~0.10 at 532 nm) and longer lags are near zero.
+- [x] Under the empirical stationary/equal-variance correlation approximation, expected SNR gain is ~2.5× for 60 m aggregation and ~3.4–3.5× for 120 m aggregation in 15–20 km, below the ideal `sqrt(N)` but materially above one.
+- [x] Direct block-error bracketing shows the scientific dependence assumption clearly: at 15–20 km, 60–120 m aggregation can move median SNR from ~1.1–1.2 toward ~2.2–3.8 under an independence-like model, while the perfect-correlation limit gives essentially no gain.
+- [x] At 20–25 km even aggressive 120–240 m aggregation remains weak in this case; aggregation cannot manufacture high-column information from an intrinsically noise-dominated signal.
+- [x] Evidence frozen in `docs/regression_baselines/20251107sapm_vertical_aggregation_preliminary.json`.
+- [ ] Run synthetic KFS truth experiments on 15/30/60/120/240 m pre-retrieval aggregation and quantify layer-amplitude bias, vertical displacement, boundary sensitivity and lower-column bias.
+- [ ] Quantify calibration-window uncertainty using the full 1 km Rayleigh window, because current candidate SNR is bin-wise and may understate the information in a window-level calibration estimate.
+- [ ] Prefer explicit pre-retrieval aggregation/rebinning over Savitzky–Golay post-processing if a productive resolution trade is eventually justified.
+
 Remaining backbone gate:
 
-- [ ] Combine persistence, propagated-SNR behavior, contribution dominance and subwindow disagreement into an evidence-backed experimental decision rule without tuning it to a desired top altitude.
+- [ ] Combine persistence, propagated-SNR behavior, contribution dominance, subwindow disagreement and any validated aggregation resolution into an evidence-backed experimental decision rule without tuning it to a desired top altitude.
 - [ ] Validate that rule on more synthetic boundary cases and at least additional observational regimes before making it productive.
 - [ ] Only then add a distinct long-mean/high-column retrieval input with explicit duration/provenance and common signal/error support.
 - [ ] Preserve original-resolution/block signals; backbone is additional state, not a destructive replacement.
-- [ ] Evaluate vertical aggregation only if needed and validate its bias with synthetic truth.
 
-P5.4 acceptance: longer averaging must demonstrably increase usable high-altitude information without materially biasing the lower column or hiding temporal nonstationarity.
+P5.4 acceptance: longer averaging/controlled aggregation must demonstrably increase usable high-altitude information without materially biasing the lower column, hiding temporal nonstationarity or disguising loss of vertical resolution.
 
 ## P5.5 — robust multi-reference ensemble — PENDING
 
@@ -234,6 +254,7 @@ Implement only if multiple accepted solutions actually need stitching. Merge wei
 - [x] `docs/level2_schema.md` documents schema 3 / method 4 and diagnostic-only SNR policy.
 - [ ] Update QA plots to show effective optical retrieval top/support and selected/accepted candidate locations; finite scattering ratio must not visually imply aerosol retrieval.
 - [ ] Add temporal-support panel only when backbone diagnostics become productive.
+- [ ] Add aggregation/effective-resolution metadata and QA only if vertical aggregation becomes productive.
 - [ ] Add ensemble/cascade panels only if those algorithms become productive.
 
 ## P5.10 — validation matrix
@@ -247,6 +268,8 @@ Synthetic established:
 - [x] Candidate catalogue retains accepted/rejected windows and QA-first selection.
 - [x] Temporally heterogeneous synthetic sequence exposes transient-only far-range support and single-block dominance.
 - [x] Candidate-persistence synthetic cases distinguish persistent high-candidate availability from first-block-only availability without applying an acceptance threshold.
+- [x] Vertical-aggregation helper exposes independent and fully correlated uncertainty limits and never bridges missing source bins.
+- [ ] KFS truth under controlled 15/30/60/120/240 m vertical aggregation -> quantify bias versus effective resolution and noise gain.
 - [ ] Evidence-backed backbone reject/split criterion on temporal non-representativeness.
 - [ ] Multiple valid high references -> ensemble stability and reference-sensitivity uncertainty.
 - [ ] Biased/contaminated candidate -> rejection or visible uncertainty impact.
@@ -260,13 +283,14 @@ Real SPU:
 - [x] Schema-3 persisted real catalogue validated and frozen as machine-readable observational evidence.
 - [x] Preliminary real temporal support/contribution/subwindow diagnostics recorded for `20251107sapm`.
 - [x] Candidate-persistence contrast recorded between `20251107sapm` and historical `20241219nt`.
+- [x] Preliminary vertical-correlation/SNR-gain brackets recorded for `20251107sapm`; they motivate aggregation experiments but do not authorize productive smoothing.
 - [ ] Extend defensible 355/532 support materially above current tops only when evidence supports it.
 - [ ] Evaluate whether 15 km is supportable for representative measurements.
 - [ ] Attempt 20 km target only when trustworthy boundary/support exists at or above the needed altitude.
 - [ ] Add clear-night, high-aerosol, cloud, weak-signal, temporally changing and materially different PC/AN-dominance cases before general validation.
 - [ ] Compare representative cases with LPP/SCC/ELDA under matched assumptions without treating them as truth.
 
-P5 success criterion: **maximize defensible inversion-supported vertical coverage while exposing where/why support ends, preserving temporal representativeness, uncertainty honesty and exact boundary provenance. Success is not “reaches 20 km.”**
+P5 success criterion: **maximize defensible inversion-supported vertical coverage while exposing where/why support ends, preserving temporal representativeness, uncertainty honesty, declared effective resolution and exact boundary provenance. Success is not “reaches 20 km.”**
 
 ## P6 — release/publication readiness
 
@@ -283,8 +307,9 @@ P5 success criterion: **maximize defensible inversion-supported vertical coverag
 
 ## Immediate next gate
 
-1. Design an **experimental**, non-productive backbone decision rule using the four observed dimensions now available: propagated candidate SNR, high-candidate temporal persistence, altitude-resolved contribution dominance and contiguous-subwindow disagreement.
-2. Stress that rule synthetically, including persistent-low-SNR, transient-high-SNR, temporally changing aerosol/cloud and internal-gap cases; do not tune thresholds to 15/20 km.
-3. Seek at least one additional real SPU case with materially different temporal/high-altitude behavior before promoting any threshold to production.
-4. Audit molecular-lidar-ratio consistency and gluing fit-parameter uncertainty in parallel.
-5. Only after those gates, introduce a productive long-mean/high-column backbone and later a multi-reference ensemble if they demonstrably extend support without hiding temporal nonstationarity or boundary ambiguity.
+1. Run **synthetic KFS truth experiments** with explicit non-overlapping 15/30/60/120/240 m pre-retrieval aggregation; quantify SNR gain, effective-resolution loss, layer-amplitude/position bias, boundary sensitivity and lower-column bias.
+2. Add a window-level Rayleigh calibration-uncertainty diagnostic so bin-wise SNR is not confused with the uncertainty of a ~1 km calibration estimate; carry dependence assumptions explicitly.
+3. Combine persistence, calibration/SNR evidence, contribution dominance and subwindow disagreement into an **experimental**, non-productive backbone decision rule; do not tune thresholds to 15/20 km.
+4. Seek at least one additional real SPU case with materially different temporal/high-altitude behavior before promoting any threshold or aggregation width to production.
+5. Audit molecular-lidar-ratio consistency and gluing fit-parameter uncertainty in parallel.
+6. Only after those gates, introduce a productive long-mean/high-column backbone and later a multi-reference ensemble if they demonstrably extend support without hiding temporal nonstationarity, boundary ambiguity or loss of resolution.
