@@ -1,12 +1,14 @@
 """Altitude-resolved scientific support semantics for Level 2 retrievals.
 
-This module does not publish new NetCDF variables by itself.  It defines the
-support contract that must be validated before product-schema exposure.
+The low-level contract in this module is intentionally independent of NetCDF.
+It distinguishes algorithmic/inversion support from a future stricter support
+claim that will additionally require an evidence-backed instrument mask.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any, Sequence
 
 import numpy as np
 
@@ -24,6 +26,26 @@ class BackwardRetrievalSupport:
     flag: np.ndarray
     bottom_altitude_m: float
     top_altitude_m: float
+
+
+@dataclass(frozen=True, slots=True)
+class Level2InversionSupport:
+    """Block and aggregate algorithmic support for processed wavelengths.
+
+    This contract deliberately says *inversion* support.  No lower instrument
+    mask is applied while overlap/near-field validity remains uncharacterized.
+    ``effective_block_count`` reports how many successful block retrievals
+    support each aggregate altitude bin, so a high top supported by one block
+    is not confused with support shared by all blocks.
+    """
+
+    flag: np.ndarray
+    flag_block: np.ndarray
+    effective_block_count: np.ndarray
+    bottom_altitude_m: np.ndarray
+    top_altitude_m: np.ndarray
+    bottom_altitude_m_block: np.ndarray
+    top_altitude_m_block: np.ndarray
 
 
 def backward_retrieval_support(
@@ -100,4 +122,167 @@ def backward_retrieval_support(
         flag=flag,
         bottom_altitude_m=float(altitude[bottom]),
         top_altitude_m=float(altitude[upper]),
+    )
+
+
+def _exact_reference_index(altitude_m: np.ndarray, reference_altitude_m: float) -> int:
+    """Resolve a stored reference altitude back to its exact lidar-grid bin."""
+    altitude = np.asarray(altitude_m, dtype=np.float64)
+    reference = float(reference_altitude_m)
+    if not np.isfinite(reference):
+        raise ValueError("reference altitude must be finite.")
+    spacing = float(np.min(np.diff(altitude))) if altitude.size > 1 else 1.0
+    atol = max(abs(spacing) * 1.0e-9, 1.0e-9)
+    matches = np.flatnonzero(np.isclose(altitude, reference, rtol=0.0, atol=atol))
+    if matches.size != 1:
+        raise ValueError(
+            "Rayleigh reference altitude must identify exactly one altitude-grid bin."
+        )
+    return int(matches[0])
+
+
+def _common_optical_support_inputs(
+    backscatter: np.ndarray,
+    backscatter_error: np.ndarray,
+    extinction: np.ndarray,
+    extinction_error: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return value/error arrays masked to common optical-product support."""
+    beta = np.asarray(backscatter, dtype=np.float64)
+    beta_error = np.asarray(backscatter_error, dtype=np.float64)
+    alpha = np.asarray(extinction, dtype=np.float64)
+    alpha_error = np.asarray(extinction_error, dtype=np.float64)
+    if not (beta.shape == beta_error.shape == alpha.shape == alpha_error.shape):
+        raise ValueError("Optical value/error arrays must have identical shapes.")
+    common = (
+        np.isfinite(beta)
+        & np.isfinite(beta_error)
+        & (beta_error >= 0.0)
+        & np.isfinite(alpha)
+        & np.isfinite(alpha_error)
+        & (alpha_error >= 0.0)
+    )
+    return np.where(common, beta, np.nan), np.where(common, beta_error, np.nan)
+
+
+def assemble_level2_inversion_support(
+    results: Sequence[Any],
+    altitude_m: np.ndarray,
+) -> Level2InversionSupport:
+    """Assemble block and aggregate backward inversion support.
+
+    ``results`` must be sorted in the same wavelength order used by the Level 2
+    dataset.  Each successful block is evaluated at its own exact accepted
+    Rayleigh boundary.  Aggregate support is the contiguous union represented
+    by the aggregate optical value/error fields, while
+    ``effective_block_count`` preserves how many block solutions support each
+    altitude.
+
+    No instrument-validity mask is supplied here.  Therefore these fields are
+    an algorithmic/inversion-domain diagnostic and are not a validated
+    near-field overlap/support claim.
+    """
+    altitude = np.asarray(altitude_m, dtype=np.float64)
+    if altitude.ndim != 1 or altitude.size == 0:
+        raise ValueError("altitude_m must be a non-empty one-dimensional grid.")
+    if not np.all(np.isfinite(altitude)) or not np.all(np.diff(altitude) > 0.0):
+        raise ValueError("altitude_m must be finite and strictly increasing.")
+    if not results:
+        raise ValueError("At least one wavelength result is required.")
+
+    n_wavelength = len(results)
+    n_block = int(np.asarray(results[0].optical.retrieval_success_flag).size)
+    if n_block <= 0:
+        raise ValueError("At least one retrieval block is required.")
+
+    flag_block = np.zeros(
+        (n_block, n_wavelength, altitude.size), dtype=np.int8
+    )
+    bottom_block = np.full((n_block, n_wavelength), np.nan, dtype=np.float64)
+    top_block = np.full((n_block, n_wavelength), np.nan, dtype=np.float64)
+
+    for wavelength_index, result in enumerate(results):
+        success = np.asarray(result.optical.retrieval_success_flag, dtype=np.int8)
+        reference_altitude = np.asarray(
+            result.rayleigh.reference_altitude_m_block, dtype=np.float64
+        )
+        beta = np.asarray(result.optical.aerosol_backscatter_block, dtype=np.float64)
+        beta_error = np.asarray(
+            result.optical.aerosol_backscatter_error_block, dtype=np.float64
+        )
+        alpha = np.asarray(result.optical.aerosol_extinction_block, dtype=np.float64)
+        alpha_error = np.asarray(
+            result.optical.aerosol_extinction_error_block, dtype=np.float64
+        )
+        expected_shape = (n_block, altitude.size)
+        if success.shape != (n_block,) or reference_altitude.shape != (n_block,):
+            raise ValueError("Block success/reference arrays do not share the common block axis.")
+        if not (
+            beta.shape
+            == beta_error.shape
+            == alpha.shape
+            == alpha_error.shape
+            == expected_shape
+        ):
+            raise ValueError("Block optical arrays do not match block/altitude dimensions.")
+
+        for block_index in range(n_block):
+            if int(success[block_index]) != 1:
+                continue
+            reference_index = _exact_reference_index(
+                altitude, reference_altitude[block_index]
+            )
+            value, uncertainty = _common_optical_support_inputs(
+                beta[block_index],
+                beta_error[block_index],
+                alpha[block_index],
+                alpha_error[block_index],
+            )
+            support = backward_retrieval_support(
+                altitude,
+                value,
+                uncertainty,
+                upper_index=reference_index,
+            )
+            flag_block[block_index, wavelength_index] = support.flag.astype(np.int8)
+            bottom_block[block_index, wavelength_index] = support.bottom_altitude_m
+            top_block[block_index, wavelength_index] = support.top_altitude_m
+
+    effective_count = flag_block.sum(axis=0, dtype=np.int16)
+    aggregate_flag = np.zeros((n_wavelength, altitude.size), dtype=np.int8)
+    aggregate_bottom = np.full(n_wavelength, np.nan, dtype=np.float64)
+    aggregate_top = np.full(n_wavelength, np.nan, dtype=np.float64)
+
+    for wavelength_index, result in enumerate(results):
+        beta, beta_error = _common_optical_support_inputs(
+            result.optical.aerosol_backscatter,
+            result.optical.aerosol_backscatter_error,
+            result.optical.aerosol_extinction,
+            result.optical.aerosol_extinction_error,
+        )
+        has_block_support = effective_count[wavelength_index] > 0
+        common = np.isfinite(beta) & np.isfinite(beta_error) & has_block_support
+        if not np.any(common):
+            continue
+        upper_index = int(np.flatnonzero(common)[-1])
+        masked_beta = np.where(has_block_support, beta, np.nan)
+        masked_error = np.where(has_block_support, beta_error, np.nan)
+        support = backward_retrieval_support(
+            altitude,
+            masked_beta,
+            masked_error,
+            upper_index=upper_index,
+        )
+        aggregate_flag[wavelength_index] = support.flag.astype(np.int8)
+        aggregate_bottom[wavelength_index] = support.bottom_altitude_m
+        aggregate_top[wavelength_index] = support.top_altitude_m
+
+    return Level2InversionSupport(
+        flag=aggregate_flag,
+        flag_block=flag_block,
+        effective_block_count=effective_count,
+        bottom_altitude_m=aggregate_bottom,
+        top_altitude_m=aggregate_top,
+        bottom_altitude_m_block=bottom_block,
+        top_altitude_m_block=top_block,
     )
