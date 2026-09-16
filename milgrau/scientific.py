@@ -6,10 +6,9 @@ from typing import Final
 
 LEVEL2_PRODUCT_SCHEMA_VERSION: Final[str] = "2"
 LEVEL2_PRODUCT_SCHEMA_CHANGE: Final[str] = "altitude_resolved_backward_inversion_support_diagnostics"
-LEVEL2_RETRIEVAL_METHOD_VERSION: Final[str] = "3"
+LEVEL2_RETRIEVAL_METHOD_VERSION: Final[str] = "4"
 LEVEL2_RETRIEVAL_METHOD_CHANGE: Final[str] = (
-    "joint_signal_uncertainty_support_missing_uncertainty_rejection_and_"
-    "conservative_correlated_block_uncertainty"
+    "qa_first_rayleigh_candidate_selection_with_method_v3_uncertainty_support"
 )
 
 ELASTIC_BACKSCATTER_INVERSION_METHOD: Final[str] = "Klett-Fernald-Sasano"
@@ -32,6 +31,11 @@ def elastic_inversion_algorithm_metadata() -> dict[str, str]:
         "integration_mode": ELASTIC_BACKSCATTER_INTEGRATION_MODE,
         "uncertainty_method": ELASTIC_BACKSCATTER_UNCERTAINTY_METHOD,
         "level2_retrieval_method_change": LEVEL2_RETRIEVAL_METHOD_CHANGE,
+        "rayleigh_reference_selection_policy": (
+            "enumerate complete candidates; apply configured minimum QA; rank accepted candidates "
+            "by relative_slope+relative_variance with lower-grid-index deterministic tie break"
+        ),
+        "rayleigh_reference_snr_policy": "diagnostic_only_no_hard_threshold",
         "optical_block_uncertainty_correlation_policy": "fully_correlated_upper_bound",
         "optical_block_uncertainty_aggregation_formula": (
             "sigma_mean=sum(sigma_block)/n_effective on common value/error support"
