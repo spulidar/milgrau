@@ -155,6 +155,13 @@ def test_validate_level2_contract_accepts_minimal_optical_dataset() -> None:
     validate_level2_contract(_level2(("time", "wavelength", "altitude")))
 
 
+def test_schema3_level2_contract_requires_rayleigh_candidate_catalogue() -> None:
+    ds = _level2(("time", "wavelength", "altitude"))
+    ds.attrs["level2_product_schema_version"] = "3"
+    with pytest.raises(KeyError, match="Rayleigh candidate catalogue"):
+        validate_level2_contract(ds)
+
+
 def test_validate_level2_contract_rejects_wrong_effective_support_count() -> None:
     ds = _level2(("time", "wavelength", "altitude"))
     ds["retrieval_inversion_effective_block_count"][0, 1] = 0
