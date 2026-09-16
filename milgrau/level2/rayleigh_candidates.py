@@ -1,15 +1,17 @@
-"""Auditable Rayleigh-reference candidate catalogue for high-column Level 2 R&D.
+"""Auditable Rayleigh-reference candidate catalogue and deterministic ranking.
 
-The productive selector still lives in :mod:`milgrau.level2.molecular`.  This
-module deliberately does not replace it yet.  It enumerates and diagnoses every
-candidate window so selection policy can be validated before productive
-behavior changes.
+Every complete candidate is diagnosed before productive selection.  Current
+productive ranking is intentionally conservative: configured minimum QA is
+applied first, then the historical ``relative_slope + relative_variance`` cost
+is minimized among accepted candidates only.  No altitude preference or hard
+SNR gate is introduced here.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import IntFlag
+from typing import Sequence
 
 import numpy as np
 
@@ -193,12 +195,7 @@ def catalogue_rayleigh_candidates(
     min_valid_fraction: float,
     measured_signal_error: np.ndarray | None = None,
 ) -> tuple[RayleighReferenceCandidate, ...]:
-    """Return every fully contained candidate in the configured search interval.
-
-    This function performs no final ranking.  Keeping the accepted and rejected
-    catalogue intact is intentional: ranking policy will be validated against
-    synthetic and SPU evidence before it changes the productive selector.
-    """
+    """Return every fully contained candidate in the configured search interval."""
     altitude = np.asarray(altitude_m, dtype=np.float64)
     measured = np.asarray(measured_signal, dtype=np.float64)
     simulated = np.asarray(simulated_molecular_signal, dtype=np.float64)
@@ -244,7 +241,31 @@ def catalogue_rayleigh_candidates(
 
 
 def accepted_rayleigh_candidates(
-    candidates: tuple[RayleighReferenceCandidate, ...] | list[RayleighReferenceCandidate],
+    candidates: Sequence[RayleighReferenceCandidate],
 ) -> tuple[RayleighReferenceCandidate, ...]:
     """Filter a catalogue after QA without imposing a ranking policy."""
     return tuple(candidate for candidate in candidates if candidate.accepted)
+
+
+def minimum_cost_rayleigh_candidate(
+    candidates: Sequence[RayleighReferenceCandidate],
+) -> RayleighReferenceCandidate:
+    """Return deterministic minimum historical diagnostic cost from any candidates.
+
+    This is useful for failure diagnostics only when no candidate passes QA.
+    Ties use the lower center index, matching the historical first-window
+    behavior rather than introducing an undocumented altitude preference.
+    """
+    if not candidates:
+        raise ValueError("Rayleigh candidate ranking requires at least one candidate.")
+    return min(candidates, key=lambda candidate: (candidate.diagnostic_cost, candidate.center_index))
+
+
+def select_minimum_cost_accepted_candidate(
+    candidates: Sequence[RayleighReferenceCandidate],
+) -> RayleighReferenceCandidate:
+    """Apply QA first, then minimize the historical cost among passers only."""
+    accepted = accepted_rayleigh_candidates(candidates)
+    if not accepted:
+        raise ValueError("No Rayleigh reference candidate passes configured minimum QA.")
+    return minimum_cost_rayleigh_candidate(accepted)
