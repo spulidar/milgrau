@@ -17,9 +17,10 @@ from milgrau.level2.contracts import (
     RayleighDiagnostics,
 )
 from milgrau.level2.kfs import kfs_inversion_monte_carlo
-from milgrau.level2.molecular import (
-    find_optimal_reference_altitude,
-    linear_rayleigh_calibration_factor,
+from milgrau.level2.rayleigh_candidates import (
+    catalogue_rayleigh_candidates,
+    minimum_cost_rayleigh_candidate,
+    select_minimum_cost_accepted_candidate,
 )
 from milgrau.level2.signal_selection import BlockGluingResult, WavelengthBlockInputs
 
@@ -277,7 +278,7 @@ def retrieve_optical_blocks(
     config: Mapping[str, Any],
     logger: logging.Logger,
 ) -> tuple[MolecularProfiles, OpticalProducts, RayleighDiagnostics, KfsDiagnostics]:
-    """Run block Rayleigh QA/KFS and aggregate the productive backward solution."""
+    """Run block QA-first Rayleigh selection/KFS and aggregate backward solutions."""
     if str(molecular.kfs_mode).strip().lower() != "backward":
         raise ValueError("Productive optical retrieval requires backward KFS mode.")
 
@@ -317,49 +318,39 @@ def retrieve_optical_blocks(
     for block_index in range(n_block):
         if glued.retrieval_input_valid_flag[block_index] != 1:
             continue
-        reference_index = find_optimal_reference_altitude(
-            rcs=glued.range_corrected_signal[block_index, :],
-            beta_mol=molecular.simulated_range_corrected_signal,
-            altitude=altitude_m,
-            min_alt=fit_config["ref_alt_min_m"],
-            max_alt=fit_config["ref_alt_max_m"],
-            window_size=fit_config["ref_window_bins"],
-            altitude_units="m",
-        )
-        factor, ref_start_m, ref_stop_m, valid_bins = (
-            origin_rayleigh_calibration_factor(
-                measured_signal=glued.range_corrected_signal[block_index, :],
-                simulated_molecular_signal=molecular.simulated_range_corrected_signal,
-                altitude_m=altitude_m,
-                reference_center_idx=reference_index,
-                reference_window_bins=fit_config["ref_window_bins"],
-            )
-        )
-        _, intercept_diagnostic, _, _, _ = linear_rayleigh_calibration_factor(
+
+        catalogue = catalogue_rayleigh_candidates(
             measured_signal=glued.range_corrected_signal[block_index, :],
             simulated_molecular_signal=molecular.simulated_range_corrected_signal,
             altitude_m=altitude_m,
-            reference_center_idx=reference_index,
-            reference_window_bins=fit_config["ref_window_bins"],
+            min_altitude_m=float(fit_config["ref_alt_min_m"]),
+            max_altitude_m=float(fit_config["ref_alt_max_m"]),
+            window_bins=int(fit_config["ref_window_bins"]),
+            max_relative_slope=float(fit_config["max_relative_slope"]),
+            max_relative_variance=float(fit_config["max_relative_variance"]),
+            min_valid_fraction=float(fit_config["min_valid_fraction"]),
+            measured_signal_error=glued.range_corrected_signal_error[block_index, :],
         )
-        qa = evaluate_rayleigh_reference(
-            glued.range_corrected_signal[block_index, :],
-            molecular.simulated_range_corrected_signal,
-            altitude_m,
-            reference_index,
-            fit_config["ref_window_bins"],
-            fit_config,
-            factor,
-        )
+        try:
+            candidate = select_minimum_cost_accepted_candidate(catalogue)
+            candidate_passed = True
+        except ValueError:
+            # Preserve one deterministic rejected candidate for failure diagnostics,
+            # but never run productive KFS from a candidate that failed QA.
+            candidate = minimum_cost_rayleigh_candidate(catalogue)
+            candidate_passed = False
+
+        reference_index = int(candidate.center_index)
+        factor = float(candidate.calibration_factor)
         calibration_factor[block_index] = factor
-        calibration_intercept[block_index] = intercept_diagnostic
-        reference_altitude[block_index] = float(altitude_m[reference_index])
-        reference_start[block_index] = ref_start_m
-        reference_stop[block_index] = ref_stop_m
-        reference_valid_bins[block_index] = int(valid_bins)
-        reference_relative_slope[block_index] = float(qa["relative_slope"])
-        reference_relative_variance[block_index] = float(qa["relative_variance"])
-        reference_valid_fraction[block_index] = float(qa["valid_fraction"])
+        calibration_intercept[block_index] = float(candidate.free_intercept)
+        reference_altitude[block_index] = float(candidate.center_altitude_m)
+        reference_start[block_index] = float(candidate.start_altitude_m)
+        reference_stop[block_index] = float(candidate.stop_altitude_m)
+        reference_valid_bins[block_index] = int(candidate.valid_bins)
+        reference_relative_slope[block_index] = float(candidate.relative_slope)
+        reference_relative_variance[block_index] = float(candidate.relative_variance)
+        reference_valid_fraction[block_index] = float(candidate.valid_fraction)
         scaled_molecular_rcs[block_index, :] = (
             molecular.simulated_range_corrected_signal * factor
         )
@@ -370,7 +361,7 @@ def retrieve_optical_blocks(
         kfs_branch[block_index, :] = build_kfs_branch(
             altitude_m, reference_index, molecular.kfs_mode
         )
-        if int(qa["success_flag"]) != 1:
+        if not candidate_passed:
             continue
 
         rayleigh_success[block_index] = 1
