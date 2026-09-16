@@ -47,7 +47,7 @@ A file satisfying an SCC submission schema is therefore not automatically guaran
 
 ## MILGRAU `_scc.nc`
 
-LIBIDS writes `*_scc.nc` with the same Level 0 writer used for the full-channel MILGRAU Level 0, restricted to the SCC channel subset and augmented with SCC identifiers. It is therefore intended to be a valid explicit LIPANCORA input.
+LIBIDS writes `*_scc.nc` with the same Level 0 writer used for the full-channel MILGRAU Level 0, restricted to the SCC channel subset and augmented with SCC identifiers. It is therefore a valid explicit LIPANCORA input.
 
 Use an explicit file path when the full Level 0 and SCC subset coexist, for example:
 
@@ -56,6 +56,14 @@ milgrau-lipancora -i /path/to/20251107sapm_scc.nc --force
 ```
 
 Automatic no-argument discovery deliberately continues to prefer the canonical full-channel Level 0 product. It does not also process the colocated SCC subset, avoiding duplicate Level 1 products from the same acquisition.
+
+For a canonical MILGRAU SCC input, the resulting `*_scc_level1_rcs.nc` is written inside the original canonical measurement directory rather than creating a separate `_scc` measurement directory. For an explicitly supplied non-canonical external SCC filename, the Level 1 product is written beside that source file instead of inventing a date hierarchy from the filename.
+
+### Real-data regression evidence
+
+On `20251107sapm`, the MILGRAU SCC export contains the five SCC channels `532.AN`, `532.PC`, `1064.AN`, `355.PC`, and `355.AN`. Running that `*_scc.nc` explicitly through LIPANCORA produced a five-channel Level 1 product whose corresponding scientific arrays and diagnostics were exactly equal to the same five channels extracted from the full-channel Level 1 product. The checked equality included corrected signal and uncertainty, range-corrected signal and uncertainty, PC saturation mask, correction-status diagnostics, dead-time clipping diagnostics, observed PC-rate diagnostics, bin-shift diagnostics, PBL height, altitude/time coordinates, and thermodynamic profiles.
+
+This is end-to-end behavioral/regression evidence for the MILGRAU-generated SCC path. It is not a claim that arbitrary SCC converters or station calibrations are interchangeable without validation.
 
 ## Porting MILGRAU to another station
 
