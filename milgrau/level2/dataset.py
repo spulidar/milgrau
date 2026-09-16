@@ -18,7 +18,12 @@ from milgrau.level2.config import (
 )
 from milgrau.level2.contracts import WavelengthRetrievalResult, validate_retrieval_results
 from milgrau.level2.metadata import apply_level2_variable_metadata
-from milgrau.scientific import LEVEL2_PRODUCT_SCHEMA_VERSION, elastic_inversion_algorithm_metadata
+from milgrau.level2.support import assemble_level2_inversion_support
+from milgrau.scientific import (
+    LEVEL2_PRODUCT_SCHEMA_CHANGE,
+    LEVEL2_PRODUCT_SCHEMA_VERSION,
+    elastic_inversion_algorithm_metadata,
+)
 
 
 def build_level2_dataset(
@@ -38,6 +43,7 @@ def build_level2_dataset(
     results = sorted(results, key=lambda result: int(result.wavelength_nm))
     wavelengths = np.asarray([result.wavelength_nm for result in results], dtype=np.int32)
     block_time = results[0].block_time
+    inversion_support = assemble_level2_inversion_support(results, altitude_m)
     coords = {
         "time": time_values,
         "block_time": block_time,
@@ -197,6 +203,34 @@ def build_level2_dataset(
             "retrieval_success_fraction": (
                 ("wavelength",),
                 vector(lambda result: float(np.mean(result.optical.retrieval_success_flag == 1))),
+            ),
+            "retrieval_inversion_support_flag": (
+                ("wavelength", "altitude"),
+                inversion_support.flag.astype(np.int8),
+            ),
+            "retrieval_inversion_support_flag_block": (
+                ("block_time", "wavelength", "altitude"),
+                inversion_support.flag_block.astype(np.int8),
+            ),
+            "retrieval_inversion_effective_block_count": (
+                ("wavelength", "altitude"),
+                inversion_support.effective_block_count.astype(np.int16),
+            ),
+            "retrieval_bottom_altitude_m": (
+                ("wavelength",),
+                inversion_support.bottom_altitude_m,
+            ),
+            "retrieval_top_altitude_m": (
+                ("wavelength",),
+                inversion_support.top_altitude_m,
+            ),
+            "retrieval_bottom_altitude_m_block": (
+                ("block_time", "wavelength"),
+                inversion_support.bottom_altitude_m_block,
+            ),
+            "retrieval_top_altitude_m_block": (
+                ("block_time", "wavelength"),
+                inversion_support.top_altitude_m_block,
             ),
             "rayleigh_reference_altitude_m": (
                 ("wavelength",),
@@ -482,6 +516,7 @@ def build_level2_dataset(
             "Pipeline": "MILGRAU/LEBEAR",
             "Input_Level1_File": source_file.name,
             "level2_product_schema_version": LEVEL2_PRODUCT_SCHEMA_VERSION,
+            "level2_product_schema_change": LEVEL2_PRODUCT_SCHEMA_CHANGE,
             "LEBEAR_Mode": "block_mean_signal_selection_rayleigh_kfs",
             "LEBEAR_Block_Average_Minutes": get_block_average_minutes(config),
             "KFS_Mode": kfs_mode,
@@ -515,7 +550,17 @@ def build_level2_dataset(
             "Wavelength_Order": "Ascending numeric order; scientific wavelength equals processed_wavelengths exactly.",
             "Partial_Product_Reuse": "Partial products are never incrementally reusable; the next run recalculates every requested wavelength.",
             "uncertainty_scope": "partial Monte Carlo dispersion; not a total uncertainty budget",
-            "scientific_reprocessing_required": "Level 2 products without schema version 1, with productive KFS metadata other than backward, or with Fernald implementation versions before 2 must be reprocessed.",
+            "retrieval_inversion_support_scope": (
+                "algorithmic backward KFS optical support from accepted exact Rayleigh boundaries "
+                "and common finite value/non-negative uncertainty support; no validated lower "
+                "instrument/overlap mask is applied"
+            ),
+            "retrieval_inversion_support_instrument_mask": "not_applied_uncharacterized",
+            "scientific_reprocessing_required": (
+                f"Level 2 products without schema version {LEVEL2_PRODUCT_SCHEMA_VERSION}, "
+                "with productive KFS metadata other than backward, or with Fernald "
+                "implementation versions before 2 must be reprocessed."
+            ),
             **elastic_inversion_algorithm_metadata(),
         }
     )
