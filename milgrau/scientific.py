@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Final
 
-LEVEL2_PRODUCT_SCHEMA_VERSION: Final[str] = "1"
+LEVEL2_PRODUCT_SCHEMA_VERSION: Final[str] = "2"
+LEVEL2_PRODUCT_SCHEMA_CHANGE: Final[str] = "altitude_resolved_backward_inversion_support_diagnostics"
 LEVEL2_RETRIEVAL_METHOD_VERSION: Final[str] = "3"
 LEVEL2_RETRIEVAL_METHOD_CHANGE: Final[str] = (
     "joint_signal_uncertainty_support_missing_uncertainty_rejection_and_"
