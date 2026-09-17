@@ -136,8 +136,75 @@ def _source_path(config: Mapping[str, Any], key: str, label: str) -> Path | None
     return path
 
 
-def configuration_provenance(config: Mapping[str, Any]) -> dict[str, str]:
-    """Return concise provenance attributes intended to be read by humans."""
+def _nonempty_source_text(source_attrs: Mapping[str, Any], *names: str) -> str | None:
+    """Return the first non-empty textual source attribute from ``names``."""
+    for name in names:
+        value = source_attrs.get(name)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return None
+
+
+def _station_lineage_provenance(
+    config: Mapping[str, Any],
+    source_attrs: Mapping[str, Any],
+) -> dict[str, str]:
+    """Return normalized station-profile/calibration lineage without date inference.
+
+    Newer processing contexts may provide ``_resolved_station`` directly. Older
+    MILGRAU products commonly expose the selected profile as ``Station_Profile``
+    but not as the normalized FAIR attribute ``station_profile_id``. For a
+    derived product, that explicit source profile may be normalized and its
+    calibration identifier may be read from the currently loaded station
+    catalog when the profile id is present there. No profile is selected from a
+    measurement date in this provenance helper.
+    """
+    result: dict[str, str] = {}
+    resolved = config.get("_resolved_station")
+    if isinstance(resolved, Mapping):
+        profile_id = _nonempty_source_text(resolved, "profile_id")
+        calibration_id = _nonempty_source_text(resolved, "calibration_id")
+    else:
+        profile_id = _nonempty_source_text(
+            source_attrs,
+            "station_profile_id",
+            "Station_Profile",
+        )
+        calibration_id = _nonempty_source_text(
+            source_attrs,
+            "instrument_calibration_id",
+        )
+
+    if profile_id is not None:
+        result["station_profile_id"] = profile_id
+    if calibration_id is not None:
+        result["instrument_calibration_id"] = calibration_id
+        return result
+
+    catalog = config.get("_station_catalog")
+    if profile_id is None or not isinstance(catalog, Mapping):
+        return result
+    profiles = catalog.get("profiles")
+    if not isinstance(profiles, list):
+        return result
+    matches = [
+        profile
+        for profile in profiles
+        if isinstance(profile, Mapping) and str(profile.get("id", "")).strip() == profile_id
+    ]
+    if len(matches) == 1:
+        catalog_calibration = _nonempty_source_text(matches[0], "calibration_id")
+        if catalog_calibration is not None:
+            result["instrument_calibration_id"] = catalog_calibration
+    return result
+
+
+def configuration_provenance(
+    config: Mapping[str, Any],
+    *,
+    source_attrs: Mapping[str, Any] | None = None,
+) -> dict[str, str]:
+    """Return concise provenance attributes intended to be read by humans and tools."""
     attrs: dict[str, str] = {
         "software_name": "MILGRAU",
         "software_version": __version__,
@@ -149,12 +216,7 @@ def configuration_provenance(config: Mapping[str, Any]) -> dict[str, str]:
     if station_path is not None:
         attrs["station_configuration_file"] = station_path.name
 
-    resolved = config.get("_resolved_station")
-    if isinstance(resolved, Mapping):
-        if resolved.get("profile_id") is not None:
-            attrs["station_profile_id"] = str(resolved["profile_id"])
-        if resolved.get("calibration_id") is not None:
-            attrs["instrument_calibration_id"] = str(resolved["calibration_id"])
+    attrs.update(_station_lineage_provenance(config, source_attrs or {}))
     return attrs
 
 
@@ -306,7 +368,7 @@ def write_netcdf_provenance(
     source = source_attrs or {}
     attrs: dict[str, str | int | float] = inherited_provenance(source)
     attrs.update(thermodynamic_source_provenance(source, config))
-    attrs.update(configuration_provenance(config))
+    attrs.update(configuration_provenance(config, source_attrs=source))
     attrs.update(source_code_provenance())
     if extra_attrs:
         for key, value in extra_attrs.items():
