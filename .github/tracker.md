@@ -520,8 +520,11 @@ Open next:
 * **Evidence:** `tests/test_high_column_export.py` covers analytical clean-window
   SNR, unequal temporal weights, rejected/unevaluated slots, missing error,
   exact native geometry, export round trip, input checksum and no-overwrite.
-  Local syntax/whitespace checks passed; full pytest/Ruff validation is pending
-  repository CI because scientific/test dependencies were unavailable locally.
+  Local syntax/whitespace checks passed. Repository [CI run 35230577260](https://github.com/spulidar/milgrau/actions/runs/35230577260)
+  passed Ruff and the full pytest suite on Ubuntu/Windows with Python 3.12/3.14
+  for implementation commit `febfe8175f690d8e9464e823df30650da85529b4`
+  (485 tests passed on Ubuntu/Python 3.12). Local pytest was unavailable because
+  required dependencies could not be installed in the local environment.
 * **Finding:** source code and aggregate frozen summaries are available, but the
   original NetCDF is not in the repository/workspace. Aggregates cannot recover
   per-candidate evidence. No new observational finding is claimed.
