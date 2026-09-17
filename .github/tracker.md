@@ -18,6 +18,7 @@ This is the active scientific/engineering source of truth. Detailed history rema
 * A fitted/window or vertically aggregated boundary is a new retrieval assumption.
 * Clean center bin != clean molecular window; narrow Monte Carlo spread != absence of bias.
 * Rayleigh-window shape compatibility is not proof that `beta_aer(ref)=0`.
+* Historical instrument numbers are not current metadata unless continuity is traceable.
 * Thresholds are not chosen to reach a desired altitude.
 * Productive semantic changes require explicit method/schema/provenance/baseline versioning.
 
@@ -34,27 +35,26 @@ This is the active scientific/engineering source of truth. Detailed history rema
 * Aerosol extinction is conditional on assumed aerosol lidar ratio.
 * Productive optical support is inversion support, not generic finite-value support.
 
-Not productive: non-zero inferred boundary aerosol, fitted/window boundary, vertically aggregated high-column backbone, smoothing as support extension, hard SNR/cloud/temporal/continuity gates, overlap cutoff, physical PC saturation threshold, ensemble, cascade/stitching and model-implied wavelength-dependent molecular lidar ratio.
+Not productive: inferred non-zero boundary aerosol, fitted/window boundary, vertically aggregated high-column backbone, Raman boundary correction, hard SNR/cloud/temporal/continuity gates, overlap cutoff, physical PC saturation threshold, ensemble, cascade/stitching and model-implied wavelength-dependent molecular lidar ratio.
 
 ---
 
-# 2. Active observational baseline
+# 2. Active baseline and frozen P5.4 evidence
 
-Primary baseline case: `20251107sapm`.
+Primary baseline: `20251107sapm`.
 
 Active identity:
 
 * L2 SHA `bba3b454387ef34c9b4bee3b0ab69e286e611cc44f9a4a6358b779f6d9f236d8`
 * source L1 SHA `7b49c9deb93e89b103dba95455d854fcebb97b81292a18269edd1bea7a5ee342`
-* revision `fa1cae20ec1ac28bf2955deb5a93f9a3ed56e663`
-* source-code SHA `091d733499a9dd3026af6f7869ea1db2a1e57546ebde9d58c2009985ddb033e5`
+* source revision `fa1cae20ec1ac28bf2955deb5a93f9a3ed56e663`
 * schema/method 3/4
 * 25,340 candidate slots; 16,331 accepted; 10 selected
 * profile-count weights 23 / 39 / 39 / 40 / 26
 
 Historical evidence for the previous checksum is retained, but its original NetCDF is unavailable after workstation migration. Historical, active and campaign products are not claimed input-equivalent unless input hashes match.
 
-Current P5.4 evidence includes:
+Key evidence files:
 
 * `20251107sapm_active_baseline_p54_summary.json`
 * `20251107sapm_first_high_boundary_experiment.json`
@@ -71,6 +71,7 @@ Current P5.4 evidence includes:
 * `p5_4_synthetic_boundary_residual_noise_lr_20260917.json`
 * `p5_4_campaign_boundary_fraction_sensitivity_20260917.json`
 * `p5_4_raman_companion_feasibility_20250629.json`
+* `p5_4_raman_metadata_gate_20260917.json`
 
 ---
 
@@ -80,10 +81,10 @@ Current P5.4 evidence includes:
 | --- | --- | --- |
 | P0–P2 | COMPLETE | productive architecture/support/engineering guardrails |
 | P3 | IN PROGRESS | FAIR/release/license/provenance |
-| P4 | PARALLEL EVIDENCE | instrument characterization / external optical comparison / Raman metadata |
+| P4 | PARALLEL EVIDENCE | instrument characterization / external optical comparison / Raman receiver metadata |
 | P5.0–P5.2 | FROZEN FOUNDATION | baselines, support semantics, QA-first catalogue |
 | P5.3 | IN PROGRESS | real candidate interpretation |
-| P5.4 | **ACTIVE PRIMARY R&D** | boundary-condition validity; Raman-independent constraint is the leading path |
+| P5.4 | **ACTIVE PRIMARY R&D** | boundary-condition validity; independent Raman constraint is leading path |
 | P5.5 | PENDING | ensemble only if P5.4 establishes need |
 | P5.6–P5.7 | DEFERRED | cascade / stitching |
 | P5.8 | PARALLEL R&D | molecular semantics / uncertainty consistency |
@@ -93,97 +94,61 @@ Current P5.4 evidence includes:
 
 ---
 
-# 4. P5.4 support/aggregation foundation
+# 4. Support, contamination and aggregation foundation
 
-The active baseline, heterogeneous campaign and synthetic work established:
+Established across baseline, synthetics and the heterogeneous campaign:
 
 * candidate existence/persistence does not imply a usable KFS boundary;
-* native paths near ~12 km can be nominally complete yet MC-fragile because many isolated weak bins accumulate failure probability;
+* native high paths can be nominally complete yet MC-fragile because many weak isolated bins accumulate failure probability;
 * accepted candidates can exist above internal invalid backward paths;
-* 60/120 m aggregation can improve support but trades vertical resolution and depends on covariance;
-* fitted/window boundaries can denoise yet remain biased under contamination;
-* leave-part-out and boundary-placement sensitivity can detect some localized contamination but broad common-mode contamination can remain stable;
+* `20250509sant` demonstrates accepted/persistent candidate islands reappearing above a strong high-cloud layer;
+* fitted/window boundaries can denoise yet remain biased under broad contamination;
+* leave-part-out and placement sensitivity detect some localized contamination but are not molecular-purity certificates;
 * no SNR, cloud, persistence, continuity, leave-out or placement-stability threshold is authorized.
 
----
-
-# 5. Heterogeneous/seasonal campaign — observational regime gate met
-
-Evidence: `p5_4_observational_campaign_20260917.json`.
-
-The reviewed package contains 11 L2 products and 256 QA/quicklook images, plus Level 1 for `20250629sant`. It spans biomass-burning-labelled, low-cloud, high-cloud, clean seasonal/daypart and adjacent temporal records.
-
-Key findings:
-
-* “clean” does not imply easy high-column support;
-* `20250509sant` high cloud shows accepted/persistent candidate islands reappearing above a strong layer, proving that shape QA + persistence cannot certify molecular purity;
-* favorable `20250628/29` and fragile `20250521sapm` / `20250716sapm` controls separate atmospheric topology from statistical path fragility;
-* all successful supplied campaign blocks use post-QA **analog fallback**, so glued/PC high-column behavior remains unvalidated.
-
-The “second real regime” blocker is closed.
+The heterogeneous/seasonal campaign contains 11 L2 products and 256 QA/quicklook images. All successful supplied campaign retrieval blocks use post-QA **analog fallback**, so glued/PC high-column behavior remains an explicit evidence gap.
 
 ---
 
-# 6. Empirical vertical dependence — first Level-1 estimate completed
+# 5. Empirical vertical dependence and aggregation results
 
-From `20250629sant_level1_rcs.nc`, block-demeaned uncertainty-normalized residuals give, between 5 and 20 km:
+From `20250629sant_level1_rcs.nc`, block-demeaned uncertainty-normalized residuals between 5–20 km give approximately:
 
-* lag-1 / 7.5 m correlation ~**0.10–0.13**;
-* most longer lags only a few percent;
-* implied 60 m SNR gain ~**2.47–2.52**;
-* implied 120 m gain ~**3.31–3.40**.
+* lag-1 / 7.5 m correlation **0.10–0.13**;
+* 60 m / 8-bin SNR gain **2.47–2.52**;
+* 120 m / 16-bin SNR gain **3.31–3.40**.
 
-This clean-night analog case lies much closer to independence than full correlation, but it is not a station-wide covariance law. Replication and source-chain diversity remain open.
+This is one clean-night analog case, not a station-wide covariance law.
 
----
+At the productive boundary, multi-case aggregation gives:
 
-# 7. Multi-case aggregation — support gain does not preserve the product
+* 60 m: median 0.6–6 km relative L2 change ~**5%**, p95 ~**20%**;
+* 120 m: median ~**6%**, p95 ~**20%**;
+* deterministic coarse representation + boundary-cell shift alone contributes median ~**4.6%** (60 m) and **5.6%** (120 m), with p95 ~21–22%.
 
-Aggregation-only evidence: `p5_4_campaign_aggregation_same_boundary_20260917.json`.
-
-The offline KFS implementation reproduces all **150** successful persisted block/wavelength backscatter profiles exactly at native group size 1.
-
-At the existing productive boundary:
-
-* 60 m: all 150 paths complete; median 0.6–6 km relative L2 change ~**5%**, p95 ~**20%**;
-* 120 m: all paths complete; median change ~**6%**, p95 ~**20%**;
-* integrated-column p95 changes reach ~**27%** (60 m) and ~**33%** (120 m).
-
-Decomposition (`p5_4_aggregation_effect_decomposition_20260917.json`) shows deterministic coarse representation + boundary-cell shift contributes median ~**4.6%** at 60 m and **5.6%** at 120 m, with p95 ~21–22%. The partial-MC mean already differs materially from deterministic KFS on the native productive grid, so that nonlinear MC behavior is not a new aggregation artifact.
-
-Decision: aggregation improves support but is not lower-column neutral. No width is authorized.
+Decision: aggregation can improve support but is not lower-column neutral. No productive aggregation width is authorized.
 
 ---
 
-# 8. Higher boundary is the larger new sensitivity
+# 6. Higher boundary is the dominant new sensitivity
 
-High-boundary + aggregation (`p5_4_campaign_high_boundary_aggregation_20260917.json`) improves completeness in many cases but produces campaign p95 lower-column changes around 44–46%.
-
-Native-grid boundary-only evidence (`p5_4_campaign_native_grid_boundary_only_20260917.json`) isolates the boundary change:
+Native-grid boundary-only evidence isolates the effect of moving the exact KFS reference without vertical aggregation:
 
 * 159/161 input-valid runs have usable exact high-reference bins;
-* only 111/159 are all-300 complete;
-* median 0.6–6 km relative L2 difference vs productive v4 is **13.1%**;
-* p95 is **47.2%**;
-* median absolute integrated-column difference is **16.5%**, p95 **61.2%**.
+* 111/159 are all-300 MC complete;
+* median 0.6–6 km relative L2 difference vs productive v4: **13.1%**;
+* p95: **47.2%**;
+* median absolute integrated-column difference: **16.5%**; p95 **61.2%**.
 
-Even complete-path cases can change strongly. `20250629sant/532` at ~10 km is 14/14 all-complete but changes the lower-column retrieval materially.
+Even all-complete high-boundary cases can materially change the lower column.
 
-Decision: high-column limitation is not primarily a candidate-ranking or vertical-rebinning problem. The physical boundary condition is now the main scientific blocker.
+Existing candidate diagnostics — slope, variance, SNR, diagnostic cost, calibration factor and path completeness — have weak/inconsistent within-case association with this lower-column sensitivity. Their signs change among events.
 
----
-
-# 9. Existing elastic candidate diagnostics do not validate the boundary
-
-Evidence: `p5_4_boundary_existing_diagnostic_association_20260917.json`.
-
-Within measurement/wavelength groups, candidate slope, variance, SNR, diagnostic cost, calibration factor and path completeness have weak/inconsistent association with lower-column sensitivity to a higher accepted boundary. Signs vary by event.
-
-Decision: do not solve P5.4 by reweighting the current Rayleigh score or by inventing a composite threshold. Existing diagnostics characterize shape, precision and numerical support; they do not establish `beta_aer(ref)=0`.
+Decision: P5.4 is not primarily a score-tuning or vertical-rebinning problem. The unresolved physical boundary assumption is the main blocker.
 
 ---
 
-# 10. Residual aerosol at the boundary — synthetic mechanism executable-complete
+# 7. Residual aerosol boundary mechanism — established in controlled truth
 
 Evidence:
 
@@ -192,90 +157,102 @@ Evidence:
 * `tests/test_kfs_residual_aerosol_boundary_rnd.py`
 * `docs/boundary_condition_rnd.md`
 
-Controlled synthetic truth prescribes a broad smooth aerosol contribution around a ~10 km reference while retaining Rayleigh-like local window shape.
+Controlled synthetic truth demonstrates:
 
-Key results:
+* current Rayleigh slope/variance/valid-fraction QA can pass with `beta_aer(ref)>0`;
+* the true total-backscatter boundary recovers known lower-column truth;
+* forcing `beta_aer(ref)=0` creates monotonic lower-column bias as residual aerosol grows;
+* signal noise adds dispersion but does not remove systematic boundary bias;
+* lidar-ratio mismatch can amplify or partially cancel boundary bias, so apparent agreement cannot prove boundary correctness.
 
-* the current slope/variance/valid-fraction QA can still pass when `beta_aer(ref)>0`;
-* with the **true** total-backscatter boundary, KFS recovers the controlled lower-column truth to numerical accuracy;
-* forcing `beta_aer(ref)=0` creates monotonic lower-column bias as residual aerosol increases;
-* at 532 nm in this controlled family, `beta_aer(ref)/beta_m(ref)=0.10` gives ~8% lower-column L2 error and ~10% integrated-column underestimation; 0.20 gives ~15% / ~19%; 0.50 gives ~31% / ~39%; these are mechanism-test values, **not operational thresholds**;
-* signal noise increases dispersion but does not remove the systematic boundary bias;
-* lidar-ratio mismatch is independent and can either amplify or partially cancel boundary bias, so apparent lower-column agreement cannot prove a correct boundary;
-* localized contamination produces strong retrieval sensitivity to boundary placement, but broad contamination can remain nearly placement-stable while still biased. Placement stability is diagnostic, not a purity certificate.
+Mechanism-test fractions are **not operational thresholds**.
 
-Cross-platform CI run `35255804893` passed Ruff and pytest on Ubuntu/Windows Python 3.12/3.14 with these R&D tests included.
-
-Decision: boundary residual aerosol is an explicit unresolved physical assumption, not a missing weight in the existing Rayleigh score.
+Cross-platform CI containing these R&D tests passed in run `35255804893`.
 
 ---
 
-# 11. Explicit boundary sensitivity helper — R&D only
+# 8. Explicit boundary-sensitivity helper — R&D only
 
-`milgrau/level2/boundary_sensitivity.py` provides `boundary_fraction_sensitivity_profiles`.
-
-For caller-declared scenario fractions `f`, it evaluates
+`milgrau/level2/boundary_sensitivity.py` exposes caller-declared scenarios
 
 `beta_total(ref) = beta_mol(ref) * (1 + f)`
 
-with the signal, grid and lidar ratio fixed. It returns deterministic backward-KFS profiles and deliberately provides **no inferred fraction, probability, score, preferred scenario or pass/fail decision**.
+with no inferred fraction, probability, score, preferred scenario or pass/fail decision.
 
-`tests/test_boundary_sensitivity_rnd.py` guards this exact semantic contract.
+Across 150 successful campaign block/wavelength controls at the existing productive reference:
 
-Real-campaign sensitivity evidence: `p5_4_campaign_boundary_fraction_sensitivity_20260917.json`.
+* declared `f=0.02`: median 0.6–6 km change ~**5.3%**, p95 ~13.3%;
+* declared `f=0.05`: median ~**13.9%**, p95 ~34.6%.
 
-Across all 150 successful campaign block/wavelength controls at their existing productive reference altitude:
-
-* declared `f=0.02` changes the 0.6–6 km solution by median ~**5.3%** (p95 ~13.3%);
-* declared `f=0.05` gives median ~**13.9%** (p95 ~34.6%);
-* integrated-column sensitivity is also material.
-
-These fractions are sensitivity scenarios only. The experiment does **not** estimate that real residual aerosol equals 2% or 5%.
+These are sensitivity scenarios only. They do not estimate real residual aerosol.
 
 ---
 
-# 12. Raman companions — physically independent boundary-validation path identified
+# 9. Raman independent-constraint path — feasibility established, spectral metadata still open
 
-Evidence/documentation:
+Published current-system evidence supports:
 
-* `p5_4_raman_companion_feasibility_20250629.json`
-* `docs/spu_raman_channel_provenance.md`
-* `station.yaml` current `spu-merionc-2024` SCC channel mapping
+* 100 Hz SPU system;
+* elastic 355/532/1064 nm;
+* 387 nm nitrogen Raman companion of 355 nm;
+* 408 nm water-vapor Raman companion of 355 nm;
+* 530 nm nitrogen rotational-Raman companion associated with 532 nm.
 
-Published SPU instrumentation identifies:
+Current repository/SCC evidence:
 
-* 387 nm as nitrogen Raman associated with 355 nm;
-* 408 nm as water-vapor Raman associated with 355 nm;
-* 530 nm as nitrogen Raman associated with 532 nm, described in prior SPU instrumentation work as rotational Raman.
+* `spu-merionc-2024` night SCC configuration 1046 exposes `530.PC=4074`, `530.AN=4075`, `387.AN=4076`, `387.PC=4077`;
+* supplied `20250629sant` Level 1 contains corrected 387/530 AN/PC signals with useful high-altitude SNR;
+* supplied `20250629sant_scc.nc` SHA `8d52f534525c73e64badec5d4007cdf4ea3609e5e962a9045a1bdaf178314af0` confirms configuration/channel IDs but contains **no passband, bandwidth, effective-wavelength or spectral-response fields**.
 
-The current MerionC night SCC mapping contains 387 and 530 AN/PC channels. The supplied `20250629sant` Level 1 contains corrected 387/530 signals with useful block SNR through the P5.4 altitude range; e.g. median block SNR at 10 km is ~11.9/31.7 for 387 AN/PC and ~32.7/57.8 for 530 AN/PC.
+Metadata changes:
 
-This establishes **feasibility**, not a Raman retrieval. Current-receiver passband/filter response, species/cross-section treatment, calibration/overlap semantics and required wavelength-dependence assumptions must be explicit before quantitative use. Historical published filter bandwidths are not silently promoted to the post-2024 MerionC profile.
+* `station.yaml` now records `raman_detection` for `spu-merionc-2024` with channel identity separate from unresolved current spectral response;
+* 387/408/530 current spectral response is explicitly `current_instrument_evidence_required`;
+* 408 is published as a current system channel but is not exposed in SCC 1046; this is recorded as an unresolved mapping/scope fact, not guessed;
+* `tests/test_spu_raman_metadata_contract.py` prevents silent insertion of numeric MerionC passbands/effective wavelengths while evidence is unresolved;
+* `docs/spu_raman_channel_provenance.md` documents the evidence hierarchy;
+* `docs/raman_boundary_validation_rnd.md` defines the R&D physics contract.
 
-Decision: prioritize companion-channel metadata/physics as the leading independent route to boundary validation. Do not use companion-channel presence or SNR as an undocumented cloud/molecular-purity flag.
+Historical SPU filter values remain historical provenance only. They are not promoted into the post-2024 MerionC profile because public historical receiver/FOV/overlap details are not demonstrably continuous with the current 100 Hz configuration.
+
+CI run `35256468442` validates the Raman metadata contract; Ruff and Ubuntu 3.12/3.14 were green at this tracker update, with Windows jobs still completing.
 
 ---
 
-# 13. Engineering/QA gates already closed
+# 10. Raman physics gate
+
+No real Raman retrieval is authorized yet.
+
+Scientific contract:
+
+* 387/355 vibrational-Raman extinction is the preferred first quantitative path once current 387 spectral/overlap metadata is traceable;
+* the logarithmic-derivative Raman method requires explicit molecular extinction, N2 density, overlap semantics and aerosol wavelength-dependence treatment;
+* absolute range-independent Raman calibration can cancel from the derivative, but overlap/range-dependent response does not;
+* 530/532 is rotational Raman and requires explicit temperature-dependent effective cross section plus active filter/transmission response; it must not be processed with an undocumented 387-like simplification;
+* a Raman diagnostic must remain independent of elastic candidate scoring and must not be tuned to reproduce KFS.
+
+Minimum controlled synthetic families before real retrieval: molecular-only, aerosol below boundary, weak residual aerosol at boundary, layer crossing boundary, Ångström sensitivity, rotational-Raman temperature/filter sensitivity, overlap-transition contamination, and noise/smoothing-resolution sensitivity.
+
+---
+
+# 11. Engineering/QA gates closed
 
 Exact-reference robustness:
 
-* historical wavelength-fatal cases: `20240621sant/532`, `20240902sant/355`;
-* KFS exact-bin rejection is now block-local without changing method-v4 Rayleigh semantics;
-* implementation commit `f90c6f770e7b8d369e775d1ed812c17fbe1266e3`;
+* historical wavelength-fatal cases `20240621sant/532` and `20240902sant/355` are now block-local KFS rejections;
+* implementation `f90c6f770e7b8d369e775d1ed812c17fbe1266e3`;
 * `tests/test_level2_kfs_block_failure.py`;
 * CI `35248016374` passed.
 
 P5.9 support-aware QA:
 
 * inversion top/support semantics explicit in SR/KFS plots;
-* `tests/test_level2_qa_support_context.py`;
-* CI `35241784472` passed;
-* heterogeneous human image review passed, including high-cloud `20250509sant`.
+* heterogeneous real-image review passed, including high-cloud `20250509sant`;
+* CI `35241784472` passed.
 
 ---
 
-# 14. Parallel open work
+# 12. Parallel open work
 
 P3:
 
@@ -289,9 +266,9 @@ P4:
 * overlap/telecover/alignment evidence;
 * physical PC saturation characterization;
 * gluing fit covariance/materiality;
-* a real glued/PC-dominant elastic regime;
-* current Raman receiver/filter spectral provenance;
-* true external optical comparison. `20250629sant_scc.nc` is SCC-ready **Level 0**, not SCC/ELDA optical L2.
+* real glued/PC-dominant elastic regime;
+* **current MerionC 387/530 filter/transmission provenance and Raman-vs-elastic overlap/calibration semantics**;
+* true external optical comparison. `20250629sant_scc.nc` is SCC-ready Level 0, not SCC/ELDA optical L2.
 
 P5.8:
 
@@ -303,26 +280,25 @@ P6:
 
 ---
 
-# 15. Next scientific gate before any method v5
+# 13. Next scientific gate before any method v5
 
-The residual-boundary mechanism itself is now established. The next question is whether independent information can constrain it.
-
-1. **Raman metadata gate:** establish current MerionC effective 387/530 detection wavelengths/passbands, filter/transmission response, overlap/calibration semantics and any post-2024 hardware changes from traceable instrument evidence.
-2. **Raman forward/retrieval truth gate:** implement only after item 1. Start with controlled synthetic molecular + aerosol truth and explicit Raman physics; validate extinction/boundary sensitivity before touching real data.
-3. **Real Raman feasibility gate:** use `20250629sant` first because Level-1 387/530 signal is available and strong; compare independent Raman evidence with elastic candidate/reference regions without feeding the elastic retrieval back into its own validation.
-4. **Boundary sensitivity fallback:** until an independent constraint exists, keep non-zero `f` as declared R&D sensitivity scenarios, never as inferred corrections or productive uncertainty without justification.
-5. Replicate vertical covariance on additional Level-1 cases and obtain glued/PC-dominant elastic evidence before instrument-wide aggregation claims.
-6. Define lower-column preservation from physics/uncertainty/validation needs, not by tuning tolerance to make a desired altitude pass.
-7. Only after those gates decide whether a method-v5 high-column backbone is scientifically justified. Ensemble remains after that decision; cascade/stitching remain deferred.
+1. Obtain traceable current MerionC evidence for the 387/530 receiver path: filter manufacturer/model or measured transmission curves, effective passbands/wavelengths, receiver changes/continuity since 2024, and Raman-vs-elastic overlap/calibration semantics.
+2. Do **not** substitute the historical SPU instrument-page filter values for missing current evidence.
+3. Once item 1 is resolved, implement the first controlled **387/355 vibrational-Raman synthetic truth** experiment under the contract in `docs/raman_boundary_validation_rnd.md`.
+4. Keep 530/532 later unless its rotational-Raman filter/temperature physics is explicitly characterized.
+5. Use `20250629sant` as the first real feasibility case only after synthetic validation; compare Raman evidence with elastic candidate regions without feeding KFS results back into Raman validation.
+6. Replicate empirical vertical covariance on additional Level-1 cases and obtain glued/PC-dominant elastic evidence before instrument-wide aggregation claims.
+7. Define lower-column preservation from physics/uncertainty/validation needs, not by tuning tolerance to make a desired altitude pass.
+8. Only after these gates decide whether a method-v5 high-column backbone is scientifically justified. Ensemble remains after that decision; cascade/stitching remain deferred.
 
 ---
 
-# 16. Current handoff
+# 14. Current handoff
 
 MILGRAU productive Level 2 remains **schema v3 / method v4**.
 
-P5.4 now has a much sharper scientific diagnosis. Weak high-altitude signal and covariance matter, and aggregation can improve numerical support, but neither is the main unresolved assumption. Higher Rayleigh-like candidates can be precise, persistent, placement-stable and path-complete while still altering the lower-column retrieval because `beta_aer(ref)=0` has not been independently validated. Controlled truth tests now reproduce this mechanism directly, and the heterogeneous real campaign shows that the retrieval is materially sensitive even to small declared boundary-residual scenarios.
+P5.4 has moved from “how do we find a higher Rayleigh-looking window?” to the sharper question “how do we independently validate the physical boundary condition?”. Aggregation improves numerical support but is not lower-column neutral; moving the exact boundary is the larger sensitivity; current elastic candidate diagnostics do not validate `beta_aer(ref)=0`; and controlled truth directly reproduces the residual-aerosol boundary mechanism.
 
-The project therefore should not pursue another elastic composite score as the next method-v5 step. The SPU instrument already provides a more promising independent route: corrected 387/530 Raman companion signals are present in the current night data. The immediate R&D priority is to make their current instrument semantics and Raman physics traceable, then test whether they can independently constrain the boundary assumption.
+The leading independent path is Raman, but the repository now explicitly refuses to manufacture current MerionC spectral metadata from historical receiver documentation. Current channel identities and SCC mappings are traceable; current 387/530 spectral response and Raman-specific overlap/calibration semantics remain the key external evidence gap. The generic Raman R&D physics contract is documented, but no real Raman retrieval or method-v5 change is authorized until that instrument gate is resolved.
 
-No hard threshold, cloud veto, fitted boundary, aggregation width, inferred residual fraction, high-column backbone, ensemble, cascade or method-v5 promotion is authorized.
+No hard threshold, cloud veto, fitted boundary, aggregation width, inferred residual fraction, Raman correction, high-column backbone, ensemble, cascade or method-v5 promotion is authorized.
