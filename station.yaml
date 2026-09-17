@@ -41,11 +41,9 @@ station:
     station_id: "83779"
     station_name: "SBMT Marte Civ"
 
-  # Monthly aerosol lidar-ratio climatology derived for this station. These are
-  # observational station metadata, not generic algorithm defaults.
   lidar_ratio_climatology:
     provenance:
-      source: "SPU-Lidar station climatology migrated from legacy config.yaml"
+      source: "climatology"
     std_sr:
       "355": 15.0
       "532": 10.0
@@ -104,15 +102,10 @@ scc_policy:
       "532": [530, 607]
       "1064": []
 
-# Named instrument calibration sets. The historical repository documented only
-# one global correction table, so all current profiles intentionally reference
-# this migrated set. Do not infer distinct historical calibrations without a
-# traceable source. Photon-counting saturation is explicitly not characterized
-# in the current source material rather than being assigned an invented limit.
 calibrations:
   spu-channel-corrections-v1:
     provenance:
-      source: "migrated_from_legacy_global_channel_corrections"
+      source: "experimental"
     channels:
       "355.PC":
         detector_mode: "photon_counting"
