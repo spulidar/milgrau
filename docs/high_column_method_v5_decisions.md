@@ -21,11 +21,11 @@ The elastic retrieval does not claim that the lidar ratio or residual aerosol at
 - [x] Nominal boundary: `beta_aer(ref) = 0`, equivalently `f = beta_aer(ref)/beta_mol(ref) = 0`.
 - [x] `f=0` is an explicit conditional assumption, not a claim that a given high altitude is physically aerosol-free.
 - [x] Residual-aerosol boundary uncertainty is retained as a separate systematic sensitivity dimension.
-- [x] **20–25 km is a preferred high-reference region when supported, not a mandatory target.**
+- [x] High altitude is a search domain / potential information gain, **not a ranking reward and not a purity certificate**.
 
-Stratospheric aerosol can exist in the 20–30 km region, including background sulfate and volcanic/wildfire perturbations. Altitude alone therefore cannot certify molecular purity. The prototype should seek the highest Rayleigh-compatible reference that is also physically/numerically admissible below the configured maximum search altitude, rather than forcing every block to reach 20 or 25 km.
+Stratospheric aerosol can exist in the 20–30 km region, including background sulfate and volcanic/wildfire perturbations. Altitude alone therefore cannot certify molecular purity. Controlled synthetic truth also rejects the tempting policy “choose the highest accepted/admissible reference”: in the tested clean/cloud/stratospheric scenarios it repeatedly selected about 24.47 km and produced materially larger lower-column errors than selecting the minimum existing Rayleigh diagnostic cost after QA and path admissibility.
 
-Campaign evidence in `docs/regression_baselines/p5_4_method_v5_progressive_grid_campaign_20260917.json` shows why this distinction matters: among 161 block×wavelength cases, 117 contain a native Rayleigh-accepted candidate in 20–25 km, but only 18 have a continuous nominal backward path to such a high reference under the current <=100 m progressive-grid cap. Candidate existence is therefore much more common than usable high-boundary support.
+Campaign evidence in `docs/regression_baselines/p5_4_method_v5_progressive_grid_campaign_20260917.json` shows a complementary support limitation: among 161 block×wavelength cases, 117 contain a native Rayleigh-accepted candidate in 20–25 km, but only 18 have a continuous nominal backward path to such a high reference under the current <=100 m progressive-grid cap. Candidate existence is therefore much more common than usable high-boundary support.
 
 ### D2 — Numerical boundary estimator — CLOSED FOR PROTOTYPE
 
@@ -80,9 +80,11 @@ Interpretation: the <=100 m grid materially extends usable elastic path informat
 
 - [x] Method v5 will no longer define physical support as `300/300` Monte-Carlo realizations surviving.
 - [x] Nominal deterministic path support and Monte-Carlo robustness are separate quantities.
-- [x] Save the valid-realization count and fraction for each requested branch/profile.
-- [x] Do not yet impose a new valid-fraction cutoff.
-- [x] Any future cutoff is derived from synthetic-truth uncertainty-coverage behavior, not from the altitude reached.
+- [x] Save complete-branch valid-realization count/fraction.
+- [x] Save altitude-resolved valid-realization count/fraction `mc_valid_fraction(z)`.
+- [x] Do not impose a new valid-fraction cutoff in the first prototype.
+
+Controlled coverage experiments show why a cutoff such as 90%, 95% or 100% would be misleading: lower-column MC survival can remain approximately 99–100% while nominal 95% interval coverage changes materially. Survival fraction therefore diagnoses numerical/statistical support but is not itself an uncertainty-calibration metric.
 
 Method v4 semantics remain unchanged while v5 is R&D.
 
@@ -91,10 +93,24 @@ Method v4 semantics remain unchanged while v5 is R&D.
 Residual aerosol at the boundary is an epistemic/systematic uncertainty, not presently a characterized random variable. Therefore the first prototype uses a **nested uncertainty design**:
 
 1. outer, caller-declared `f` scenarios describe boundary-condition sensitivity;
-2. within each `f` scenario, the ordinary Monte Carlo propagates signal noise and declared lidar-ratio uncertainty;
+2. within each `f` scenario, the random ensemble propagates signal noise and declared lidar-ratio/reference-estimator uncertainty;
 3. random dispersion and between-`f` sensitivity are stored separately.
 
 No probability density is assigned to `f` yet. If independent evidence later supports a probability distribution for `f`, the nested ensemble may be marginalized into a declared total conditional uncertainty. Until then, combining arbitrary `f` draws with random measurement noise would overstate what is known.
+
+### D4c — Reference-selection uncertainty — REQUIRED FOR V5 RANDOM UNCERTAINTY
+
+Synthetic coverage tests identify reference selection as a genuine random-uncertainty source. When the reference is held fixed, the tested 532 nm ensemble gives approximately 98.6–99% lower-column coverage under the deliberately broad interval experiment. When each noisy observation is first allowed to choose its nominal reference but the subsequent MC conditions on that one chosen reference, coverage falls to roughly 88–93% depending on interval representation/noise even though MC survival remains near one.
+
+Therefore the method-v5 random ensemble must propagate signal uncertainty **through reference selection itself**:
+
+1. perturb the native measured signal;
+2. rebuild the progressive representation;
+3. rerun native-grid Rayleigh QA and nominal-path admissibility;
+4. rerun the deterministic high-column selector;
+5. invert using the selected boundary for that same realization.
+
+An R&D implementation now exists in `milgrau/level2/selection_aware_mc_rnd.py`. Its coverage is being validated before productive promotion. Standard deviation and empirical 2.5/97.5% intervals are both retained; neither is declared calibrated until the selection-aware study closes.
 
 ### D5 — Temporal strategy — CLOSED FOR FIRST PROTOTYPE
 
@@ -125,10 +141,11 @@ A candidate above an invalid or opaque segment is not automatically usable merel
 
 Promotion is based on two distinct evidence classes:
 
-- [x] **synthetic truth:** bias and uncertainty coverage against known aerosol truth;
+- [x] **synthetic truth:** deterministic method/representation bias against known aerosol truth, kept distinct from random-uncertainty coverage;
+- [x] **random uncertainty:** interval coverage around the deterministic noiseless output of the declared method;
 - [x] **real-data regression:** difference from method v4 in the established lower column, interpreted as compatibility/sensitivity rather than truth.
 
-No fixed percentage is selected merely because it allows a preferred high-altitude solution. Integrated-column and profile-shape differences are both retained.
+No fixed percentage is selected merely because it allows a preferred high-altitude solution. Integrated-column and profile-shape differences are both retained. Achieved altitude is never the truth metric.
 
 High-reference campaign experiments have already shown that moving the boundary can alter the lower column materially. Therefore successful high-path support cannot by itself validate a v5 solution; boundary sensitivity remains a required output dimension.
 
@@ -138,21 +155,29 @@ High-reference campaign experiments have already shown that moving the boundary 
 - [x] Extinction remains explicitly conditional on the assumed/climatological aerosol lidar ratio.
 - [x] A higher supported extinction profile is not an independent lidar-ratio retrieval.
 
-### D9 — Higher-reference selection — PARTIALLY OPEN
+### D9 — Higher-reference selection — CLOSED FOR FIRST PROTOTYPE
 
-The first prototype should select a reference only after constructing the progressive grid and confirming nominal path admissibility.
+Frozen synthetic evidence: `docs/regression_baselines/p5_4_method_v5_selector_synthetic_20260917.json`.
 
-Current direction:
+The first automatic selector is explicitly staged:
 
-- [x] maximum configured search altitude remains 25 km for the prototype;
-- [x] 20–25 km is preferred when an admissible Rayleigh-compatible path actually exists;
-- [x] if 20–25 km is not supported, a lower high-column reference may be used rather than forcing failure at an arbitrary target altitude;
-- [ ] determine the minimum altitude at which the v5 high-reference selector is allowed to depart from the v4 reference regime;
-- [ ] determine the deterministic tie-break among multiple admissible high cells;
-- [ ] verify with synthetic truth that the selector is not acting as a proxy for unobserved `f`;
-- [ ] validate selected-reference behavior under explicit stratospheric-aerosol and cloud cases.
+1. native-grid Rayleigh minimum QA must pass over the physical Rayleigh window;
+2. the corresponding progressive-grid boundary cell must be on a continuous nominal admissible path;
+3. the cell must lie in the configurable first-prototype search domain, initially **10–25 km**;
+4. among survivors, minimize the existing Rayleigh diagnostic cost `relative_slope + relative_variance`;
+5. exact ties prefer lower altitude / lower grid index.
 
-Candidate shape QA, nominal path support, estimator precision, MC robustness and effective resolution remain separate diagnostics; no composite molecular-purity score is introduced.
+Scientific interpretation:
+
+- [x] no new composite molecular-purity score is introduced;
+- [x] “choose the highest” is rejected by controlled synthetic truth;
+- [x] 10 km is a configurable R&D search-domain floor, **not** an aerosol-free threshold;
+- [x] no tested fixed floor (8, 10 or 12 km) certifies purity: broad smooth aerosol contamination can change which floor appears favorable when the contamination layer is moved;
+- [x] explicit cloud and stratospheric-aerosol synthetic cases are included in the selector evidence;
+- [x] selector behavior has been challenged at 355 and 532 nm under normalized synthetic noise;
+- [ ] real Level-1 validation is still required because real 355/532 detector noise/covariance is not represented by wavelength-normalized synthetic noise.
+
+Candidate shape QA, nominal path support, selector altitude, estimator precision, MC robustness, selected-reference spread and effective resolution remain separate diagnostics.
 
 ### D10 — Method/product versioning — DECIDED IN PRINCIPLE
 
@@ -161,7 +186,7 @@ If the prototype passes promotion gates:
 - [x] retrieval method becomes **v5**;
 - [ ] decide whether schema v3 can cleanly represent all new altitude-grid and uncertainty dimensions or schema v4 is required;
 - [ ] freeze method-v4 and method-v5 regression products from identical Level-1 inputs;
-- [ ] expose boundary model, `f` scenario identity, boundary cell resolution/source-bin count, effective vertical resolution, nominal supported top and valid-MC fraction.
+- [ ] expose boundary model, `f` scenario identity, boundary cell resolution/source-bin count, effective vertical resolution, nominal supported top, selected-reference distribution/summary and altitude-resolved MC-valid fraction.
 
 ## Progressive-grid implementation contract
 
@@ -185,18 +210,19 @@ Current implementation: `milgrau/level2/adaptive_grid.py`, with executable R&D c
 ## Minimum validation matrix before promotion
 
 - [ ] controlled molecular-only synthetic truth;
-- [ ] controlled residual-aerosol boundary truth;
-- [ ] weak-signal / many-isolated-bin path case;
-- [ ] narrow and broad contamination cases;
-- [ ] cloud/layer case;
-- [ ] explicit stratospheric-aerosol case in the high-reference region;
+- [x] controlled residual-aerosol boundary truth;
+- [x] weak-signal / many-isolated-bin path case;
+- [x] narrow and broad contamination counterexamples;
+- [x] cloud/layer case;
+- [x] explicit stratospheric-aerosol case in the high-reference region;
 - [x] heterogeneous-current-SPU path/resolution feasibility;
-- [ ] 355 and 532 nm synthetic truth separately;
+- [x] 355 and 532 nm selector synthetic truth separately under normalized noise;
+- [ ] selection-aware random-uncertainty coverage;
 - [ ] native vs progressive high-column retrieval, not only path feasibility;
-- [ ] lower-column compatibility reported independently of achieved top altitude;
-- [ ] valid-MC fraction versus synthetic confidence-interval coverage;
+- [ ] real-data lower-column compatibility from identical Level-1 inputs;
+- [x] MC valid fraction tested against synthetic interval coverage; no survival cutoff justified;
 - [x] 20/40/60 min observational path comparison.
 
 ## Current interpretation
 
-The vertical representation is now sufficiently specified for a first R&D retrieval implementation. The campaign evidence rejects two tempting but unsupported shortcuts: keeping native 7.5 m all the way to 10 km is unnecessarily restrictive for a high-column path, while forcing a 20–25 km boundary is too aggressive under a <=100 m resolution cap. The first v5 prototype therefore preserves the established lower column exactly, progressively coarsens above 6 km, retains 20 min temporal blocks, and allows the supported high-reference altitude to remain measurement-dependent.
+The first-prototype architecture is now specific: preserve the established lower column, progressively coarsen above 6 km, retain 20 min blocks, constrain automatic reference search to a declared high-column domain, and rank only already-admissible references using the existing Rayleigh diagnostic cost rather than altitude. The remaining synthetic blocker is statistical rather than geometric: random uncertainty must include the instability of the selected reference under signal noise. Once selection-aware coverage is characterized, the next validation stage requires real Level-1 profiles to establish actual 355/532 noise/covariance behavior and same-input method-v4 versus method-v5 regression.
