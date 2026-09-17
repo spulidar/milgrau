@@ -259,7 +259,10 @@ def test_window_boundary_mc_rejects_missing_window_support() -> None:
         stop,
     ) = _clean_reference_case()
     rcs_error = 0.02 * rcs
-    rcs_error[start + 2] = np.nan
+    # Put the missing uncertainty above the exact reference so this exercises
+    # window support rather than the overlapping backward-path support check.
+    assert stop - 2 > ref_idx
+    rcs_error[stop - 2] = np.nan
 
     with pytest.raises(ValueError, match="Fitting-window RCS uncertainty"):
         window_fitted_boundary_monte_carlo(
