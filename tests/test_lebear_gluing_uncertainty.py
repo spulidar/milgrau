@@ -1,4 +1,4 @@
-"""Tests for LEBEAR gluing uncertainty propagation."""
+"""Tests for productive method-v5 gluing uncertainty propagation."""
 
 from __future__ import annotations
 
@@ -40,7 +40,9 @@ def test_propagate_glued_error_uses_fade_weights() -> None:
     assert np.allclose(result[6:], 10.0)
     analog_weights = 1.0 - np.arange(4, dtype=np.float64) / 4.0
     photon_weights = 1.0 - analog_weights
-    expected_window = np.sqrt((analog_weights * 6.0) ** 2 + (photon_weights * 10.0) ** 2)
+    expected_window = np.sqrt(
+        (analog_weights * 6.0) ** 2 + (photon_weights * 10.0) ** 2
+    )
     assert np.allclose(result[2:6], expected_window)
     assert not np.isclose(result[5], result[6])
 
@@ -65,14 +67,35 @@ def _write_level1(path: Path) -> Path:
     ds = xr.Dataset(
         data_vars={
             "corrected_signal": (("time", "channel", "altitude"), corrected),
-            "corrected_signal_error": (("time", "channel", "altitude"), corrected_error),
+            "corrected_signal_error": (
+                ("time", "channel", "altitude"),
+                corrected_error,
+            ),
             "range_corrected_signal": (("time", "channel", "altitude"), rcs),
-            "range_corrected_signal_error": (("time", "channel", "altitude"), rcs_error),
-            "pc_saturation_mask": (("time", "channel", "altitude"), np.zeros(shape, dtype=np.int8)),
-            "pc_saturation_characterized": (("channel",), np.array([0, 1], dtype=np.int8)),
-            "channel_correction_success": (("channel",), np.ones(channel.size, dtype=np.int8)),
-            "Atmospheric_Temperature_K": (("altitude",), temperature_k.astype(np.float64)),
-            "Atmospheric_Pressure_hPa": (("altitude",), pressure_hpa.astype(np.float64)),
+            "range_corrected_signal_error": (
+                ("time", "channel", "altitude"),
+                rcs_error,
+            ),
+            "pc_saturation_mask": (
+                ("time", "channel", "altitude"),
+                np.zeros(shape, dtype=np.int8),
+            ),
+            "pc_saturation_characterized": (
+                ("channel",),
+                np.array([0, 1], dtype=np.int8),
+            ),
+            "channel_correction_success": (
+                ("channel",),
+                np.ones(channel.size, dtype=np.int8),
+            ),
+            "Atmospheric_Temperature_K": (
+                ("altitude",),
+                temperature_k.astype(np.float64),
+            ),
+            "Atmospheric_Pressure_hPa": (
+                ("altitude",),
+                pressure_hpa.astype(np.float64),
+            ),
         },
         coords={"time": time, "channel": channel, "altitude": altitude},
         attrs={
@@ -98,7 +121,7 @@ def _config(tmp_path: Path) -> dict:
             "kfs_mode": "backward",
             "monte_carlo_iterations": 5,
             "random_seed": 123,
-            "beta_ref_relative_std": 0.10,
+            "beta_ref_relative_std": 0.0,
             "aerosol_ref_fraction": 0.0,
             "min_lidar_ratio_sr": 10.0,
             "allow_negative_aerosol": False,
@@ -109,6 +132,14 @@ def _config(tmp_path: Path) -> dict:
                 "max_relative_slope": 10.0,
                 "max_relative_variance": 10.0,
                 "min_valid_fraction": 0.50,
+            },
+            "method_v5": {
+                "reference_tier_min_altitudes_m": [1200.0, 900.0, 600.0],
+                "reference_search_max_m": 1500.0,
+                "path_start_altitude_m": 7.5,
+                "residual_aerosol_fractions": [0.0, 0.02],
+                "uncertainty_mode": "independent",
+                "progressive_grid_schedule": [[0.0, 7.5]],
             },
             "gluing": {
                 "window_length_bins": 20,
@@ -140,16 +171,22 @@ def test_level2_saves_gluing_window_diagnostics(tmp_path: Path) -> None:
 
     assert summary.results[0].status is ExecutionStatus.OK
     with xr.open_dataset(level2_output_path(level1)) as ds:
+        assert ds.attrs["level2_retrieval_method_version"] == "5"
         assert "gluing_start_altitude_m" in ds
+        assert "gluing_split_altitude_m" in ds
         assert "gluing_stop_altitude_m" in ds
-        assert "Gluing_Error_Propagation" in ds.attrs
         assert np.isfinite(ds["gluing_start_altitude_m"].values).any()
         assert np.isfinite(ds["gluing_stop_altitude_m"].values).any()
-        start = float(ds["gluing_start_altitude_m"].isel(time=0, wavelength=0))
-        split = float(ds["gluing_split_altitude_m"].isel(time=0, wavelength=0))
-        stop = float(ds["gluing_stop_altitude_m"].isel(time=0, wavelength=0))
+        start = float(ds["gluing_start_altitude_m"].isel(block_time=0, wavelength=0))
+        split = float(ds["gluing_split_altitude_m"].isel(block_time=0, wavelength=0))
+        stop = float(ds["gluing_stop_altitude_m"].isel(block_time=0, wavelength=0))
         assert start < split < stop
-        error_profile = ds["glued_range_corrected_signal_error"].isel(time=0, wavelength=0)
+        error_profile = ds["range_corrected_signal_error_block"].isel(
+            block_time=0, wavelength=0
+        )
         window_error = error_profile.sel(altitude=slice(start, stop)).values
         assert np.isfinite(window_error).all()
         assert np.nanmin(window_error) > 0.0
+        assert "fitted gluing slope/intercept uncertainty excluded" in ds.attrs[
+            "gluing_uncertainty_scope"
+        ]
