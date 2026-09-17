@@ -1,6 +1,6 @@
 """Executable high-column elastic retrieval layer for method-v5 R&D.
 
-Nothing in this module is wired into productive method v4.  It keeps three
+Nothing in this module is wired into productive method v4. It keeps three
 scientific roles separate:
 
 1. native-grid Rayleigh-window QA diagnoses whether a physical neighborhood is
@@ -10,9 +10,9 @@ scientific roles separate:
 3. caller-declared residual-aerosol fractions ``f`` remain outer systematic
    sensitivity scenarios around an inner random Monte Carlo.
 
-The final automatic high-reference ranking rule is intentionally not encoded
-here yet.  The module catalogues admissible reference cells and can execute a
-retrieval for an explicitly chosen cell.
+The module catalogues admissible reference cells and can execute a retrieval for
+an explicitly chosen cell. Automatic ranking/fallback policy lives in
+:mod:`milgrau.level2.high_column_selector`.
 """
 
 from __future__ import annotations
@@ -110,10 +110,10 @@ def prepare_high_column_profile(
 ) -> PreparedHighColumnProfile:
     """Represent one native profile on the strict method-v5 progressive grid.
 
-    Finite signed background-subtracted RCS samples are averaged.  Missing
-    source samples invalidate only their progressive cell.  A cell becomes
-    usable by KFS only when its aggregated RCS and molecular backscatter are
-    both finite and positive.
+    Finite signed background-subtracted RCS samples are averaged. Missing source
+    samples invalidate only their progressive cell. A cell becomes usable by KFS
+    only when its aggregated RCS and molecular backscatter are both finite and
+    positive.
     """
     altitude = np.asarray(altitude_m, dtype=np.float64)
     signal = np.asarray(range_corrected_signal, dtype=np.float64)
@@ -172,7 +172,7 @@ def contiguous_usable_top_index(
 ) -> int | None:
     """Return the last continuously KFS-usable cell above ``path_start_altitude_m``.
 
-    The first unusable progressive cell terminates the nominal path.  No later
+    The first unusable progressive cell terminates the nominal path. No later
     recovery is interpreted as continuous support.
     """
     altitude = prepared.grid.altitude_m
@@ -218,9 +218,14 @@ def catalogue_high_column_reference_cells(
     """Diagnose progressive boundary cells using native-grid Rayleigh windows.
 
     Rayleigh QA remains on the native grid so a 1 km window retains the same
-    physical/sample meaning as method v4.  The progressive cell is only the
-    numerical boundary representation.  This function does not rank accepted
-    cells or assert molecular purity.
+    physical/sample meaning as method v4. The search bounds apply to the
+    **reference-cell center**, not to every sample in the diagnostic window.
+    This avoids silently shifting a declared 10 km floor upward by half a
+    Rayleigh window. The diagnostic window itself only has to fit inside the
+    measured native altitude domain.
+
+    The progressive cell is only the numerical boundary representation. This
+    function does not rank accepted cells or assert molecular purity.
     """
     native_signal = np.asarray(native_range_corrected_signal, dtype=np.float64)
     native_molecular = np.asarray(native_simulated_molecular_signal, dtype=np.float64)
@@ -258,8 +263,6 @@ def catalogue_high_column_reference_cells(
         start = native_center - half
         stop = start + window_bins
         if start < 0 or stop > native_altitude.size:
-            continue
-        if native_altitude[start] < search_min or native_altitude[stop - 1] > search_max:
             continue
 
         candidate = evaluate_rayleigh_candidate(
@@ -315,7 +318,7 @@ def run_high_column_reference_cell_monte_carlo(
     """Execute nested boundary-scenario MC for one explicitly chosen v5 cell.
 
     The caller, not this function, owns the experimental reference-cell
-    selection policy.  The chosen cell must be source-supported, KFS-usable and
+    selection policy. The chosen cell must be source-supported, KFS-usable and
     lie on the continuous nominal path from the lower-column start.
     """
     ref_idx = int(reference_cell_index)
