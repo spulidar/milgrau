@@ -39,6 +39,13 @@ _REQUIRED_VARIABLES: tuple[str, ...] = (
     "rayleigh_reference_tier_min_altitude_m_block",
     "rayleigh_reference_tier_index_block",
     "rayleigh_reference_fallback_used_block",
+    "rayleigh_reference_relative_slope_block",
+    "rayleigh_reference_relative_variance_block",
+    "rayleigh_reference_valid_fraction_block",
+    "rayleigh_reference_diagnostic_cost_block",
+    "rayleigh_reference_snr_median_block",
+    "rayleigh_reference_effective_resolution_m_block",
+    "rayleigh_reference_source_bin_count_block",
     "contiguous_path_top_altitude_m_block",
     "selection_success_fraction_block",
     "selected_reference_altitude_m_mc",
@@ -52,6 +59,14 @@ _REQUIRED_VARIABLES: tuple[str, ...] = (
     "gluing_attempted_flag",
     "gluing_success_flag",
     "single_channel_fallback_flag",
+    "gluing_start_altitude_m",
+    "gluing_split_altitude_m",
+    "gluing_stop_altitude_m",
+    "gluing_slope",
+    "gluing_intercept",
+    "gluing_correlation",
+    "gluing_relative_rmse",
+    "gluing_relative_bias",
     "requested_wavelengths",
     "processed_wavelengths",
     "failed_wavelengths",
@@ -108,7 +123,15 @@ def validate_method_v5_level2_contract(ds: xr.Dataset) -> None:
     _require_names(ds, _REQUIRED_VARIABLES)
     _require_names(
         ds,
-        ("block_time", "block_start_utc", "block_end_utc", "wavelength", "altitude", "residual_fraction", "mc_iteration"),
+        (
+            "block_time",
+            "block_start_utc",
+            "block_end_utc",
+            "wavelength",
+            "altitude",
+            "residual_fraction",
+            "mc_iteration",
+        ),
         coords=True,
     )
 
@@ -158,6 +181,13 @@ def validate_method_v5_level2_contract(ds: xr.Dataset) -> None:
         "rayleigh_reference_tier_min_altitude_m_block",
         "rayleigh_reference_tier_index_block",
         "rayleigh_reference_fallback_used_block",
+        "rayleigh_reference_relative_slope_block",
+        "rayleigh_reference_relative_variance_block",
+        "rayleigh_reference_valid_fraction_block",
+        "rayleigh_reference_diagnostic_cost_block",
+        "rayleigh_reference_snr_median_block",
+        "rayleigh_reference_effective_resolution_m_block",
+        "rayleigh_reference_source_bin_count_block",
         "contiguous_path_top_altitude_m_block",
         "selection_success_fraction_block",
         "retrieval_input_valid_flag",
@@ -167,6 +197,14 @@ def validate_method_v5_level2_contract(ds: xr.Dataset) -> None:
         "gluing_attempted_flag",
         "gluing_success_flag",
         "single_channel_fallback_flag",
+        "gluing_start_altitude_m",
+        "gluing_split_altitude_m",
+        "gluing_stop_altitude_m",
+        "gluing_slope",
+        "gluing_intercept",
+        "gluing_correlation",
+        "gluing_relative_rmse",
+        "gluing_relative_bias",
     ):
         _require_dims(ds, name, block_wavelength)
     for name in (
@@ -175,11 +213,21 @@ def validate_method_v5_level2_contract(ds: xr.Dataset) -> None:
         "selected_reference_tier_index_mc",
     ):
         _require_dims(ds, name, block_wavelength_iteration)
-    for name in ("lidar_ratio_assumed_sr", "lidar_ratio_std_sr", "retrieval_top_altitude_m", "retrieval_success_fraction"):
+    for name in (
+        "lidar_ratio_assumed_sr",
+        "lidar_ratio_std_sr",
+        "retrieval_top_altitude_m",
+        "retrieval_success_fraction",
+    ):
         _require_dims(ds, name, ("wavelength",))
 
     altitude = np.asarray(ds["altitude"].values, dtype=np.float64)
-    if altitude.ndim != 1 or altitude.size < 2 or np.any(~np.isfinite(altitude)) or np.any(np.diff(altitude) <= 0.0):
+    if (
+        altitude.ndim != 1
+        or altitude.size < 2
+        or np.any(~np.isfinite(altitude))
+        or np.any(np.diff(altitude) <= 0.0)
+    ):
         raise ValueError("Method-v5 altitude must be finite, 1D, and strictly increasing.")
     resolution = np.asarray(ds["effective_vertical_resolution_m"].values, dtype=np.float64)
     source_count = np.asarray(ds["source_bin_count"].values, dtype=np.int64)
@@ -189,7 +237,12 @@ def validate_method_v5_level2_contract(ds: xr.Dataset) -> None:
         raise ValueError("source_bin_count must be positive for every progressive cell.")
 
     residual = np.asarray(ds["residual_fraction"].values, dtype=np.float64)
-    if residual.ndim != 1 or residual.size == 0 or np.any(~np.isfinite(residual)) or np.any(residual < 0.0):
+    if (
+        residual.ndim != 1
+        or residual.size == 0
+        or np.any(~np.isfinite(residual))
+        or np.any(residual < 0.0)
+    ):
         raise ValueError("residual_fraction must contain finite non-negative scenarios.")
     if not np.any(residual == 0.0) or np.unique(residual).size != residual.size:
         raise ValueError("residual_fraction must include unique nominal f=0.")
@@ -212,19 +265,31 @@ def validate_method_v5_level2_contract(ds: xr.Dataset) -> None:
     if not _same_with_nan(ds["retrieval_success_fraction"].values, expected_success_fraction):
         raise ValueError("retrieval_success_fraction must equal the successful block fraction.")
 
-    nominal_beta = np.asarray(ds["aerosol_backscatter_nominal_block"].values, dtype=np.float64)
-    expected_support_count = np.count_nonzero(np.isfinite(nominal_beta), axis=0).astype(np.int32)
+    nominal_beta = np.asarray(
+        ds["aerosol_backscatter_nominal_block"].values, dtype=np.float64
+    )
+    expected_support_count = np.count_nonzero(np.isfinite(nominal_beta), axis=0).astype(
+        np.int32
+    )
     observed_support_count = np.asarray(ds["period_support_count"].values, dtype=np.int32)
     if not np.array_equal(observed_support_count, expected_support_count):
-        raise ValueError("period_support_count must equal finite nominal block support at each altitude.")
-    expected_support_fraction = expected_support_count.astype(np.float64) / float(ds.sizes["block_time"])
+        raise ValueError(
+            "period_support_count must equal finite nominal block support at each altitude."
+        )
+    expected_support_fraction = expected_support_count.astype(np.float64) / float(
+        ds.sizes["block_time"]
+    )
     if not _same_with_nan(ds["period_support_fraction"].values, expected_support_fraction):
         raise ValueError("period_support_fraction must equal period_support_count / block count.")
 
     expected_beta_mean = _finite_mean(nominal_beta, axis=0)
     if not _same_with_nan(ds["aerosol_backscatter_mean"].values, expected_beta_mean):
-        raise ValueError("aerosol_backscatter_mean must be the finite-only nominal block mean.")
-    nominal_alpha = np.asarray(ds["aerosol_extinction_nominal_block"].values, dtype=np.float64)
+        raise ValueError(
+            "aerosol_backscatter_mean must be the finite-only nominal block mean."
+        )
+    nominal_alpha = np.asarray(
+        ds["aerosol_extinction_nominal_block"].values, dtype=np.float64
+    )
     expected_alpha_mean = _finite_mean(nominal_alpha, axis=0)
     if not _same_with_nan(ds["aerosol_extinction_mean"].values, expected_alpha_mean):
         raise ValueError("aerosol_extinction_mean must be the finite-only nominal block mean.")
@@ -233,26 +298,74 @@ def validate_method_v5_level2_contract(ds: xr.Dataset) -> None:
     for wavelength_index in range(ds.sizes["wavelength"]):
         support = np.flatnonzero(observed_support_count[wavelength_index] > 0)
         expected_top = float(altitude[support[-1]]) if support.size else np.nan
-        if not np.isclose(top[wavelength_index], expected_top, rtol=0.0, atol=1.0e-9, equal_nan=True):
-            raise ValueError("retrieval_top_altitude_m must match the highest altitude with period support.")
+        if not np.isclose(
+            top[wavelength_index],
+            expected_top,
+            rtol=0.0,
+            atol=1.0e-9,
+            equal_nan=True,
+        ):
+            raise ValueError(
+                "retrieval_top_altitude_m must match the highest altitude with period support."
+            )
 
     mc_valid = np.asarray(ds["mc_valid_fraction"].values, dtype=np.float64)
     finite_mc = np.isfinite(mc_valid)
     if np.any((mc_valid[finite_mc] < 0.0) | (mc_valid[finite_mc] > 1.0)):
         raise ValueError("mc_valid_fraction must lie between 0 and 1 where finite.")
-    selection_fraction = np.asarray(ds["selection_success_fraction_block"].values, dtype=np.float64)
+    selection_fraction = np.asarray(
+        ds["selection_success_fraction_block"].values, dtype=np.float64
+    )
     finite_selection = np.isfinite(selection_fraction)
-    if np.any((selection_fraction[finite_selection] < 0.0) | (selection_fraction[finite_selection] > 1.0)):
-        raise ValueError("selection_success_fraction_block must lie between 0 and 1 where finite.")
+    if np.any(
+        (selection_fraction[finite_selection] < 0.0)
+        | (selection_fraction[finite_selection] > 1.0)
+    ):
+        raise ValueError(
+            "selection_success_fraction_block must lie between 0 and 1 where finite."
+        )
 
-    references = np.asarray(ds["rayleigh_reference_altitude_m_block"].values, dtype=np.float64)
+    references = np.asarray(
+        ds["rayleigh_reference_altitude_m_block"].values, dtype=np.float64
+    )
     if np.any((retrieval_success == 1) & ~np.isfinite(references)):
-        raise ValueError("Every successful method-v5 block requires a finite selected reference altitude.")
+        raise ValueError(
+            "Every successful method-v5 block requires a finite selected reference altitude."
+        )
+    selected_resolution = np.asarray(
+        ds["rayleigh_reference_effective_resolution_m_block"].values,
+        dtype=np.float64,
+    )
+    selected_source_count = np.asarray(
+        ds["rayleigh_reference_source_bin_count_block"].values,
+        dtype=np.int64,
+    )
+    if np.any((retrieval_success == 1) & (~np.isfinite(selected_resolution) | (selected_resolution <= 0.0))):
+        raise ValueError("Every successful reference requires a positive effective resolution.")
+    if np.any((retrieval_success == 1) & (selected_source_count <= 0)):
+        raise ValueError("Every successful reference requires a positive native source-bin count.")
+    valid_fraction = np.asarray(
+        ds["rayleigh_reference_valid_fraction_block"].values, dtype=np.float64
+    )
+    finite_valid_fraction = np.isfinite(valid_fraction)
+    if np.any(
+        (valid_fraction[finite_valid_fraction] < 0.0)
+        | (valid_fraction[finite_valid_fraction] > 1.0)
+    ):
+        raise ValueError("rayleigh_reference_valid_fraction_block must lie between 0 and 1.")
 
-    requested = tuple(int(value) for value in np.asarray(ds["requested_wavelengths"].values).tolist())
-    wavelength = tuple(int(value) for value in np.asarray(ds["wavelength"].values).tolist())
-    processed = tuple(int(value) for value in np.asarray(ds["processed_wavelengths"].values).tolist())
-    failed = tuple(int(value) for value in np.asarray(ds["failed_wavelengths"].values).tolist())
+    requested = tuple(
+        int(value) for value in np.asarray(ds["requested_wavelengths"].values).tolist()
+    )
+    wavelength = tuple(
+        int(value) for value in np.asarray(ds["wavelength"].values).tolist()
+    )
+    processed = tuple(
+        int(value) for value in np.asarray(ds["processed_wavelengths"].values).tolist()
+    )
+    failed = tuple(
+        int(value) for value in np.asarray(ds["failed_wavelengths"].values).tolist()
+    )
     if requested != wavelength:
         raise ValueError("Schema-4 wavelength coordinate must equal requested_wavelengths exactly.")
     expected_processed = tuple(
@@ -262,7 +375,9 @@ def validate_method_v5_level2_contract(ds: xr.Dataset) -> None:
     )
     expected_failed = tuple(value for value in wavelength if value not in expected_processed)
     if processed != expected_processed or failed != expected_failed:
-        raise ValueError("processed_wavelengths/failed_wavelengths must match method-v5 block success.")
+        raise ValueError(
+            "processed_wavelengths/failed_wavelengths must match method-v5 block success."
+        )
     expected_completeness = "complete" if not failed else "partial"
     expected_status = "success" if not failed else "partial"
     if str(ds.attrs.get("product_completeness", "")) != expected_completeness:
