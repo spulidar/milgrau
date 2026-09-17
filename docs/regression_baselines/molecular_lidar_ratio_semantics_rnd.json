@@ -1,0 +1,24 @@
+{
+  "evidence_type": "synthetic_model_internal_semantics_rnd",
+  "productive_method_changed": false,
+  "productive_level2_retrieval_method": 4,
+  "current_productive_molecular_lidar_ratio_sr": 8.377580409572781,
+  "molecular_model_semantics": {
+    "extinction": "total Rayleigh volume scattering coefficient from Bucholtz-style molecular model",
+    "backscatter": "angular volume scattering coefficient at 180 degrees using wavelength-dependent molecular depolarization/phase function"
+  },
+  "model_implied_alpha_over_beta_sr": {
+    "355": 8.503662994736853,
+    "532": 8.49662582719281
+  },
+  "fractional_difference_from_8pi_over_3": {
+    "355": 0.01505000000000023,
+    "532": 0.014210000000000056
+  },
+  "synthetic_test_statement": "For a noiseless elastic forward model generated with the model-implied alpha_mol/beta_mol semantics, backward KFS using the matching molecular lidar ratio recovers the controlled aerosol profile more closely than KFS using the current fixed 8*pi/3 constant at both 355 and 532 nm.",
+  "unresolved_physics": [
+    "Whether the relevant receiver/filter semantics correspond to total Rayleigh, Cabannes, or another effective detected molecular component.",
+    "The quantitative impact on representative real SPU retrievals under matched receiver semantics."
+  ],
+  "decision": "R&D evidence only. Do not change productive molecular lidar-ratio semantics until receiver/filter physics and representative sensitivity are resolved; any productive change requires retrieval-method versioning."
+}
