@@ -1,0 +1,89 @@
+{
+  "evidence_type": "p3_representative_level2_metadata_audit",
+  "created_date": "2026-09-17",
+  "scope": {
+    "campaign_level2_product_count": 11,
+    "measurement_ids": [
+      "20240621sant",
+      "20240902sant",
+      "20241202saam",
+      "20250509sant",
+      "20250510sant",
+      "20250521sapm",
+      "20250628sant",
+      "20250629sant",
+      "20250716saam",
+      "20250716sapm",
+      "20251107sapm"
+    ],
+    "product_lineage_revision": "831ac2f4666c670fb3fec877fd581903a397a60d"
+  },
+  "scientific_provenance": {
+    "all_11_have_core_identity": true,
+    "core_identity_fields_checked": [
+      "Measurement_ID",
+      "software_name",
+      "software_version",
+      "level2_product_schema_version",
+      "level2_retrieval_method_version",
+      "source_repository",
+      "source_repository_revision",
+      "source_code_sha256",
+      "source_level1_sha256",
+      "processing_configuration_file",
+      "station_configuration_file",
+      "KFS_Mode",
+      "monte_carlo_random_seed",
+      "monte_carlo_iterations",
+      "kfs_reference_boundary_model",
+      "kfs_aerosol_ref_fraction",
+      "lidar_ratio_source"
+    ],
+    "all_11_embed_exact_processing_yaml": true,
+    "all_11_embed_exact_station_yaml": true,
+    "processing_configuration_yaml_sha256_for_campaign": "619720d1d29d9945c7648e398d5663d5b3c673d6880f51eb27abef0a334b56c2",
+    "station_configuration_yaml_sha256_for_campaign": "5de99aa280bf47db6b19b8a051e4b795d5cd9c7a62a341797e75df90098e7e9e",
+    "interpretation": "The exact scientific recipe is embedded directly in each NetCDF. Configuration hashes are therefore not required to reconstruct the recipe and should not be reintroduced as redundant legacy metadata."
+  },
+  "instrument_lineage_machine_readability": {
+    "legacy_Station_Profile_present_in_all_11": true,
+    "profiles_observed": ["spu-raman-2018", "spu-merionc-2024"],
+    "normalized_station_profile_id_present_in_campaign_products": false,
+    "normalized_instrument_calibration_id_present_in_campaign_products": false,
+    "scientific_information_lost": false,
+    "reason": "Station_Profile plus the embedded exact station catalog preserve the lineage for human reconstruction, but the normalized profile/calibration identifiers were not directly searchable as global attributes in these products.",
+    "current_code_fix": {
+      "provenance_helper_commit": "590cf00c211b441aae1e58bbc1c4aeeb816d79f0",
+      "test_commit": "b25045722c0d405728c68945ab601bce69ee739d",
+      "behavior": "Derived products normalize explicit source Station_Profile to station_profile_id and materialize instrument_calibration_id only when the named profile exists in the loaded station catalog; no date-based profile inference is performed."
+    }
+  },
+  "publication_and_discovery_metadata": {
+    "fields_not_present_in_the_11_campaign_products": [
+      "license / license_url",
+      "creator/contact metadata",
+      "citation",
+      "title/summary/keywords",
+      "CF Conventions declaration",
+      "project/acknowledgement"
+    ],
+    "classification": "release_and_discovery_gap_not_scientific_recipe_loss",
+    "notes": [
+      "No software/data license is selected by this audit; licensing remains a deliberate governance decision.",
+      "A CF Conventions attribute must not be added until actual CF compliance is reviewed rather than assumed.",
+      "Citation/contact/title metadata should be designed as stable release metadata rather than copied ad hoc into scientific code."
+    ]
+  },
+  "environment_reproducibility": {
+    "exact_python_dependency_environment_embedded": false,
+    "classification": "P6_release_environment_gate",
+    "interpretation": "Source-code content identity and exact YAML recipes are present, but bit-for-bit environment recreation still requires a released/locked environment artifact outside or alongside the product."
+  },
+  "decision": {
+    "representative_level2_metadata_review": "complete",
+    "scientific_recipe_provenance": "strong",
+    "instrument_lineage_discoverability": "fixed_for_new_products_pending_CI",
+    "release_metadata": "open",
+    "productive_retrieval_change": "none"
+  }
+}
