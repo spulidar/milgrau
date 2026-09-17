@@ -20,8 +20,10 @@ Source:
 
 Earlier peer-reviewed SPU instrumentation descriptions provide the same channel identities and describe 530 nm specifically as rotational Raman scattering from nitrogen:
 
-* Moreira, G. de A. et al. (2019), *Analyzing the atmospheric boundary layer using high-order moments obtained from multiwavelength lidar data: impact of wavelength choice*, Atmospheric Measurement Techniques 12, 4261–4276. The paper describes 387 nm as the nitrogen-shifted companion of 355 nm, 408 nm as the water-vapor-shifted companion of 355 nm, and 530 nm as rotational Raman shifting from 532 nm by nitrogen.
-* Freudenthaler, V. et al. / LPP collaboration (2023), *Collaborative development of the Lidar Processing Pipeline (LPP) for retrievals of atmospheric aerosols and clouds*, Geoscientific Instrumentation, Methods and Data Systems 12, 171–203, likewise describes SPU detection at elastic 355/532/1064 nm plus nitrogen Raman 387/530 nm and water-vapor 408 nm.
+* Moreira, G. de A. et al. (2019), *Analyzing the atmospheric boundary layer using high-order moments obtained from multiwavelength lidar data: impact of wavelength choice*, Atmospheric Measurement Techniques 12, 4261–4276.
+* Pallotta, J. V.; de Carvalho, S. A.; Lopes, F. J. D. S.; Cacheffo, A.; Landulfo, E.; Barbosa, H. M. J. (2023), *Collaborative development of the Lidar Processing Pipeline (LPP) for retrievals of atmospheric aerosols and clouds*, Geoscientific Instrumentation, Methods and Data Systems 12, 171–185. DOI: `10.5194/gi-12-171-2023`.
+
+The published descriptions identify 387 nm as the nitrogen-shifted companion of 355 nm, 408 nm as the water-vapor-shifted companion of 355 nm, and 530 nm as nitrogen Raman associated with 532 nm; the 2019 SPU description identifies the 530-nm channel specifically as rotational Raman nitrogen.
 
 The SPU Lidar Station instrument page also publishes the same species assignments and historical interference-filter bandwidths. Those filter values are useful provenance evidence but are **not copied into current MerionC metadata here**, because the repository does not yet demonstrate that the receiver/filter assembly and effective spectral response were unchanged across the 2024 instrument-profile transition.
 
