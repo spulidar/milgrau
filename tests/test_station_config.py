@@ -78,7 +78,7 @@ def test_profiles_resolve_named_instrument_calibration() -> None:
 
     assert {ctx["calibration_id"] for ctx in contexts} == {"spu-channel-corrections-v1"}
     for ctx in contexts:
-        assert ctx["calibration_provenance"]["source"] == "migrated_from_legacy_global_channel_corrections"
+        assert ctx["calibration_provenance"]["source"] == "experimental"
         assert ctx["channel_calibrations"]["355.PC"]["deadtime_us"] == 0.002
         assert ctx["channel_calibrations"]["355.PC"]["saturation"] == {"status": "not_characterized"}
 
