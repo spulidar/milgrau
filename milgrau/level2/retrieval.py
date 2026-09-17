@@ -1,4 +1,4 @@
-"""Public Level 2 retrieval API with explicit productive orchestration."""
+"""Shared Level 2 signal preparation plus retained legacy retrieval helpers."""
 
 from __future__ import annotations
 
@@ -320,14 +320,19 @@ def _apply_provisional_pc_deadtime_guard(
     )
 
 
-def process_wavelength(
+def prepare_wavelength_state(
     ds_l1: xr.Dataset,
     wavelength_nm: int,
     altitude_m: np.ndarray,
     config: Mapping[str, Any],
     logger: logging.Logger,
-) -> WavelengthRetrievalResult:
-    """Process one wavelength through the explicit productive Level 2 path."""
+) -> tuple[WavelengthBlockInputs, BlockGluingResult, MolecularModel]:
+    """Prepare the shared signal/gluing/molecular state used by productive method v5.
+
+    This deliberately stops before any Rayleigh-reference selection or optical
+    inversion so the productive v5 path is independent of the historical v4
+    retrieval decision.
+    """
     inputs = _run_retrieval_stage(
         "selection_and_blocking",
         lambda: _apply_provisional_pc_deadtime_guard(
@@ -347,6 +352,20 @@ def process_wavelength(
     molecular_model = _run_retrieval_stage(
         "molecular_model",
         lambda: build_molecular_model(ds_l1, wavelength_nm, altitude_m, config),
+    )
+    return inputs, glued, molecular_model
+
+
+def process_wavelength(
+    ds_l1: xr.Dataset,
+    wavelength_nm: int,
+    altitude_m: np.ndarray,
+    config: Mapping[str, Any],
+    logger: logging.Logger,
+) -> WavelengthRetrievalResult:
+    """Retained legacy v4 retrieval helper; productive LEBEAR no longer calls it."""
+    inputs, glued, molecular_model = prepare_wavelength_state(
+        ds_l1, wavelength_nm, altitude_m, config, logger
     )
     molecular, optical, rayleigh, kfs = _run_retrieval_stage(
         "rayleigh_kfs",
@@ -378,6 +397,7 @@ __all__ = [
     "evaluate_rayleigh_reference",
     "glue_signal_blocks",
     "prepare_wavelength_blocks",
+    "prepare_wavelength_state",
     "process_wavelength",
     "propagate_glued_error",
     "retrieve_optical_blocks",
