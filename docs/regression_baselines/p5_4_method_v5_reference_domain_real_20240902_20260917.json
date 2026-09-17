@@ -1,0 +1,60 @@
+{
+  "study": "method-v5 real Level-1 reference-domain support diagnostic",
+  "source_level1_id": "20240902sant",
+  "date_frozen": "2026-09-17",
+  "branch_context": "new-architecture",
+  "block_minutes": 20,
+  "search_max_altitude_m": 25000.0,
+  "rayleigh_window_m": 1000.0,
+  "current_catalogue_semantics_note": "search bounds constrain both candidate centers and the complete native Rayleigh QA window, so a nominal lower bound L effectively excludes centers within about half a Rayleigh window above L",
+  "wavelengths": {
+    "355": {
+      "available_blocks": 7,
+      "contiguous_top_altitude_m": [3093.75, 3206.25, 3011.25, 3296.25, 3266.25, 3296.25, 3056.25],
+      "contiguous_top_median_m": 3206.25,
+      "domain_6000": {
+        "selected_blocks": 0,
+        "rayleigh_accepted_cells_by_block": [59, 5, 17, 77, 63, 110, 81],
+        "path_admissible_cells_by_block": [0, 0, 0, 0, 0, 0, 0]
+      },
+      "domain_8000": {
+        "selected_blocks": 0,
+        "rayleigh_accepted_cells_by_block": [40, 5, 17, 54, 38, 74, 45],
+        "path_admissible_cells_by_block": [0, 0, 0, 0, 0, 0, 0]
+      },
+      "domain_10000": {
+        "selected_blocks": 0,
+        "rayleigh_accepted_cells_by_block": [17, 1, 2, 47, 5, 20, 44],
+        "path_admissible_cells_by_block": [0, 0, 0, 0, 0, 0, 0]
+      },
+      "interpretation": "High-altitude Rayleigh-like windows exist, but the continuous KFS-usable path terminates near 3.0-3.3 km in every block. Lowering the search floor to 6 km cannot make these high windows admissible without bridging a gap."
+    },
+    "532": {
+      "available_blocks": 7,
+      "contiguous_top_altitude_m": [9622.5, 9802.5, 9532.5, 10342.5, 8437.5, 9622.5, 8242.5],
+      "contiguous_top_median_m": 9622.5,
+      "domain_6000": {
+        "selected_blocks": 7,
+        "selected_reference_altitude_m": [6622.5, 6592.5, 6577.5, 6877.5, 7177.5, 6682.5, 7207.5],
+        "selected_reference_median_m": 6682.5,
+        "selected_reference_diagnostic_cost": [0.065399224046524, 0.06672741341049522, 0.08699478485950607, 0.0930157949934941, 0.08557267168761902, 0.07778643571483596, 0.16903046560408316]
+      },
+      "domain_8000": {
+        "selected_blocks": 5,
+        "selected_reference_altitude_m": [8677.5, 9682.5, 8767.5, 9487.5, null, 9007.5, null],
+        "selected_reference_median_over_successes_m": 9007.5,
+        "selected_reference_diagnostic_cost": [0.3566108476028083, 0.4513972313309481, 0.2592551568545643, 0.2740281772213373, null, 0.22153299271596208, null]
+      },
+      "domain_10000": {
+        "selected_blocks": 0
+      },
+      "interpretation": "Unlike 355 nm, the continuous path commonly reaches 8-10 km. The fixed 10 km domain removes recoverable 532 nm blocks; 8 km recovers five of seven and 6 km recovers all seven under the current catalogue semantics. This does not establish 6 km as a globally valid purity floor."
+    }
+  },
+  "method_decisions_supported": [
+    "Keep continuous path admissibility as a hard requirement; do not bridge internal unusable cells.",
+    "Do not infer molecular purity from Rayleigh shape alone.",
+    "Do not replace the 10 km experimental search floor with a global 6 km floor solely from this case.",
+    "Evaluate a support-aware fallback or revised search-domain semantics before promoting method-v5."
+  ]
+}
