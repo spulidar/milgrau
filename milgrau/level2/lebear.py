@@ -96,7 +96,8 @@ def level2_output_is_current(
             ):
                 return False
             requested_written = sorted(
-                int(value) for value in np.asarray(ds["requested_wavelengths"].values).tolist()
+                int(value)
+                for value in np.asarray(ds["requested_wavelengths"].values).tolist()
             )
             if requested_written != requested:
                 return False
@@ -188,7 +189,10 @@ def attempt_wavelength(
             wavelength_nm=wavelength_nm,
             stage=WavelengthFailureStage.RETRIEVAL_VALIDATION,
             code=WavelengthFailureCode.NO_VALID_RETRIEVAL_BLOCK,
-            message="No block produced a valid legacy Rayleigh plus backward KFS optical retrieval.",
+            message=(
+                "No block produced a valid legacy Rayleigh plus backward KFS "
+                "optical retrieval."
+            ),
             cause_summary="retrieval_success_flag contains no successful block",
         )
         wavelength_logger.warning("legacy helper produced no valid retrieval blocks")
@@ -204,14 +208,22 @@ def attempt_wavelength(
     return WavelengthAttempt.success(result)
 
 
+def _wavelength_values(ds_l2: xr.Dataset, name: str) -> list[int]:
+    return [int(value) for value in np.asarray(ds_l2[name].values).tolist()]
+
+
 def _product_execution_metadata(ds_l2: xr.Dataset) -> dict[str, Any]:
-    requested = [int(value) for value in np.asarray(ds_l2["requested_wavelengths"].values).tolist()]
-    processed = [int(value) for value in np.asarray(ds_l2["processed_wavelengths"].values).tolist()]
-    failed = [int(value) for value in np.asarray(ds_l2["failed_wavelengths"].values).tolist()]
+    """Return operational metadata using JSON-scalar values only."""
+    requested = _wavelength_values(ds_l2, "requested_wavelengths")
+    processed = _wavelength_values(ds_l2, "processed_wavelengths")
+    failed = _wavelength_values(ds_l2, "failed_wavelengths")
     return {
-        "requested_wavelengths": requested,
-        "processed_wavelengths": processed,
-        "failed_wavelengths": failed,
+        "requested_wavelengths": ",".join(str(value) for value in requested),
+        "processed_wavelengths": ",".join(str(value) for value in processed),
+        "failed_wavelengths": ",".join(str(value) for value in failed),
+        "requested_wavelength_count": len(requested),
+        "processed_wavelength_count": len(processed),
+        "failed_wavelength_count": len(failed),
         "product_completeness": str(ds_l2.attrs.get("product_completeness", "")),
         "product_status": str(ds_l2.attrs.get("product_status", "")),
     }
@@ -260,7 +272,10 @@ def process_single_level1_file(
             bind_log_context(file_logger, stage="start").info(
                 "method=v5 schema=4 wavelengths=%s tiers=%s",
                 ",".join(str(value) for value in wavelengths),
-                ",".join(f"{value / 1000.0:g}km" for value in v5_cfg.reference_tier_min_altitudes_m),
+                ",".join(
+                    f"{value / 1000.0:g}km"
+                    for value in v5_cfg.reference_tier_min_altitudes_m
+                ),
             )
 
             altitude_m = np.asarray(ds_l1["altitude"].values, dtype=np.float64)
@@ -300,7 +315,9 @@ def process_single_level1_file(
                 "kfs_nominal_aerosol_ref_fraction": 0.0,
                 "kfs_beta_ref_relative_std": float(kfs_cfg["beta_ref_relative_std"]),
                 "kfs_min_lidar_ratio_sr": float(kfs_cfg["min_lidar_ratio_sr"]),
-                "kfs_allow_negative_aerosol": int(bool(kfs_cfg["allow_negative_aerosol"])),
+                "kfs_allow_negative_aerosol": int(
+                    bool(kfs_cfg["allow_negative_aerosol"])
+                ),
                 "lidar_ratio_source": _lidar_ratio_source(config),
                 **gluing_selection_score_metadata(),
             },
@@ -316,16 +333,17 @@ def process_single_level1_file(
         )
 
         duration = time.perf_counter() - started_at
+        failed_wavelengths = _wavelength_values(ds_l2, "failed_wavelengths")
+        processed_wavelengths = _wavelength_values(ds_l2, "processed_wavelengths")
         metadata = {
             "pipeline": "L2",
             "save_id": save_id,
             **_product_execution_metadata(ds_l2),
         }
-        failed = metadata["failed_wavelengths"]
-        if failed:
+        if failed_wavelengths:
             bind_log_context(file_logger, stage="done").warning(
                 "method-v5 partial | failed=%s | %s | %.1f s",
-                ",".join(str(value) for value in failed),
+                ",".join(str(value) for value in failed_wavelengths),
                 output_path.name,
                 duration,
             )
@@ -342,7 +360,7 @@ def process_single_level1_file(
         else:
             bind_log_context(file_logger, stage="done").info(
                 "method-v5 complete | wavelengths=%d | %s | %.1f s",
-                len(metadata["processed_wavelengths"]),
+                len(processed_wavelengths),
                 output_path.name,
                 duration,
             )
@@ -416,7 +434,9 @@ def process_level_2(config: Mapping[str, Any], logger: logging.Logger) -> Execut
         return ExecutionSummary.from_results(
             [
                 ExecutionResult.skipped(
-                    "level2.discovery", "No Level 1 files found", metadata={"pipeline": "L2"}
+                    "level2.discovery",
+                    "No Level 1 files found",
+                    metadata={"pipeline": "L2"},
                 )
             ]
         )
@@ -454,7 +474,9 @@ def process_level_2(config: Mapping[str, Any], logger: logging.Logger) -> Execut
         files_to_process.append(file_path)
 
     if not files_to_process:
-        bind_log_context(logger, stage="summary").info("all method-v5 Level 2 products are current")
+        bind_log_context(logger, stage="summary").info(
+            "all method-v5 Level 2 products are current"
+        )
         return ExecutionSummary.from_results(skipped_results)
 
     bind_log_context(logger, stage="queue").info(
