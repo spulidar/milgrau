@@ -1,13 +1,12 @@
 """Low-memory command-line runner for real Level-1 method-v5 R&D validation.
 
-The productive Level-2 pipeline intentionally loads a complete Level-1 dataset
-before retrieval.  That is convenient operationally but unnecessarily expensive
-for method-v5 R&D on large files.  This runner keeps the NetCDF lazy, restricts
-the altitude domain, and processes one configured temporal block and one
-wavelength at a time.  It writes a small JSON checkpoint after every completed
-block so interrupted studies can resume without repeating earlier blocks.
+The productive Level-2 pipeline loads a complete Level-1 dataset before
+retrieval. That is convenient operationally but unnecessarily expensive for
+method-v5 R&D on large files. This runner keeps the NetCDF lazy, restricts the
+altitude domain, and processes one configured temporal block and one wavelength
+at a time. It writes a small JSON checkpoint after every completed block.
 
-This module is R&D-only.  It does not alter productive method-v4 behavior.
+This module is R&D-only. It does not alter productive method-v4 behavior.
 """
 
 from __future__ import annotations
@@ -88,6 +87,12 @@ def run_low_memory_validation(
     station_config_path: str | Path | None = None,
     n_iterations: int = 60,
     residual_fractions: Sequence[float] = (0.0, 0.02, 0.05),
+    reference_tier_min_altitudes_m: Sequence[float] = (
+        10_000.0,
+        9_000.0,
+        8_000.0,
+        6_000.0,
+    ),
     beta_ref_relative_std: float = 0.0,
     max_altitude_m: float = 30_000.0,
     block_start: int = 0,
@@ -102,8 +107,11 @@ def run_low_memory_validation(
     config = load_config(config_path, station_config_path)
     minutes = int(get_block_average_minutes(config))
     iterations = int(n_iterations)
+    tiers = tuple(float(value) for value in reference_tier_min_altitudes_m)
     if iterations <= 0:
         raise ValueError("n_iterations must be positive.")
+    if not tiers:
+        raise ValueError("reference_tier_min_altitudes_m must not be empty.")
 
     logger = logging.getLogger("milgrau.v5_validation")
     logger.setLevel(logging.INFO)
@@ -137,6 +145,7 @@ def run_low_memory_validation(
             altitude_m.size,
             float(altitude_m[-1]),
         )
+        logger.info("reference tiers (m): %s", ", ".join(f"{v:g}" for v in tiers))
 
         for wavelength_nm in [int(value) for value in wavelengths]:
             output_path = _output_path(output_root, source_path, wavelength_nm)
@@ -157,6 +166,7 @@ def run_low_memory_validation(
                 "max_altitude_m_loaded": float(altitude_m[-1]),
                 "n_iterations": iterations,
                 "residual_fractions": [float(value) for value in residual_fractions],
+                "reference_tier_min_altitudes_m": list(tiers),
                 "beta_ref_relative_std": float(beta_ref_relative_std),
                 "uncertainty_mode": "independent",
                 "blocks": [completed[index] for index in sorted(completed)],
@@ -192,6 +202,7 @@ def run_low_memory_validation(
                     n_iterations=iterations,
                     beta_ref_relative_std=float(beta_ref_relative_std),
                     uncertainty_mode="independent",
+                    reference_tier_min_altitudes_m=tiers,
                 )
                 if len(summary.blocks) != 1:
                     raise RuntimeError(
@@ -245,6 +256,13 @@ def _parse_args() -> argparse.Namespace:
         type=float,
         default=[0.0, 0.02, 0.05],
     )
+    parser.add_argument(
+        "--reference-tier-min-altitudes-m",
+        nargs="+",
+        type=float,
+        default=[10_000.0, 9_000.0, 8_000.0, 6_000.0],
+        help="Preferred-to-fallback reference-tier minima; default: 10000 9000 8000 6000",
+    )
     parser.add_argument("--beta-ref-relative-std", type=float, default=0.0)
     parser.add_argument("--max-altitude-m", type=float, default=30_000.0)
     parser.add_argument("--block-start", type=int, default=0)
@@ -267,6 +285,7 @@ def main() -> int:
         station_config_path=args.station_config,
         n_iterations=args.n_iterations,
         residual_fractions=args.residual_fractions,
+        reference_tier_min_altitudes_m=args.reference_tier_min_altitudes_m,
         beta_ref_relative_std=args.beta_ref_relative_std,
         max_altitude_m=args.max_altitude_m,
         block_start=args.block_start,
