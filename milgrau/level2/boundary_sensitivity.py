@@ -2,9 +2,9 @@
 
 Productive method v4 assumes zero aerosol backscatter at the exact Rayleigh
 reference bin. This module does not estimate or correct that assumption. It
-only evaluates a caller-declared family of residual aerosol fractions so the
-scientific dependence on the boundary condition can be exposed separately from
-signal noise, lidar-ratio uncertainty and vertical aggregation.
+only evaluates caller-declared residual aerosol fractions so the scientific
+dependence on the boundary condition remains distinct from random measurement
+noise and lidar-ratio uncertainty.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from milgrau.level2.kfs import fernald_inversion
+from milgrau.level2.kfs import fernald_inversion, kfs_inversion_monte_carlo
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,25 +26,39 @@ class BoundaryFractionSensitivity:
     reference_index: int
 
 
-def boundary_fraction_sensitivity_profiles(
+@dataclass(frozen=True, slots=True)
+class BoundaryFractionMonteCarloSensitivity:
+    """Nested random-MC results for caller-declared boundary scenarios.
+
+    The first dimension of every profile quantity is the residual-aerosol
+    scenario ``f = beta_aer(ref) / beta_mol(ref)``.  ``f`` is not sampled from a
+    probability density: every scenario is an explicit conditional experiment.
+    Random signal/LR/reference-estimator perturbations occur *within* each
+    scenario.  The same random seed is reused for each scenario to provide a
+    paired Monte-Carlo comparison.
+    """
+
+    residual_aerosol_fraction_of_molecular: np.ndarray
+    beta_total_reference_nominal: np.ndarray
+    aerosol_backscatter_mean: np.ndarray
+    aerosol_backscatter_random_std: np.ndarray
+    aerosol_extinction_mean: np.ndarray
+    aerosol_extinction_random_std: np.ndarray
+    backward_valid_count: np.ndarray
+    backward_valid_fraction: np.ndarray
+    n_iterations: int
+    reference_index: int
+    uncertainty_scope: str
+
+
+def _validate_boundary_inputs(
     *,
     rcs: np.ndarray,
     altitude_m: np.ndarray,
     beta_mol: np.ndarray,
     reference_index: int,
-    aerosol_lidar_ratio_sr: float | np.ndarray,
     residual_fractions: np.ndarray | list[float] | tuple[float, ...],
-    min_lidar_ratio_sr: float = 10.0,
-    allow_negative_aerosol: bool = False,
-) -> BoundaryFractionSensitivity:
-    """Evaluate explicit ``beta_aer(ref)/beta_mol(ref)`` sensitivity values.
-
-    ``residual_fractions`` are scenario inputs, not inferred quantities or
-    probabilities. For each value ``f``, the exact KFS boundary is
-    ``beta_total(ref) = beta_mol(ref) * (1 + f)``. The signal, grid and aerosol
-    lidar ratio remain unchanged. No score, preferred fraction or pass/fail
-    state is produced.
-    """
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, int, np.ndarray]:
     signal = np.asarray(rcs, dtype=np.float64)
     altitude = np.asarray(altitude_m, dtype=np.float64)
     molecular = np.asarray(beta_mol, dtype=np.float64)
@@ -72,6 +86,37 @@ def boundary_fraction_sensitivity_profiles(
     if not np.isfinite(beta_mol_ref) or beta_mol_ref <= 0.0:
         raise ValueError("beta_mol must be finite and positive at reference_index.")
 
+    return signal, altitude, molecular, ref_idx, fractions
+
+
+def boundary_fraction_sensitivity_profiles(
+    *,
+    rcs: np.ndarray,
+    altitude_m: np.ndarray,
+    beta_mol: np.ndarray,
+    reference_index: int,
+    aerosol_lidar_ratio_sr: float | np.ndarray,
+    residual_fractions: np.ndarray | list[float] | tuple[float, ...],
+    min_lidar_ratio_sr: float = 10.0,
+    allow_negative_aerosol: bool = False,
+) -> BoundaryFractionSensitivity:
+    """Evaluate explicit ``beta_aer(ref)/beta_mol(ref)`` sensitivity values.
+
+    ``residual_fractions`` are scenario inputs, not inferred quantities or
+    probabilities. For each value ``f``, the exact KFS boundary is
+    ``beta_total(ref) = beta_mol(ref) * (1 + f)``. The signal, grid and aerosol
+    lidar ratio remain unchanged. No score, preferred fraction or pass/fail
+    state is produced.
+    """
+    signal, altitude, molecular, ref_idx, fractions = _validate_boundary_inputs(
+        rcs=rcs,
+        altitude_m=altitude_m,
+        beta_mol=beta_mol,
+        reference_index=reference_index,
+        residual_fractions=residual_fractions,
+    )
+
+    beta_mol_ref = float(molecular[ref_idx])
     boundary = beta_mol_ref * (1.0 + fractions)
     profiles = np.stack(
         [
@@ -96,4 +141,98 @@ def boundary_fraction_sensitivity_profiles(
         beta_total_reference=np.asarray(boundary, dtype=np.float64),
         aerosol_backscatter=profiles,
         reference_index=ref_idx,
+    )
+
+
+def boundary_fraction_monte_carlo_sensitivity(
+    *,
+    rcs: np.ndarray,
+    rcs_error: np.ndarray | None,
+    altitude_m: np.ndarray,
+    beta_mol: np.ndarray,
+    reference_index: int,
+    aerosol_lidar_ratio_sr: float,
+    aerosol_lidar_ratio_std_sr: float,
+    residual_fractions: np.ndarray | list[float] | tuple[float, ...],
+    n_iterations: int = 300,
+    beta_ref_relative_std: float = 0.10,
+    min_lidar_ratio_sr: float = 10.0,
+    allow_negative_aerosol: bool = False,
+    seed: int | None = None,
+) -> BoundaryFractionMonteCarloSensitivity:
+    """Run paired random Monte Carlo inside explicit boundary ``f`` scenarios.
+
+    This function intentionally does **not** draw ``f`` randomly.  The caller
+    supplies a finite family of physically interpretable sensitivity scenarios.
+    For every scenario the KFS Monte Carlo propagates the existing random
+    ingredients (signal uncertainty, scalar aerosol lidar-ratio uncertainty and
+    reference-boundary estimator perturbation).  Reusing the same ``seed`` for
+    every scenario gives paired random draws, making the between-scenario
+    boundary effect easier to interpret.
+
+    ``backward_valid_fraction`` is diagnostic-only.  No cutoff is applied and
+    no productive method-v4 validity semantics are changed.
+    """
+    signal, altitude, molecular, ref_idx, fractions = _validate_boundary_inputs(
+        rcs=rcs,
+        altitude_m=altitude_m,
+        beta_mol=beta_mol,
+        reference_index=reference_index,
+        residual_fractions=residual_fractions,
+    )
+    iterations = int(n_iterations)
+    if iterations <= 0:
+        raise ValueError("n_iterations must be positive.")
+
+    beta_means: list[np.ndarray] = []
+    beta_stds: list[np.ndarray] = []
+    alpha_means: list[np.ndarray] = []
+    alpha_stds: list[np.ndarray] = []
+    valid_counts: list[int] = []
+
+    for fraction in fractions:
+        beta_mean, beta_std, alpha_mean, alpha_std, diagnostics = (
+            kfs_inversion_monte_carlo(
+                rcs=signal,
+                altitude=altitude,
+                beta_mol=molecular,
+                lr_base=float(aerosol_lidar_ratio_sr),
+                lr_std=float(aerosol_lidar_ratio_std_sr),
+                ref_idx=ref_idx,
+                n_iterations=iterations,
+                rcs_error=rcs_error,
+                beta_ref_relative_std=float(beta_ref_relative_std),
+                aerosol_ref_fraction=float(fraction),
+                altitude_units="m",
+                min_lidar_ratio=float(min_lidar_ratio_sr),
+                allow_negative_aerosol=bool(allow_negative_aerosol),
+                seed=seed,
+                return_diagnostics=True,
+                mode="backward",
+            )
+        )
+        beta_means.append(np.asarray(beta_mean, dtype=np.float64))
+        beta_stds.append(np.asarray(beta_std, dtype=np.float64))
+        alpha_means.append(np.asarray(alpha_mean, dtype=np.float64))
+        alpha_stds.append(np.asarray(alpha_std, dtype=np.float64))
+        valid_counts.append(
+            int(np.count_nonzero(diagnostics["backward_valid_simulations"]))
+        )
+
+    valid_count_arr = np.asarray(valid_counts, dtype=np.int32)
+    beta_mol_ref = float(molecular[ref_idx])
+    return BoundaryFractionMonteCarloSensitivity(
+        residual_aerosol_fraction_of_molecular=fractions.copy(),
+        beta_total_reference_nominal=beta_mol_ref * (1.0 + fractions),
+        aerosol_backscatter_mean=np.stack(beta_means, axis=0),
+        aerosol_backscatter_random_std=np.stack(beta_stds, axis=0),
+        aerosol_extinction_mean=np.stack(alpha_means, axis=0),
+        aerosol_extinction_random_std=np.stack(alpha_stds, axis=0),
+        backward_valid_count=valid_count_arr,
+        backward_valid_fraction=valid_count_arr.astype(np.float64) / float(iterations),
+        n_iterations=iterations,
+        reference_index=ref_idx,
+        uncertainty_scope=(
+            "nested_boundary_scenarios_within_scenario_partial_monte_carlo_dispersion"
+        ),
     )
