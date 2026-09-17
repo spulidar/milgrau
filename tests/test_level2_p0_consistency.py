@@ -1,4 +1,4 @@
-"""Regression guards for Level 2 productive-method identity and QA outputs."""
+"""Regression guards for Level 2 productive method-v5 identity and QA outputs."""
 
 from __future__ import annotations
 
@@ -29,12 +29,16 @@ def _logger() -> logging.Logger:
     return logger
 
 
-def test_productive_kfs_identity_is_backward() -> None:
+def test_productive_kfs_identity_is_backward_method_v5() -> None:
     config = {"inversion": {"kfs_mode": "backward"}}
 
     assert get_kfs_mode(config) == "backward"
     assert "Backward Klett--Fernald" in kfs_mode_description("backward")
-    assert elastic_inversion_algorithm_metadata()["integration_mode"] == "backward"
+    metadata = elastic_inversion_algorithm_metadata()
+    assert LEVEL2_PRODUCT_SCHEMA_VERSION == "4"
+    assert LEVEL2_RETRIEVAL_METHOD_VERSION == "5"
+    assert metadata["integration_mode"] == "backward"
+    assert metadata["uncertainty_method"] == "selection-aware Monte Carlo"
 
 
 def test_level2_incremental_rejects_stale_method_schema_or_gluing_metadata(
@@ -68,7 +72,6 @@ def test_level2_incremental_rejects_stale_method_schema_or_gluing_metadata(
             "source_level1_sha256": file_sha256(input_path),
             "product_completeness": "complete",
             "product_status": "success",
-            "KFS_Mode": "backward",
             **metadata,
             **gluing_metadata,
         },
@@ -76,8 +79,9 @@ def test_level2_incremental_rejects_stale_method_schema_or_gluing_metadata(
     ds.to_netcdf(product_path)
 
     monkeypatch.setattr(lebear, "get_wavelengths_to_process", lambda _config: [532])
-    monkeypatch.setattr(lebear, "get_kfs_mode", lambda _config: "backward")
-    monkeypatch.setattr(lebear, "validate_level2_contract", lambda _dataset: None)
+    monkeypatch.setattr(
+        lebear, "validate_method_v5_level2_contract", lambda _dataset: None
+    )
     monkeypatch.setattr(lebear, "output_is_current", lambda *args, **kwargs: True)
 
     assert lebear.level2_output_is_current(input_path, product_path, {}) is True
@@ -98,11 +102,6 @@ def test_level2_incremental_rejects_stale_method_schema_or_gluing_metadata(
 
     ds.attrs.update(gluing_metadata)
     ds.attrs["integration_mode"] = "two_sided"
-    ds.to_netcdf(product_path)
-    assert lebear.level2_output_is_current(input_path, product_path, {}) is False
-
-    ds.attrs["integration_mode"] = "backward"
-    ds.attrs["KFS_Mode"] = "two_sided"
     ds.to_netcdf(product_path)
     assert lebear.level2_output_is_current(input_path, product_path, {}) is False
 
