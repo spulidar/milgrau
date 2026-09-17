@@ -1,0 +1,80 @@
+{
+  "evidence_type": "p5_4_campaign_high_boundary_aggregation_rnd",
+  "created_date": "2026-09-17",
+  "productive_identity": "schema_v3_method_v4_backward_kfs_unchanged",
+  "experiment": "For each processed wavelength, use the pre-existing all-block accepted candidate nearest 10 km (or highest all-block candidate when the persistent region does not reach 10 km), map it to a fixed-origin 60/120 m aggregate cell, and run backward KFS Monte Carlo. This does not rerun Rayleigh QA on aggregated data and is not a productive selection rule. Lower-column differences are evaluated only where the productive method-v4 retrieval is finite.",
+  "global_summary": {
+    "60m_independent": {
+      "runs": 161,
+      "all_300_simulations_complete_runs": 152,
+      "minimum_complete_fraction": 0.24,
+      "median_complete_fraction": 1.0,
+      "median_lower_0p6_6km_relative_l2_difference_vs_productive": 0.1192735302,
+      "p95_lower_0p6_6km_relative_l2_difference_vs_productive": 0.4360438978,
+      "median_absolute_integrated_column_relative_difference_vs_productive": 0.1658177893,
+      "p95_absolute_integrated_column_relative_difference_vs_productive": 0.5243755150
+    },
+    "60m_fully_correlated": {
+      "runs": 161,
+      "all_300_simulations_complete_runs": 124,
+      "minimum_complete_fraction": 0.0,
+      "median_complete_fraction": 1.0,
+      "median_lower_0p6_6km_relative_l2_difference_vs_productive": 0.1180143537,
+      "p95_lower_0p6_6km_relative_l2_difference_vs_productive": 0.4525012588,
+      "p95_absolute_integrated_column_relative_difference_vs_productive": 0.5857030211
+    },
+    "120m_independent": {
+      "runs": 161,
+      "all_300_simulations_complete_runs": 157,
+      "minimum_complete_fraction": 0.8466666667,
+      "median_complete_fraction": 1.0,
+      "median_lower_0p6_6km_relative_l2_difference_vs_productive": 0.1039365877,
+      "p95_lower_0p6_6km_relative_l2_difference_vs_productive": 0.4603888607,
+      "median_absolute_integrated_column_relative_difference_vs_productive": 0.1576729214,
+      "p95_absolute_integrated_column_relative_difference_vs_productive": 0.4978459199
+    },
+    "120m_fully_correlated": {
+      "runs": 161,
+      "all_300_simulations_complete_runs": 122,
+      "minimum_complete_fraction": 0.0,
+      "median_complete_fraction": 1.0,
+      "median_lower_0p6_6km_relative_l2_difference_vs_productive": 0.1090407095,
+      "p95_lower_0p6_6km_relative_l2_difference_vs_productive": 0.4553257111,
+      "p95_absolute_integrated_column_relative_difference_vs_productive": 0.5457798796
+    }
+  },
+  "selected_case_examples": {
+    "20250521sapm_532_probe_8643p75m": {
+      "native_path": "MC-fragile with zero all-300 positive probability",
+      "60m_independent_min_complete_fraction": 0.24,
+      "120m_independent_min_complete_fraction": 0.8466666667,
+      "60m_fully_correlated_all_complete_blocks": "0/9",
+      "120m_fully_correlated_all_complete_blocks": "0/9"
+    },
+    "20250716sapm_355_probe_9881p25m": {
+      "native_path": "MC-fragile",
+      "60m_independent_all_complete_blocks": "8/8",
+      "60m_fully_correlated_min_complete_fraction": 0.3933333333
+    },
+    "20251107sapm_532_probe_10001p25m": {
+      "native_path": "extremely MC-fragile",
+      "60m_independent_all_complete_blocks": "5/5",
+      "60m_fully_correlated_all_complete_blocks": "0/5",
+      "60m_independent_median_lower_relative_l2_difference": 0.25247,
+      "60m_independent_p95_integrated_column_absolute_difference": 0.62407
+    },
+    "20250629sant_532_probe_10001p25m": {
+      "native_path": "already favorable near 10 km",
+      "60m_independent_all_complete_blocks": "14/14",
+      "60m_independent_median_lower_relative_l2_difference": 0.19149,
+      "60m_independent_p95_integrated_column_absolute_difference": 0.69666
+    }
+  },
+  "interpretation": [
+    "Coarse pre-retrieval aggregation can turn native weak-bin failures into complete ~10 km paths, especially under the independent-within-aggregate error model.",
+    "The support conclusion remains strongly covariance dependent: many blocks are not all-300 complete under the fully-correlated source-error amplitude.",
+    "High-boundary runs materially change the lower column even in favorable clean controls. Across the campaign the median 0.6-6 km relative L2 difference is about 10-12%, with p95 around 44-46%.",
+    "These experiments intentionally combine two changes, vertical aggregation and a higher boundary, so they demonstrate that support gain is insufficient but do not identify which change dominates each lower-column difference."
+  ],
+  "decision": "No high-column backbone, 60/120 m width choice or method-v5 promotion. The next experiment must isolate boundary placement/calibration from vertical aggregation and apply an explicit lower-column preservation criterion before optimizing altitude."
+}
