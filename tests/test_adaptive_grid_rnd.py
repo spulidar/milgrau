@@ -12,8 +12,9 @@ from milgrau.level2.adaptive_grid import (
 
 V5_GRID_SCHEDULE = (
     (0.0, 7.5),
-    (10_000.0, 15.0),
-    (15_000.0, 30.0),
+    (6_000.0, 15.0),
+    (10_000.0, 30.0),
+    (15_000.0, 60.0),
     (20_000.0, 60.0),
     (25_000.0, 100.0),
 )
@@ -23,7 +24,7 @@ def _cell_near(grid, altitude_m: float) -> int:
     return int(np.argmin(np.abs(grid.altitude_m - float(altitude_m))))
 
 
-def test_progressive_grid_preserves_native_low_column_and_caps_high_resolution() -> None:
+def test_progressive_grid_preserves_validated_low_column_and_caps_high_resolution() -> None:
     altitude = np.arange(0.0, 30_000.0 + 7.5, 7.5, dtype=np.float64)
     grid = build_progressive_grid(altitude, V5_GRID_SCHEDULE)
 
@@ -34,8 +35,9 @@ def test_progressive_grid_preserves_native_low_column_and_caps_high_resolution()
     assert np.all(np.diff(grid.altitude_m) > 0.0)
 
     assert grid.source_count[_cell_near(grid, 5_000.0)] == 1
-    assert grid.source_count[_cell_near(grid, 12_000.0)] == 2
-    assert grid.source_count[_cell_near(grid, 17_000.0)] == 4
+    assert grid.source_count[_cell_near(grid, 8_000.0)] == 2
+    assert grid.source_count[_cell_near(grid, 12_000.0)] == 4
+    assert grid.source_count[_cell_near(grid, 17_000.0)] == 8
     assert grid.source_count[_cell_near(grid, 22_000.0)] == 8
     assert grid.source_count[_cell_near(grid, 27_000.0)] == 13
 
@@ -50,20 +52,20 @@ def test_progressive_grid_preserves_native_low_column_and_caps_high_resolution()
     assert np.allclose(grid.effective_resolution_m[full_high_cells], 97.5)
 
 
-def test_progressive_grid_is_exact_identity_below_first_transition() -> None:
+def test_progressive_grid_is_exact_identity_through_established_lower_column() -> None:
     altitude = np.arange(0.0, 12_000.0 + 7.5, 7.5, dtype=np.float64)
     values = 2.0 + 0.001 * altitude
     grid = build_progressive_grid(altitude, V5_GRID_SCHEDULE)
     aggregated = aggregate_to_progressive_grid(values, grid)
 
-    low_cells = grid.altitude_m < 10_000.0
+    low_cells = grid.altitude_m < 6_000.0
     source_indices = grid.source_start_index[low_cells]
     assert np.all(grid.source_count[low_cells] == 1)
     assert np.array_equal(aggregated.values[low_cells], values[source_indices])
     assert np.all(aggregated.valid[low_cells])
 
 
-def test_invalid_native_sample_invalidates_only_its_own_output_cell() -> None:
+def test_missing_native_sample_invalidates_only_its_own_output_cell() -> None:
     altitude = np.arange(0.0, 30_000.0 + 7.5, 7.5, dtype=np.float64)
     values = np.ones_like(altitude)
     grid = build_progressive_grid(altitude, V5_GRID_SCHEDULE)
@@ -72,26 +74,29 @@ def test_invalid_native_sample_invalidates_only_its_own_output_cell() -> None:
     start = int(grid.source_start_index[target_cell])
     values[start + 2] = np.nan
 
-    aggregated = aggregate_to_progressive_grid(values, grid, require_positive=True)
+    aggregated = aggregate_to_progressive_grid(values, grid)
     assert not aggregated.valid[target_cell]
     assert np.isnan(aggregated.values[target_cell])
     assert aggregated.valid[target_cell - 1]
     assert aggregated.valid[target_cell + 1]
 
 
-def test_nonpositive_required_source_is_not_hidden_by_aggregation() -> None:
+def test_finite_signed_rcs_can_be_averaged_without_being_called_a_gap() -> None:
     altitude = np.arange(0.0, 30_000.0 + 7.5, 7.5, dtype=np.float64)
     values = np.ones_like(altitude)
     grid = build_progressive_grid(altitude, V5_GRID_SCHEDULE)
 
-    target_cell = _cell_near(grid, 17_000.0)
+    target_cell = _cell_near(grid, 12_000.0)
     start = int(grid.source_start_index[target_cell])
-    values[start] = 0.0
+    assert grid.source_count[target_cell] == 4
+    values[start] = -1.0
 
-    strict = aggregate_to_progressive_grid(values, grid, require_positive=True)
-    finite_only = aggregate_to_progressive_grid(values, grid, require_positive=False)
-    assert not strict.valid[target_cell]
-    assert finite_only.valid[target_cell]
+    signed_rcs = aggregate_to_progressive_grid(values, grid, require_positive=False)
+    positive_state = aggregate_to_progressive_grid(values, grid, require_positive=True)
+
+    assert signed_rcs.valid[target_cell]
+    assert signed_rcs.values[target_cell] > 0.0
+    assert not positive_state.valid[target_cell]
 
 
 def test_uncertainty_dependence_limits_are_explicit() -> None:
