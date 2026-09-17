@@ -1,18 +1,14 @@
 """Selection-aware Monte Carlo for the elastic method-v5 R&D path.
 
-The existing KFS Monte Carlo conditions on one already-selected reference.  A
+The existing KFS Monte Carlo conditions on one already-selected reference. A
 controlled synthetic experiment showed that this misses material uncertainty:
 when noisy observations re-select different admissible reference cells, nominal
 95% lower-column coverage drops even while every KFS realization is finite.
 
 This R&D implementation therefore perturbs the *native* signal, rebuilds the
-progressive representation, reruns Rayleigh QA and reference selection, and
-only then evaluates KFS.  Residual aerosol fraction ``f`` remains an outer
+progressive representation, reruns Rayleigh QA and tiered reference selection,
+and only then evaluates KFS. Residual aerosol fraction ``f`` remains an outer
 systematic scenario rather than a random draw.
-
-The implementation favors transparent semantics over speed.  It is not wired
-into productive method v4 and should be optimized only after its statistical
-behavior is validated.
 """
 
 from __future__ import annotations
@@ -30,8 +26,8 @@ from milgrau.level2.high_column_rnd import (
 )
 from milgrau.level2.high_column_selector import (
     V5_REFERENCE_SEARCH_MAX_M,
-    V5_REFERENCE_SEARCH_MIN_M,
-    select_minimum_cost_high_column_reference,
+    V5_REFERENCE_SEARCH_TIER_MINIMA_M,
+    select_tiered_high_column_reference,
 )
 from milgrau.level2.kfs import fernald_inversion
 
@@ -56,6 +52,8 @@ class SelectionAwareMonteCarloSensitivity:
     selection_success_fraction: float
     selected_reference_index_samples: np.ndarray
     selected_reference_altitude_m_samples: np.ndarray
+    selected_reference_tier_min_altitude_m_samples: np.ndarray
+    selected_reference_tier_index_samples: np.ndarray
     n_iterations: int
     uncertainty_scope: str
 
@@ -103,22 +101,24 @@ def selection_aware_boundary_monte_carlo_rnd(
     progressive_grid_schedule: Sequence[tuple[float, float]] = (
         V5_PROGRESSIVE_GRID_SCHEDULE
     ),
-    search_min_altitude_m: float = V5_REFERENCE_SEARCH_MIN_M,
+    reference_tier_min_altitudes_m: Sequence[float] = (
+        V5_REFERENCE_SEARCH_TIER_MINIMA_M
+    ),
+    search_min_altitude_m: float | None = None,
     search_max_altitude_m: float = V5_REFERENCE_SEARCH_MAX_M,
     rayleigh_window_m: float = 1000.0,
     path_start_altitude_m: float = 600.0,
 ) -> SelectionAwareMonteCarloSensitivity:
-    """Propagate native signal noise through v5 reference selection and KFS.
+    """Propagate native signal noise through tiered v5 selection and KFS.
 
     Each realization uses one native signal perturbation for both selection and
-    inversion, preserving their statistical dependence.  The same selected
-    reference and signal realization is then evaluated for every caller-declared
-    ``f`` scenario, while the same lidar-ratio and reference-boundary random
-    variates are reused across scenarios for paired comparison.
+    inversion, preserving their statistical dependence. The selector attempts
+    the declared reference tiers in order (default 10, 9, 8, 6 km), so fallback
+    itself is part of the random ensemble. The same selected reference and signal
+    realization is evaluated for every caller-declared ``f`` scenario.
 
-    No valid-fraction threshold is imposed.  A failed selector simply yields an
-    invalid realization, which is visible in ``selection_success_fraction`` and
-    altitude-resolved finite-realization fractions.
+    ``search_min_altitude_m`` is retained as a backward-compatible single-tier
+    override for controlled tests. No valid-fraction threshold is imposed.
     """
     signal = np.asarray(range_corrected_signal, dtype=np.float64)
     signal_error = np.asarray(range_corrected_signal_error, dtype=np.float64)
@@ -165,8 +165,15 @@ def selection_aware_boundary_monte_carlo_rnd(
     if not np.isfinite(beta_ref_relative_std) or beta_ref_relative_std < 0.0:
         raise ValueError("beta_ref_relative_std must be finite and nonnegative.")
 
-    # Build once to establish the deterministic output grid shape.  Every later
-    # realization uses the same altitude/schedule and therefore the same grid.
+    tier_minima = (
+        (float(search_min_altitude_m),)
+        if search_min_altitude_m is not None
+        else tuple(float(value) for value in reference_tier_min_altitudes_m)
+    )
+    if not tier_minima:
+        raise ValueError("reference_tier_min_altitudes_m must not be empty.")
+    catalogue_min_altitude_m = float(min(tier_minima))
+
     baseline_prepared = prepare_high_column_profile(
         range_corrected_signal=signal,
         range_corrected_signal_error=signal_error,
@@ -187,6 +194,8 @@ def selection_aware_boundary_monte_carlo_rnd(
     alpha_sims = np.full_like(beta_sims, np.nan)
     selected_indices = np.full(iterations, -1, dtype=np.int32)
     selected_altitudes = np.full(iterations, np.nan, dtype=np.float64)
+    selected_tier_minima = np.full(iterations, np.nan, dtype=np.float64)
+    selected_tier_indices = np.full(iterations, -1, dtype=np.int16)
 
     rng = np.random.default_rng(seed)
     signal_noise = rng.standard_normal((iterations, signal.size))
@@ -224,7 +233,7 @@ def selection_aware_boundary_monte_carlo_rnd(
             native_range_corrected_signal_error=signal_error,
             native_simulated_molecular_signal=molecular_signal,
             native_altitude_m=native_altitude,
-            search_min_altitude_m=float(search_min_altitude_m),
+            search_min_altitude_m=catalogue_min_altitude_m,
             search_max_altitude_m=float(search_max_altitude_m),
             rayleigh_window_m=float(rayleigh_window_m),
             max_relative_slope=float(max_relative_slope),
@@ -233,17 +242,20 @@ def selection_aware_boundary_monte_carlo_rnd(
             path_start_altitude_m=float(path_start_altitude_m),
         )
         try:
-            selected = select_minimum_cost_high_column_reference(
+            selection = select_tiered_high_column_reference(
                 catalogue,
-                min_altitude_m=float(search_min_altitude_m),
+                tier_min_altitudes_m=tier_minima,
                 max_altitude_m=float(search_max_altitude_m),
             )
         except ValueError:
             continue
 
+        selected = selection.reference
         ref_idx = int(selected.cell_index)
         selected_indices[iteration] = ref_idx
         selected_altitudes[iteration] = float(selected.altitude_m)
+        selected_tier_minima[iteration] = float(selection.tier_min_altitude_m)
+        selected_tier_indices[iteration] = int(selection.tier_index)
         lidar_ratio = float(lr_samples[iteration])
         for fraction_index, fraction in enumerate(fractions):
             beta_ref_mean = float(prepared.molecular_backscatter[ref_idx]) * (
@@ -285,12 +297,8 @@ def selection_aware_boundary_monte_carlo_rnd(
     alpha_q025: list[np.ndarray] = []
     alpha_q975: list[np.ndarray] = []
     for fraction_index in range(n_fraction):
-        b_mean, b_std, b_q025, b_q975 = _finite_stats(
-            beta_sims[fraction_index]
-        )
-        a_mean, a_std, a_q025, a_q975 = _finite_stats(
-            alpha_sims[fraction_index]
-        )
+        b_mean, b_std, b_q025, b_q975 = _finite_stats(beta_sims[fraction_index])
+        a_mean, a_std, a_q025, a_q975 = _finite_stats(alpha_sims[fraction_index])
         beta_means.append(b_mean)
         beta_stds.append(b_std)
         beta_q025.append(b_q025)
@@ -321,9 +329,11 @@ def selection_aware_boundary_monte_carlo_rnd(
         selection_success_fraction=float(selection_success_count / iterations),
         selected_reference_index_samples=selected_indices,
         selected_reference_altitude_m_samples=selected_altitudes,
+        selected_reference_tier_min_altitude_m_samples=selected_tier_minima,
+        selected_reference_tier_index_samples=selected_tier_indices,
         n_iterations=iterations,
         uncertainty_scope=(
             "selection_aware_native_signal_noise_plus_lidar_ratio_and_reference_boundary_"
-            "dispersion_with_outer_fixed_f_scenarios"
+            "dispersion_with_tiered_reference_fallback_and_outer_fixed_f_scenarios"
         ),
     )
