@@ -19,38 +19,62 @@ The elastic retrieval does not claim that the lidar ratio or residual aerosol at
 ### D1 — Meaning of the upper boundary — CLOSED FOR PROTOTYPE
 
 - [x] Nominal boundary: `beta_aer(ref) = 0`, equivalently `f = beta_aer(ref)/beta_mol(ref) = 0`.
-- [x] High-reference search domain for the first prototype: **20–25 km**.
-- [x] `f=0` is an explicit conditional assumption, not a claim that 20–25 km is physically aerosol-free.
+- [x] `f=0` is an explicit conditional assumption, not a claim that a given high altitude is physically aerosol-free.
 - [x] Residual-aerosol boundary uncertainty is retained as a separate systematic sensitivity dimension.
+- [x] **20–25 km is a preferred high-reference region when supported, not a mandatory target.**
 
-Stratospheric aerosol can exist in the 20–30 km region, including background sulfate and volcanic/wildfire perturbations. Therefore altitude alone cannot certify molecular purity. A high Rayleigh-compatible reference in 20–25 km is used because it is physically preferable to a lower tropospheric reference for the nominal zero-aerosol assumption, while the unresolved residual aerosol is kept explicit.
+Stratospheric aerosol can exist in the 20–30 km region, including background sulfate and volcanic/wildfire perturbations. Altitude alone therefore cannot certify molecular purity. The prototype should seek the highest Rayleigh-compatible reference that is also physically/numerically admissible below the configured maximum search altitude, rather than forcing every block to reach 20 or 25 km.
+
+Campaign evidence in `docs/regression_baselines/p5_4_method_v5_progressive_grid_campaign_20260917.json` shows why this distinction matters: among 161 block×wavelength cases, 117 contain a native Rayleigh-accepted candidate in 20–25 km, but only 18 have a continuous nominal backward path to such a high reference under the current <=100 m progressive-grid cap. Candidate existence is therefore much more common than usable high-boundary support.
 
 ### D2 — Numerical boundary estimator — CLOSED FOR PROTOTYPE
 
 - [x] The high boundary is represented by the **same effective vertical cell used by the high-column retrieval**, not by pretending that a multi-bin estimator is a native 7.5 m point measurement.
 - [x] The RCS, molecular backscatter and altitude assigned to the reference are the strict aggregated-cell quantities.
 - [x] The effective cell resolution and source-bin count must be written to diagnostics/product metadata.
-- [x] Aggregation never bridges an invalid native bin. A source cell containing unsupported required samples remains unsupported.
+- [x] Aggregation never bridges a missing/masked/instrument-invalid native sample.
+- [x] Finite signed background-subtracted RCS samples may be averaged; the resulting aggregated RCS cell must itself be finite and positive before KFS uses it.
 
-This reduces single-bin random noise while keeping the estimator's physical resolution honest. It does not establish aerosol-free purity.
+A finite negative native RCS sample at high altitude is not automatically a physical gap; it can be a noisy background-subtracted measurement. Rejecting every aggregate containing one such sample defeats the purpose of estimating the signal at the declared coarser resolution. This distinction does **not** permit interpolation across NaNs, masks or instrument-invalid samples.
 
 ### D3 — Progressive vertical grid — CLOSED FOR FIRST R&D GRID
 
-The first method-v5 prototype uses a deterministic progressive resolution schedule built from contiguous native Level-1 bins:
+The current first-prototype schedule preserves the established lower-column representation exactly and begins aggregation above it:
 
 | altitude | requested resolution | SPU 7.5 m native-grid realization |
 | --- | ---: | ---: |
-| below 10 km | 7.5 m | 1 bin |
-| 10–15 km | 15 m | 2 bins |
-| 15–20 km | 30 m | 4 bins |
+| below 6 km | 7.5 m | 1 bin |
+| 6–10 km | 15 m | 2 bins |
+| 10–15 km | 30 m | 4 bins |
+| 15–20 km | 60 m | 8 bins |
 | 20–25 km | 60 m | 8 bins |
 | >=25 km | 100 m maximum requested | 97.5 m = 13 bins |
 
-The 100 m value is a **maximum requested physical resolution**, not permission to invent a non-native cell. For the current 7.5 m SPU grid the nearest strict contiguous realization not exceeding 100 m is 97.5 m.
+The 100 m value is a **maximum requested physical resolution**, not permission to invent a non-native cell. For the current 7.5 m SPU grid the largest strict contiguous native-bin realization not exceeding 100 m is 97.5 m.
 
-This schedule is an initial R&D policy, not yet a productive threshold law. Its transition heights will be challenged with synthetic coverage and heterogeneous measurements before promotion. The implementation must expose the schedule so later work can test an uncertainty-driven selector without rewriting the KFS core.
+Why aggregation begins at 6 km rather than 10 km: campaign tests showed that retaining 7.5 m all the way to 10 km leaves many weak cells in the 6–10 km path and prevents a high boundary even when the far-range cells themselves are sufficiently averaged. The productive method-v4 lower-column validation region is approximately 0.6–6 km, so the prototype preserves that region exactly and treats the region above it as the high-column information trade.
 
-No interpolation, padding or gap filling is allowed. The KFS integration already supports a strictly increasing nonuniform altitude grid, so the adaptive representation can remain explicit rather than being resampled back to a fake uniform 7.5 m grid.
+This schedule is an R&D policy, not yet a universal station law. Its transition heights will be challenged with synthetic coverage and heterogeneous measurements before promotion. The implementation exposes the schedule so a future uncertainty-driven selector can replace fixed altitude bands without rewriting KFS.
+
+No interpolation, padding or gap filling is allowed. The generalized KFS integrator already uses local `dz` values and therefore accepts a strictly increasing nonuniform altitude grid directly.
+
+### D3a — Campaign evidence for the current grid
+
+Frozen evidence: `docs/regression_baselines/p5_4_method_v5_progressive_grid_campaign_20260917.json`.
+
+For the 161 available 20 min block×wavelength states, the continuous positive aggregated path from the lower column reaches approximately:
+
+- minimum: **6.77 km**;
+- p10: **9.80 km**;
+- p25: **12.89 km**;
+- median: **14.57 km**;
+- p75: **17.07 km**;
+- p90: **21.71 km**;
+- maximum: **24.99 km**.
+
+Counts are 143/161 reaching at least 10 km, 133/161 at least 12 km, 69/161 at least 15 km and 18/161 at least 20 km.
+
+Interpretation: the <=100 m grid materially extends usable elastic path information for many measurements, but it does **not** justify promising a fixed 20–25 km boundary. The achievable top remains measurement-dependent and must be reported as such.
 
 ### D4 — Monte-Carlo/support semantics — CLOSED CONCEPTUALLY
 
@@ -72,19 +96,26 @@ Residual aerosol at the boundary is an epistemic/systematic uncertainty, not pre
 
 No probability density is assigned to `f` yet. If independent evidence later supports a probability distribution for `f`, the nested ensemble may be marginalized into a declared total conditional uncertainty. Until then, combining arbitrary `f` draws with random measurement noise would overstate what is known.
 
-### D5 — Temporal strategy — BASELINE CLOSED / EXTENSION OPEN
+### D5 — Temporal strategy — CLOSED FOR FIRST PROTOTYPE
 
-- [x] Preserve the current 20 min block product as the primary temporal state for the first v5 prototype.
-- [x] Vertical aggregation is tested before introducing longer temporal averaging, so the two information trades can be identified separately.
-- [ ] Evaluate shorter/longer candidate temporal blocks on the heterogeneous observations after the progressive-grid prototype is operational.
-- [ ] If a longer high-column mean is adopted, preserve the underlying block-level contribution/persistence diagnostics.
+- [x] Preserve the current **20 min block product** as the primary temporal state for the first v5 prototype.
+- [x] Vertical aggregation is tested independently of temporal averaging so the two information trades remain identifiable.
+- [x] Real-data probes at 40 and 60 min did not materially improve the campaign-wide median continuous top.
+- [ ] Revisit temporal adaptation only after the progressive-grid retrieval and MC-coverage semantics are validated.
 
-The current `block_average_minutes: 20` is therefore retained initially rather than silently lengthened to obtain high-altitude coverage.
+Frozen real-data comparison:
+
+- 20 min: 159 windows, median continuous top **14.81 km**, 70 reach >=15 km, 18 reach >=20 km;
+- 40 min: 87 windows, median **14.87 km**, 41 reach >=15 km, 9 reach >=20 km;
+- 60 min: 59 windows, median **14.96 km**, 29 reach >=15 km, 6 reach >=20 km.
+
+The small median change does not justify silently degrading temporal resolution to obtain altitude coverage. If a future longer high-column mean is adopted, the underlying block contribution/persistence state must remain available.
 
 ### D6 — Admissible atmospheric path — CLOSED INVARIANTS
 
-- [x] All required cells must come from finite usable source samples.
-- [x] Internal unsupported gaps are not bridged.
+- [x] All required aggregated cells must come from finite usable source samples.
+- [x] Internal missing/masked/instrument-invalid gaps are not bridged.
+- [x] An aggregated RCS cell used by KFS must be finite and positive.
 - [x] Instrument/saturation masks are respected when characterized.
 - [x] Cloud/layer presence remains diagnostic unless a separately validated veto is adopted.
 
@@ -99,6 +130,8 @@ Promotion is based on two distinct evidence classes:
 
 No fixed percentage is selected merely because it allows a preferred high-altitude solution. Integrated-column and profile-shape differences are both retained.
 
+High-reference campaign experiments have already shown that moving the boundary can alter the lower column materially. Therefore successful high-path support cannot by itself validate a v5 solution; boundary sensitivity remains a required output dimension.
+
 ### D8 — Lidar-ratio scope — CLOSED FOR PROTOTYPE
 
 - [x] Backscatter and extinction may both be generated under the same declared lidar-ratio assumption.
@@ -107,15 +140,19 @@ No fixed percentage is selected merely because it allows a preferred high-altitu
 
 ### D9 — Higher-reference selection — PARTIALLY OPEN
 
-The first prototype searches for Rayleigh-compatible high-reference cells in **20–25 km** after constructing the progressive grid and confirming nominal path admissibility.
+The first prototype should select a reference only after constructing the progressive grid and confirming nominal path admissibility.
 
-Still open before promotion:
+Current direction:
 
-- [ ] determine the deterministic tie-break/selection policy among multiple admissible 20–25 km cells;
-- [ ] verify that the policy is not acting as a proxy for an unobserved `f`;
-- [ ] validate the selected-reference behavior under stratospheric-aerosol and cloud synthetic cases.
+- [x] maximum configured search altitude remains 25 km for the prototype;
+- [x] 20–25 km is preferred when an admissible Rayleigh-compatible path actually exists;
+- [x] if 20–25 km is not supported, a lower high-column reference may be used rather than forcing failure at an arbitrary target altitude;
+- [ ] determine the minimum altitude at which the v5 high-reference selector is allowed to depart from the v4 reference regime;
+- [ ] determine the deterministic tie-break among multiple admissible high cells;
+- [ ] verify with synthetic truth that the selector is not acting as a proxy for unobserved `f`;
+- [ ] validate selected-reference behavior under explicit stratospheric-aerosol and cloud cases.
 
-Candidate shape QA, path support, estimator precision and effective resolution remain separate diagnostics; no composite molecular-purity score is introduced.
+Candidate shape QA, nominal path support, estimator precision, MC robustness and effective resolution remain separate diagnostics; no composite molecular-purity score is introduced.
 
 ### D10 — Method/product versioning — DECIDED IN PRINCIPLE
 
@@ -124,7 +161,7 @@ If the prototype passes promotion gates:
 - [x] retrieval method becomes **v5**;
 - [ ] decide whether schema v3 can cleanly represent all new altitude-grid and uncertainty dimensions or schema v4 is required;
 - [ ] freeze method-v4 and method-v5 regression products from identical Level-1 inputs;
-- [ ] expose boundary model, `f` scenario identity, boundary cell resolution/source-bin count, effective vertical resolution and valid-MC fraction.
+- [ ] expose boundary model, `f` scenario identity, boundary cell resolution/source-bin count, effective vertical resolution, nominal supported top and valid-MC fraction.
 
 ## Progressive-grid implementation contract
 
@@ -133,13 +170,17 @@ The grid utility must satisfy all of the following before being connected to pro
 - contiguous source-bin groups only;
 - no overlap between output cells;
 - no native sample used twice;
-- no output cell spanning an unsupported source gap;
+- no output cell spanning a missing/masked/instrument-invalid source gap;
+- finite signed background-subtracted RCS may contribute to an arithmetic cell mean;
+- any aggregated RCS cell passed to KFS must itself be finite and positive;
 - arithmetic cell mean for signal/state quantities unless a different estimator is explicitly declared;
 - uncertainty aggregation with an explicit dependence model;
 - source count and effective cell width retained;
 - molecular and measured profiles represented on exactly the same cells;
 - output altitude strictly increasing so the existing generalized KFS integral can operate directly on the nonuniform grid;
-- exact native-grid identity below the first transition.
+- exact native-grid identity through the established lower-column region below 6 km.
+
+Current implementation: `milgrau/level2/adaptive_grid.py`, with executable R&D contract in `tests/test_adaptive_grid_rnd.py`.
 
 ## Minimum validation matrix before promotion
 
@@ -148,14 +189,14 @@ The grid utility must satisfy all of the following before being connected to pro
 - [ ] weak-signal / many-isolated-bin path case;
 - [ ] narrow and broad contamination cases;
 - [ ] cloud/layer case;
-- [ ] explicit stratospheric-aerosol case in the 20–25 km reference region;
-- [ ] at least several heterogeneous current SPU measurements;
-- [ ] 355 and 532 nm separately;
-- [ ] native vs progressive high-column grid;
+- [ ] explicit stratospheric-aerosol case in the high-reference region;
+- [x] heterogeneous-current-SPU path/resolution feasibility;
+- [ ] 355 and 532 nm synthetic truth separately;
+- [ ] native vs progressive high-column retrieval, not only path feasibility;
 - [ ] lower-column compatibility reported independently of achieved top altitude;
 - [ ] valid-MC fraction versus synthetic confidence-interval coverage;
-- [ ] temporal 20 min baseline versus any later proposed temporal averaging.
+- [x] 20/40/60 min observational path comparison.
 
 ## Current interpretation
 
-The first v5 prototype is now sufficiently specified to implement the vertical-grid layer without waiting for Raman. The remaining scientific work is validation rather than choosing an arbitrary target altitude: verify the progressive grid, quantify its representation error, determine MC coverage behavior, and then finalize the high-reference tie-break within 20–25 km.
+The vertical representation is now sufficiently specified for a first R&D retrieval implementation. The campaign evidence rejects two tempting but unsupported shortcuts: keeping native 7.5 m all the way to 10 km is unnecessarily restrictive for a high-column path, while forcing a 20–25 km boundary is too aggressive under a <=100 m resolution cap. The first v5 prototype therefore preserves the established lower column exactly, progressively coarsens above 6 km, retains 20 min temporal blocks, and allows the supported high-reference altitude to remain measurement-dependent.
