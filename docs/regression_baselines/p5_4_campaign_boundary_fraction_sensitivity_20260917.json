@@ -1,0 +1,35 @@
+{
+  "evidence_type": "p5_4_campaign_boundary_residual_fraction_sensitivity",
+  "created_date": "2026-09-17",
+  "productive_identity": "schema_v3_method_v4_backward_kfs_unchanged",
+  "experiment": "For each of the 150 successful persisted campaign block/wavelength retrievals, keep the native 7.5 m grid, measured RCS, productive reference altitude and assumed aerosol lidar ratio fixed. Recompute deterministic backward KFS with beta_total(ref)=beta_m(ref)*(1+f), where f is a declared sensitivity parameter rather than an inferred aerosol fraction. Compare each f>0 result with the otherwise identical f=0 deterministic solution over 0.6-6 km.",
+  "important_semantics": [
+    "This is a sensitivity envelope, not an estimate or prior for real beta_aer(ref).",
+    "Relative changes can be large when the f=0 aerosol column is small; they quantify dependence on the boundary assumption, not observational truth error.",
+    "No f value is proposed as a threshold, correction or productive uncertainty model."
+  ],
+  "global_summary": {
+    "f_0p02": {"runs": 150, "median_lower_relative_l2_change": 0.05319, "p95_lower_relative_l2_change": 0.13273, "median_absolute_integrated_column_change": 0.07779, "p95_absolute_integrated_column_change": 0.17730},
+    "f_0p05": {"runs": 150, "median_lower_relative_l2_change": 0.13871, "p95_lower_relative_l2_change": 0.34571, "median_absolute_integrated_column_change": 0.23234, "p95_absolute_integrated_column_change": 0.51080},
+    "f_0p10": {"runs": 150, "median_lower_relative_l2_change": 0.29512, "p95_lower_relative_l2_change": 0.72967, "median_absolute_integrated_column_change": 0.53154, "p95_absolute_integrated_column_change": 1.18482},
+    "f_0p20": {"runs": 150, "median_lower_relative_l2_change": 0.60975, "p95_lower_relative_l2_change": 1.60386, "median_absolute_integrated_column_change": 1.07946, "p95_absolute_integrated_column_change": 2.63167}
+  },
+  "wavelength_summary": {
+    "355": {
+      "runs": 83,
+      "f_0p02": {"median_l2": 0.06791, "p95_l2": 0.20028, "median_abs_column": 0.07772, "p95_abs_column": 0.24992},
+      "f_0p05": {"median_l2": 0.18560, "p95_l2": 0.59113, "median_abs_column": 0.22814, "p95_abs_column": 0.80667}
+    },
+    "532": {
+      "runs": 67,
+      "f_0p02": {"median_l2": 0.04309, "p95_l2": 0.08532, "median_abs_column": 0.07786, "p95_abs_column": 0.15641},
+      "f_0p05": {"median_l2": 0.11803, "p95_l2": 0.21528, "median_abs_column": 0.23268, "p95_abs_column": 0.44544}
+    }
+  },
+  "interpretation": [
+    "The campaign retrieval is highly sensitive to the aerosol-free reference assumption even at the existing productive reference altitudes: f=0.02 changes the lower-column solution by about 5% in median across the campaign, and f=0.05 by about 14%.",
+    "This does not imply that real residual fractions are 0.02 or 0.05. It demonstrates that beta_aer(ref) is a scientifically material nuisance parameter if it is not observationally constrained.",
+    "The sensitivity exists before any high-column boundary move or vertical aggregation, reinforcing that boundary-condition uncertainty is conceptually distinct from high-altitude signal support."
+  ],
+  "decision": "Keep boundary residual aerosol as an explicit assumption/sensitivity dimension in P5.4 R&D. Do not silently absorb it into Rayleigh shape QA, SNR or vertical aggregation uncertainty."
+}
