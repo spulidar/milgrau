@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from milgrau.level2.constants import RAYLEIGH_LIDAR_RATIO_SR
 from milgrau.level2.high_column_rnd import (
     catalogue_high_column_reference_cells,
     prepare_high_column_profile,
@@ -13,8 +14,8 @@ from milgrau.level2.high_column_selector import (
     V5_REFERENCE_SEARCH_MAX_M,
     V5_REFERENCE_SEARCH_MIN_M,
     select_minimum_cost_high_column_reference,
+    select_tiered_high_column_reference,
 )
-from milgrau.level2.constants import RAYLEIGH_LIDAR_RATIO_SR
 from milgrau.level2.molecular import calculate_molecular_profile
 from milgrau.physics.atmosphere import get_standard_atmosphere
 from tests.kfs_forward_model import elastic_lidar_forward_model
@@ -105,7 +106,6 @@ def test_selector_does_not_reward_highest_altitude() -> None:
     assert selected.native_rayleigh_candidate.diagnostic_cost <= (
         highest.native_rayleigh_candidate.diagnostic_cost
     )
-    # This assertion protects selector semantics, not a universal atmospheric law.
     assert selected.altitude_m <= highest.altitude_m
 
 
@@ -126,11 +126,39 @@ def test_selector_altitude_domain_is_explicit_and_can_be_overridden() -> None:
         )
 
 
-def test_selector_rejects_invalid_domain() -> None:
+def test_tiered_selector_uses_highest_tier_with_any_supported_candidate() -> None:
+    catalogue = _catalogue()
+    tiers = (24_000.0, 18_000.0, 12_000.0, 8_000.0)
+    expected_index = next(
+        index
+        for index, lower in enumerate(tiers)
+        if any(
+            lower <= cell.altitude_m <= 25_000.0
+            for cell in catalogue.accepted_and_admissible
+        )
+    )
+    selected = select_tiered_high_column_reference(
+        catalogue,
+        tier_min_altitudes_m=tiers,
+        max_altitude_m=25_000.0,
+    )
+    assert selected.tier_index == expected_index
+    assert selected.tier_min_altitude_m == tiers[expected_index]
+    assert selected.fallback_used == (expected_index > 0)
+    assert selected.reference.altitude_m >= tiers[expected_index]
+
+
+def test_selector_rejects_invalid_domain_and_tier_order() -> None:
     catalogue = _catalogue()
     with pytest.raises(ValueError, match="finite and increasing"):
         select_minimum_cost_high_column_reference(
             catalogue,
             min_altitude_m=12_000.0,
             max_altitude_m=10_000.0,
+        )
+    with pytest.raises(ValueError, match="strictly descending"):
+        select_tiered_high_column_reference(
+            catalogue,
+            tier_min_altitudes_m=(10_000.0, 11_000.0),
+            max_altitude_m=25_000.0,
         )
