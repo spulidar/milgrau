@@ -15,6 +15,8 @@ Current productive code identity:
 - Rayleigh-window calibration-uncertainty R&D gate: CI green at `6284b21e5aa3fa3ff9ede8f830be03e96e6f67cb`;
 - window-fitted boundary synthetic R&D gate: CI green at `cdf6db261ad76d01fa61c9dccc210c3b090c6c07`;
 - pre-retrieval vertical-aggregation KFS truth gate: CI green at `4a71eed6b9cb235b3d31959c68c74ce3a05fb83d`;
+- legacy-inspired molecular-window contamination R&D gate: CI green at `dc49784e27c0169c9e3c76c3259f01d6df4df63f`;
+- window-fitted-boundary Monte Carlo R&D gate: full Ruff + Ubuntu/Windows Python 3.12/3.14 matrix green at `9b88493322b8cac29707bf9246a703351a4d0b82`;
 - current observational schema-v3 evidence: `docs/regression_baselines/20251107sapm_method_v4_schema3_catalogue.json`;
 - current temporal evidence: `docs/regression_baselines/20251107sapm_temporal_support_preliminary.json` and `docs/regression_baselines/high_column_candidate_persistence_comparison.json`;
 - current vertical-SNR/boundary evidence: `docs/regression_baselines/20251107sapm_vertical_aggregation_preliminary.json`, `docs/regression_baselines/20251107sapm_rayleigh_window_uncertainty_preliminary.json` and `docs/regression_baselines/20251107sapm_exact_vs_window_boundary_preliminary.json`.
@@ -36,6 +38,8 @@ Frozen method-v3 comparison baseline remains `docs/regression_baselines/20251107
 - Post-retrieval cosmetic smoothing must never be used to claim additional inversion support.
 - A fitted/window-denoised boundary is a different retrieval assumption from an exact measured-bin boundary and must receive a new retrieval-method identity if it becomes productive.
 - A molecular-window fit must never be assumed clean merely because its center bin looks molecular; layer/cloud contamination must remain an explicit failure mode.
+- The absence of an anomaly/cloud flag is not evidence that a molecular window is uncontaminated.
+- Random Monte Carlo spread never substitutes for systematic/model-bias QA; the same noisy bins must not be counted twice as independent signal and fitted-boundary uncertainty.
 - Multiple accepted reference solutions are sensitivity/ensemble evidence, not independent truths; their disagreement must remain visible.
 - A KFS member is tied to the signal/molecular state at its exact local boundary.
 - Elastic extinction remains conditional on the assumed aerosol lidar ratio.
@@ -98,7 +102,8 @@ P3 blocks release/FAIR completion; it does not block scientific P4/P5 developmen
 ### Other evidence
 
 - [ ] Characterize propagated-error SNR across additional observational regimes before enabling a hard Rayleigh SNR gate.
-- [ ] Validate cloud/layer screening before productive reference rejection or window-fitted boundaries.
+- [x] Establish synthetic failure modes for the legacy-inspired anomaly detector: sharp strong layers can be caught, but broad smooth contamination can materially bias the Rayleigh fit with zero detector flag.
+- [ ] Validate cloud/layer screening on observational regimes before productive reference rejection or window-fitted boundaries.
 - [ ] Quantify gluing slope/intercept uncertainty and covariance before expanding the uncertainty budget.
 - [ ] Compare representative retrievals with LPP and SCC/ELDA expectations without treating either as ground truth.
 
@@ -167,7 +172,7 @@ Remaining catalogue R&D is not required to close P5.2:
 - [x] Every accepted candidate in the 15–20 km and 20–25 km bands has bin-wise median SNR < 3 in this measurement; this is descriptive evidence only, not a proposed hard SNR threshold.
 - [x] Rejections are dominated by excess relative slope and/or variance, with some insufficient-valid-fraction combinations; no candidate was rejected for invalid calibration in this case.
 - [x] Window-level calibration uncertainty is demonstrably different from bin-wise SNR and contains substantially more information in this event; see P5.4.
-- [ ] Separate future high-column limitation into boundary noise, temporal representativeness and cloud/layer contamination before enabling any new productive gate.
+- [x] High-column limitation is now decomposed in R&D into at least boundary noise, temporal representativeness, covariance/resolution trade and contamination/model-bias observables; no productive threshold follows from this decomposition alone.
 - [ ] Compare a future redesigned lower-column solution against the frozen method-v3 baseline when a higher-boundary method becomes productive.
 
 ## P5.4 — high-column backbone — TEMPORAL + BOUNDARY/SNR R&D
@@ -226,13 +231,22 @@ Real `20251107sapm` temporal evidence with profile-count weights `[23, 39, 39, 4
 - [x] Synthetic distributed zero-mean window noise shows the same direction of benefit.
 - [x] Synthetic contaminated-window counterexample shows the required safety condition: an aerosol layer inside the fit window biases the fitted boundary even when the exact center bin itself is molecular. Window fitting therefore cannot become productive before cloud/layer/molecular-cleanliness QA is validated.
 - [x] Cross-platform fitted-boundary synthetic gate green at `cdf6db261ad76d01fa61c9dccc210c3b090c6c07`.
-- [ ] Extend synthetic fitted-boundary tests to multiple noise amplitudes/correlation structures, asymmetric contamination and boundary-placement offsets; propagate fitted-boundary uncertainty through Monte Carlo rather than treating the fit as exact.
-- [ ] Define/validate molecular-window contamination diagnostics before any real high-boundary retrieval experiment is considered for production.
-- [ ] If a fitted boundary becomes productive, increment the retrieval-method version and expose its boundary estimator, fit uncertainty and contamination QA explicitly.
+- [x] Legacy-inspired low-percentile/MAD layer screening is preserved only as a diagnostic candidate: synthetic sharp/strong layers can be detected, while a broad smooth contaminant can shift the fitted calibration by >20% with zero detector fraction. A zero flag is therefore never molecular certification.
+- [x] Cross-platform legacy-inspired contamination gate green at `dc49784e27c0169c9e3c76c3259f01d6df4df63f`.
+- [x] Add non-productive `window_fitted_boundary_monte_carlo()` that perturbs the signal, re-fits the molecular window and propagates the resulting `X_ref` through backward KFS in the **same realization**, avoiding double counting of signal and fit noise.
+- [x] Independent-bin MC reproduces the analytic origin-fit uncertainty within a Monte-Carlo sampling guard; a clean multi-bin window stabilizes `X_ref`, and the controlled lower-column MC mean remains close to synthetic truth.
+- [x] MC strict support never interpolates/shrinks a window; missing window uncertainty fails explicitly.
+- [x] A contaminated-window synthetic case demonstrates systematic fitted-boundary bias >5× the random MC spread even when the exact center bin is aerosol-free. Random uncertainty therefore does not cover contamination/model bias.
+- [x] Full cross-platform fitted-boundary MC gate green at `9b88493322b8cac29707bf9246a703351a4d0b82`.
+- [ ] Extend fitted-boundary MC to **explicit caller-supplied correlated-noise realizations**; do not infer AR(1) or a covariance law from lag-1 alone.
+- [ ] Extend synthetic fitted-boundary tests across multiple noise amplitudes, asymmetric contamination and boundary-placement offsets.
+- [ ] Define/validate molecular-window contamination diagnostics on observational regimes before any real high-boundary retrieval experiment is considered for production.
+- [ ] If a fitted boundary becomes productive, increment the retrieval-method version and expose its boundary estimator, fit uncertainty, dependence/noise model and contamination QA explicitly.
 
 ### Remaining backbone gate
 
-- [ ] Combine temporal persistence, window/boundary uncertainty, contribution dominance, subwindow disagreement and any validated aggregation resolution into an evidence-backed experimental decision rule without tuning it to a desired top altitude.
+- [ ] Build a diagnostic-only **high-column evidence vector** that keeps temporal persistence, window/boundary uncertainty, contribution dominance, subwindow disagreement, contamination indicators and effective resolution separate rather than collapsing them prematurely into one score.
+- [ ] Use that vector to formulate an experimental decision rule without tuning it to a desired top altitude.
 - [ ] Run **offline, non-productive** high-boundary retrieval experiments on `20251107sapm` using the fitted-boundary concept and/or explicit aggregation, then compare 0–6 km against the frozen method-v3 baseline before any method promotion.
 - [ ] Validate the decision rule on more synthetic boundary cases and at least one additional observational regime with materially different high-altitude behavior.
 - [ ] Only then add a distinct long-mean/high-column productive retrieval input with explicit duration/provenance and common signal/error support.
@@ -295,9 +309,12 @@ Synthetic established:
 - [x] KFS truth under controlled 15/30/60/120/240 m vertical aggregation stays within the current <5% R&D guards relative to the coarse truth while explicitly exposing narrow-layer peak loss at coarse resolution.
 - [x] Clean molecular-window fitted-boundary cases reduce exact-bin boundary-noise impact in synthetic truth.
 - [x] Contaminated-window counterexample demonstrates fitted-boundary bias despite a clean center bin; layer/cloud QA is a prerequisite rather than an optional refinement.
-- [ ] Propagated fitted-boundary uncertainty under multiple covariance/noise models.
+- [x] Independent-noise fitted-boundary Monte Carlo matches analytic fit uncertainty and preserves the controlled lower-column mean without double-counting the same signal noise.
+- [x] Contaminated fitted-boundary MC demonstrates systematic bias can dominate a narrow random uncertainty distribution.
+- [ ] Correlated-noise fitted-boundary Monte Carlo under explicit caller-supplied covariance models.
 - [ ] Evidence-backed backbone reject/split criterion on temporal non-representativeness.
 - [ ] Multiple valid high references -> ensemble stability and reference-sensitivity uncertainty.
+- [ ] Biased/contaminated candidate -> rejection or visible uncertainty impact under a validated observational diagnostic.
 - [ ] Upper-tail noise -> supported top falls gracefully under the future high-column method.
 - [ ] Backbone averaging/aggregation -> no material lower-column truth bias.
 - [ ] Molecular-lidar-ratio semantics sensitivity quantified.
@@ -334,10 +351,11 @@ P5 success criterion: **maximize defensible inversion-supported vertical coverag
 
 ## Immediate next gate
 
-1. Extend the fitted-boundary synthetic experiment to multiple noise/covariance amplitudes and asymmetric aerosol/cloud contamination, and propagate the fitted boundary uncertainty through KFS Monte Carlo rather than treating the fitted scale as exact.
-2. Implement and validate **diagnostic-only molecular-window contamination observables** before any high-boundary window fit is allowed to influence a retrieval experiment.
-3. Run an **offline, non-productive** `20251107sapm` experiment comparing exact-bin and window-fitted boundaries at higher accepted references; quantify changes below 6 km, retrieval stability, uncertainty and supported top without changing method v4 products.
-4. Keep 60–120 m vertical aggregation as a parallel fallback/augmentation experiment; do not choose a productive width until additional synthetic layer widths/noise structures and real regimes are evaluated.
-5. Seek at least one additional real SPU case with materially different temporal/high-altitude behavior before promoting any threshold, boundary estimator or aggregation width.
-6. Audit molecular-lidar-ratio consistency and gluing fit-parameter uncertainty in parallel.
-7. Only after those gates, introduce a productive high-column backbone and later a multi-reference ensemble if they demonstrably extend support without hiding temporal nonstationarity, contamination, boundary ambiguity or loss of resolution.
+1. Extend fitted-boundary Monte Carlo to **explicit caller-supplied correlated noise/covariance**, validating it against the existing analytic window-covariance diagnostic; do not infer AR(1) or any covariance law from lag-1 alone.
+2. Build a diagnostic-only **high-column evidence vector** that preserves candidate persistence, window/boundary uncertainty, contribution dominance, subwindow disagreement, contamination observables and effective resolution as separate fields before any combined rule/score exists.
+3. Extend the contamination/boundary synthetic matrix to multiple noise amplitudes, asymmetric layers and boundary-placement offsets, including cases where a legacy-inspired anomaly detector misses broad smooth bias.
+4. Run an **offline, non-productive** `20251107sapm` experiment comparing exact-bin and window-fitted higher boundaries only after the evidence vector can expose why a candidate is risky; quantify changes below 6 km, uncertainty and supported top without changing method v4 products.
+5. Keep 60–120 m vertical aggregation as a parallel fallback/augmentation experiment; do not choose a productive width until additional synthetic layer widths/noise structures and real regimes are evaluated.
+6. Seek at least one additional real SPU case with materially different temporal/high-altitude behavior before promoting any threshold, boundary estimator or aggregation width.
+7. Audit molecular-lidar-ratio consistency and gluing fit-parameter uncertainty in parallel.
+8. Only after those gates, introduce a productive high-column backbone and later a multi-reference ensemble if they demonstrably extend support without hiding temporal nonstationarity, contamination, boundary ambiguity or loss of resolution.
