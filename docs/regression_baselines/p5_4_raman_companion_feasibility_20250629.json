@@ -1,0 +1,32 @@
+{
+  "evidence_type": "p5_4_raman_companion_boundary_validation_feasibility",
+  "created_date": "2026-09-17",
+  "measurement_id": "20250629sant",
+  "scope": "Feasibility only. No Raman extinction/backscatter product is derived here.",
+  "repository_semantics": {
+    "station_profile": "spu-merionc-2024",
+    "scc_night_configuration_id": 1046,
+    "scc_night_channels": ["532.AN", "532.PC", "1064.AN", "355.PC", "355.AN", "530.PC", "530.AN", "387.AN", "387.PC"],
+    "station_policy_raman_companions": {"355": [387, 408], "532": [530, 607]},
+    "caveat": "The repository identifies companion wavelengths but does not yet document enough species/filter/transmission semantics to derive a scientifically defensible Raman extinction constraint from MILGRAU alone."
+  },
+  "level1_observation": {
+    "available_channels": ["1064.AN", "1064.PC", "355.AN", "355.PC", "387.AN", "387.PC", "408.AN", "408.PC", "530.AN", "530.PC", "532.AN", "532.PC"],
+    "all_channel_correction_success_flags": 1,
+    "twenty_minute_blocks": 14,
+    "block_profile_counts": [39, 39, 40, 39, 39, 40, 39, 39, 39, 40, 39, 39, 40, 9]
+  },
+  "median_block_snr_at_selected_altitudes": {
+    "altitudes_m": [5000, 6000, 8000, 10000, 12000, 15000],
+    "387.AN": [99.32, 62.27, 21.71, 11.92, 5.51, 3.32],
+    "387.PC": [95.35, 73.12, 46.47, 31.74, 22.94, 14.05],
+    "530.AN": [266.75, 164.57, 66.60, 32.73, 17.35, 8.43],
+    "530.PC": [157.85, 123.80, 81.56, 57.75, 41.65, 25.59]
+  },
+  "interpretation": [
+    "The current night instrument profile retains non-elastic companion channels with strong enough Level-1 signal to make an independent boundary-validation R&D path plausible at the altitudes relevant to P5.4.",
+    "Signal availability alone is not sufficient to call these channels a validated Raman retrieval. Species identity, filter/receiver spectral response, wavelength semantics, molecular cross-sections and any required aerosol-wavelength relationship must be documented first.",
+    "The 408 channels present in this Level-1 file are not part of the current 2024+ SCC night channel list, so their presence must not be silently interpreted as an active validated companion product."
+  ],
+  "decision": "Prioritize Raman-companion spectral/instrument semantics as a physically independent route to boundary-condition validation. Keep it R&D until the required metadata and forward/retrieval physics are explicit and tested."
+}
