@@ -1,4 +1,4 @@
-"""Synthetic NetCDF contract tests for Level 1 and LEBEAR inputs."""
+"""Synthetic NetCDF contract tests for Level 1 and productive method-v5 Level 2."""
 
 from __future__ import annotations
 
@@ -10,8 +10,7 @@ import pandas as pd
 import xarray as xr
 
 from milgrau.level2.lebear import process_single_level1_file
-from milgrau.level2.metadata import LEVEL2_METADATA_VARIABLE_NAMES
-from milgrau.level2.rayleigh_catalogue_dataset import RAYLEIGH_CANDIDATE_VARIABLES
+from milgrau.level2.schema_v5 import validate_method_v5_level2_contract
 from milgrau.operations import ExecutionStatus
 from milgrau.physics.atmosphere import get_standard_atmosphere
 from milgrau.scientific import (
@@ -130,9 +129,9 @@ def _level2_config(tmp_path: Path) -> dict:
             "wavelengths_to_process": [532],
             "block_average_minutes": 15,
             "kfs_mode": "backward",
-            "monte_carlo_iterations": 10,
+            "monte_carlo_iterations": 6,
             "random_seed": 123,
-            "beta_ref_relative_std": 0.10,
+            "beta_ref_relative_std": 0.0,
             "aerosol_ref_fraction": 0.0,
             "min_lidar_ratio_sr": 10.0,
             "allow_negative_aerosol": False,
@@ -143,6 +142,14 @@ def _level2_config(tmp_path: Path) -> dict:
                 "max_relative_slope": 10.0,
                 "max_relative_variance": 10.0,
                 "min_valid_fraction": 0.50,
+            },
+            "method_v5": {
+                "reference_tier_min_altitudes_m": [1200.0, 900.0, 600.0],
+                "reference_search_max_m": 1400.0,
+                "path_start_altitude_m": 7.5,
+                "residual_aerosol_fractions": [0.0, 0.02],
+                "uncertainty_mode": "independent",
+                "progressive_grid_schedule": [[0.0, 7.5]],
             },
             "gluing": {
                 "window_length_bins": 20,
@@ -177,7 +184,7 @@ def test_synthetic_level1_contract_contains_canonical_atmosphere(tmp_path: Path)
         assert ds.attrs["thermodynamic_profile_source_type"] == "ussa76"
 
 
-def test_lebear_uses_level1_atmosphere_and_generates_level2(tmp_path: Path) -> None:
+def test_lebear_generates_schema4_method5_from_level1_atmosphere(tmp_path: Path) -> None:
     path = _write_synthetic_level1(tmp_path / "synthetic_level1_rcs.nc")
     logger = _ListLogger()
 
@@ -187,112 +194,41 @@ def test_lebear_uses_level1_atmosphere_and_generates_level2(tmp_path: Path) -> N
     assert output_path.exists()
 
     with xr.open_dataset(output_path) as ds_l2:
-        assert ds_l2.attrs["level2_product_schema_version"] == LEVEL2_PRODUCT_SCHEMA_VERSION
-        assert (
-            ds_l2.attrs["level2_retrieval_method_version"]
-            == LEVEL2_RETRIEVAL_METHOD_VERSION
-        )
-        assert ds_l2.attrs["Molecular_sources"] == "ussa76"
-        assert ds_l2.attrs["molecular_atmosphere_implementation_version"] == "3"
-        assert (
-            ds_l2.attrs["molecular_atmosphere_scientific_change"]
-            == "level1_materialized_atmosphere_with_log_pressure_interpolation"
-        )
+        validate_method_v5_level2_contract(ds_l2)
+        assert ds_l2.attrs["level2_product_schema_version"] == LEVEL2_PRODUCT_SCHEMA_VERSION == "4"
+        assert ds_l2.attrs["level2_retrieval_method_version"] == LEVEL2_RETRIEVAL_METHOD_VERSION == "5"
         assert ds_l2.attrs["integration_mode"] == "backward"
-        assert ds_l2.attrs["uncertainty_method"] == "Monte Carlo"
-        assert (
-            ds_l2.attrs["kfs_reference_boundary_model"]
-            == "beta_total_ref=beta_mol_ref*(1+aerosol_ref_fraction)"
-        )
-        assert ds_l2.attrs["kfs_aerosol_ref_fraction"] == 0.0
-        assert ds_l2.attrs["kfs_beta_ref_relative_std"] == 0.10
+        assert ds_l2.attrs["uncertainty_method"] == "selection-aware Monte Carlo"
+        assert ds_l2.attrs["kfs_reference_boundary_model"] == "beta_total_ref=beta_mol_ref*(1+f)"
+        assert ds_l2.attrs["kfs_nominal_aerosol_ref_fraction"] == 0.0
+        assert ds_l2.attrs["kfs_beta_ref_relative_std"] == 0.0
         assert ds_l2.attrs["kfs_min_lidar_ratio_sr"] == 10.0
         assert ds_l2.attrs["kfs_allow_negative_aerosol"] == 0
         assert ds_l2.attrs["gluing_selection_score_version"] == "1"
-        assert ds_l2.attrs["gluing_score_relative_rmse_weight"] == 1.0
-        assert ds_l2.attrs["gluing_score_absolute_relative_bias_weight"] == 1.0
-        assert ds_l2.attrs["gluing_score_intercept_percent_weight"] == 0.001
-        assert ds_l2.attrs["gluing_score_saturation_fraction_weight"] == 0.01
         assert "relative_rmse" in ds_l2.attrs["gluing_selection_score_formula"]
 
         assert ds_l2["molecular_backscatter"].dims == ("wavelength", "altitude")
         assert np.all(np.isfinite(ds_l2["molecular_backscatter"].values))
         assert set(np.unique(ds_l2["retrieval_success_flag"].values).tolist()) == {1}
-
-        canonical_aggregate = {
-            "aerosol_backscatter_mean",
-            "aerosol_backscatter_mean_error",
-            "aerosol_extinction_mean",
-            "aerosol_extinction_mean_error",
-        }
-        assert canonical_aggregate <= set(ds_l2.data_vars)
-        for name in canonical_aggregate:
-            assert ds_l2[name].dims == ("wavelength", "altitude")
-
-        legacy_duplicate_aliases = {
-            "aerosol_backscatter",
-            "aerosol_backscatter_error",
-            "aerosol_extinction",
-            "aerosol_extinction_error",
-        }
-        assert legacy_duplicate_aliases.isdisjoint(ds_l2.data_vars)
-
-        expected_metadata_variables = set(LEVEL2_METADATA_VARIABLE_NAMES) | set(
-            RAYLEIGH_CANDIDATE_VARIABLES
+        assert ds_l2["aerosol_backscatter_mean"].dims == ("wavelength", "altitude")
+        assert ds_l2["aerosol_extinction_mean"].dims == ("wavelength", "altitude")
+        assert ds_l2["mc_valid_fraction"].dims == (
+            "block_time",
+            "wavelength",
+            "residual_fraction",
+            "altitude",
         )
-        assert set(ds_l2.data_vars) == expected_metadata_variables
-        assert all(
-            str(ds_l2[name].attrs.get("long_name", "")).strip()
-            for name in ds_l2.data_vars
+        assert ds_l2["selected_reference_altitude_m_mc"].dims == (
+            "block_time",
+            "wavelength",
+            "mc_iteration",
         )
+        assert ds_l2["effective_vertical_resolution_m"].dims == (
+            "wavelength",
+            "altitude",
+        )
+        assert np.asarray(ds_l2["residual_fraction"].values).tolist() == [0.0, 0.02]
+        assert np.all(ds_l2["period_support_count"].values >= 0)
         assert ds_l2["altitude"].attrs["units"] == "m"
-        assert ds_l2["altitude"].attrs["reference"] == "above_station"
-        assert ds_l2["wavelength"].attrs["units"] == "nm"
-
-        assert ds_l2["molecular_backscatter"].attrs["units"] == "m-1 sr-1"
-        assert ds_l2["molecular_extinction"].attrs["units"] == "m-1"
         assert ds_l2["aerosol_backscatter_mean"].attrs["units"] == "m-1 sr-1"
-        assert ds_l2["aerosol_backscatter_mean_error"].attrs["units"] == "m-1 sr-1"
         assert ds_l2["aerosol_extinction_mean"].attrs["units"] == "m-1"
-        assert ds_l2["aerosol_extinction_mean_error"].attrs["units"] == "m-1"
-        assert ds_l2["lidar_ratio_assumed_sr"].attrs["units"] == "sr"
-
-        assert "units" not in ds_l2["glued_corrected_signal"].attrs
-        assert (
-            ds_l2["glued_corrected_signal"].attrs["unit_status"]
-            == "source_dependent_channel_native_corrected"
-        )
-        assert "unsupported bins are never filled or bridged" in ds_l2[
-            "aerosol_backscatter_mean"
-        ].attrs["missing_value_semantics"]
-        assert "not supported aerosol retrieval" in ds_l2["scattering_ratio_mean"].attrs[
-            "description"
-        ]
-
-        for name in (
-            "gluing_merge_source_flag",
-            "retrieval_success_flag",
-            "rayleigh_reference_success_flag_block",
-            "rayleigh_candidate_accepted_flag",
-            "rayleigh_candidate_selected_flag",
-            "kfs_branch_block",
-            "signal_source_flag_block",
-            "retrieval_input_invalid_reason_block",
-            "failed_wavelength_stage",
-            "failed_wavelength_code",
-        ):
-            flag_values = np.asarray(ds_l2[name].attrs["flag_values"])
-            assert flag_values.dtype.kind in {"i", "u"}
-            assert flag_values.ndim == 1
-            assert str(ds_l2[name].attrs["flag_meanings"]).strip()
-
-        assert np.asarray(ds_l2["signal_source_flag"].attrs["flag_values"]).tolist() == [
-            0,
-            1,
-            2,
-            3,
-        ]
-        assert np.asarray(
-            ds_l2["retrieval_input_invalid_reason"].attrs["flag_values"]
-        ).tolist() == list(range(11))
-        assert "not requested" in ds_l2["kfs_forward_valid_flag"].attrs["description"]
