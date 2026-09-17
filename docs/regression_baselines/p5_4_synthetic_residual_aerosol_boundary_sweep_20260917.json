@@ -1,0 +1,41 @@
+{
+  "evidence_type": "p5_4_synthetic_residual_aerosol_boundary_sweep",
+  "created_date": "2026-09-17",
+  "design": {
+    "native_grid_m": 7.5,
+    "reference_altitude_m": 9997.5,
+    "rayleigh_window_width_m": 1000,
+    "rayleigh_qa_thresholds": {"max_relative_slope": 0.25, "max_relative_variance": 0.5, "min_valid_fraction": 0.5},
+    "aerosol_lidar_ratio_sr": 55.0,
+    "noise": "none",
+    "aggregation": "none",
+    "controlled_residual": "beta_aer_high(z)=f*beta_m(z)*Gaussian(center=10 km,sigma=2 km), so f=beta_aer(ref)/beta_m(ref)",
+    "purpose": "Isolate bias caused by assuming beta_aer(ref)=0 when a broad smooth aerosol contribution preserves an approximately molecular Rayleigh-window shape."
+  },
+  "results": {
+    "355nm": [
+      {"f": 0.0, "qa_pass": true, "relative_slope": 0.0000, "wrong_boundary_lower_l2": 0.0000},
+      {"f": 0.05, "qa_pass": true, "relative_slope": 0.0122, "wrong_boundary_lower_l2": 0.0149, "integrated_column_relative_difference": -0.0160},
+      {"f": 0.10, "qa_pass": true, "relative_slope": 0.0244, "wrong_boundary_lower_l2": 0.0285, "integrated_column_relative_difference": -0.0306},
+      {"f": 0.20, "qa_pass": true, "relative_slope": 0.0487, "wrong_boundary_lower_l2": 0.0524, "integrated_column_relative_difference": -0.0559},
+      {"f": 0.50, "qa_pass": true, "relative_slope": 0.1216, "wrong_boundary_lower_l2": 0.1030, "integrated_column_relative_difference": -0.1082},
+      {"f": 1.00, "qa_pass": true, "relative_slope": 0.2427, "wrong_boundary_lower_l2": 0.1413, "integrated_column_relative_difference": -0.1442}
+    ],
+    "532nm": [
+      {"f": 0.0, "qa_pass": true, "relative_slope": 0.0000, "wrong_boundary_lower_l2": 0.0000},
+      {"f": 0.05, "qa_pass": true, "relative_slope": 0.0024, "wrong_boundary_lower_l2": 0.0410, "integrated_column_relative_difference": -0.0523},
+      {"f": 0.10, "qa_pass": true, "relative_slope": 0.0048, "wrong_boundary_lower_l2": 0.0795, "integrated_column_relative_difference": -0.1013},
+      {"f": 0.20, "qa_pass": true, "relative_slope": 0.0097, "wrong_boundary_lower_l2": 0.1500, "integrated_column_relative_difference": -0.1905},
+      {"f": 0.50, "qa_pass": true, "relative_slope": 0.0241, "wrong_boundary_lower_l2": 0.3145, "integrated_column_relative_difference": -0.3912},
+      {"f": 1.00, "qa_pass": true, "relative_slope": 0.0481, "wrong_boundary_lower_l2": 0.4840, "integrated_column_relative_difference": -0.5768}
+    ]
+  },
+  "correct_boundary_check": "Using the true beta_total(ref)=beta_m(ref)+beta_aer(ref) recovers the lower-column synthetic truth to numerical accuracy (relative L2 approximately 2e-5 at 355 nm and 1e-6 at 532 nm over the sweep).",
+  "interpretation": [
+    "A broad smooth aerosol residual can pass the existing Rayleigh-window slope/variance/valid-fraction QA while materially violating the productive aerosol-free boundary assumption.",
+    "At 532 nm in this controlled case, f=0.10 produces about 8% lower-column L2 bias and 10% integrated-column underestimation; f=0.20 produces about 15% and 19%; f=0.50 produces about 31% and 39%.",
+    "The wavelength dependence of the bias is physical/model-dependent; these numerical values are a controlled mechanism test, not operational thresholds.",
+    "Correct boundary knowledge removes the bias, confirming that the failure is the boundary condition rather than the Fernald implementation."
+  ],
+  "decision": "Boundary residual aerosol must become an explicit R&D dimension. Existing Rayleigh shape QA cannot be treated as proof that beta_aer(ref)=0."
+}
