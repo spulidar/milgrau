@@ -38,7 +38,7 @@ Not productive: fitted boundary, high-column backbone, productive vertical aggre
 
 # 2. Observational baseline policy
 
-Primary case: `20251107sapm`.
+Primary baseline case: `20251107sapm`.
 
 Historical derived evidence is preserved for L2 SHA `32b793fc7874f850ee38273f7073c957194f87dd08fed1c340e96b976917a212`, source L1 `52663cbfd7863db6d38bc6596616c672c573c19bc55a3c5e72403abbc4ba0b3f`, revision `b68e4d812a37c2a003e49e30c15c2e112e4c8360`. Its original NetCDF is unavailable after workstation migration and is not a current development blocker.
 
@@ -63,8 +63,9 @@ Active evidence files include:
 * `20251107sapm_vertical_aggregation_support_edge.json`
 * `p54_covariance_leaveout_synthetic.json`
 * `p5_4_heterogeneous_spu_cases_20260917.json`
+* `p5_4_observational_campaign_20260917.json`
 
-Historical and active products are not claimed input-equivalent.
+Historical, active-baseline and campaign products are not claimed input-equivalent unless their input hashes match.
 
 ---
 
@@ -73,21 +74,21 @@ Historical and active products are not claimed input-equivalent.
 | Priority | Status | Meaning |
 | --- | --- | --- |
 | P0–P2 | COMPLETE | productive architecture/support/engineering guardrails |
-| P3 | IN PROGRESS | FAIR/release/license; method-v4 traceability drift corrected and guarded |
-| P4 | PARALLEL EVIDENCE | instrument characterization / external comparisons |
+| P3 | IN PROGRESS | FAIR/release/license; method-v4 traceability corrected and guarded |
+| P4 | PARALLEL EVIDENCE | instrument characterization / true external-chain comparisons still open |
 | P5.0–P5.2 | FROZEN FOUNDATION | baselines, support semantics, QA-first catalogue |
 | P5.3 | IN PROGRESS | real candidate interpretation |
-| P5.4 | **ACTIVE PRIMARY R&D** | high-column support/boundary/aggregation evidence |
+| P5.4 | **ACTIVE PRIMARY R&D** | multi-case high-column support/boundary/aggregation evidence |
 | P5.5 | PENDING | ensemble only if P5.4 establishes need |
 | P5.6–P5.7 | DEFERRED | cascade / stitching |
 | P5.8 | PARALLEL R&D | molecular semantics / uncertainty consistency |
-| P5.9 | IN PROGRESS | support-aware QA implemented; heterogeneous visual review pending |
-| P5.10 | IN PROGRESS | validation matrix |
+| P5.9 | **IMPLEMENTED + REAL-IMAGE REVIEWED** | support-aware QA semantics now visually checked on heterogeneous cases |
+| P5.10 | IN PROGRESS | validation matrix expanded to heterogeneous/seasonal campaign |
 | P6 | PENDING | reproducible release/publication |
 
 ---
 
-# 4. P5.4 HighColumnEvidence — observational gate populated
+# 4. P5.4 HighColumnEvidence — active-baseline gate populated
 
 `HighColumnEvidence` keeps shape QA, bin SNR, window SNR dependence limits, exact-window persistence, dominant temporal contribution, subwindow disagreement, contamination status, effective resolution and boundary/dependence identity physically separate. There is no composite score or preferred target altitude.
 
@@ -142,7 +143,7 @@ Interpretation: support fragility is distributed across many isolated/short clus
 
 ---
 
-# 7. 60/120 m support-edge aggregation — completed, R&D only
+# 7. 60/120 m support-edge aggregation — single-case experiment completed, R&D only
 
 Evidence: `20251107sapm_vertical_aggregation_support_edge.json`.
 
@@ -155,7 +156,7 @@ Under independent source-bin error combination, both widths yielded 100% complet
 
 This event does not identify a 60 vs 120 m winner. Existing controlled synthetic truth tests show the coarsened inversion can remain within the current loose 5% R&D truth guard while separately exposing narrow-layer resolution loss.
 
-Decision: aggregation remains promising R&D, not a productive width choice.
+Decision: aggregation remains promising R&D, not a productive width choice. The next aggregation gate is explicitly multi-case and must check 0–6 km preservation.
 
 ---
 
@@ -167,7 +168,7 @@ Frozen evidence: `p54_covariance_leaveout_synthetic.json`.
 Equicorrelation gain families:
 
 * 60 m / 8 bins: 2.83 at rho=0 -> 2.17 at 0.1 -> 1.61 at 0.3 -> 1.24 at 0.6 -> 1.05 at 0.9 -> 1.0 at 1;
-* 120 m / 16 bins: 4.0 -> 2.53 -> 1.71 -> 1.26 -> 1.05 -> 1.0.
+* 120 m / 16 bins: 4.0 -> 2.53 -> 1.71 at 0.3 -> 1.26 at 0.6 -> 1.05 at 0.9 -> 1.0 at 1.
 
 Exponential-lag correlation gives intermediate gains but preserves the same dependence trend. Strong correlation can erase almost all extra precision of the wider aggregate while resolution loss remains.
 
@@ -189,55 +190,92 @@ Therefore leave-out sensitivity can expose localized contamination but **stable 
 
 ---
 
-# 10. Heterogeneous SPU stress cases — second-real-regime gate met
+# 10. Heterogeneous/seasonal SPU campaign — observational regime gate met
 
-Evidence: `p5_4_heterogeneous_spu_cases_20260917.json`.
+Evidence: `p5_4_heterogeneous_spu_cases_20260917.json` and `p5_4_observational_campaign_20260917.json`.
 
-User-supplied observational annotations are treated as context, not independent atmospheric ground truth:
+The reviewed user package SHA is `017be4afc3607b4a4df417ca510d672bffb0ecc52733f55f7a2dfc256707cf43`. It contains 11 Level-2 products and 256 QA/quicklook images, plus Level 1 and SCC-ready Level 0 material for `20250629sant`.
 
-* `20240620sant`: plume / night;
-* `20240902sant`: biomass-burning / morning;
-* `20241202saam`: low cloud / morning;
-* `20250509sant`: high cloud / night;
-* `20240621sant`: unlabeled adjacent-day stress case.
+Observed campaign identities include biomass-burning-labelled, low-cloud, high-cloud, user-labelled clean seasonal/daypart controls and adjacent records. User atmospheric labels are treated as observational annotations rather than exact aerosol/cloud truth.
 
-All supplied products are schema v3 / method v4 generated from source revision `831ac2f4666c670fb3fec877fd581903a397a60d`.
+Important source-selection limitation: **all successfully retrieved wavelength blocks in this supplied campaign use post-QA analog single-channel fallback**. The campaign therefore provides strong atmospheric/Rayleigh/KFS stress coverage but does not validate glued or photon-counting high-column behavior.
 
-Important source-selection limitation: **all successfully retrieved blocks in these products use post-QA analog single-channel fallback**. These cases therefore expand atmospheric/regime coverage for Rayleigh/KFS but do not validate glued or photon-counting high-column behavior.
+Cross-case findings:
 
-Key real-event findings:
+* “clean” does not imply easy high-column support: `20250628/29` are favorable near 10 km, while `20250521sapm`, `20250716sapm` and the campaign lineage of `20251107sapm` can remain MC-fragile despite no dominant obvious cloud in the quicklook;
+* high-cloud `20250509sant` has a strong scattering-ratio layer near 14.36–14.37 km. The first connected all-block accepted candidate run ends near 12.1–12.3 km, but disconnected accepted/persistent islands reappear above the cloud at ~15.3 km and higher;
+* therefore local shape QA + temporal persistence cannot certify molecular purity;
+* biomass-burning-labelled `20240902sant` has very poor nominal path support near 10 km despite accepted candidates there;
+* low-cloud `20241202saam` keeps productive references near ~5.6–5.9 km and becomes highly uncertainty-fragile before 10 km;
+* adjacent clean-night records `20250628/29` provide the most favorable multi-block controls in the supplied campaign, with nominal ~10-km paths intact in every block;
+* `20250716saam` is visually favorable but has only one block, so it cannot establish temporal persistence; the same-day later `20250716sapm` record is substantially more fragile;
+* candidate topology — especially the first connected all-block accepted run — is scientifically informative as a threshold-free diagnostic, but is **not** authorized as a productive boundary rule because isolated gaps and strict all-block intersection can also truncate otherwise informative regions.
 
-* high-cloud `20250509sant` has a strong scattering-ratio layer near 14.36–14.37 km; candidate acceptance is strongly disrupted through the layer, yet all-block accepted candidate islands reappear above it up to ~15.51 km (355) and ~17.50 km (532);
-* therefore shape QA plus exact-window persistence is not sufficient to certify a molecularly clean high boundary, consistent with the synthetic broad-contamination counterexample;
-* low-cloud `20241202saam` shows strong low-altitude scattering-ratio structure while the productive references remain near ~5.6–5.9 km;
-* biomass-burning-labelled `20240902sant` strongly stresses lower-column aerosol structure and has only 4/7 valid backward 532-nm blocks;
-* plume `20240620sant` retains 18/18 valid 355-nm blocks and 16/18 at 532 nm, while some 532-nm Rayleigh-selected references reach ~15.4–15.5 km but fail backward support;
-* accepted candidates above 20 km occur in several cases at low diagnostic SNR; their existence is not validation of a usable KFS boundary.
+The user-listed 2024-05-22 high-cloud morning and January-27 clean-summer case are not present in the supplied ZIP; the latter also lacks a specified year. The user-labelled 2025-05-20 clean-autumn case is represented by canonical file `Measurement_ID=20250521sapm`.
 
-Decision: the requirement for materially different real SPU regimes is no longer the primary P5.4 blocker. The next scientific gates are path contamination/layer handling without a tuned cloud veto, lower-column preservation under any aggregation/backbone experiment, explicit covariance behavior, and source-selection diversity beyond analog fallback.
+Decision: the “second real regime” blocker is closed. The primary P5.4 question is now whether an aggregation/backbone can preserve the lower column across favorable and unfavorable real regimes while remaining contamination-aware and covariance-honest.
 
 ---
 
-# 11. Exact-reference KFS failure — engineering robustness fix
+# 11. Empirical vertical dependence — first real Level-1 estimate completed
 
-Two supplied cases exposed a method-v4 orchestration failure:
+Evidence is frozen inside `p5_4_observational_campaign_20260917.json` from `20250629sant_level1_rcs.nc`.
+
+Method: block-demeaned Level-1 range-corrected-signal residuals divided by supplied per-profile uncertainty, using the configured 20-minute floor blocks and the existing `vertical_noise_autocorrelation` R&D semantics. Because the corresponding Level-2 retrieval selected analog fallback, diagnostics were evaluated for `355.AN` and `532.AN`.
+
+Between 5 and 20 km:
+
+* lag-1 / 7.5-m correlation is approximately **0.10–0.13**;
+* most longer-lag correlations are only a few percent;
+* autocorrelation-adjusted SNR gain for 60 m / 8 bins is approximately **2.47–2.52**, below the independent limit sqrt(8)=2.83;
+* corresponding 120 m / 16-bin gain is approximately **3.31–3.40**, below the independent limit 4.0 and far above the fully-correlated limit 1.0.
+
+Interpretation: for this one clean-night analog case, the observed vertical dependence is materially closer to the independent limit than to the fully-correlated limit. This is **not** a station-wide covariance law: unresolved atmospheric variability can contribute to the residual correlation, and replication is still required for other Level-1 regimes and signal sources.
+
+Decision: the generic “no empirical covariance evidence” gate is closed. Replication/source-chain diversity remains open.
+
+---
+
+# 12. Exact-reference KFS failure — engineering robustness fix validated
+
+Historical campaign products exposed the old orchestration failure in:
 
 * `20240621sant` / 532 nm;
 * `20240902sant` / 355 nm.
 
-The Rayleigh window definition can satisfy configured valid-fraction/slope/variance QA even when the **exact center bin** required by productive KFS is non-finite or non-positive. KFS correctly rejects such a boundary, but the previous call path propagated the `ValueError` and aborted the whole wavelength.
+The Rayleigh window can satisfy configured valid-fraction/slope/variance QA even when the **exact center bin** required by productive KFS is non-finite or non-positive. KFS correctly rejects that boundary, but the old call path propagated the `ValueError` and aborted the whole wavelength.
 
 Engineering decision: preserve method-v4 Rayleigh semantics and exact-bin KFS semantics; treat this expected KFS input rejection as **block-local**, leave its KFS-valid flag false, and continue evaluating other blocks. Do not add a new center-bin Rayleigh gate without an explicit scientific method decision.
 
 Implementation commit: `f90c6f770e7b8d369e775d1ed812c17fbe1266e3`.
 Regression test: `tests/test_level2_kfs_block_failure.py`, commit `9829e79e68814092fe8c1afa2626d4082efb2e86`.
-CI run `35248016374` is the validation run for this change; at this tracker write it is still executing.
+Cross-platform CI run `35248016374` completed successfully.
 
-A current-code re-run of the two source Level 1 cases is still required to verify the observed wavelength-level failure becomes block-local in the real data path.
+A current-code **real Level-1 re-run** of the two historical failure cases remains desirable, but their Level-1 files are not in the supplied campaign package and this no longer blocks the unit-level engineering fix.
 
 ---
 
-# 12. P3 scientific traceability — drift corrected
+# 13. P5.9 support-aware QA — implemented and heterogeneous real-image reviewed
+
+`milgrau/viz/level2_qa_support.py` marks the algorithmic inversion top and visually identifies the region above it as outside supported aerosol retrieval while preserving scattering ratio as a diagnostic.
+
+`tests/test_level2_qa_support_context.py` guards explicit `retrieval_top_altitude_m` handling and fallback through `retrieval_inversion_support_flag`. Cross-platform CI run `35241784472` passed.
+
+Human review covered low-cloud, high-cloud, biomass-burning-labelled, clean/adjacent controls and seasonal/daypart examples. The support-aware SR/KFS panels visibly distinguish finite high-altitude scattering ratio from supported aerosol retrieval, including the critical `20250509sant` high-cloud case.
+
+Decision: the principal P5.9 support-visualization gate is closed. Candidate density remains diagnostic rather than validation, and any future R&D panels must remain explicitly labeled R&D.
+
+---
+
+# 14. External-comparison status
+
+The supplied `20250629sant_scc.nc` is **MILGRAU Level 0 SCC-compatible raw input** (`SCC_Ready=1`), not an SCC/ELDA optical Level-2 retrieval. It therefore cannot serve as an external aerosol backscatter/extinction comparison.
+
+P4/P5.10 external-chain comparison remains open and requires matched SCC/ELDA/LPP optical output with compatible wavelength/product semantics.
+
+---
+
+# 15. P3 scientific traceability — drift corrected
 
 `docs/scientific_traceability.md` explicitly documents productive schema v3 / method v4, current candidate-catalogue ownership, inherited uncertainty/support semantics, R&D-only P5.4 ownership and active baseline evidence.
 
@@ -247,59 +285,48 @@ Remaining P3: deliberate software license, root `LICENSE`, license metadata alig
 
 ---
 
-# 13. P5.9 support-aware QA — implemented, visual review pending
-
-The Level 2 QA path now distinguishes scattering-ratio context from supported aerosol optical retrieval. `milgrau/viz/level2_qa_support.py` marks the algorithmic inversion top and visually identifies the region above it as outside supported aerosol retrieval while preserving scattering ratio as a diagnostic.
-
-`tests/test_level2_qa_support_context.py` guards both explicit `retrieval_top_altitude_m` handling and fallback through `retrieval_inversion_support_flag`. Cross-platform CI run `35241784472` passed.
-
-Remaining P5.9 gate: human inspection on heterogeneous real cases, especially low/high cloud, to ensure finite high-altitude scattering ratio cannot visually read as retrieved aerosol and that molecular/candidate context is not misleading.
-
----
-
-# 14. Validation state before any method v5
+# 16. Validation state before any method v5
 
 Synthetic established: molecular/aerosol recovery, grid convergence, missing uncertainty/gap semantics, QA-first catalogue, temporal persistence/transience, vertical aggregation/resolution trade, fitted-window denoising, contaminated-window counterexamples, independent/correlated fitted-boundary MC, molecular-lidar-ratio sensitivity, wider noise amplitudes, asymmetric/broad contamination, boundary placement, explicit covariance families and leave-part-out counterexamples.
 
-Real SPU established: active `20251107sapm` baseline plus plume, biomass-burning-labelled, low-cloud, high-cloud and adjacent-day stress cases; candidate catalogues; temporal evidence; SNR/dependence brackets; exact-vs-window evidence; populated HighColumnEvidence; first high-boundary comparison; weak-bin failure decomposition; 60/120 m support-edge aggregation; real cloud-layer evidence that accepted/persistent candidate islands can reappear above a strong layer.
+Real SPU established: active baseline; heterogeneous/seasonal campaign; candidate catalogues; temporal evidence; SNR/dependence brackets; exact-vs-window evidence; populated HighColumnEvidence; first high-boundary comparison; weak-bin failure decomposition; single-case 60/120 m support-edge aggregation; high-cloud candidate re-entry above a strong layer; favorable and unfavorable clean controls; first empirical Level-1 vertical-dependence estimate; support-aware QA human review.
 
 Still required before any method-v5 proposal:
 
-* lower-column truth preservation for a future aggregated/backbone method under controlled synthetics and explicit covariance;
-* path-contamination/layer tests that do not rely on a tuned hard cloud veto;
-* empirical dependence/covariance characterization where feasible;
-* at least one real regime with materially different signal-source behavior, ideally valid glued and/or photon-counting contribution rather than universal analog fallback;
-* current-code re-run of the two exact-reference failure cases;
-* visual QA review on the heterogeneous cases;
-* matched LPP/SCC/ELDA comparisons when feasible.
+* multi-case 60/120 m aggregation/backbone experiments spanning favorable and unfavorable real regimes;
+* explicit **0–6 km preservation** against method-v4 controls whenever a high-column experiment changes vertical resolution or boundary treatment;
+* contamination/layer stress tests that do not rely on a tuned hard cloud veto;
+* replication of empirical dependence on additional Level-1 cases and, critically, a materially different signal-source regime such as valid glued or photon-counting contribution;
+* matched external optical-chain comparisons when feasible;
+* current-code real Level-1 rerun of historical exact-reference failures when those source files become available.
 
 P5 success is defensible inversion-supported coverage with honest uncertainty, temporal representativeness, declared resolution and exact provenance — not “reach 20 km”.
 
 ---
 
-# 15. Parallel open work
+# 17. Parallel open work
 
-P4: overlap/telecover evidence, physical PC saturation, gluing fit covariance/materiality, additional AN/PC regimes, real cloud/layer validation and external-chain comparison.
+P4: overlap/telecover evidence, physical PC saturation, gluing fit covariance/materiality, source-chain diversity and true external optical comparison.
 
 P5.8: productive molecular lidar ratio stays `8*pi/3` until actual receiver/filter molecular semantics are resolved.
 
-P5.9: support-aware rendering is implemented; heterogeneous real-image review remains open. Candidate density remains diagnostic, not validation; R&D panels remain labeled R&D.
+P5.9: primary support-aware visualization gate is closed; maintain semantic guards for future panels.
 
 P6: reproducible environment/build artifact tests, warnings/coverage, release metadata, branch reconciliation/protection and immutable scientific tags remain pending.
 
 ---
 
-# 16. Immediate next gate
+# 18. Immediate next gate
 
-1. Review Level 2 QA images for `20240620sant`, `20240902sant`, `20241202saam` and especially `20250509sant`; prioritize ScatteringRatio, KFS and Molecular panels at both wavelengths.
-2. Re-run `20240621sant` and `20240902sant` from Level 1 on current HEAD after the block-local KFS fix and verify one bad exact reference no longer aborts the whole wavelength.
-3. Use the high-cloud case as a real-event contamination stress test: experimental high-boundary logic must not infer molecular purity merely because accepted/persistent candidate islands reappear above the cloud layer.
-4. Extend the 60/120 m R&D comparison to heterogeneous cases only after defining a path-safe, contamination-aware experiment and preserving 0–6 km products against the method-v4 control.
-5. Seek a real case with different source-selection behavior (valid glued/PC contribution) before generalizing high-column conclusions to the instrument chain.
-6. Only after those gates decide whether a method-v5 high-column backbone is scientifically justified. Multi-reference ensemble remains after that decision; cascade/stitching remain deferred.
+1. Run a **multi-case strict 60/120 m aggregation experiment** using favorable controls (`20250628sant`, `20250629sant`, and usable `20240621sant/355`) and unfavorable/stress controls (`20250521sapm`, `20250716sapm`, `20241202saam`, `20250509sant`).
+2. For every aggregation experiment, preserve the method-v4 native-grid result as control and quantify differences in aerosol backscatter/extinction/support over **0–6 km** separately from any high-column gain.
+3. Carry at least independent, fully-correlated and the observational `20250629sant` autocorrelation-informed dependence cases where scientifically meaningful; never present the latter as a universal instrument covariance.
+4. Keep `20250509sant` as the contamination topology stress case: no experimental boundary logic may infer molecular purity merely because accepted/persistent candidates reappear above the high cloud.
+5. Seek/retain a real Level-1 case with valid glued or photon-counting-dominant retrieval before generalizing a backbone to the instrument chain.
+6. Only after these gates decide whether a method-v5 high-column backbone is scientifically justified. Multi-reference ensemble remains after that decision; cascade/stitching remain deferred.
 
 ---
 
-# 17. Current handoff
+# 19. Current handoff
 
-MILGRAU productive Level 2 remains schema v3 / method v4. P5.4 no longer depends on a single observational regime: the new heterogeneous matrix adds plume, biomass-burning-labelled, low-cloud and high-cloud stress cases. The high-cloud case supplies particularly strong real-event evidence that local Rayleigh shape QA and temporal persistence can reappear above a strong layer and therefore do not certify a clean molecular boundary. All supplied successful blocks use analog fallback, so source-chain diversity remains an explicit evidence gap. Two cases also exposed a block-local exact-reference KFS robustness defect; the implementation now preserves Rayleigh acceptance but rejects only the unusable KFS block, with a focused regression test and CI validation in progress. Support-aware QA plotting has passed cross-platform CI and now needs visual review on these real cases. No hard threshold, cloud veto, fitted boundary, aggregation width, ensemble, cascade or method-v5 promotion is authorized.
+MILGRAU productive Level 2 remains schema v3 / method v4. P5.4 is now supported by a heterogeneous and seasonal observational campaign rather than a single event. The campaign confirms two independent high-column limitations: atmospheric/topological contamination can create accepted/persistent candidate islands above a strong layer, while visually clean records can still be uncertainty-fragile. `20250629sant` additionally provides a first Level-1 empirical vertical-dependence estimate, with 5–20 km lag-1 correlations around 0.10–0.13 and 60/120 m SNR gains around 2.5/3.3–3.4, materially closer to independence than full correlation but not yet generalizable. Support-aware QA passed CI and heterogeneous human review. The exact-reference block-local robustness fix passed cross-platform CI. All successful supplied campaign retrievals still use analog fallback, so source-chain diversity remains an explicit evidence gap. The next decisive P5.4 step is a multi-case 60/120 m experiment with explicit 0–6 km preservation and covariance sensitivity. No hard threshold, cloud veto, fitted boundary, aggregation width, ensemble, cascade or method-v5 promotion is authorized.
