@@ -31,25 +31,33 @@ class BoundaryFractionMonteCarloSensitivity:
     """Nested random-MC results for caller-declared boundary scenarios.
 
     The first dimension of every profile quantity is the residual-aerosol
-    scenario ``f = beta_aer(ref) / beta_mol(ref)``.  ``f`` is not sampled from a
+    scenario ``f = beta_aer(ref) / beta_mol(ref)``. ``f`` is not sampled from a
     probability density: every scenario is an explicit conditional experiment.
     Random signal/LR/reference-estimator perturbations occur *within* each
-    scenario.  The same random seed is reused for each scenario to provide a
+    scenario. The same random seed is reused for each scenario to provide a
     paired Monte-Carlo comparison.
+
+    Both standard deviation and empirical 2.5/97.5 percentiles are retained.
+    The percentile interval does not assume that the finite Monte-Carlo ensemble
+    is Gaussian, which matters when the nonlinear inversion or non-negative
+    aerosol constraint produces skew/truncation.
 
     ``backward_valid_fraction`` is the fraction of simulations that survive the
     complete requested backward branch. ``aerosol_backscatter_valid_fraction``
     is altitude resolved and reports how many simulations are finite at each
-    retrieval cell.  The latter is the relevant support diagnostic for an
-    altitude-resolved uncertainty product and is not converted to a binary gate.
+    retrieval cell. Neither is converted to a binary gate here.
     """
 
     residual_aerosol_fraction_of_molecular: np.ndarray
     beta_total_reference_nominal: np.ndarray
     aerosol_backscatter_mean: np.ndarray
     aerosol_backscatter_random_std: np.ndarray
+    aerosol_backscatter_random_q025: np.ndarray
+    aerosol_backscatter_random_q975: np.ndarray
     aerosol_extinction_mean: np.ndarray
     aerosol_extinction_random_std: np.ndarray
+    aerosol_extinction_random_q025: np.ndarray
+    aerosol_extinction_random_q975: np.ndarray
     aerosol_backscatter_valid_count: np.ndarray
     aerosol_backscatter_valid_fraction: np.ndarray
     backward_valid_count: np.ndarray
@@ -57,6 +65,26 @@ class BoundaryFractionMonteCarloSensitivity:
     n_iterations: int
     reference_index: int
     uncertainty_scope: str
+
+
+def _finite_profile_quantiles(
+    values: np.ndarray,
+    lower_q: float = 0.025,
+    upper_q: float = 0.975,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return finite-only altitude-resolved empirical quantiles without warnings."""
+    array = np.asarray(values, dtype=np.float64)
+    if array.ndim != 2:
+        raise ValueError("values must have shape (simulation, altitude).")
+    lower = np.full(array.shape[1], np.nan, dtype=np.float64)
+    upper = np.full(array.shape[1], np.nan, dtype=np.float64)
+    for altitude_index in range(array.shape[1]):
+        finite = array[:, altitude_index]
+        finite = finite[np.isfinite(finite)]
+        if finite.size:
+            lower[altitude_index] = float(np.quantile(finite, lower_q))
+            upper[altitude_index] = float(np.quantile(finite, upper_q))
+    return lower, upper
 
 
 def _validate_boundary_inputs(
@@ -170,11 +198,11 @@ def boundary_fraction_monte_carlo_sensitivity(
 ) -> BoundaryFractionMonteCarloSensitivity:
     """Run paired random Monte Carlo inside explicit boundary ``f`` scenarios.
 
-    This function intentionally does **not** draw ``f`` randomly.  The caller
+    This function intentionally does **not** draw ``f`` randomly. The caller
     supplies a finite family of physically interpretable sensitivity scenarios.
     For every scenario the KFS Monte Carlo propagates the existing random
     ingredients (signal uncertainty, scalar aerosol lidar-ratio uncertainty and
-    reference-boundary estimator perturbation).  Reusing the same ``seed`` for
+    reference-boundary estimator perturbation). Reusing the same ``seed`` for
     every scenario gives paired random draws, making the between-scenario
     boundary effect easier to interpret.
 
@@ -195,8 +223,12 @@ def boundary_fraction_monte_carlo_sensitivity(
 
     beta_means: list[np.ndarray] = []
     beta_stds: list[np.ndarray] = []
+    beta_q025: list[np.ndarray] = []
+    beta_q975: list[np.ndarray] = []
     alpha_means: list[np.ndarray] = []
     alpha_stds: list[np.ndarray] = []
+    alpha_q025: list[np.ndarray] = []
+    alpha_q975: list[np.ndarray] = []
     profile_valid_counts: list[np.ndarray] = []
     branch_valid_counts: list[int] = []
 
@@ -221,11 +253,19 @@ def boundary_fraction_monte_carlo_sensitivity(
                 mode="backward",
             )
         )
+        beta_sims = np.asarray(diagnostics["beta_aer_sims"], dtype=np.float64)
+        alpha_sims = np.asarray(diagnostics["alpha_aer_sims"], dtype=np.float64)
+        beta_lower, beta_upper = _finite_profile_quantiles(beta_sims)
+        alpha_lower, alpha_upper = _finite_profile_quantiles(alpha_sims)
+
         beta_means.append(np.asarray(beta_mean, dtype=np.float64))
         beta_stds.append(np.asarray(beta_std, dtype=np.float64))
+        beta_q025.append(beta_lower)
+        beta_q975.append(beta_upper)
         alpha_means.append(np.asarray(alpha_mean, dtype=np.float64))
         alpha_stds.append(np.asarray(alpha_std, dtype=np.float64))
-        beta_sims = np.asarray(diagnostics["beta_aer_sims"], dtype=np.float64)
+        alpha_q025.append(alpha_lower)
+        alpha_q975.append(alpha_upper)
         profile_valid_counts.append(
             np.count_nonzero(np.isfinite(beta_sims), axis=0).astype(np.int32)
         )
@@ -241,8 +281,12 @@ def boundary_fraction_monte_carlo_sensitivity(
         beta_total_reference_nominal=beta_mol_ref * (1.0 + fractions),
         aerosol_backscatter_mean=np.stack(beta_means, axis=0),
         aerosol_backscatter_random_std=np.stack(beta_stds, axis=0),
+        aerosol_backscatter_random_q025=np.stack(beta_q025, axis=0),
+        aerosol_backscatter_random_q975=np.stack(beta_q975, axis=0),
         aerosol_extinction_mean=np.stack(alpha_means, axis=0),
         aerosol_extinction_random_std=np.stack(alpha_stds, axis=0),
+        aerosol_extinction_random_q025=np.stack(alpha_q025, axis=0),
+        aerosol_extinction_random_q975=np.stack(alpha_q975, axis=0),
         aerosol_backscatter_valid_count=profile_valid_count_arr,
         aerosol_backscatter_valid_fraction=(
             profile_valid_count_arr.astype(np.float64) / float(iterations)
