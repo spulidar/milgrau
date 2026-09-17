@@ -1,4 +1,4 @@
-"""Regression tests for exact Level 1 content identity in Level 2 provenance."""
+"""Regression tests for exact Level 1 content identity in method-v5 provenance."""
 
 from __future__ import annotations
 
@@ -33,7 +33,6 @@ def _write_currentness_fixture(source: Path, output: Path) -> None:
         "source_level1_sha256": file_sha256(source),
         "product_completeness": "complete",
         "product_status": "success",
-        "KFS_Mode": "backward",
         **elastic_inversion_algorithm_metadata(),
         **gluing_selection_score_metadata(),
     }
@@ -65,9 +64,10 @@ def test_level2_currentness_rejects_changed_bytes_even_when_other_checks_pass(
     source.write_bytes(b"original-level1-content")
     _write_currentness_fixture(source, output)
 
-    monkeypatch.setattr(lebear, "validate_level2_contract", lambda _ds: None)
+    monkeypatch.setattr(
+        lebear, "validate_method_v5_level2_contract", lambda _ds: None
+    )
     monkeypatch.setattr(lebear, "get_wavelengths_to_process", lambda _config: [532])
-    monkeypatch.setattr(lebear, "get_kfs_mode", lambda _config: "backward")
     monkeypatch.setattr(lebear, "output_is_current", lambda *args, **kwargs: True)
 
     assert lebear.level2_output_is_current(source, output, {})
