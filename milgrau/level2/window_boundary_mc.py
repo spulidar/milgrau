@@ -1,19 +1,15 @@
 """R&D Monte Carlo propagation for a window-fitted KFS signal boundary.
 
-This module is deliberately non-productive.  Level 2 method v4 still uses the
+This module is deliberately non-productive. Level 2 method v4 still uses the
 exact measured range-corrected-signal bin at the selected reference altitude.
-The helper below asks a narrower research question: if a local molecular window
-is used to estimate the signal value at that *same exact altitude*, how does the
-window fit uncertainty propagate into a backward Fernald retrieval?
+Here the local molecular window is re-fitted in every realization to study how
+its random signal uncertainty would propagate through a backward KFS retrieval.
 
 The first implemented noise model is explicit independent Gaussian per-bin
-measurement noise.  The same perturbed window is used to re-fit the molecular
-scale and to perturb the retrieval profile, so the boundary fit is not sampled
-as an independent nuisance on top of the same signal noise.  Correlated-noise
-extensions must be added explicitly rather than inferred from this helper.
-
-Window contamination/model error is outside this random-noise Monte Carlo.  A
-small Monte Carlo spread therefore does not certify a molecular window.
+measurement noise. The same perturbation drives both the window fit and the
+retrieval profile, so window-fit uncertainty is not double-counted as an
+independent nuisance. Window contamination/model error is outside this Monte
+Carlo; a small spread therefore never certifies molecular purity.
 """
 
 from __future__ import annotations
@@ -44,7 +40,6 @@ class WindowBoundaryMonteCarloResult:
 
 
 def _origin_factor(measured: np.ndarray, molecular: np.ndarray) -> float:
-    """Return the origin-constrained least-squares molecular scale."""
     denominator = float(np.sum(molecular**2))
     if not np.isfinite(denominator) or denominator <= 0.0:
         raise ValueError("Molecular window denominator must be finite and positive.")
@@ -53,13 +48,11 @@ def _origin_factor(measured: np.ndarray, molecular: np.ndarray) -> float:
 
 
 def _nanmean_std(samples: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Return per-bin mean/std without empty-slice warnings."""
     finite = np.isfinite(samples)
     count = finite.sum(axis=0)
     safe = np.where(finite, samples, 0.0)
-    total = safe.sum(axis=0)
     mean = np.divide(
-        total,
+        safe.sum(axis=0),
         count,
         out=np.full(samples.shape[1], np.nan, dtype=np.float64),
         where=count > 0,
@@ -94,25 +87,19 @@ def window_fitted_boundary_monte_carlo(
 ) -> WindowBoundaryMonteCarloResult:
     """Propagate independent signal noise through a local fitted boundary.
 
-    ``window_start_idx`` is inclusive and ``window_stop_idx`` is exclusive.  The
-    exact ``ref_idx`` must lie inside that window.  The nominal and every Monte
-    Carlo realization estimate one multiplicative molecular scale from the
-    complete window and evaluate ``X_ref = C * molecular_rcs[ref_idx]`` without
-    moving the reference altitude.
-
-    The helper deliberately requires complete finite positive window support
-    and complete finite positive backward-path signal/molecular support.  It
-    does not interpolate missing bins or silently shrink the fitting window.
-    Simulations whose Gaussian perturbation makes the required backward path or
-    fitted scale non-positive are counted as unsuccessful rather than clipped.
+    Window start is inclusive and stop is exclusive. The exact reference bin
+    must lie inside the window. Complete finite positive support is required in
+    the fit window and along the backward retrieval path; nothing is filled,
+    clipped or silently removed. A realization that becomes non-positive on
+    required support is rejected and counted as unsuccessful.
     """
     signal = np.asarray(rcs, dtype=np.float64)
     error = np.asarray(rcs_error, dtype=np.float64)
     molecular_signal = np.asarray(molecular_rcs, dtype=np.float64)
     altitude = np.asarray(altitude_m, dtype=np.float64)
     beta_molecular = np.asarray(beta_mol, dtype=np.float64)
-
     arrays = (signal, error, molecular_signal, altitude, beta_molecular)
+
     if any(array.ndim != 1 for array in arrays):
         raise ValueError("All window-boundary Monte Carlo profiles must be one-dimensional.")
     if not all(array.shape == signal.shape for array in arrays[1:]):
@@ -138,16 +125,20 @@ def window_fitted_boundary_monte_carlo(
 
     backward_slice = slice(0, reference + 1)
     window_slice = slice(start, stop)
+    perturb_slice = slice(0, max(reference + 1, stop))
+
     if np.any(~np.isfinite(signal[backward_slice])) or np.any(signal[backward_slice] <= 0.0):
-        raise ValueError("Backward-path RCS must be finite and positive before Monte Carlo perturbation.")
+        raise ValueError("Backward-path RCS must be finite and positive before perturbation.")
     if np.any(~np.isfinite(beta_molecular[backward_slice])) or np.any(beta_molecular[backward_slice] <= 0.0):
         raise ValueError("Backward-path molecular backscatter must be finite and positive.")
     if np.any(~np.isfinite(error[backward_slice])) or np.any(error[backward_slice] < 0.0):
         raise ValueError("Backward-path RCS uncertainty must be finite and non-negative.")
+    if np.any(~np.isfinite(signal[window_slice])) or np.any(signal[window_slice] <= 0.0):
+        raise ValueError("Fitting-window measured RCS must be finite and positive.")
     if np.any(~np.isfinite(molecular_signal[window_slice])) or np.any(molecular_signal[window_slice] <= 0.0):
         raise ValueError("Fitting-window molecular RCS must be finite and positive.")
-    if np.any(error[window_slice] <= 0.0):
-        raise ValueError("Fitting-window RCS uncertainty must be strictly positive.")
+    if np.any(~np.isfinite(error[window_slice])) or np.any(error[window_slice] <= 0.0):
+        raise ValueError("Fitting-window RCS uncertainty must be finite and strictly positive.")
     if not np.isfinite(beta_total_ref) or float(beta_total_ref) <= 0.0:
         raise ValueError("beta_total_ref must be finite and positive.")
 
@@ -157,24 +148,21 @@ def window_fitted_boundary_monte_carlo(
     nominal_boundary = float(nominal_factor * molecular_signal[reference])
 
     rng = np.random.default_rng(int(random_seed))
-    retrieval_samples = np.full((int(n_simulations), signal.size), np.nan, dtype=np.float64)
-    factor_samples = np.full(int(n_simulations), np.nan, dtype=np.float64)
-    boundary_samples = np.full(int(n_simulations), np.nan, dtype=np.float64)
+    n_mc = int(n_simulations)
+    retrieval_samples = np.full((n_mc, signal.size), np.nan, dtype=np.float64)
+    factor_samples = np.full(n_mc, np.nan, dtype=np.float64)
+    boundary_samples = np.full(n_mc, np.nan, dtype=np.float64)
     successful = 0
 
-    for simulation in range(int(n_simulations)):
+    for simulation in range(n_mc):
         perturbed = signal.copy()
-        perturbed[backward_slice] += rng.normal(
-            loc=0.0,
-            scale=error[backward_slice],
-        )
+        perturbed[perturb_slice] += rng.normal(0.0, error[perturb_slice])
         if np.any(~np.isfinite(perturbed[backward_slice])) or np.any(perturbed[backward_slice] <= 0.0):
             continue
+        if np.any(~np.isfinite(perturbed[window_slice])) or np.any(perturbed[window_slice] <= 0.0):
+            continue
 
-        factor = _origin_factor(
-            perturbed[window_slice],
-            molecular_signal[window_slice],
-        )
+        factor = _origin_factor(perturbed[window_slice], molecular_signal[window_slice])
         if not np.isfinite(factor):
             continue
         fitted_boundary = float(factor * molecular_signal[reference])
@@ -204,7 +192,9 @@ def window_fitted_boundary_monte_carlo(
         successful += 1
 
     if successful < 2:
-        raise ValueError("Fewer than two valid Monte Carlo realizations survived the strict backward-support checks.")
+        raise ValueError(
+            "Fewer than two valid Monte Carlo realizations survived strict support checks."
+        )
 
     beta_mean, beta_std = _nanmean_std(retrieval_samples)
     valid_factors = factor_samples[np.isfinite(factor_samples)]
@@ -219,5 +209,5 @@ def window_fitted_boundary_monte_carlo(
         boundary_signal_mean=float(np.mean(valid_boundaries)),
         boundary_signal_std=float(np.std(valid_boundaries, ddof=0)),
         successful_simulations=int(successful),
-        requested_simulations=int(n_simulations),
+        requested_simulations=n_mc,
     )
