@@ -1,0 +1,49 @@
+{
+  "measurement_id": "20251107sapm",
+  "evidence_type": "offline_vertical_aggregation_support_edge_experiment",
+  "scientific_scope": "R&D_only_productive_native_grid_unchanged",
+  "active_baseline_level2_sha256": "bba3b454387ef34c9b4bee3b0ab69e286e611cc44f9a4a6358b779f6d9f236d8",
+  "question": "Do declared 60 m / 120 m non-overlapping pre-retrieval aggregates reduce the weak-bin Monte Carlo path failures seen near the nominal native-grid support edge without hiding the dependence/resolution trade?",
+  "native_support_edge_reference_targets_m": {"355": 12176.25, "532": 12393.75},
+  "aggregation_semantics": {
+    "native_spacing_m": 7.5,
+    "widths_m": [60.0, 120.0],
+    "bins_per_group": [8, 16],
+    "signal": "arithmetic mean of complete non-overlapping source groups; no interpolation/padding",
+    "molecular_backscatter": "arithmetic group mean, matching existing synthetic KFS aggregation R&D",
+    "error_independent": "sqrt(sum(sigma_i^2))/N within each aggregate",
+    "error_fully_correlated": "sum(sigma_i)/N within each aggregate",
+    "mc_between_aggregate_bins": "independent Gaussian perturbations; the fully-correlated label applies only to the source-bin uncertainty combination within an aggregate and is not a full vertical covariance model",
+    "iterations": 300,
+    "random_seed": 143
+  },
+  "summary": [
+    {"width_m":60.0,"error_model":"independent_within_group","wavelength_nm":355,"coarse_reference_altitude_m":12150.0,"minimum_single_realization_path_survival_probability":0.9999999999997192,"minimum_mc_complete_fraction_across_blocks":1.0,"median_lower_0_6km_beta_relative_l2_vs_grouped_method_v4":0.02603},
+    {"width_m":60.0,"error_model":"independent_within_group","wavelength_nm":532,"coarse_reference_altitude_m":12390.0,"minimum_single_realization_path_survival_probability":0.9999999999990236,"minimum_mc_complete_fraction_across_blocks":1.0,"median_lower_0_6km_beta_relative_l2_vs_grouped_method_v4":0.04723},
+    {"width_m":60.0,"error_model":"fully_correlated_within_group","wavelength_nm":355,"coarse_reference_altitude_m":12150.0,"minimum_single_realization_path_survival_probability":0.98043,"minimum_mc_complete_fraction_across_blocks":0.98667,"median_lower_0_6km_beta_relative_l2_vs_grouped_method_v4":0.01754},
+    {"width_m":60.0,"error_model":"fully_correlated_within_group","wavelength_nm":532,"coarse_reference_altitude_m":12390.0,"minimum_single_realization_path_survival_probability":0.98128,"minimum_mc_complete_fraction_across_blocks":0.99667,"median_lower_0_6km_beta_relative_l2_vs_grouped_method_v4":0.05808},
+    {"width_m":120.0,"error_model":"independent_within_group","wavelength_nm":355,"coarse_reference_altitude_m":12180.0,"minimum_single_realization_path_survival_probability":1.0,"minimum_mc_complete_fraction_across_blocks":1.0,"median_lower_0_6km_beta_relative_l2_vs_grouped_method_v4":0.03010},
+    {"width_m":120.0,"error_model":"independent_within_group","wavelength_nm":532,"coarse_reference_altitude_m":12420.0,"minimum_single_realization_path_survival_probability":1.0,"minimum_mc_complete_fraction_across_blocks":1.0,"median_lower_0_6km_beta_relative_l2_vs_grouped_method_v4":0.05178},
+    {"width_m":120.0,"error_model":"fully_correlated_within_group","wavelength_nm":355,"coarse_reference_altitude_m":12180.0,"minimum_single_realization_path_survival_probability":0.99037,"minimum_mc_complete_fraction_across_blocks":0.99333,"median_lower_0_6km_beta_relative_l2_vs_grouped_method_v4":0.02101},
+    {"width_m":120.0,"error_model":"fully_correlated_within_group","wavelength_nm":532,"coarse_reference_altitude_m":12420.0,"minimum_single_realization_path_survival_probability":0.98825,"minimum_mc_complete_fraction_across_blocks":0.98667,"median_lower_0_6km_beta_relative_l2_vs_grouped_method_v4":0.05290}
+  ],
+  "comparison_to_native_support_edge": {
+    "native_exact_boundary_worst_mc_complete_fraction": {"355": 0.19333, "532": 0.13333},
+    "finding": "Aggregation strongly reduces weak-bin sign failures at the support-edge probes in this event. The improvement is strongest under independent source-bin errors but remains large under the fully-correlated-within-group error bound."
+  },
+  "interpretation": [
+    "The native support-edge failure is consistent with many weak isolated/short-cluster bins rather than one extended missing layer, so strict averaging can improve sign robustness without interpolating across gaps.",
+    "60 m and 120 m both materially improve path completeness; this event does not establish a scientifically preferred width.",
+    "Under the conservative fully-correlated-within-group uncertainty amplitude, some blocks still lose one or more of 300 Monte Carlo realizations, so current all-simulations-valid productive semantics are not automatically satisfied.",
+    "Lower-column differences from grouped method-v4 products are sensitivity/regression differences, not truth errors. Existing controlled synthetic tests, not this real case, provide the primary evidence that 60/120 m aggregation does not itself create large coarse-grid KFS bias.",
+    "A full empirical vertical covariance model remains absent; neither uncertainty limit is promoted as the true dependence model."
+  ],
+  "decision": "Keep vertical aggregation as a promising declared-resolution P5.4 R&D path. Do not choose 60 m or 120 m productively and do not change method v4.",
+  "next_gate": [
+    "use controlled correlated-noise families to bracket aggregation support under explicit covariance rather than only two limits",
+    "compare narrow/broad aerosol-layer truth preservation at 60/120 m with the same support-edge experiment design",
+    "repeat observational support-edge aggregation on a materially different SPU regime",
+    "only after these gates consider an experimental aggregated high-column backbone"
+  ],
+  "local_detailed_analysis_sha256": "211e8923821108d5c60c40bbbbcb5a86740dc9e215262c89a59b9ca135386b66"
+}
