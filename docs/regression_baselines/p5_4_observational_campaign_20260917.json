@@ -1,1 +1,67 @@
-{"placeholder":"will_replace"}
+{
+  "evidence_type": "p5_4_observational_campaign_review",
+  "created_date": "2026-09-17",
+  "source_package": {
+    "filename": "02-processed_dataa.zip",
+    "sha256": "017be4afc3607b4a4df417ca510d672bffb0ecc52733f55f7a2dfc256707cf43"
+  },
+  "scope": {
+    "level2_products_reviewed": 11,
+    "qa_and_quicklook_images": 256,
+    "common_source_revision": "831ac2f4666c670fb3fec877fd581903a397a60d",
+    "productive_identity": "schema_v3_method_v4_backward_kfs",
+    "source_selection_caveat": "All successfully processed wavelength blocks in the supplied campaign selected post-QA analog single-channel fallback. This campaign therefore does not validate glued or photon-counting high-column behavior.",
+    "lineage_caveat": "These products predate the later block-local KFS input-rejection robustness fix. Historical wavelength-fatal ref_idx failures remain evidence of old behavior, not current-head expected behavior.",
+    "label_caveat": "Atmospheric labels are user-supplied observational annotations, not independent aerosol/cloud ground truth."
+  },
+  "case_summary": [
+    {"id":"20240621sant","label":"adjacent_unlabeled","blocks":18,"wavelength":"355","retrieval":"18/18","reference_median_m":6907.5,"first_contiguous_all_block_ceiling_m":16316.25,"near_10km_gap_free_blocks":18,"near_10km_min_all300_positive_probability":1.0,"note":"532 failed under historical ref_idx exception handling"},
+    {"id":"20240902sant","label":"biomass_burning_morning","blocks":7,"wavelength":"532","retrieval":"4/7","reference_median_m":5906.25,"first_contiguous_all_block_ceiling_m":6056.25,"near_10km_gap_free_blocks":0,"near_10km_min_all300_positive_probability":0.0,"note":"355 failed under historical ref_idx exception handling"},
+    {"id":"20241202saam","label":"low_cloud_morning","blocks":7,"wavelength":"355","retrieval":"7/7","reference_median_m":5583.75,"first_contiguous_all_block_ceiling_m":6198.75,"near_10km_probe_altitude_m":6896.25,"near_10km_min_all300_positive_probability":0.0030138299010251937},
+    {"id":"20241202saam","label":"low_cloud_morning","blocks":7,"wavelength":"532","retrieval":"6/7","reference_median_m":5906.25,"first_contiguous_all_block_ceiling_m":6138.75,"near_10km_probe_altitude_m":6138.75,"near_10km_min_all300_positive_probability":1.807895190409338e-10},
+    {"id":"20250509sant","label":"high_cloud_night","blocks":5,"wavelength":"355","retrieval":"5/5","reference_median_m":5628.75,"first_contiguous_all_block_ceiling_m":12311.25,"near_10km_gap_free_blocks":5,"near_10km_min_all300_positive_probability":0.9116502309316029},
+    {"id":"20250509sant","label":"high_cloud_night","blocks":5,"wavelength":"532","retrieval":"5/5","reference_median_m":6153.75,"first_contiguous_all_block_ceiling_m":12131.25,"near_10km_gap_free_blocks":5,"near_10km_min_all300_positive_probability":0.8022353838267071},
+    {"id":"20250510sant","label":"adjacent_unlabeled","blocks":15,"wavelength":"355","retrieval":"15/15","reference_median_m":5718.75,"first_contiguous_all_block_ceiling_m":9416.25,"near_10km_probe_altitude_m":9416.25,"near_10km_min_all300_positive_probability":0.9999999999999334},
+    {"id":"20250510sant","label":"adjacent_unlabeled","blocks":15,"wavelength":"532","retrieval":"15/15","reference_median_m":5778.75,"first_contiguous_all_block_ceiling_m":9341.25,"near_10km_probe_altitude_m":9341.25,"near_10km_min_all300_positive_probability":1.0},
+    {"id":"20250521sapm","label":"clean_morning_autumn_user_date_2025-05-20","blocks":9,"wavelength":"355","retrieval":"6/9","reference_median_m":5696.25,"first_contiguous_all_block_ceiling_m":5553.75,"near_10km_probe_altitude_m":8733.75,"near_10km_gap_free_blocks":6,"near_10km_min_all300_positive_probability":0.0},
+    {"id":"20250521sapm","label":"clean_morning_autumn_user_date_2025-05-20","blocks":9,"wavelength":"532","retrieval":"5/9","reference_median_m":5696.25,"first_contiguous_all_block_ceiling_m":6093.75,"near_10km_probe_altitude_m":8643.75,"near_10km_gap_free_blocks":7,"near_10km_min_all300_positive_probability":0.0},
+    {"id":"20250628sant","label":"adjacent_unlabeled","blocks":4,"wavelength":"355","retrieval":"4/4","reference_median_m":5625.0,"first_contiguous_all_block_ceiling_m":12146.25,"near_10km_gap_free_blocks":4,"near_10km_min_all300_positive_probability":0.9999965770265722},
+    {"id":"20250628sant","label":"adjacent_unlabeled","blocks":4,"wavelength":"532","retrieval":"4/4","reference_median_m":6982.5,"first_contiguous_all_block_ceiling_m":13098.75,"near_10km_gap_free_blocks":4,"near_10km_min_all300_positive_probability":0.8678185567497776},
+    {"id":"20250629sant","label":"clean_night","blocks":14,"wavelength":"355","retrieval":"14/14","reference_median_m":5748.75,"first_contiguous_all_block_ceiling_m":11681.25,"near_10km_gap_free_blocks":14,"near_10km_min_all300_positive_probability":0.8097458934723829},
+    {"id":"20250629sant","label":"clean_night","blocks":14,"wavelength":"532","retrieval":"14/14","reference_median_m":6078.75,"first_contiguous_all_block_ceiling_m":12138.75,"near_10km_gap_free_blocks":14,"near_10km_min_all300_positive_probability":0.999936499186866},
+    {"id":"20250716saam","label":"clean_morning_winter","blocks":1,"wavelength":"355","retrieval":"1/1","reference_median_m":5868.75,"first_contiguous_all_block_ceiling_m":12753.75,"near_10km_min_all300_positive_probability":0.8211085262343114,"note":"single block; no temporal-persistence evidence"},
+    {"id":"20250716saam","label":"clean_morning_winter","blocks":1,"wavelength":"532","retrieval":"1/1","reference_median_m":6281.25,"first_contiguous_all_block_ceiling_m":13046.25,"near_10km_min_all300_positive_probability":0.9099793171508191,"note":"single block; no temporal-persistence evidence"},
+    {"id":"20250716sapm","label":"same_day_afternoon_unlabeled","blocks":8,"wavelength":"355","retrieval":"8/8","reference_median_m":5587.5,"first_contiguous_all_block_ceiling_m":8576.25,"near_10km_gap_free_blocks":6,"near_10km_min_all300_positive_probability":0.0},
+    {"id":"20250716sapm","label":"same_day_afternoon_unlabeled","blocks":8,"wavelength":"532","retrieval":"8/8","reference_median_m":5647.5,"first_contiguous_all_block_ceiling_m":8583.75,"near_10km_gap_free_blocks":7,"near_10km_min_all300_positive_probability":0.0},
+    {"id":"20251107sapm","label":"clean_morning_spring","blocks":5,"wavelength":"355","retrieval":"5/5","reference_median_m":5741.25,"first_contiguous_all_block_ceiling_m":10316.25,"near_10km_gap_free_blocks":5,"near_10km_min_all300_positive_probability":6.922387619369858e-218},
+    {"id":"20251107sapm","label":"clean_morning_spring","blocks":5,"wavelength":"532","retrieval":"5/5","reference_median_m":5786.25,"first_contiguous_all_block_ceiling_m":10383.75,"near_10km_gap_free_blocks":5,"near_10km_min_all300_positive_probability":0.0}
+  ],
+  "cross_case_findings": {
+    "clean_does_not_imply_high_column_support": "Clean-labelled/visually unobstructed cases range from robust near-10-km support (20250628/29) to fragile paths (20250521 and 20250716 afternoon).",
+    "high_cloud_candidate_reentry": "20250509sant contains a strong layer near 14.36-14.37 km. All-block accepted candidates form a lower connected run ending near 12.1-12.3 km, then disconnected accepted islands reappear above about 15.3 km. Acceptance plus persistence alone cannot certify a molecular boundary.",
+    "candidate_topology": "The first contiguous all-block accepted run is useful as a threshold-free topology diagnostic, but it is not authorized as a productive boundary rule because isolated noisy gaps and strict all-block persistence can truncate otherwise informative regions.",
+    "sequence_20250509_10": "Candidate topology changes materially from the high-cloud night to the adjacent record: disconnected high-altitude re-entry on 20250509 versus a single all-block connected run ending near 9.3-9.4 km on 20250510.",
+    "sequence_20250628_29": "Both adjacent night records support nominal near-10-km paths in all blocks; first connected ceilings are about 12.15/13.10 km on 20250628 and 11.68/12.14 km on 20250629 for 355/532 nm.",
+    "sequence_20250716": "The morning record has only one block and cannot establish temporal persistence. The later eight-block record is much more fragile around 10 km.",
+    "scc_semantics": "20250629sant_scc.nc is a MILGRAU Level-0 SCC-compatible raw input, not an SCC/ELDA optical retrieval output, so it is not an external optical comparison.",
+    "lineage_20251107": "The campaign 20251107 Level-1 SHA differs from the previously active baseline; it is not a pure Level-2 code-regression comparison."
+  },
+  "empirical_vertical_dependence_20250629": {
+    "method": "Block-demeaned Level-1 range-corrected-signal residuals divided by supplied per-profile uncertainty, using 20-min floor blocks and the existing vertical_noise_autocorrelation R&D semantics.",
+    "block_profile_counts": [39,39,40,39,39,40,39,39,39,40,39,39,40,9],
+    "355_AN": {
+      "5_10km": {"lag1_7p5m":0.1345709551,"snr_gain_60m":2.4961529050,"snr_gain_120m":3.3847001839},
+      "10_15km": {"lag1_7p5m":0.1032660302,"snr_gain_60m":2.5139594015,"snr_gain_120m":3.3734718369},
+      "15_20km": {"lag1_7p5m":0.0960029148,"snr_gain_60m":2.5165729729,"snr_gain_120m":3.3687327749}
+    },
+    "532_AN": {
+      "5_10km": {"lag1_7p5m":0.1326488306,"snr_gain_60m":2.4903891557,"snr_gain_120m":3.3660885976},
+      "10_15km": {"lag1_7p5m":0.1146464357,"snr_gain_60m":2.4667762054,"snr_gain_120m":3.3124656004},
+      "15_20km": {"lag1_7p5m":0.0977047287,"snr_gain_60m":2.5235647794,"snr_gain_120m":3.4020314626}
+    },
+    "interpretation": "In this one clean-night analog case, 5-20 km vertical dependence is much closer to the independent limit than the fully correlated limit: lag-1 correlation is about 0.10-0.13 and most longer-lag correlations are only a few percent. The implied 60/120 m SNR gains remain below sqrt(8)/sqrt(16). Residual atmospheric variability can contribute, so this is not a station-wide covariance law."
+  },
+  "missing_from_supplied_zip": ["2024-05-22 high-cloud morning", "01-27 clean summer morning (year unspecified)"],
+  "decision": "Keep productive schema v3 / method v4 unchanged. Candidate topology, empirical covariance and aggregation remain R&D diagnostics. No high-column boundary, cloud veto, continuity gate, aggregation width or method-v5 promotion is authorized from this campaign alone.",
+  "next_gate": "Run 60/120 m aggregation and lower-column-preservation experiments across favorable and unfavorable campaign cases under explicit dependence assumptions; also obtain at least one glued or photon-counting-dominant real case before a productive high-column backbone decision."
+}
