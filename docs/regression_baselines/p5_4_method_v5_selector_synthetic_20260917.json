@@ -1,0 +1,69 @@
+{
+  "evidence_date": "2026-09-17",
+  "scope": "method-v5 R&D automatic high-column reference selection",
+  "productive_method_unchanged": "schema-v3/method-v4",
+  "implementation_commits": {
+    "selector_matrix": "b8700ccc77cb5b12472af5d7ae66a953d7e739a1",
+    "cross_wavelength_challenge": "face851e196ae7a09a0ad614e3118658f13b898c"
+  },
+  "ci_runs": {
+    "selector_matrix": 35264565914,
+    "cross_wavelength_challenge": 35264752788
+  },
+  "candidate_filters": [
+    "native-grid Rayleigh minimum QA",
+    "continuous nominal progressive-grid KFS path",
+    "caller-declared high-column altitude domain"
+  ],
+  "selectors_compared": [
+    "highest accepted/admissible altitude",
+    "minimum existing Rayleigh diagnostic cost relative_slope+relative_variance"
+  ],
+  "primary_conclusions": [
+    "Always selecting the highest accepted/admissible reference is rejected by controlled synthetic truth: it repeatedly selected about 24.47 km and produced larger lower-column errors than minimum-Rayleigh-cost selection.",
+    "Minimum existing Rayleigh diagnostic cost after QA and path admissibility is retained as the first method-v5 selector architecture; no new molecular-purity score is introduced.",
+    "No tested fixed lower altitude (8, 10 or 12 km) guarantees molecular purity. Broad smooth aerosol contamination can make a different floor appear preferable when the contamination altitude is moved.",
+    "The first prototype uses 10 km as a configurable search-domain lower bound, not as an aerosol-free criterion. Residual boundary aerosol sensitivity remains mandatory.",
+    "The 355/532 cross-wavelength synthetic comparison normalizes noise to each synthetic wavelength and therefore tests algorithmic behavior, not the real detector/noise difference between SPU channels."
+  ],
+  "first_matrix_532nm": {
+    "clean_high_column": {
+      "highest": {"median_reference_m": 24468.75, "median_relative_l2_0p6_6km": 0.096554, "median_abs_column_error": 0.116286},
+      "minimum_cost_floor_8000": {"median_reference_m": 8801.25, "median_relative_l2_0p6_6km": 0.038054, "median_abs_column_error": 0.027747},
+      "minimum_cost_floor_10000": {"median_reference_m": 10751.25, "median_relative_l2_0p6_6km": 0.038330, "median_abs_column_error": 0.021818},
+      "minimum_cost_floor_12000": {"median_reference_m": 12296.25, "median_relative_l2_0p6_6km": 0.040978, "median_abs_column_error": 0.032628}
+    },
+    "broad_residual_10km": {
+      "highest": {"median_reference_m": 24468.75, "median_relative_l2_0p6_6km": 0.093876, "median_abs_column_error": 0.112630},
+      "minimum_cost_floor_8000": {"median_reference_m": 9408.75, "median_relative_l2_0p6_6km": 0.088499, "median_abs_column_error": 0.106460},
+      "minimum_cost_floor_10000": {"median_reference_m": 10406.25, "median_relative_l2_0p6_6km": 0.077844, "median_abs_column_error": 0.091484},
+      "minimum_cost_floor_12000": {"median_reference_m": 13346.25, "median_relative_l2_0p6_6km": 0.044492, "median_abs_column_error": 0.040247}
+    },
+    "high_cloud_14p5km": {
+      "highest": {"median_reference_m": 24468.75, "median_relative_l2_0p6_6km": 0.093089, "median_abs_column_error": 0.111856},
+      "minimum_cost_floor_10000": {"median_reference_m": 10751.25, "median_relative_l2_0p6_6km": 0.037469, "median_abs_column_error": 0.021074}
+    },
+    "stratospheric_aerosol_22km": {
+      "highest": {"median_reference_m": 24468.75, "median_relative_l2_0p6_6km": 0.078500, "median_abs_column_error": 0.090386},
+      "minimum_cost_floor_10000": {"median_reference_m": 10751.25, "median_relative_l2_0p6_6km": 0.040395, "median_abs_column_error": 0.023568}
+    }
+  },
+  "cross_wavelength_challenge": {
+    "355nm_clean": {
+      "floor_8000": {"median_reference_m": 8958.75, "median_relative_l2": 0.070758, "median_abs_column_error": 0.008227},
+      "floor_10000": {"median_reference_m": 10361.25, "median_relative_l2": 0.070352, "median_abs_column_error": 0.001628},
+      "floor_12000": {"median_reference_m": 12161.25, "median_relative_l2": 0.070416, "median_abs_column_error": 0.002031}
+    },
+    "532nm_clean": {
+      "floor_8000": {"median_reference_m": 8958.75, "median_relative_l2": 0.036168, "median_abs_column_error": 0.022251},
+      "floor_10000": {"median_reference_m": 10361.25, "median_relative_l2": 0.033778, "median_abs_column_error": 0.015481},
+      "floor_12000": {"median_reference_m": 12461.25, "median_relative_l2": 0.038143, "median_abs_column_error": 0.026377}
+    },
+    "532nm_broad_residual_13km": {
+      "floor_8000": {"median_reference_m": 8666.25, "median_relative_l2": 0.039208, "median_abs_column_error": 0.030145},
+      "floor_10000": {"median_reference_m": 11096.25, "median_relative_l2": 0.087985, "median_abs_column_error": 0.106138},
+      "floor_12000": {"median_reference_m": 12431.25, "median_relative_l2": 0.088827, "median_abs_column_error": 0.106878}
+    }
+  },
+  "interpretation_boundary": "These experiments compare algorithmic policies against controlled truth. They do not establish that any fixed altitude is aerosol-free in the real atmosphere."
+}
