@@ -1,9 +1,8 @@
 """Current LEBEAR orchestration and traceability regression tests.
 
-The original round-1 characterization suite duplicated kernel-level science tests
-and froze pre-strict configuration/status contracts. Scientific kernels now live
-in dedicated test modules; this file guards the current LEBEAR orchestration
-boundary only.
+Scientific kernels live in dedicated modules; this file guards the productive
+method-v5 orchestration boundary, incremental identity, batch continuation and
+atomic writing behavior.
 """
 
 from __future__ import annotations
@@ -62,7 +61,6 @@ def _write_completeness_shell(
             "level2_retrieval_method_version": LEVEL2_RETRIEVAL_METHOD_VERSION,
             "product_completeness": completeness,
             "product_status": status,
-            "KFS_Mode": "backward",
         },
     ).to_netcdf(path)
     return path
@@ -110,7 +108,7 @@ def test_attempt_wavelength_keeps_system_failure_fatal(monkeypatch) -> None:
     assert attempt.diagnostic.wavelength_nm == 355
 
 
-def test_level2_currentness_requires_complete_requested_wavelength_set(
+def test_level2_currentness_requires_requested_set_and_valid_product_status(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -127,28 +125,29 @@ def test_level2_currentness_requires_complete_requested_wavelength_set(
     )
 
     monkeypatch.setattr(lebear, "get_wavelengths_to_process", lambda _config: [355, 532])
-    monkeypatch.setattr(lebear, "get_kfs_mode", lambda _config: "backward")
     monkeypatch.setattr(lebear, "elastic_inversion_algorithm_metadata", lambda: {})
     monkeypatch.setattr(lebear, "gluing_selection_score_metadata", lambda: {})
-    monkeypatch.setattr(lebear, "validate_level2_contract", lambda _ds: None)
+    monkeypatch.setattr(
+        lebear, "validate_method_v5_level2_contract", lambda _ds: None
+    )
     monkeypatch.setattr(lebear, "output_is_current", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(lebear, "file_sha256", lambda _path: "")
 
     assert lebear.level2_output_is_current(level1, output, {})
 
     with xr.open_dataset(output) as opened:
-        partial = opened.load()
-    partial.attrs["product_completeness"] = "partial"
-    partial.attrs["product_status"] = "partial_failure"
-    partial["processed_wavelengths"] = (
+        invalid = opened.load()
+    invalid.attrs["product_completeness"] = "partial"
+    invalid.attrs["product_status"] = "partial_failure"
+    invalid["processed_wavelengths"] = (
         ("processed_wavelength",),
         np.asarray([532], dtype=np.int32),
     )
-    partial["failed_wavelengths"] = (
+    invalid["failed_wavelengths"] = (
         ("failed_wavelength",),
         np.asarray([355], dtype=np.int32),
     )
-    partial.to_netcdf(output, mode="w")
+    invalid.to_netcdf(output, mode="w")
 
     assert not lebear.level2_output_is_current(level1, output, {})
 
