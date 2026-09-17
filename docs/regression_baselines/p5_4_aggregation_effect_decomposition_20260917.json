@@ -1,0 +1,28 @@
+{
+  "evidence_type": "p5_4_aggregation_effect_decomposition_rnd",
+  "created_date": "2026-09-17",
+  "experiment": "For every successful campaign block/wavelength, compare deterministic native-grid KFS to the persisted native MC mean; then compare deterministic 60/120 m coarse-grid KFS at the productive boundary to the grouped native deterministic solution; finally compare aggregated MC mean to aggregated deterministic KFS. This separates the coarse representation/boundary-cell effect from the nonlinear Monte Carlo mean already present in method v4.",
+  "results": {
+    "60m": {
+      "cases": 150,
+      "maximum_boundary_cell_shift_m": 26.25,
+      "deterministic_coarse_vs_grouped_native_deterministic_relative_l2": {"median": 0.0461370876, "p95": 0.2200470031, "maximum": 0.4237964058},
+      "aggregated_mc_vs_aggregated_deterministic_relative_l2": {"median": 0.1309903562, "p95": 0.3482004715, "maximum": 0.8810443592},
+      "persisted_native_mc_vs_native_deterministic_relative_l2": {"median": 0.1342085468, "p95": 0.3250007221, "maximum": 0.6124137531}
+    },
+    "120m": {
+      "cases": 150,
+      "maximum_boundary_cell_shift_m": 56.25,
+      "deterministic_coarse_vs_grouped_native_deterministic_relative_l2": {"median": 0.0564291760, "p95": 0.2121164184, "maximum": 0.5405480909},
+      "aggregated_mc_vs_aggregated_deterministic_relative_l2": {"median": 0.1294735621, "p95": 0.3501038343, "maximum": 0.9948898474},
+      "persisted_native_mc_vs_native_deterministic_relative_l2": {"median": 0.1342085468, "p95": 0.3250007221, "maximum": 0.6124137531}
+    }
+  },
+  "interpretation": [
+    "The nonlinear partial-Monte-Carlo mean differs materially from deterministic KFS even on the productive native grid; this is not a new aggregation artifact.",
+    "The aggregation-specific deterministic coarse-representation plus boundary-cell effect is about 4.6% median at 60 m and 5.6% median at 120 m, consistent with the approximately 5-6% median same-boundary MC-vs-MC campaign differences.",
+    "The aggregation-specific effect is strongly event/block dependent, with p95 around 21-22% and maxima above 40%, so a median-only preservation argument would be unsafe.",
+    "High-boundary native-grid experiments show larger campaign-wide lower-column changes than this aggregation-only structural effect, making boundary-condition validity the dominant next scientific question."
+  ],
+  "decision": "Treat aggregation discretization/boundary-cell representation and high-boundary validity as separate R&D dimensions. Do not tune an aggregation width to compensate for high-boundary bias."
+}
