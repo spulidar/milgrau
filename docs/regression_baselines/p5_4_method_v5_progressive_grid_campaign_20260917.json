@@ -1,0 +1,61 @@
+{
+  "evidence_type": "method_v5_progressive_grid_campaign_rnd",
+  "date": "2026-09-17",
+  "productive_method_unchanged": "schema_v3_method_v4",
+  "progressive_grid_schedule": [
+    {"min_altitude_m": 0.0, "requested_resolution_m": 7.5},
+    {"min_altitude_m": 6000.0, "requested_resolution_m": 15.0},
+    {"min_altitude_m": 10000.0, "requested_resolution_m": 30.0},
+    {"min_altitude_m": 15000.0, "requested_resolution_m": 60.0},
+    {"min_altitude_m": 20000.0, "requested_resolution_m": 60.0},
+    {"min_altitude_m": 25000.0, "requested_resolution_m": 100.0, "spu_effective_resolution_m": 97.5}
+  ],
+  "aggregation_semantics": {
+    "source_groups": "strict_contiguous_nonoverlapping",
+    "missing_or_nonfinite_source_sample": "invalidates_cell",
+    "finite_signed_background_subtracted_rcs": "may_be_averaged",
+    "kfs_cell_requirement": "aggregated_rcs_finite_and_positive",
+    "gap_filling": false
+  },
+  "campaign": {"block_wavelength_count": 161, "heterogeneous_level2_products": 11},
+  "twenty_minute_block_contiguous_positive_path_top_m": {
+    "minimum": 6772.5,
+    "p10": 9802.5,
+    "p25": 12892.5,
+    "median": 14572.5,
+    "p75": 17070.0,
+    "p90": 21712.5,
+    "maximum": 24986.25,
+    "count_ge_10km": 143,
+    "count_ge_12km": 133,
+    "count_ge_15km": 69,
+    "count_ge_20km": 18
+  },
+  "full_measurement_mean_contiguous_positive_path_top_m": {
+    "profile_count": 20,
+    "minimum": 9622.5,
+    "median": 15476.25,
+    "maximum": 24633.75,
+    "count_ge_15km": 10,
+    "count_ge_20km": 1
+  },
+  "temporal_window_sensitivity": [
+    {"minutes": 20, "retrieval_windows": 159, "median_top_m": 14812.5, "count_ge_15km": 70, "count_ge_20km": 18},
+    {"minutes": 40, "retrieval_windows": 87, "median_top_m": 14872.5, "count_ge_15km": 41, "count_ge_20km": 9},
+    {"minutes": 60, "retrieval_windows": 59, "median_top_m": 14962.5, "count_ge_15km": 29, "count_ge_20km": 6}
+  ],
+  "high_reference_20_25km_probe": {
+    "block_wavelengths_with_native_rayleigh_accepted_candidate": 117,
+    "progressive_grid_runs_with_selected_boundary_cell_usable": 78,
+    "nominal_contiguous_backward_paths": 18,
+    "interpretation": "A fixed 20-25 km boundary target is not broadly supported at <=100 m vertical resolution on 20 min blocks. High candidate existence remains much more common than a continuous usable inversion path."
+  },
+  "decisions_supported": [
+    "preserve native 7.5 m representation through the established lower column below 6 km",
+    "begin progressive aggregation above 6 km",
+    "retain 100 m as a requested maximum; current 7.5 m SPU grid realizes 97.5 m",
+    "do not require or promise a 20-25 km boundary for every block",
+    "retain 20 min as the initial temporal baseline because 40-60 min did not materially raise the campaign-wide median continuous top",
+    "select any final MC valid-fraction threshold from synthetic coverage rather than target altitude"
+  ]
+}
