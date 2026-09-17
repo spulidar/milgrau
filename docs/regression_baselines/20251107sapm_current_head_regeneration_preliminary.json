@@ -1,0 +1,51 @@
+{
+  "measurement_id": "20251107sapm",
+  "evidence_type": "current_head_regeneration_preliminary_not_frozen_baseline",
+  "input_level2_file_sha256": "bba3b454387ef34c9b4bee3b0ab69e286e611cc44f9a4a6358b779f6d9f236d8",
+  "expected_frozen_level2_file_sha256": "32b793fc7874f850ee38273f7073c957194f87dd08fed1c340e96b976917a212",
+  "checksum_matches_frozen_baseline": false,
+  "current_source_repository_revision": "fa1cae20ec1ac28bf2955deb5a93f9a3ed56e663",
+  "frozen_source_repository_revision": "b68e4d812a37c2a003e49e30c15c2e112e4c8360",
+  "current_source_code_sha256": "091d733499a9dd3026af6f7869ea1db2a1e57546ebde9d58c2009985ddb033e5",
+  "current_source_level1_sha256": "7b49c9deb93e89b103dba95455d854fcebb97b81292a18269edd1bea7a5ee342",
+  "frozen_source_level1_sha256": "52663cbfd7863db6d38bc6596616c672c573c19bc55a3c5e72403abbc4ba0b3f",
+  "same_level1_content_as_frozen": false,
+  "level2_product_schema_version": "3",
+  "level2_retrieval_method_version": "4",
+  "catalogue_summary": {
+    "total_candidate_slots": 25340,
+    "evaluated_count": 25340,
+    "accepted_count": 16331,
+    "frozen_accepted_count": 16224,
+    "accepted_count_delta": 107,
+    "selected_count": 10
+  },
+  "block_wavelength_comparison": [
+    {"block_index":0,"wavelength_nm":355,"current_accepted_count":1547,"frozen_accepted_count":1563,"accepted_count_delta":-16,"current_selected_reference_altitude_m":5876.25,"frozen_selected_reference_altitude_m":5748.75,"selected_reference_altitude_delta_m":127.5},
+    {"block_index":0,"wavelength_nm":532,"current_accepted_count":1672,"frozen_accepted_count":1646,"accepted_count_delta":26,"current_selected_reference_altitude_m":5831.25,"frozen_selected_reference_altitude_m":5793.75,"selected_reference_altitude_delta_m":37.5},
+    {"block_index":1,"wavelength_nm":355,"current_accepted_count":1601,"frozen_accepted_count":1597,"accepted_count_delta":4,"current_selected_reference_altitude_m":5711.25,"frozen_selected_reference_altitude_m":5606.25,"selected_reference_altitude_delta_m":105.0},
+    {"block_index":1,"wavelength_nm":532,"current_accepted_count":2066,"frozen_accepted_count":2053,"accepted_count_delta":13,"current_selected_reference_altitude_m":5846.25,"frozen_selected_reference_altitude_m":5816.25,"selected_reference_altitude_delta_m":30.0},
+    {"block_index":2,"wavelength_nm":355,"current_accepted_count":1584,"frozen_accepted_count":1556,"accepted_count_delta":28,"current_selected_reference_altitude_m":6123.75,"frozen_selected_reference_altitude_m":6101.25,"selected_reference_altitude_delta_m":22.5},
+    {"block_index":2,"wavelength_nm":532,"current_accepted_count":1588,"frozen_accepted_count":1583,"accepted_count_delta":5,"current_selected_reference_altitude_m":5816.25,"frozen_selected_reference_altitude_m":5748.75,"selected_reference_altitude_delta_m":67.5},
+    {"block_index":3,"wavelength_nm":355,"current_accepted_count":1591,"frozen_accepted_count":1588,"accepted_count_delta":3,"current_selected_reference_altitude_m":6078.75,"frozen_selected_reference_altitude_m":5996.25,"selected_reference_altitude_delta_m":82.5},
+    {"block_index":3,"wavelength_nm":532,"current_accepted_count":1543,"frozen_accepted_count":1528,"accepted_count_delta":15,"current_selected_reference_altitude_m":6153.75,"frozen_selected_reference_altitude_m":5861.25,"selected_reference_altitude_delta_m":292.5},
+    {"block_index":4,"wavelength_nm":355,"current_accepted_count":1541,"frozen_accepted_count":1520,"accepted_count_delta":21,"current_selected_reference_altitude_m":6198.75,"frozen_selected_reference_altitude_m":5621.25,"selected_reference_altitude_delta_m":577.5},
+    {"block_index":4,"wavelength_nm":532,"current_accepted_count":1598,"frozen_accepted_count":1590,"accepted_count_delta":8,"current_selected_reference_altitude_m":6281.25,"frozen_selected_reference_altitude_m":6318.75,"selected_reference_altitude_delta_m":-37.5}
+  ],
+  "accepted_candidate_snr_by_altitude_band_current": [
+    {"wavelength_nm":355,"altitude_band_m":[5000,10000],"accepted_candidate_count":3000,"snr_median":14.767664530736878},
+    {"wavelength_nm":355,"altitude_band_m":[10000,15000],"accepted_candidate_count":2898,"snr_median":3.137255217942298},
+    {"wavelength_nm":355,"altitude_band_m":[15000,20000],"accepted_candidate_count":1641,"snr_median":1.1971371348043927},
+    {"wavelength_nm":355,"altitude_band_m":[20000,25000],"accepted_candidate_count":325,"snr_median":0.9143627571387989},
+    {"wavelength_nm":532,"altitude_band_m":[5000,10000],"accepted_candidate_count":3000,"snr_median":15.928056004764596},
+    {"wavelength_nm":532,"altitude_band_m":[10000,15000],"accepted_candidate_count":2825,"snr_median":3.569967337334444},
+    {"wavelength_nm":532,"altitude_band_m":[15000,20000],"accepted_candidate_count":1739,"snr_median":1.3038626854173907},
+    {"wavelength_nm":532,"altitude_band_m":[20000,25000],"accepted_candidate_count":903,"snr_median":0.872069285492971}
+  ],
+  "interpretation": [
+    "This file is a valid schema-3/method-4 product generated from a newer repository revision, but it is not the checksum-matched frozen observational baseline.",
+    "Its Level 1 content identity differs from the frozen baseline, so catalogue and selected-reference differences cannot be attributed to Level 2 code drift alone.",
+    "Do not replace or rewrite the frozen regression evidence with this regeneration.",
+    "Retain this comparison as provenance evidence and obtain the checksum-matched frozen NetCDF before closing the P5.4 observational export gate."
+  ]
+}
