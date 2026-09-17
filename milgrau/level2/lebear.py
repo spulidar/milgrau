@@ -1,4 +1,4 @@
-"""LEBEAR Level 2 optical inversion orchestration."""
+"""LEBEAR Level 2 method-v5 optical inversion orchestration."""
 
 from __future__ import annotations
 
@@ -25,10 +25,7 @@ from milgrau.scientific import (
     elastic_inversion_algorithm_metadata,
 )
 from milgrau.level2.completeness import (
-    Level2ProductContract,
-    ProductCompleteness,
     WavelengthAttempt,
-    WavelengthAttemptStatus,
     WavelengthFailureCode,
     WavelengthFailureDiagnostic,
     WavelengthFailureStage,
@@ -44,9 +41,12 @@ from milgrau.level2.config import (
     get_wavelengths_to_process,
     incremental_enabled,
 )
-from milgrau.level2.dataset import build_level2_dataset
 from milgrau.level2.discovery import discover_level1_files
 from milgrau.level2.gluing import gluing_selection_score_metadata
+from milgrau.level2.method_v5_product import (
+    build_method_v5_level2_dataset,
+    get_method_v5_config,
+)
 from milgrau.level2.retrieval import RetrievalStageError, process_wavelength
 from milgrau.level2.qa import generate_level2_qa, level2_qa_enabled
 from milgrau.level2.time_window import subset_level1_time_window
@@ -61,7 +61,8 @@ def level2_output_is_current(
     stop_utc: str | None = None,
     output_tag: str | None = None,
 ) -> bool:
-    """Return whether one complete Level 2 output is intact and up to date."""
+    """Return whether one schema-4/method-v5 Level 2 output is intact and current."""
+    del start_utc, stop_utc, output_tag
     output = Path(output_path)
     if not output.is_file():
         return False
@@ -80,11 +81,8 @@ def level2_output_is_current(
                 != LEVEL2_RETRIEVAL_METHOD_VERSION
                 or str(ds.attrs.get("source_level1_sha256", ""))
                 != source_level1_sha256
-                or str(ds.attrs.get("product_completeness", "")) != "complete"
-                or str(ds.attrs.get("product_status", "")) != "success"
+                or str(ds.attrs.get("product_status", "")) not in {"success", "partial"}
                 or "requested_wavelengths" not in ds
-                or "processed_wavelengths" not in ds
-                or "failed_wavelengths" not in ds
             ):
                 return False
             if str(ds.attrs.get("KFS_Mode", "")).strip().lower() != expected_kfs_mode:
@@ -99,16 +97,10 @@ def level2_output_is_current(
                 for key, value in expected_gluing_metadata.items()
             ):
                 return False
-            requested_written = [
+            requested_written = sorted(
                 int(value) for value in np.asarray(ds["requested_wavelengths"].values).tolist()
-            ]
-            processed_written = [
-                int(value) for value in np.asarray(ds["processed_wavelengths"].values).tolist()
-            ]
-            failed_written = [
-                int(value) for value in np.asarray(ds["failed_wavelengths"].values).tolist()
-            ]
-            if requested_written != requested or processed_written != requested or failed_written != []:
+            )
+            if requested_written != requested:
                 return False
     except Exception:
         return False
@@ -156,7 +148,7 @@ def _lidar_ratio_source(config: Mapping[str, Any]) -> str:
 
 
 class FatalWavelengthProcessingError(RuntimeError):
-    """Signal that one wavelength exposed a global resource/runtime failure."""
+    """Retained legacy diagnostic exception for direct v4 helper tests."""
 
 
 def attempt_wavelength(
@@ -166,7 +158,7 @@ def attempt_wavelength(
     config: Mapping[str, Any],
     logger: logging.Logger,
 ) -> WavelengthAttempt:
-    """Isolate one requested wavelength and classify its scientific outcome."""
+    """Retained legacy one-wavelength diagnostic helper; LEBEAR itself uses v5."""
     wavelength_logger = bind_log_context(logger, stage=f"{wavelength_nm}nm")
     try:
         result = process_wavelength(ds_l1, wavelength_nm, altitude_m, config, wavelength_logger)
@@ -196,10 +188,10 @@ def attempt_wavelength(
             wavelength_nm=wavelength_nm,
             stage=WavelengthFailureStage.RETRIEVAL_VALIDATION,
             code=WavelengthFailureCode.NO_VALID_RETRIEVAL_BLOCK,
-            message="No block produced a valid Rayleigh plus backward KFS optical retrieval.",
+            message="No block produced a valid legacy Rayleigh plus backward KFS optical retrieval.",
             cause_summary="retrieval_success_flag contains no successful block",
         )
-        wavelength_logger.warning("no valid retrieval blocks")
+        wavelength_logger.warning("legacy helper produced no valid retrieval blocks")
         return WavelengthAttempt.recoverable_failure(diagnostic)
     fallback_blocks = int(
         np.asarray(result.gluing.single_channel_fallback_flag_block, dtype=np.int8).sum()
@@ -208,8 +200,21 @@ def attempt_wavelength(
         wavelength_logger.warning(
             "single-channel fallback used | blocks=%d/%d", fallback_blocks, total_blocks
         )
-    wavelength_logger.info("retrieval blocks=%d/%d", valid_blocks, total_blocks)
+    wavelength_logger.info("legacy retrieval blocks=%d/%d", valid_blocks, total_blocks)
     return WavelengthAttempt.success(result)
+
+
+def _product_execution_metadata(ds_l2: xr.Dataset) -> dict[str, Any]:
+    requested = [int(value) for value in np.asarray(ds_l2["requested_wavelengths"].values).tolist()]
+    processed = [int(value) for value in np.asarray(ds_l2["processed_wavelengths"].values).tolist()]
+    failed = [int(value) for value in np.asarray(ds_l2["failed_wavelengths"].values).tolist()]
+    return {
+        "requested_wavelengths": requested,
+        "processed_wavelengths": processed,
+        "failed_wavelengths": failed,
+        "product_completeness": str(ds_l2.attrs.get("product_completeness", "")),
+        "product_status": str(ds_l2.attrs.get("product_status", "")),
+    }
 
 
 def process_single_level1_file(
@@ -220,7 +225,7 @@ def process_single_level1_file(
     stop_utc: str | None = None,
     output_tag: str | None = None,
 ) -> ExecutionSummary:
-    """Generate one Level 2 product and report optional QA separately."""
+    """Generate one productive schema-4/method-v5 Level 2 product."""
     nc_path = Path(nc_file)
     save_id = logging_save_id(nc_path)
     file_logger = bind_log_context(logger, save_id=save_id)
@@ -232,73 +237,43 @@ def process_single_level1_file(
     kfs_cfg: dict[str, Any] = {}
     try:
         source_level1_sha256 = file_sha256(nc_path)
-        with xr.open_dataset(nc_path) as ds_l1:
-            ds_l1.load()
-            source_provenance = dict(ds_l1.attrs)
+        with xr.open_dataset(nc_path, cache=False) as ds_source:
+            source_provenance = dict(ds_source.attrs)
             stage = "level2.validation.input"
-            validate_level1_contract(ds_l1)
+            validate_level1_contract(ds_source)
             stage = "level2.time_window"
-            ds_l1, inferred_output_tag = subset_level1_time_window(ds_l1, start_utc, stop_utc)
+            ds_l1, inferred_output_tag = subset_level1_time_window(
+                ds_source, start_utc, stop_utc
+            )
             if output_tag is None:
                 output_tag = inferred_output_tag
+
             stage = "level2.configuration"
             wavelengths = canonical_wavelengths(get_wavelengths_to_process(config))
             get_kfs_mode(config)
             kfs_cfg = get_kfs_config(config)
             get_gluing_config(config)
             get_molecular_fit_config(config)
+            v5_cfg = get_method_v5_config(config)
             for wavelength in wavelengths:
                 get_lidar_ratio(config, wavelength, ds_l1["time"].values[0])
             bind_log_context(file_logger, stage="start").info(
-                "wavelengths=%s", ",".join(str(value) for value in wavelengths)
+                "method=v5 schema=4 wavelengths=%s tiers=%s",
+                ",".join(str(value) for value in wavelengths),
+                ",".join(f"{value / 1000.0:g}km" for value in v5_cfg.reference_tier_min_altitudes_m),
             )
+
             altitude_m = np.asarray(ds_l1["altitude"].values, dtype=np.float64)
             if np.nanmax(altitude_m) <= 100.0:
                 altitude_m = altitude_m * 1000.0
-            attempts: list[WavelengthAttempt] = []
+
             stage = "level2.retrieval"
-            for wavelength in wavelengths:
-                attempt = attempt_wavelength(
-                    ds_l1, wavelength, altitude_m, config, file_logger
-                )
-                attempts.append(attempt)
-                if attempt.status is WavelengthAttemptStatus.FATAL_FAILURE:
-                    assert attempt.diagnostic is not None
-                    raise FatalWavelengthProcessingError(attempt.diagnostic.message)
-            product_contract = Level2ProductContract.from_attempts(wavelengths, attempts)
-            if product_contract.completeness is ProductCompleteness.FAILED:
-                diagnostics = "; ".join(
-                    f"{item.wavelength_nm} nm: {item.code.name.lower()}"
-                    for item in product_contract.failure_diagnostics
-                )
-                return ExecutionSummary.from_results(
-                    [
-                        ExecutionResult.failure(
-                            "level2.retrieval",
-                            f"No requested wavelength produced a usable optical product ({diagnostics}).",
-                            input_path=nc_path,
-                            duration_seconds=time.perf_counter() - started_at,
-                            metadata={
-                                "pipeline": "L2",
-                                "save_id": save_id,
-                                **product_contract.execution_metadata(),
-                            },
-                        )
-                    ]
-                )
-            results_by_wavelength = {
-                attempt.wavelength_nm: attempt.result
-                for attempt in attempts
-                if attempt.status is WavelengthAttemptStatus.SUCCESS
-                and attempt.result is not None
-            }
-            results = [
-                results_by_wavelength[wavelength]
-                for wavelength in product_contract.processed_wavelengths
-            ]
-            stage = "level2.dataset"
-            ds_l2 = build_level2_dataset(
-                ds_l1, results, altitude_m, nc_path, config, product_contract
+            ds_l2 = build_method_v5_level2_dataset(
+                ds_l1,
+                altitude_m,
+                nc_path,
+                config,
+                file_logger,
             )
             stage = "level2.validation.output"
             validate_level2_contract(ds_l2)
@@ -317,13 +292,12 @@ def process_single_level1_file(
             source_attrs=source_provenance,
             extra_attrs={
                 "source_level1_sha256": source_level1_sha256,
+                "level2_product_schema_version": LEVEL2_PRODUCT_SCHEMA_VERSION,
                 "level2_retrieval_method_version": LEVEL2_RETRIEVAL_METHOD_VERSION,
                 "monte_carlo_random_seed": int(kfs_cfg["random_seed"]),
                 "monte_carlo_iterations": int(kfs_cfg["monte_carlo_iterations"]),
-                "kfs_reference_boundary_model": (
-                    "beta_total_ref=beta_mol_ref*(1+aerosol_ref_fraction)"
-                ),
-                "kfs_aerosol_ref_fraction": float(kfs_cfg["aerosol_ref_fraction"]),
+                "kfs_reference_boundary_model": "beta_total_ref=beta_mol_ref*(1+f)",
+                "kfs_nominal_aerosol_ref_fraction": 0.0,
                 "kfs_beta_ref_relative_std": float(kfs_cfg["beta_ref_relative_std"]),
                 "kfs_min_lidar_ratio_sr": float(kfs_cfg["min_lidar_ratio_sr"]),
                 "kfs_allow_negative_aerosol": int(bool(kfs_cfg["allow_negative_aerosol"])),
@@ -332,74 +306,57 @@ def process_single_level1_file(
             },
         )
         bind_log_context(file_logger, stage="provenance").debug(
-            "MILGRAU=%s | method=%s | source_sha256=%s | profile=%s | calibration=%s | MC seed=%s | LR=%s",
+            "MILGRAU=%s | schema=%s | method=%s | source_sha256=%s | MC seed=%s | LR=%s",
             provenance_attrs.get("software_version", "-"),
+            provenance_attrs.get("level2_product_schema_version", "-"),
             provenance_attrs.get("level2_retrieval_method_version", "-"),
             str(provenance_attrs.get("source_level1_sha256", "-"))[:12],
-            provenance_attrs.get("station_profile_id", "-"),
-            provenance_attrs.get("instrument_calibration_id", "-"),
             provenance_attrs.get("monte_carlo_random_seed", "-"),
             provenance_attrs.get("lidar_ratio_source", "-"),
         )
+
         duration = time.perf_counter() - started_at
-        if product_contract.completeness is ProductCompleteness.COMPLETE:
-            bind_log_context(file_logger, stage="done").info(
-                "wavelengths=%d/%d | %s | %.1f s",
-                len(product_contract.processed_wavelengths),
-                len(product_contract.requested_wavelengths),
-                output_path.name,
-                duration,
-            )
-            product_results = [
-                ExecutionResult.success(
-                    "level2.complete",
-                    "Complete Level 2 generated",
-                    input_path=nc_path,
-                    output_path=output_path,
-                    duration_seconds=duration,
-                    metadata={
-                        "pipeline": "L2",
-                        "save_id": save_id,
-                        **product_contract.execution_metadata(),
-                    },
-                )
-            ]
-        else:
+        metadata = {
+            "pipeline": "L2",
+            "save_id": save_id,
+            **_product_execution_metadata(ds_l2),
+        }
+        failed = metadata["failed_wavelengths"]
+        if failed:
             bind_log_context(file_logger, stage="done").warning(
-                "partial wavelengths=%d/%d | failed=%s | %s | %.1f s",
-                len(product_contract.processed_wavelengths),
-                len(product_contract.requested_wavelengths),
-                ",".join(str(value) for value in product_contract.failed_wavelengths),
+                "method-v5 partial | failed=%s | %s | %.1f s",
+                ",".join(str(value) for value in failed),
                 output_path.name,
                 duration,
             )
             product_results = [
                 ExecutionResult.success(
                     "level2.write",
-                    "Partial Level 2 file written atomically",
+                    "Method-v5 partial Level 2 written atomically",
                     input_path=nc_path,
                     output_path=output_path,
                     duration_seconds=duration,
-                    metadata={
-                        "pipeline": "L2",
-                        "save_id": save_id,
-                        **product_contract.execution_metadata(),
-                    },
-                ),
-                ExecutionResult.failure(
-                    "level2.partial",
-                    "Level 2 was written but is incomplete; failed wavelengths: "
-                    f"{', '.join(str(value) for value in product_contract.failed_wavelengths)} nm",
-                    input_path=nc_path,
-                    output_path=output_path,
-                    duration_seconds=duration,
-                    metadata={
-                        "pipeline": "L2",
-                        "save_id": save_id,
-                        **product_contract.execution_metadata(),
-                    },
-                ),
+                    metadata=metadata,
+                )
             ]
+        else:
+            bind_log_context(file_logger, stage="done").info(
+                "method-v5 complete | wavelengths=%d | %s | %.1f s",
+                len(metadata["processed_wavelengths"]),
+                output_path.name,
+                duration,
+            )
+            product_results = [
+                ExecutionResult.success(
+                    "level2.complete",
+                    "Complete method-v5 Level 2 generated",
+                    input_path=nc_path,
+                    output_path=output_path,
+                    duration_seconds=duration,
+                    metadata=metadata,
+                )
+            ]
+
         if level2_qa_enabled(config):
             qa_result = generate_level2_qa(
                 nc_path,
@@ -438,9 +395,8 @@ def process_single_level1_file(
             [
                 ExecutionResult.failure(
                     stage,
-                    "Level 2 processing failed",
-                    fatal=isinstance(exc, FatalWavelengthProcessingError)
-                    or stage in fatal_stages,
+                    "Level 2 method-v5 processing failed",
+                    fatal=stage in fatal_stages,
                     input_path=nc_path,
                     output_path=output_path,
                     cause=exc,
@@ -453,7 +409,7 @@ def process_single_level1_file(
 
 
 def process_level_2(config: Mapping[str, Any], logger: logging.Logger) -> ExecutionSummary:
-    """Discover Level 1 files and process them into Level 2 products."""
+    """Discover Level 1 files and process them into method-v5 Level 2 products."""
     files = discover_level1_files(config)
     if not files:
         bind_log_context(logger, stage="discovery").warning("no Level 1 files found")
@@ -474,12 +430,12 @@ def process_level_2(config: Mapping[str, Any], logger: logging.Logger) -> Execut
         output_path = level2_output_path(file_path)
         if incremental and level2_output_is_current(file_path, output_path, config):
             bind_log_context(file_logger, stage="skip").info(
-                "up to date | %s", output_path.name
+                "method-v5 up to date | %s", output_path.name
             )
             skipped_results.append(
                 ExecutionResult.skipped(
                     "level2.incremental",
-                    "Level 2 is up to date",
+                    "Method-v5 Level 2 is up to date",
                     input_path=file_path,
                     output_path=output_path,
                     metadata={"pipeline": "L2", "save_id": save_id},
@@ -498,7 +454,7 @@ def process_level_2(config: Mapping[str, Any], logger: logging.Logger) -> Execut
         files_to_process.append(file_path)
 
     if not files_to_process:
-        bind_log_context(logger, stage="summary").info("all Level 2 products are current")
+        bind_log_context(logger, stage="summary").info("all method-v5 Level 2 products are current")
         return ExecutionSummary.from_results(skipped_results)
 
     bind_log_context(logger, stage="queue").info(
