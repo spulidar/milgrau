@@ -40,10 +40,14 @@ def test_progressive_grid_preserves_native_low_column_and_caps_high_resolution()
     assert grid.source_count[_cell_near(grid, 27_000.0)] == 13
 
     # Requested 100 m is represented by 13 native 7.5 m bins = 97.5 m,
-    # never by interpolation to a fictitious exact 100 m cell.
+    # never by interpolation to a fictitious exact 100 m cell. A final short
+    # edge cell is allowed when the source profile ends mid-group.
     high = grid.altitude_m >= 25_100.0
+    full_high_cells = high & (grid.source_count == 13)
+    assert np.any(full_high_cells)
     assert np.all(grid.effective_resolution_m[high] <= 100.0)
-    assert np.allclose(grid.effective_resolution_m[high], 97.5)
+    assert np.all(grid.source_count[high] <= 13)
+    assert np.allclose(grid.effective_resolution_m[full_high_cells], 97.5)
 
 
 def test_progressive_grid_is_exact_identity_below_first_transition() -> None:
