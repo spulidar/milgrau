@@ -14,7 +14,8 @@ The tracker keeps a compact status summary **and** actionable checklists. The fi
 * Separate analytical/synthetic truth, real-data regression, external-chain comparison and instrument characterization.
 * Real measurements are behavior/regression evidence, not exact aerosol optical truth.
 * Missing uncertainty is never zero uncertainty; unsupported bins stay unsupported.
-* Backward KFS cannot extend above its accepted boundary or jump invalid internal gaps.
+* Backward KFS cannot extend above its accepted boundary or jump missing/masked/instrument-invalid internal gaps.
+* Finite signed background-subtracted RCS is measurement information and may be averaged at a declared coarser resolution; the aggregated KFS cell itself must be finite and positive.
 * High altitude is an objective, not permission to weaken QA.
 * Long averaging must expose temporal contribution; vertical aggregation must expose resolution loss.
 * A fitted/window or vertically aggregated boundary is a new retrieval assumption.
@@ -36,7 +37,7 @@ The tracker keeps a compact status summary **and** actionable checklists. The fi
 * Aerosol extinction is conditional on assumed aerosol lidar ratio.
 * Productive optical support is inversion support, not generic finite-value support.
 
-Not productive yet: inferred non-zero boundary aerosol, fitted/window boundary, vertically aggregated high-column retrieval, adaptive high-column resolution, relaxed MC-support semantics, hard SNR/cloud/temporal gates, overlap cutoff, physical PC saturation threshold, ensemble, cascade/stitching and Raman correction.
+Not productive yet: method-v5 progressive grid, aggregated-cell boundary, residual-`f` scenario ensemble, relaxed MC-support semantics, automatic high-reference selector, hard SNR/cloud/temporal gates, overlap cutoff, physical PC saturation threshold, cascade/stitching and Raman correction.
 
 ---
 
@@ -71,6 +72,7 @@ Key frozen evidence includes:
 * `p5_4_synthetic_residual_aerosol_boundary_sweep_20260917.json`
 * `p5_4_synthetic_boundary_residual_noise_lr_20260917.json`
 * `p5_4_campaign_boundary_fraction_sensitivity_20260917.json`
+* `p5_4_method_v5_progressive_grid_campaign_20260917.json`
 * `p3_level2_metadata_audit_20260917.json`
 
 Raman feasibility evidence remains preserved but is **deferred** as a future independent validation path rather than a current method-v5 prerequisite.
@@ -86,8 +88,8 @@ Raman feasibility evidence remains preserved but is **deferred** as a future ind
 | P4 | PARALLEL EVIDENCE | overlap, detector and gluing characterization |
 | P5.0–P5.2 | FROZEN FOUNDATION | baseline, support semantics, QA-first catalogue |
 | P5.3 | MOSTLY COMPLETE | candidate diagnostics interpreted; no new purity score justified |
-| P5.4 | **ACTIVE PRIMARY R&D** | define and validate elastic high-column method-v5 semantics |
-| P5.5 | PENDING | ensemble only if method-v5 evidence establishes need |
+| P5.4 | **ACTIVE / V5 R&D EXECUTABLE** | progressive grid + nested boundary scenarios implemented; selector/coverage validation open |
+| P5.5 | PENDING | ensemble only if method-v5 evidence establishes need beyond explicit `f` sensitivity |
 | P5.6–P5.7 | DEFERRED | cascade / stitching |
 | P5.8 | PARALLEL R&D | molecular semantics / uncertainty consistency |
 | P5.9 | COMPLETE | support-aware QA implemented and real-image reviewed |
@@ -113,25 +115,9 @@ Across baseline, synthetics and 11 heterogeneous/seasonal real L2 products:
 
 All successful supplied campaign retrieval blocks use post-QA **analog fallback**, so glued/PC high-column behavior remains an evidence gap, not a blocker for defining elastic method-v5 semantics.
 
-## 4.2 Covariance and aggregation
+## 4.2 Boundary movement dominates the new sensitivity
 
-From `20250629sant` Level 1, block-demeaned uncertainty-normalized residuals over 5–20 km give approximately:
-
-* lag-1 / 7.5 m correlation **0.10–0.13**;
-* 60 m / 8-bin SNR gain **2.47–2.52**;
-* 120 m / 16-bin SNR gain **3.31–3.40**.
-
-At the existing productive boundary:
-
-* 60 m aggregation: median 0.6–6 km relative L2 change ~**5%**, p95 ~**20%**;
-* 120 m aggregation: median ~**6%**, p95 ~**20%**;
-* deterministic coarse representation + boundary-cell shift contributes median ~**4.6%** / **5.6%**, with p95 ~21–22%.
-
-Aggregation improves high-path support but is not lower-column neutral. No width is yet productive.
-
-## 4.3 Moving the boundary is the larger sensitivity
-
-Native-grid boundary-only tests near 10 km isolate boundary movement from aggregation:
+Native-grid boundary-only tests near 10 km:
 
 * 159/161 input-valid runs have usable exact high-reference bins;
 * 111/159 are all-300 MC complete;
@@ -139,125 +125,168 @@ Native-grid boundary-only tests near 10 km isolate boundary movement from aggreg
 * p95: **47.2%**;
 * median absolute integrated-column difference: **16.5%**; p95 **61.2%**.
 
-Slope, variance, SNR, diagnostic cost, calibration factor and path completeness show weak/inconsistent within-case association with this lower-column sensitivity. There is no demonstrated elastic score that validates a higher boundary.
+Existing slope, variance, SNR, cost, calibration factor and path completeness do not consistently predict this sensitivity. There is no demonstrated elastic score that validates a higher boundary.
 
-## 4.4 Residual aerosol is a demonstrated boundary mechanism
+## 4.3 Residual aerosol is a demonstrated boundary mechanism
 
-Controlled synthetic truth shows:
+Controlled truth shows that Rayleigh QA can pass while `beta_aer(ref)>0`; true total-backscatter boundary recovers truth; forcing `f=0` creates increasing lower-column bias; LR mismatch may amplify or partially compensate it.
 
-* Rayleigh slope/variance/valid-fraction QA can pass while `beta_aer(ref)>0`;
-* using the true total-backscatter boundary recovers lower-column truth;
-* forcing `beta_aer(ref)=0` creates monotonic lower-column bias as residual aerosol grows;
-* signal noise adds dispersion but does not remove systematic boundary bias;
-* lidar-ratio mismatch can amplify or partially cancel boundary bias.
+Across 150 real controls at the existing reference, declared scenarios `f=0.02` and `f=0.05` change the 0.6–6 km retrieval by median ~**5.3%** and ~**13.9%**. These are sensitivity scenarios, not inferred aerosol fractions.
 
-Across 150 successful campaign controls at the existing reference, declared sensitivity scenarios `f=0.02` and `f=0.05` change the 0.6–6 km retrieval by median ~**5.3%** and ~**13.9%** respectively. These are sensitivity scenarios, not inferred aerosol fractions.
+## 4.4 Progressive-grid campaign evidence
 
-**Current conclusion:** the high-column problem is principally a boundary-model + support-statistics problem, not a candidate-score problem.
+Current first-prototype grid:
+
+| altitude | requested resolution | SPU realization |
+| --- | ---: | ---: |
+| <6 km | 7.5 m | 1 native bin |
+| 6–10 km | 15 m | 2 bins |
+| 10–15 km | 30 m | 4 bins |
+| 15–25 km | 60 m | 8 bins |
+| >=25 km | <=100 m | 97.5 m / 13 bins |
+
+On 161 available 20-min block×wavelength states, continuous positive aggregated path tops from the established lower column are:
+
+* minimum 6.77 km; p10 9.80 km; p25 12.89 km;
+* median **14.57 km**; p75 17.07 km; p90 21.71 km; maximum 24.99 km;
+* 143/161 reach >=10 km, 133/161 >=12 km, 69/161 >=15 km, 18/161 >=20 km.
+
+A mandatory 20–25 km boundary is rejected: 117/161 cases contain a native Rayleigh-accepted candidate there, but only 18/161 have a continuous nominal path to that region under the <=100 m grid cap. **20–25 km is a preferred region when supported, not a required boundary altitude.**
+
+Longer temporal averaging is not presently justified as the fix: 20/40/60 min windows give median continuous tops ~14.81/14.87/14.96 km respectively. The first v5 prototype therefore keeps 20 min.
+
+**Current conclusion:** preserve the validated lower column exactly, coarsen progressively above 6 km, let the high supported top remain measurement-dependent, and carry boundary sensitivity explicitly.
 
 ---
 
-# 5. P5.4 — restored actionable checklist for method v5
+# 5. P5.4 — actionable method-v5 checklist
 
-Full decision contract: `docs/high_column_method_v5_decisions.md`.
+Full contract: `docs/high_column_method_v5_decisions.md`.
 
 ## 5.1 Scientific product definition
 
-* [ ] Decide that method v5 is explicitly an **elastic retrieval conditional on declared boundary and lidar-ratio assumptions**, rather than an independently observed aerosol truth product.
-* [ ] Decide whether the central upper boundary remains `beta_aer(ref)=0` with a systematic residual-aerosol sensitivity envelope, or whether a different bounded boundary prior is adopted.
-* [ ] Decide whether the high-column extension applies to aerosol backscatter only or to backscatter + extinction under the same assumed/climatological lidar ratio.
-
-Recommended minimal path: keep a central molecular-boundary solution for comparability, but publish boundary sensitivity separately and do not describe molecular purity as independently verified.
+* [x] Method v5 is an **elastic retrieval conditional on declared boundary, lidar-ratio and effective-resolution assumptions**.
+* [x] Nominal boundary remains `beta_aer(ref)=0` / `f=0` for comparability.
+* [x] `f=0` is an assumption, not an observation of molecular purity.
+* [x] Residual `f` is treated as a separate systematic sensitivity dimension.
+* [x] Backscatter and extinction may both be produced; extinction remains conditional on assumed/climatological LR.
 
 ## 5.2 Boundary estimator
 
-* [ ] Choose exact native-bin, explicit Rayleigh-window estimator, or another synthetically validated estimator.
-* [ ] If a window estimator is chosen, propagate estimator uncertainty separately from signal noise.
-* [ ] Keep broad-contamination bias as a systematic failure mode; denoising is not purity validation.
+* [x] High boundary is represented by the same progressive-grid cell used by KFS.
+* [x] Effective cell width and source-bin count remain explicit.
+* [x] Native 1-km Rayleigh QA remains separate from the aggregated-cell numerical boundary.
+* [x] Broad-contamination bias remains a systematic failure mode; averaging is not purity validation.
 
 ## 5.3 Vertical representation
 
-* [ ] Choose native, fixed-coarse or adaptive-resolution high-column representation.
-* [ ] If aggregation is used, declare effective resolution per altitude.
-* [ ] Use an explicit covariance/dependence model for aggregated uncertainty.
-* [ ] Do not interpolate through invalid internal gaps.
-* [ ] Compare the chosen representation against native synthetic truth and the method-v4 lower column.
+* [x] Preserve native 7.5 m representation through the established lower column below 6 km.
+* [x] First R&D grid: 15 m at 6–10 km, 30 m at 10–15 km, 60 m at 15–25 km, <=100 m above 25 km.
+* [x] Current 7.5 m SPU grid realizes the <=100 m cap as 97.5 m.
+* [x] No interpolation, padding or source-bin reuse.
+* [x] Missing/masked/instrument-invalid source sample invalidates its progressive cell.
+* [x] Finite signed RCS may be averaged; aggregated KFS cell must be finite and positive.
+* [x] Effective resolution/source count are retained by the R&D grid utility.
+* [ ] Validate representation error and retrieval coverage in controlled truth before promotion.
+
+Implementation: `milgrau/level2/adaptive_grid.py`; tests: `tests/test_adaptive_grid_rnd.py`.
 
 ## 5.4 MC / support semantics
 
-* [ ] Decide whether method v5 still requires 100% valid MC paths or uses a pre-declared valid-realization fraction.
-* [ ] If a fraction is used, define it from statistical meaning before checking achieved altitude.
-* [ ] Store/report valid-realization fraction so support confidence is auditable.
-* [ ] Mark bins with insufficient realizations unsupported rather than filling them.
+* [x] V5 will not define physical support as `300/300` MC survival.
+* [x] Nominal deterministic path support is separate from random-MC robustness.
+* [x] Nested boundary-scenario MC reports valid count/fraction per `f` scenario.
+* [x] No new valid-fraction cutoff is imposed yet.
+* [ ] Derive any future cutoff from synthetic confidence-interval coverage, never from desired altitude.
+* [ ] Add final valid-count/fraction fields to the v5 NetCDF/schema contract.
 
-## 5.5 Temporal semantics
+Implementation: `boundary_fraction_monte_carlo_sensitivity` in `milgrau/level2/boundary_sensitivity.py`.
 
-* [x] Block contribution and candidate persistence diagnostics exist.
-* [ ] Decide whether method v5 remains block-native or introduces a long-mean high-column signal.
-* [ ] If long averaging is used, preserve block contribution/persistence in the product.
-* [ ] Do not let a long mean hide a transient layer/cloud event.
+## 5.5 Boundary `f` uncertainty semantics
 
-Recommended first implementation: remain block-native; postpone a long-mean backbone until the boundary/support decisions are already validated.
+* [x] Outer caller-declared `f` scenarios = epistemic/systematic boundary sensitivity.
+* [x] Inner MC = random signal + declared LR/reference-estimator perturbations.
+* [x] Same seed reused across `f` scenarios for paired comparison.
+* [x] No arbitrary probability distribution assigned to `f`.
+* [ ] Only marginalize `f` into a total probabilistic uncertainty if independent evidence later supplies a defensible distribution.
 
-## 5.6 Admissible path
+## 5.6 Temporal semantics
 
-* [x] Internal invalid gaps cannot be bridged.
+* [x] Keep current 20-min blocks for the first v5 prototype.
+* [x] 40/60-min observational probes completed; median continuous top barely changes.
+* [x] Do not trade temporal resolution for altitude without a demonstrated benefit.
+* [ ] Revisit adaptive temporal averaging after grid + MC coverage validation if still needed.
+
+## 5.7 Admissible path
+
 * [x] Local Rayleigh QA alone is insufficient for path acceptance.
-* [ ] Define one deterministic path-admissibility contract before reference ranking.
-* [ ] Keep cloud/layer state diagnostic unless a separate validated veto is established.
-* [ ] Add characterized saturation/instrument masks when P4 evidence exists; do not fabricate them now.
+* [x] Continuous nominal progressive-cell path is diagnosed separately.
+* [x] Missing/masked/instrument-invalid gaps are not bridged.
+* [x] Cloud/layer state remains diagnostic unless a validated veto is established.
+* [ ] Add characterized saturation/instrument masks when P4 evidence exists.
 
-## 5.7 Lower-column preservation and truth validation
+## 5.8 Lower-column preservation and truth validation
 
 * [x] Current real-data lower-column sensitivity is quantified.
 * [x] Residual-aerosol boundary bias exists in controlled truth.
 * [ ] Define synthetic-truth acceptance in terms of bias + uncertainty coverage.
-* [ ] Define real-data regression compatibility using uncertainty-normalized differences, not an arbitrary percent selected after seeing results.
+* [ ] Define real-data regression compatibility using uncertainty-normalized differences.
 * [ ] Report both profile-shape and integrated-column differences.
-* [ ] Keep achieved top altitude out of the acceptance metric.
+* [x] Keep achieved top altitude out of the acceptance metric.
 
-## 5.8 Deterministic reference selection
+## 5.9 Rayleigh/reference selection
 
-* [ ] Only after sections 5.1–5.7 are fixed, define the high-reference selection rule.
-* [ ] Keep candidate shape QA, path support, boundary sensitivity, temporal state and effective resolution as separate quantities unless controlled evidence justifies combining them.
-* [ ] Do not introduce a new composite “purity score” from current evidence.
+* [x] Rayleigh QA for v5 candidate cells remains on the native grid using a physical 1-km window.
+* [x] Progressive cell is the numerical KFS boundary representation.
+* [x] 20–25 km is preferred only when Rayleigh-compatible **and** path-admissible.
+* [x] R&D catalogue can expose accepted/admissible cells without auto-ranking them.
+* [ ] Determine the minimum altitude where v5 may depart from the v4 reference regime.
+* [ ] Determine deterministic final ranking/tie-break among admissible high cells using synthetic truth.
+* [ ] Verify selector behavior with explicit stratospheric-aerosol and cloud truth cases.
+* [x] Do not introduce a composite molecular-purity score.
 
-## 5.9 Method/schema promotion
+Implementation: `milgrau/level2/high_column_rnd.py`.
 
-* [ ] Implement experimental method-v5 path behind an explicit method switch or R&D entry point.
-* [ ] Freeze method-v4 and method-v5 outputs on identical Level-1 inputs.
-* [ ] Bump retrieval method to v5 only after validation gates pass.
-* [ ] Decide whether schema v3 can represent boundary model, effective resolution and MC-support fraction; bump schema only if needed.
-* [ ] Record boundary model, estimator, resolution, support fraction and sensitivity assumptions in NetCDF.
+## 5.10 Method/schema promotion
+
+* [x] Experimental v5 R&D execution exists for an explicitly selected reference cell.
+* [ ] Run the executable v5 retrieval across the heterogeneous campaign.
+* [ ] Freeze v4 and v5 outputs on identical Level-1 inputs.
+* [ ] Bump productive retrieval method to v5 only after validation gates pass.
+* [ ] Decide whether schema v3 can represent progressive altitude/resolution + scenario dimensions cleanly; otherwise bump schema.
+* [ ] Record boundary model, `f` scenario, resolution/source count, supported top and MC valid fraction in NetCDF.
 
 ---
 
 # 6. Minimum method-v5 validation matrix
 
-* [ ] molecular-only synthetic truth;
-* [x] residual-aerosol boundary synthetic truth;
+* [ ] molecular-only progressive-grid synthetic truth;
+* [x] residual-aerosol boundary synthetic mechanism;
 * [x] weak-signal / many-isolated-bin path case;
 * [x] localized and broad contamination counterexamples;
 * [x] high-cloud/layer real case available (`20250509sant`);
-* [x] heterogeneous 11-product SPU campaign available;
-* [ ] chosen method-v5 algorithm run across the heterogeneous campaign;
-* [ ] 355 and 532 evaluated separately;
-* [ ] chosen high-column resolution compared against native truth/regression;
-* [ ] lower-column compatibility evaluated independently of top altitude;
+* [x] heterogeneous 11-product SPU path/resolution feasibility;
+* [x] 20/40/60-min temporal path comparison;
+* [ ] executable v5 retrieval across heterogeneous campaign;
+* [ ] explicit stratospheric-aerosol truth in candidate region;
+* [ ] 355 and 532 synthetic truth separately;
+* [ ] native vs progressive retrieval truth comparison;
+* [ ] valid-MC fraction versus confidence-interval coverage;
+* [ ] lower-column compatibility independently of top altitude;
 * [ ] at least one glued/PC-dominant successful regime before instrument-wide generalization.
 
 ---
 
 # 7. Raman — deferred, not deleted
 
-Raman channel identity/feasibility evidence is preserved in the repository, but quantitative Raman retrieval is no longer a blocker for the first elastic method-v5 experiment.
+Raman channel identity/feasibility evidence is preserved, but quantitative Raman retrieval is not a blocker for the first elastic v5 experiment.
 
 * [x] Current acquisition contains 387/408/530 channels.
 * [x] SCC mapping for 387/530 current nighttime configuration is known.
 * [ ] Current receiver/filter spectral response remains unresolved.
 * [ ] Quantitative Raman retrieval remains future work.
 
-Future role: independent boundary validation and/or independent nighttime extinction retrieval after the elastic method-v5 design is stable.
+Future role: independent boundary validation and/or independent nighttime extinction retrieval after elastic v5 is stable.
 
 ---
 
@@ -283,12 +312,7 @@ Future role: independent boundary validation and/or independent nighttime extinc
 * [ ] Formal CF compliance review before claiming a CF convention.
 * [ ] Bit-for-bit dependency/environment artifact under P6.
 
-Current station labels intentionally remain simple:
-
-* lidar-ratio table: `climatology`;
-* channel correction set: `experimental`.
-
-Detailed historical ancestry is not an active blocker and can be curated later.
+Current station labels intentionally remain simple: lidar-ratio table `climatology`; channel correction set `experimental`. Detailed historical ancestry is not an active blocker.
 
 ---
 
@@ -314,7 +338,7 @@ Detailed historical ancestry is not an active blocker and can be curated later.
 * [ ] Quantify fitted slope/intercept uncertainty and covariance.
 * [ ] Test a valid glued/PC-dominant regime.
 
-P4 evidence improves generality but does not block defining the first conditional elastic method-v5 R&D path.
+P4 evidence improves generality but does not block the first conditional elastic v5 R&D path.
 
 ---
 
@@ -324,6 +348,7 @@ P4 evidence improves generality but does not block defining the first conditiona
 * [x] Support-aware SR/KFS QA implemented and heterogeneous real-image reviewed (CI `35241784472`).
 * [x] Scientific traceability regression contract protects schema v3 / method v4 (CI `35240916329`).
 * [x] Station/calibration machine-readable provenance regression tested; CI `35257631767` passed Ruff and cross-platform pytest.
+* [ ] Latest progressive-grid / nested-`f` / executable-v5 R&D commits: CI pending at this tracker snapshot.
 
 ---
 
@@ -331,7 +356,7 @@ P4 evidence improves generality but does not block defining the first conditiona
 
 ## P5.5 Ensemble
 
-* [ ] Revisit only if one validated method-v5 boundary still leaves material reference ambiguity.
+* [ ] Revisit only if one validated v5 boundary still leaves material reference ambiguity beyond explicit boundary-scenario sensitivity.
 
 ## P5.6–P5.7 Cascade / stitching
 
@@ -352,29 +377,20 @@ P4 evidence improves generality but does not block defining the first conditiona
 
 ---
 
-# 12. Immediate next scientific decisions
+# 12. Immediate next scientific gates
 
-The next work is **not another score sweep**. Before implementing productive high-column integration, close these decisions in order:
+The architecture decisions D0–D6 are sufficiently closed for R&D implementation. Next gates are now:
 
-1. [ ] D1 — accept method v5 as a conditional elastic retrieval and choose the boundary model/sensitivity semantics.
-2. [ ] D2 — choose the numerical boundary estimator.
-3. [ ] D3 — choose native/fixed/adaptive high-column vertical representation.
-4. [ ] D4 — choose MC-validity/support semantics.
-5. [ ] D5 — keep block-native retrieval or introduce long averaging.
-6. [ ] D7 — define synthetic-truth and real-regression promotion criteria.
-7. [ ] Implement the experimental method-v5 path.
-8. [ ] Run the full synthetic + heterogeneous SPU validation matrix.
-9. [ ] Decide method-v5 promotion and schema impact.
+1. [ ] Run molecular-only and aerosol-known synthetic truth on the progressive grid and quantify representation bias.
+2. [ ] Map `mc_valid_fraction` to actual confidence-interval coverage in controlled truth; derive a cutoff only if coverage requires one.
+3. [ ] Add explicit stratospheric-aerosol truth in the candidate-reference region.
+4. [ ] Use those synthetics to choose the minimum v5 reference altitude and final deterministic ranking among admissible cells.
+5. [ ] Run the executable selected-cell v5 retrieval across the heterogeneous SPU campaign.
+6. [ ] Compare v5 vs v4 lower column on identical Level-1 input as regression/sensitivity, not truth.
+7. [ ] Decide schema-v3 extension versus schema-v4.
+8. [ ] Only then promote productive retrieval method to v5.
 
-Recommended starting position for the first experiment:
-
-* conditional elastic product;
-* central `beta_aer(ref)=0` retained for comparability, with explicit residual-boundary sensitivity reported separately;
-* block-native temporal processing;
-* no cloud veto and no interpolation;
-* test fixed 60 m versus adaptive high-altitude aggregation rather than assuming a winner;
-* replace all-300-valid semantics only if a pre-declared statistical support rule is justified;
-* promote based on synthetic truth/uncertainty coverage and uncertainty-normalized lower-column compatibility, never on achieved altitude alone.
+No target altitude, MC fraction, SNR value or percent lower-column agreement is preselected as an acceptance threshold.
 
 ---
 
@@ -382,6 +398,8 @@ Recommended starting position for the first experiment:
 
 MILGRAU productive Level 2 remains **schema v3 / method v4**.
 
-P5.4 has established that moving the upper boundary is a larger sensitivity than aggregation, current elastic candidate diagnostics do not independently validate `beta_aer(ref)=0`, and residual boundary aerosol can create systematic lower-column bias even when Rayleigh-window QA passes. This does **not** prevent an elastic-only method v5 if its scientific claim is explicitly conditional on declared boundary and lidar-ratio assumptions and its boundary sensitivity is carried honestly.
+The first elastic method-v5 R&D architecture is now concrete: conditional product; nominal `f=0`; explicit outer residual-`f` scenarios; inner random Monte Carlo; native Rayleigh QA; progressive KFS grid preserving <6 km at 7.5 m and coarsening to <=100 m aloft; 20-min temporal baseline; nominal path support separated from MC survival.
 
-Raman is deferred as future independent validation. FAIR core work is sufficiently closed for the present retrieval-development phase: MIT is selected, metadata/provenance are strong, and climatology/calibration labels are intentionally simple. The active scientific problem is now the explicit method-v5 decision checklist in section 5 and `docs/high_column_method_v5_decisions.md`.
+The campaign evidence shows that this representation commonly supports paths into ~12–18 km but cannot guarantee 20–25 km. High reference altitude must therefore remain measurement-dependent. `20–25 km` is a preferred region when genuinely supported, not a success requirement.
+
+Raman remains deferred as future independent validation. The remaining method-v5 blockers are synthetic uncertainty coverage, the final high-reference selector, heterogeneous executable retrieval validation and schema/product representation—not another Rayleigh score sweep.
