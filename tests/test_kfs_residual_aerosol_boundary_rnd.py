@@ -1,6 +1,6 @@
 """R&D tests for residual aerosol hidden inside a Rayleigh-like boundary window.
 
-These tests do not change productive method-v4 selection.  They demonstrate a
+These tests do not change productive method-v4 selection. They demonstrate a
 specific boundary-condition failure mode: a broad, smooth aerosol contribution
 can preserve a Rayleigh-like window shape while the productive assumption
 ``beta_aer(ref) = 0`` materially biases the backward KFS lower column.
@@ -60,13 +60,6 @@ def _synthetic_boundary_case(
         altitude_m,
         beta_mol,
         beta_aer,
-        RAYLEIGH_LIDAR_RATIO_SR,
-        lidar_ratio,
-    )
-    molecular_rcs = elastic_lidar_forward_model(
-        altitude_m,
-        beta_mol,
-        np.zeros_like(beta_aer),
         RAYLEIGH_LIDAR_RATIO_SR,
         lidar_ratio,
     )
