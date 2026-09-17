@@ -1,0 +1,58 @@
+{
+  "evidence_type": "p5_4_campaign_vertical_aggregation_productive_boundary_rnd",
+  "created_date": "2026-09-17",
+  "productive_identity": "schema_v3_method_v4_backward_kfs_unchanged",
+  "experiment": "Strict fixed-origin non-overlapping pre-retrieval aggregation at 60 m (8 native bins) and 120 m (16 native bins), retaining each block's own productive method-v4 boundary by mapping it to the containing coarse cell. Compare the aggregated KFS Monte Carlo result to the corresponding coarse representation of persisted native-grid method-v4 aerosol backscatter over 0.6-6 km. Independent and fully-correlated-within-aggregate source-error amplitudes remain separate.",
+  "implementation_anchor": {
+    "native_group_size_1_successful_block_wavelength_cases": 150,
+    "maximum_relative_l2_difference_0p6_6km": 0.0,
+    "median_relative_l2_difference_0p6_6km": 0.0,
+    "interpretation": "The offline KFS implementation exactly reproduces persisted method-v4 block aerosol backscatter before aggregation."
+  },
+  "global_summary": {
+    "60m_independent": {
+      "runs": 150,
+      "minimum_complete_mc_fraction": 1.0,
+      "median_lower_0p6_6km_relative_l2_difference": 0.0506333286,
+      "p95_lower_0p6_6km_relative_l2_difference": 0.2058613439,
+      "maximum_lower_0p6_6km_relative_l2_difference": 0.2927717581,
+      "median_absolute_integrated_column_relative_difference": 0.0670805412,
+      "p95_absolute_integrated_column_relative_difference": 0.2685843688
+    },
+    "60m_fully_correlated": {
+      "runs": 150,
+      "minimum_complete_mc_fraction": 1.0,
+      "median_lower_0p6_6km_relative_l2_difference": 0.0475623986,
+      "p95_lower_0p6_6km_relative_l2_difference": 0.1993369143,
+      "p95_absolute_integrated_column_relative_difference": 0.2660394749
+    },
+    "120m_independent": {
+      "runs": 150,
+      "minimum_complete_mc_fraction": 1.0,
+      "median_lower_0p6_6km_relative_l2_difference": 0.0633231453,
+      "p95_lower_0p6_6km_relative_l2_difference": 0.2041972441,
+      "maximum_lower_0p6_6km_relative_l2_difference": 0.3887206425,
+      "median_absolute_integrated_column_relative_difference": 0.0774266744,
+      "p95_absolute_integrated_column_relative_difference": 0.3345525190
+    },
+    "120m_fully_correlated": {
+      "runs": 150,
+      "minimum_complete_mc_fraction": 1.0,
+      "median_lower_0p6_6km_relative_l2_difference": 0.0613756688,
+      "p95_lower_0p6_6km_relative_l2_difference": 0.2063823072,
+      "p95_absolute_integrated_column_relative_difference": 0.3340048251
+    }
+  },
+  "selected_case_examples": {
+    "20241202saam_532_60m_independent": {"median_relative_l2": 0.01833, "p95_relative_l2": 0.03991},
+    "20250509sant_355_60m_independent": {"median_relative_l2": 0.03930, "p95_relative_l2": 0.19667},
+    "20250629sant_532_60m_independent": {"median_relative_l2": 0.14368, "p95_relative_l2": 0.24623},
+    "20251107sapm_355_60m_independent": {"median_relative_l2": 0.06018, "p95_relative_l2": 0.10978}
+  },
+  "interpretation": [
+    "At the existing productive boundary, 60/120 m aggregation removes the native weak-bin path fragility for every already-successful campaign block under both error-amplitude bounds.",
+    "That support gain is not lower-column neutral. The campaign median lower-column difference is already about 5% for 60 m and the 95th percentile is about 20%; integrated-column changes are also material and event dependent.",
+    "The real-data behavior does not uniformly satisfy the current loose 5% synthetic R&D preservation guard."
+  ],
+  "decision": "Do not promote 60 m or 120 m aggregation as a productive support fix. Lower-column preservation must be an explicit gate, not inferred from improved completeness."
+}
