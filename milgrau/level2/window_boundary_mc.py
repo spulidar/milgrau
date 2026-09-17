@@ -5,11 +5,15 @@ exact measured range-corrected-signal bin at the selected reference altitude.
 Here the local molecular window is re-fitted in every realization to study how
 its random signal uncertainty would propagate through a backward KFS retrieval.
 
-The first implemented noise model is explicit independent Gaussian per-bin
-measurement noise. The same perturbation drives both the window fit and the
-retrieval profile, so window-fit uncertainty is not double-counted as an
-independent nuisance. Window contamination/model error is outside this Monte
-Carlo; a small spread therefore never certifies molecular purity.
+The same perturbation drives both the window fit and the retrieval profile, so
+window-fit uncertainty is not double-counted as an independent nuisance. The
+caller may optionally provide a complete correlation matrix for the fitting
+window. No AR(1), Toeplitz or other correlation law is inferred by this module.
+Bins on the backward path outside that supplied window remain explicitly
+independent from one another and from the window in this R&D model.
+
+Window contamination/model error is outside this Monte Carlo; a small random
+spread therefore never certifies molecular purity.
 """
 
 from __future__ import annotations
@@ -36,7 +40,7 @@ class WindowBoundaryMonteCarloResult:
     boundary_signal_std: float
     successful_simulations: int
     requested_simulations: int
-    noise_model: str = "independent_gaussian_per_bin"
+    noise_model: str
 
 
 def _origin_factor(measured: np.ndarray, molecular: np.ndarray) -> float:
@@ -67,6 +71,35 @@ def _nanmean_std(samples: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return mean, np.sqrt(variance)
 
 
+def _correlation_square_root(
+    window_correlation: np.ndarray,
+    window_size: int,
+) -> np.ndarray:
+    """Validate a caller-supplied correlation matrix and return a PSD square root."""
+    correlation = np.asarray(window_correlation, dtype=np.float64)
+    expected_shape = (int(window_size), int(window_size))
+    if correlation.shape != expected_shape:
+        raise ValueError(
+            f"window_correlation must have shape {expected_shape}; got {correlation.shape}."
+        )
+    if not np.all(np.isfinite(correlation)):
+        raise ValueError("window_correlation must be entirely finite.")
+    if not np.allclose(correlation, correlation.T, rtol=0.0, atol=1.0e-12):
+        raise ValueError("window_correlation must be symmetric.")
+    if not np.allclose(np.diag(correlation), 1.0, rtol=0.0, atol=1.0e-12):
+        raise ValueError("window_correlation must have a unit diagonal.")
+    if np.any(np.abs(correlation) > 1.0 + 1.0e-12):
+        raise ValueError("window_correlation entries must lie within [-1, 1].")
+
+    eigenvalues, eigenvectors = np.linalg.eigh(correlation)
+    scale = max(float(np.max(np.abs(eigenvalues))), 1.0)
+    tolerance = 1.0e-10 * scale
+    if float(np.min(eigenvalues)) < -tolerance:
+        raise ValueError("window_correlation must be positive semidefinite.")
+    eigenvalues = np.clip(eigenvalues, 0.0, None)
+    return (eigenvectors * np.sqrt(eigenvalues)[np.newaxis, :]) @ eigenvectors.T
+
+
 def window_fitted_boundary_monte_carlo(
     rcs: np.ndarray,
     rcs_error: np.ndarray,
@@ -81,17 +114,25 @@ def window_fitted_boundary_monte_carlo(
     *,
     n_simulations: int,
     random_seed: int,
+    window_correlation: np.ndarray | None = None,
     lr_mol: float = RAYLEIGH_LIDAR_RATIO_SR,
     min_lidar_ratio: float = 10.0,
     allow_negative_aerosol: bool = True,
 ) -> WindowBoundaryMonteCarloResult:
-    """Propagate independent signal noise through a local fitted boundary.
+    """Propagate explicit signal-noise assumptions through a fitted boundary.
 
     Window start is inclusive and stop is exclusive. The exact reference bin
     must lie inside the window. Complete finite positive support is required in
     the fit window and along the backward retrieval path; nothing is filled,
     clipped or silently removed. A realization that becomes non-positive on
     required support is rejected and counted as unsuccessful.
+
+    With ``window_correlation=None``, all perturbed bins are independent. When a
+    matrix is supplied it must describe every pair of fitting-window bins. The
+    fit-window perturbation then follows exactly that matrix; backward-path bins
+    outside the window remain independent and have zero cross-covariance with
+    the supplied window by construction. The function never extrapolates a
+    correlation law beyond the matrix provided by the caller.
     """
     signal = np.asarray(rcs, dtype=np.float64)
     error = np.asarray(rcs_error, dtype=np.float64)
@@ -125,7 +166,7 @@ def window_fitted_boundary_monte_carlo(
 
     backward_slice = slice(0, reference + 1)
     window_slice = slice(start, stop)
-    perturb_slice = slice(0, max(reference + 1, stop))
+    window_size = stop - start
 
     if np.any(~np.isfinite(signal[backward_slice])) or np.any(signal[backward_slice] <= 0.0):
         raise ValueError("Backward-path RCS must be finite and positive before perturbation.")
@@ -142,10 +183,22 @@ def window_fitted_boundary_monte_carlo(
     if not np.isfinite(beta_total_ref) or float(beta_total_ref) <= 0.0:
         raise ValueError("beta_total_ref must be finite and positive.")
 
+    correlation_root = None
+    noise_model = "independent_gaussian_per_bin"
+    if window_correlation is not None:
+        correlation_root = _correlation_square_root(window_correlation, window_size)
+        noise_model = "caller_supplied_correlated_window_plus_independent_external_backward_bins"
+
     nominal_factor = _origin_factor(signal[window_slice], molecular_signal[window_slice])
     if not np.isfinite(nominal_factor):
         raise ValueError("Nominal fitting window does not define a positive calibration factor.")
     nominal_boundary = float(nominal_factor * molecular_signal[reference])
+
+    window_indices = np.arange(start, stop, dtype=np.int64)
+    backward_indices = np.arange(0, reference + 1, dtype=np.int64)
+    external_backward_indices = backward_indices[
+        (backward_indices < start) | (backward_indices >= stop)
+    ]
 
     rng = np.random.default_rng(int(random_seed))
     n_mc = int(n_simulations)
@@ -156,7 +209,18 @@ def window_fitted_boundary_monte_carlo(
 
     for simulation in range(n_mc):
         perturbed = signal.copy()
-        perturbed[perturb_slice] += rng.normal(0.0, error[perturb_slice])
+        if external_backward_indices.size:
+            perturbed[external_backward_indices] += rng.normal(
+                0.0,
+                error[external_backward_indices],
+            )
+
+        if correlation_root is None:
+            window_standard_noise = rng.normal(size=window_size)
+        else:
+            window_standard_noise = correlation_root @ rng.normal(size=window_size)
+        perturbed[window_indices] += error[window_indices] * window_standard_noise
+
         if np.any(~np.isfinite(perturbed[backward_slice])) or np.any(perturbed[backward_slice] <= 0.0):
             continue
         if np.any(~np.isfinite(perturbed[window_slice])) or np.any(perturbed[window_slice] <= 0.0):
@@ -210,4 +274,5 @@ def window_fitted_boundary_monte_carlo(
         boundary_signal_std=float(np.std(valid_boundaries, ddof=0)),
         successful_simulations=int(successful),
         requested_simulations=n_mc,
+        noise_model=noise_model,
     )
