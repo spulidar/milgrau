@@ -365,18 +365,27 @@ def retrieve_optical_blocks(
             continue
 
         rayleigh_success[block_index] = 1
-        beta_mean, beta_std, alpha_mean, alpha_std, kfs_diagnostic = (
-            run_kfs_profile(
-                glued.range_corrected_signal[block_index, :],
-                glued.range_corrected_signal_error[block_index, :],
-                altitude_m,
-                molecular.backscatter,
-                reference_index,
-                molecular.lidar_ratio_assumed_sr,
-                molecular.lidar_ratio_std_sr,
-                config,
+        try:
+            beta_mean, beta_std, alpha_mean, alpha_std, kfs_diagnostic = (
+                run_kfs_profile(
+                    glued.range_corrected_signal[block_index, :],
+                    glued.range_corrected_signal_error[block_index, :],
+                    altitude_m,
+                    molecular.backscatter,
+                    reference_index,
+                    molecular.lidar_ratio_assumed_sr,
+                    molecular.lidar_ratio_std_sr,
+                    config,
+                )
             )
-        )
+        except ValueError as exc:
+            logger.warning(
+                "  -> %d nm block %d KFS rejected after Rayleigh QA: %s",
+                int(inputs.wavelength_nm),
+                block_index + 1,
+                exc,
+            )
+            continue
         backward_valid = bool(kfs_diagnostic["backward_valid"])
         forward_valid = bool(kfs_diagnostic["forward_valid"])
         kfs_backward_valid[block_index] = np.int8(backward_valid)
