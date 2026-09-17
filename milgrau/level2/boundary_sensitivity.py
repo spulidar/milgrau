@@ -36,6 +36,12 @@ class BoundaryFractionMonteCarloSensitivity:
     Random signal/LR/reference-estimator perturbations occur *within* each
     scenario.  The same random seed is reused for each scenario to provide a
     paired Monte-Carlo comparison.
+
+    ``backward_valid_fraction`` is the fraction of simulations that survive the
+    complete requested backward branch. ``aerosol_backscatter_valid_fraction``
+    is altitude resolved and reports how many simulations are finite at each
+    retrieval cell.  The latter is the relevant support diagnostic for an
+    altitude-resolved uncertainty product and is not converted to a binary gate.
     """
 
     residual_aerosol_fraction_of_molecular: np.ndarray
@@ -44,6 +50,8 @@ class BoundaryFractionMonteCarloSensitivity:
     aerosol_backscatter_random_std: np.ndarray
     aerosol_extinction_mean: np.ndarray
     aerosol_extinction_random_std: np.ndarray
+    aerosol_backscatter_valid_count: np.ndarray
+    aerosol_backscatter_valid_fraction: np.ndarray
     backward_valid_count: np.ndarray
     backward_valid_fraction: np.ndarray
     n_iterations: int
@@ -170,8 +178,9 @@ def boundary_fraction_monte_carlo_sensitivity(
     every scenario gives paired random draws, making the between-scenario
     boundary effect easier to interpret.
 
-    ``backward_valid_fraction`` is diagnostic-only.  No cutoff is applied and
-    no productive method-v4 validity semantics are changed.
+    Complete-branch and altitude-resolved valid-realization fractions are
+    diagnostic-only. No cutoff is applied and no productive method-v4 validity
+    semantics are changed.
     """
     signal, altitude, molecular, ref_idx, fractions = _validate_boundary_inputs(
         rcs=rcs,
@@ -188,7 +197,8 @@ def boundary_fraction_monte_carlo_sensitivity(
     beta_stds: list[np.ndarray] = []
     alpha_means: list[np.ndarray] = []
     alpha_stds: list[np.ndarray] = []
-    valid_counts: list[int] = []
+    profile_valid_counts: list[np.ndarray] = []
+    branch_valid_counts: list[int] = []
 
     for fraction in fractions:
         beta_mean, beta_std, alpha_mean, alpha_std, diagnostics = (
@@ -215,11 +225,16 @@ def boundary_fraction_monte_carlo_sensitivity(
         beta_stds.append(np.asarray(beta_std, dtype=np.float64))
         alpha_means.append(np.asarray(alpha_mean, dtype=np.float64))
         alpha_stds.append(np.asarray(alpha_std, dtype=np.float64))
-        valid_counts.append(
+        beta_sims = np.asarray(diagnostics["beta_aer_sims"], dtype=np.float64)
+        profile_valid_counts.append(
+            np.count_nonzero(np.isfinite(beta_sims), axis=0).astype(np.int32)
+        )
+        branch_valid_counts.append(
             int(np.count_nonzero(diagnostics["backward_valid_simulations"]))
         )
 
-    valid_count_arr = np.asarray(valid_counts, dtype=np.int32)
+    profile_valid_count_arr = np.stack(profile_valid_counts, axis=0)
+    branch_valid_count_arr = np.asarray(branch_valid_counts, dtype=np.int32)
     beta_mol_ref = float(molecular[ref_idx])
     return BoundaryFractionMonteCarloSensitivity(
         residual_aerosol_fraction_of_molecular=fractions.copy(),
@@ -228,8 +243,14 @@ def boundary_fraction_monte_carlo_sensitivity(
         aerosol_backscatter_random_std=np.stack(beta_stds, axis=0),
         aerosol_extinction_mean=np.stack(alpha_means, axis=0),
         aerosol_extinction_random_std=np.stack(alpha_stds, axis=0),
-        backward_valid_count=valid_count_arr,
-        backward_valid_fraction=valid_count_arr.astype(np.float64) / float(iterations),
+        aerosol_backscatter_valid_count=profile_valid_count_arr,
+        aerosol_backscatter_valid_fraction=(
+            profile_valid_count_arr.astype(np.float64) / float(iterations)
+        ),
+        backward_valid_count=branch_valid_count_arr,
+        backward_valid_fraction=(
+            branch_valid_count_arr.astype(np.float64) / float(iterations)
+        ),
         n_iterations=iterations,
         reference_index=ref_idx,
         uncertainty_scope=(
