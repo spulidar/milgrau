@@ -62,6 +62,8 @@ def test_validation_summary_json_replaces_nonfinite_values(tmp_path) -> None:
     block = V5BlockValidationSummary(
         block_index=0,
         block_time_utc="2025-01-01T00:00:00",
+        block_start_utc="2025-01-01T00:00:00",
+        block_end_utc="2025-01-01T00:19:59",
         retrieval_input_valid=True,
         signal_source_flag=3,
         v4_retrieval_success=True,
@@ -69,6 +71,10 @@ def test_validation_summary_json_replaces_nonfinite_values(tmp_path) -> None:
         v5_success=False,
         v5_failure="no admissible reference",
         v5_reference_altitude_m=float("nan"),
+        v5_retrieval_top_altitude_m=float("nan"),
+        v5_reference_tier_min_altitude_m=float("nan"),
+        v5_reference_tier_index=-1,
+        v5_reference_fallback_used=False,
         v5_reference_effective_resolution_m=float("nan"),
         v5_reference_diagnostic_cost=float("nan"),
         v5_accepted_admissible_candidates=0,
@@ -76,6 +82,7 @@ def test_validation_summary_json_replaces_nonfinite_values(tmp_path) -> None:
         mc_selection_success_fraction=float("nan"),
         mc_reference_altitude_median=float("nan"),
         mc_reference_altitude_std=float("nan"),
+        mc_reference_tier_counts={},
         mc_lower_valid_fraction_min=float("nan"),
         v4_v5_lower_relative_l2=float("nan"),
         residual_fraction_lower_relative_l2={"0.02": float("nan")},
@@ -89,12 +96,15 @@ def test_validation_summary_json_replaces_nonfinite_values(tmp_path) -> None:
         n_iterations=50,
         beta_ref_relative_std=0.0,
         uncertainty_mode="independent",
+        reference_tier_min_altitudes_m=(10_000.0, 9_000.0, 8_000.0, 6_000.0),
         blocks=(block,),
     )
 
     payload = validation_summary_dict(summary)
     assert payload["blocks"][0]["v5_reference_altitude_m"] is None
     assert payload["blocks"][0]["residual_fraction_lower_relative_l2"]["0.02"] is None
+    assert payload["blocks"][0]["block_start_utc"] == "2025-01-01T00:00:00"
+    assert payload["reference_tier_min_altitudes_m"] == [10000.0, 9000.0, 8000.0, 6000.0]
 
     path = write_validation_summary_json(summary, tmp_path / "evidence.json")
     parsed = json.loads(path.read_text(encoding="utf-8"))
