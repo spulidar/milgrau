@@ -1,0 +1,57 @@
+{
+  "measurement_id": "20251107sapm",
+  "evidence_type": "offline_high_boundary_path_failure_diagnostic",
+  "scientific_scope": "R&D_diagnostic_only_not_ground_truth",
+  "active_baseline_level2_sha256": "bba3b454387ef34c9b4bee3b0ab69e286e611cc44f9a4a6358b779f6d9f236d8",
+  "question": "Why do nominally complete high-boundary paths near 10-12 km lose Monte Carlo completeness under the current independent per-bin signal-noise model?",
+  "model": {
+    "signal_perturbation": "independent Gaussian per native range bin using persisted one-sigma RCS uncertainty",
+    "single_bin_positive_probability": "Phi(signal/error)",
+    "path_survival_probability": "product of single-bin positive probabilities along the contiguous backward path",
+    "mc_iterations_reference": 300,
+    "caveat": "This is an analytic diagnostic of the current independent-noise perturbation model, not a validated empirical vertical covariance model."
+  },
+  "moderate_10km_probe": [
+    {
+      "wavelength_nm": 355,
+      "reference_altitude_m": 10001.25,
+      "minimum_single_realization_path_survival_probability": 0.999632,
+      "minimum_probability_all_300_realizations_survive": 0.8955,
+      "maximum_bins_with_individual_nonpositive_probability_gt_0p01": 0,
+      "interpretation": "The nominal path is robust per realization; the all-300-valid requirement can still fail occasionally because many very small tail risks accumulate."
+    },
+    {
+      "wavelength_nm": 532,
+      "reference_altitude_m": 10001.25,
+      "minimum_single_realization_path_survival_probability": 0.999565,
+      "minimum_probability_all_300_realizations_survive": 0.8776,
+      "maximum_bins_with_individual_nonpositive_probability_gt_0p01": 0,
+      "interpretation": "No individual native bin has >1% non-positive risk, but aggregate path/ensemble risk is non-zero."
+    }
+  ],
+  "support_edge_probe": [
+    {
+      "wavelength_nm": 355,
+      "reference_altitude_m": 12176.25,
+      "minimum_single_realization_path_survival_probability": 0.18069,
+      "median_single_realization_path_survival_probability": 0.35984,
+      "minimum_probability_all_300_realizations_survive": 1e-223,
+      "maximum_bins_with_individual_nonpositive_probability_gt_0p01": 27,
+      "maximum_contiguous_risk_cluster_bins": 3,
+      "finding": "Fragility is distributed across many weak native bins, mostly isolated or in short clusters rather than one extended missing layer."
+    },
+    {
+      "wavelength_nm": 532,
+      "reference_altitude_m": 12393.75,
+      "minimum_single_realization_path_survival_probability": 0.13065,
+      "median_single_realization_path_survival_probability": 0.83161,
+      "minimum_probability_all_300_realizations_survive": 6.7e-266,
+      "maximum_bins_with_individual_nonpositive_probability_gt_0p01": 32,
+      "maximum_contiguous_risk_cluster_bins": 2,
+      "finding": "Many weak isolated/short-cluster bins make complete backward support fragile even though the nominal path contains no missing/non-positive bin."
+    }
+  ],
+  "decision": "Retain strict no-gap semantics. The observed failure pattern justifies testing declared pre-retrieval aggregation as a precision/resolution trade, not interpolation or gap filling.",
+  "relationship_to_followup": "The subsequent 60/120 m aggregation experiment directly tests this weak-bin hypothesis and is frozen in 20251107sapm_vertical_aggregation_support_edge.json.",
+  "local_detailed_analysis_sha256": "7d981b4fb063e2031ff82c29055956102a49a90fa42d60d718f9ea53c9b13bd5"
+}
