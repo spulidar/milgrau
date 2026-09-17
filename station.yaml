@@ -27,10 +27,10 @@ station:
       beam_diameter_m: 0.04
       beam_diameter_status: "experimental_pending"
       divergence_full_angle_mrad: 0.10
-      divergence_status: "experimental_pending"
+      divergence_status: "upper_bound_unverified_used_as_model_value"
       axis_separation_m: 0.0
       axis_tilt_mrad: 0.0
-      alignment_status: "experimental_pending"
+      alignment_status: "assumed_coaxial_parallel"
     reported_full_overlap:
       altitude_m_agl: 500.0
       status: "reported_unverified"
@@ -290,6 +290,36 @@ profiles:
         axis_separation_m: 0.0
         axis_tilt_mrad: 0.0
         alignment_status: "assumed_coaxial_parallel"
+    raman_detection:
+      status: "partial_current_metadata"
+      provenance:
+        current_identity_source: "Silva et al. 2025, Atmosphere 16(9), 1022, doi:10.3390/atmos16091022"
+        historical_receiver_source: "SPU Lidar Station instruments page; historical spectral values not promoted to MerionC"
+      channels:
+        "387":
+          companion_elastic_nm: 355
+          species: "N2"
+          scattering_type: "vibrational_raman"
+          nominal_detection_wavelength_nm: 387
+          scc_night_channel_ids: {AN: 4076, PC: 4077}
+          current_spectral_response:
+            status: "current_instrument_evidence_required"
+        "408":
+          companion_elastic_nm: 355
+          species: "H2O"
+          scattering_type: "vibrational_raman"
+          nominal_detection_wavelength_nm: 408
+          scc_mapping_status: "published_current_identity_not_exposed_in_scc_1046"
+          current_spectral_response:
+            status: "current_instrument_evidence_required"
+        "530":
+          companion_elastic_nm: 532
+          species: "N2"
+          scattering_type: "rotational_raman"
+          nominal_detection_wavelength_nm: 530
+          scc_night_channel_ids: {AN: 4075, PC: 4074}
+          current_spectral_response:
+            status: "current_instrument_evidence_required"
     scc:
       day:
         configuration_id: 1047
