@@ -33,7 +33,10 @@ def test_selection_aware_mc_reselects_reference_and_reports_support() -> None:
         RAYLEIGH_LIDAR_RATIO_SR,
         55.0,
     )
-    error = np.sqrt((0.01 * signal) ** 2 + (0.03 * signal[np.argmin(np.abs(altitude - 10_000.0))]) ** 2)
+    error = np.sqrt(
+        (0.01 * signal) ** 2
+        + (0.03 * signal[np.argmin(np.abs(altitude - 10_000.0))]) ** 2
+    )
 
     result = selection_aware_boundary_monte_carlo_rnd(
         range_corrected_signal=signal,
@@ -67,6 +70,8 @@ def test_selection_aware_mc_reselects_reference_and_reports_support() -> None:
     assert result.aerosol_backscatter_valid_fraction.shape == (2, result.altitude_m.size)
     assert result.selected_reference_index_samples.shape == (12,)
     assert result.selected_reference_altitude_m_samples.shape == (12,)
+    assert result.selected_reference_tier_min_altitude_m_samples.shape == (12,)
+    assert result.selected_reference_tier_index_samples.shape == (12,)
     assert 0 < result.selection_success_count <= result.n_iterations
     assert np.isclose(
         result.selection_success_fraction,
@@ -75,8 +80,13 @@ def test_selection_aware_mc_reselects_reference_and_reports_support() -> None:
     selected = result.selected_reference_altitude_m_samples[
         np.isfinite(result.selected_reference_altitude_m_samples)
     ]
+    selected_tiers = result.selected_reference_tier_min_altitude_m_samples[
+        np.isfinite(result.selected_reference_tier_min_altitude_m_samples)
+    ]
     assert selected.size == result.selection_success_count
+    assert selected_tiers.size == result.selection_success_count
     assert np.all((selected >= 9000.0) & (selected <= 14_000.0))
+    assert np.all(selected_tiers == 9000.0)
     assert np.all(result.aerosol_backscatter_valid_fraction >= 0.0)
     assert np.all(result.aerosol_backscatter_valid_fraction <= 1.0)
 
