@@ -15,6 +15,8 @@ _EXPENSIVE_RND_SWEEPS = [
     "test_high_column_mc_coverage_rnd.py",
     "test_high_column_mc_interval_diagnostic_rnd.py",
     "test_high_column_mc_random_coverage_rnd.py",
+    "test_selection_aware_mc_coverage_rnd.py",
+    "test_selection_aware_mc_measurement_only_rnd.py",
 ]
 
 collect_ignore = (
