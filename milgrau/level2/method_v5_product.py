@@ -1,6 +1,6 @@
 """Productive method-v5 Level 2 retrieval and schema-4 dataset assembly.
 
-Method v5 operates on 20-minute temporal blocks, preserves the native lower
+Method v5 operates on configured temporal blocks, preserves the native lower
 column, progressively aggregates the high column, selects a reference from the
 highest supported declared altitude tier, and propagates native signal noise
 through reference re-selection in the Monte Carlo ensemble.
@@ -96,6 +96,13 @@ class MethodV5WavelengthProduct:
     reference_tier_min_altitude_m_block: np.ndarray
     reference_tier_index_block: np.ndarray
     reference_fallback_used_block: np.ndarray
+    reference_relative_slope_block: np.ndarray
+    reference_relative_variance_block: np.ndarray
+    reference_valid_fraction_block: np.ndarray
+    reference_diagnostic_cost_block: np.ndarray
+    reference_snr_median_block: np.ndarray
+    reference_effective_resolution_m_block: np.ndarray
+    reference_source_bin_count_block: np.ndarray
     contiguous_path_top_altitude_m_block: np.ndarray
     selection_success_fraction_block: np.ndarray
     selected_reference_altitude_m_mc: np.ndarray
@@ -108,7 +115,11 @@ class MethodV5WavelengthProduct:
     gluing_attempted_flag_block: np.ndarray
     gluing_success_flag_block: np.ndarray
     single_channel_fallback_flag_block: np.ndarray
+    gluing_start_altitude_m_block: np.ndarray
     gluing_split_altitude_m_block: np.ndarray
+    gluing_stop_altitude_m_block: np.ndarray
+    gluing_slope_block: np.ndarray
+    gluing_intercept_block: np.ndarray
     gluing_correlation_block: np.ndarray
     gluing_relative_rmse_block: np.ndarray
     gluing_relative_bias_block: np.ndarray
@@ -146,7 +157,10 @@ def get_method_v5_config(config: Mapping[str, Any]) -> MethodV5Configuration:
         _positive_float(value, f"inversion.method_v5.reference_tier_min_altitudes_m[{index}]")
         for index, value in enumerate(raw_tiers)
     )
-    if any(next_value >= value for value, next_value in zip(tiers, tiers[1:], strict=False)):
+    if any(
+        next_value >= value
+        for value, next_value in zip(tiers, tiers[1:], strict=False)
+    ):
         raise ValueError(
             "inversion.method_v5.reference_tier_min_altitudes_m must be strictly descending."
         )
@@ -314,6 +328,13 @@ def retrieve_wavelength_method_v5(
     reference_tier_min = np.full(n_block, np.nan, dtype=np.float64)
     reference_tier_index = np.full(n_block, -1, dtype=np.int16)
     reference_fallback = np.zeros(n_block, dtype=np.int8)
+    reference_relative_slope = np.full(n_block, np.nan, dtype=np.float64)
+    reference_relative_variance = np.full(n_block, np.nan, dtype=np.float64)
+    reference_valid_fraction = np.full(n_block, np.nan, dtype=np.float64)
+    reference_diagnostic_cost = np.full(n_block, np.nan, dtype=np.float64)
+    reference_snr_median = np.full(n_block, np.nan, dtype=np.float64)
+    reference_effective_resolution = np.full(n_block, np.nan, dtype=np.float64)
+    reference_source_bin_count = np.zeros(n_block, dtype=np.int32)
     path_top = np.full(n_block, np.nan, dtype=np.float64)
     selection_success_fraction = np.full(n_block, np.nan, dtype=np.float64)
     selected_reference_mc = np.full((n_block, iterations), np.nan, dtype=np.float64)
@@ -387,6 +408,7 @@ def retrieve_wavelength_method_v5(
             continue
 
         selected = result.selected_reference
+        candidate = selected.native_rayleigh_candidate
         nominal = np.asarray(
             fernald_inversion(
                 result.prepared.range_corrected_signal,
@@ -409,6 +431,13 @@ def retrieve_wavelength_method_v5(
         reference_tier_min[block_index] = float(result.selected_reference_tier_min_altitude_m)
         reference_tier_index[block_index] = int(result.selected_reference_tier_index)
         reference_fallback[block_index] = int(result.selected_reference_fallback_used)
+        reference_relative_slope[block_index] = float(candidate.relative_slope)
+        reference_relative_variance[block_index] = float(candidate.relative_variance)
+        reference_valid_fraction[block_index] = float(candidate.valid_fraction)
+        reference_diagnostic_cost[block_index] = float(candidate.diagnostic_cost)
+        reference_snr_median[block_index] = float(candidate.uncertainty_snr_median)
+        reference_effective_resolution[block_index] = float(selected.effective_resolution_m)
+        reference_source_bin_count[block_index] = int(selected.source_count)
         selection_success_fraction[block_index] = float(
             result.monte_carlo.selection_success_fraction
         )
@@ -471,6 +500,13 @@ def retrieve_wavelength_method_v5(
         reference_tier_min_altitude_m_block=reference_tier_min,
         reference_tier_index_block=reference_tier_index,
         reference_fallback_used_block=reference_fallback,
+        reference_relative_slope_block=reference_relative_slope,
+        reference_relative_variance_block=reference_relative_variance,
+        reference_valid_fraction_block=reference_valid_fraction,
+        reference_diagnostic_cost_block=reference_diagnostic_cost,
+        reference_snr_median_block=reference_snr_median,
+        reference_effective_resolution_m_block=reference_effective_resolution,
+        reference_source_bin_count_block=reference_source_bin_count,
         contiguous_path_top_altitude_m_block=path_top,
         selection_success_fraction_block=selection_success_fraction,
         selected_reference_altitude_m_mc=selected_reference_mc,
@@ -489,7 +525,11 @@ def retrieve_wavelength_method_v5(
         single_channel_fallback_flag_block=np.asarray(
             glued.single_channel_fallback_flag, dtype=np.int8
         ),
+        gluing_start_altitude_m_block=np.asarray(glued.start_altitude_m, dtype=np.float64),
         gluing_split_altitude_m_block=np.asarray(glued.split_altitude_m, dtype=np.float64),
+        gluing_stop_altitude_m_block=np.asarray(glued.stop_altitude_m, dtype=np.float64),
+        gluing_slope_block=np.asarray(glued.slope, dtype=np.float64),
+        gluing_intercept_block=np.asarray(glued.intercept, dtype=np.float64),
         gluing_correlation_block=np.asarray(glued.correlation, dtype=np.float64),
         gluing_relative_rmse_block=np.asarray(glued.relative_rmse, dtype=np.float64),
         gluing_relative_bias_block=np.asarray(glued.relative_bias, dtype=np.float64),
@@ -535,11 +575,19 @@ def build_method_v5_level2_dataset(
         dtype=np.float64,
     )
     processed = np.asarray(
-        [result.wavelength_nm for result in results if np.any(result.retrieval_success_flag_block == 1)],
+        [
+            result.wavelength_nm
+            for result in results
+            if np.any(result.retrieval_success_flag_block == 1)
+        ],
         dtype=np.int32,
     )
     failed = np.asarray(
-        [result.wavelength_nm for result in results if not np.any(result.retrieval_success_flag_block == 1)],
+        [
+            result.wavelength_nm
+            for result in results
+            if not np.any(result.retrieval_success_flag_block == 1)
+        ],
         dtype=np.int32,
     )
     if processed.size == 0:
@@ -566,11 +614,17 @@ def build_method_v5_level2_dataset(
             ),
             "lidar_ratio_assumed_sr": (
                 ("wavelength",),
-                np.asarray([result.lidar_ratio_assumed_sr for result in results], dtype=np.float64),
+                np.asarray(
+                    [result.lidar_ratio_assumed_sr for result in results],
+                    dtype=np.float64,
+                ),
             ),
             "lidar_ratio_std_sr": (
                 ("wavelength",),
-                np.asarray([result.lidar_ratio_std_sr for result in results], dtype=np.float64),
+                np.asarray(
+                    [result.lidar_ratio_std_sr for result in results],
+                    dtype=np.float64,
+                ),
             ),
             "range_corrected_signal_block": (
                 ("block_time", "wavelength", "altitude"),
@@ -642,7 +696,10 @@ def build_method_v5_level2_dataset(
             ),
             "retrieval_top_altitude_m": (
                 ("wavelength",),
-                np.asarray([result.retrieval_top_altitude_m for result in results], dtype=np.float64),
+                np.asarray(
+                    [result.retrieval_top_altitude_m for result in results],
+                    dtype=np.float64,
+                ),
             ),
             "rayleigh_reference_altitude_m_block": (
                 ("block_time", "wavelength"),
@@ -659,6 +716,34 @@ def build_method_v5_level2_dataset(
             "rayleigh_reference_fallback_used_block": (
                 ("block_time", "wavelength"),
                 _stack_block(results, "reference_fallback_used_block").astype(np.int8),
+            ),
+            "rayleigh_reference_relative_slope_block": (
+                ("block_time", "wavelength"),
+                _stack_block(results, "reference_relative_slope_block"),
+            ),
+            "rayleigh_reference_relative_variance_block": (
+                ("block_time", "wavelength"),
+                _stack_block(results, "reference_relative_variance_block"),
+            ),
+            "rayleigh_reference_valid_fraction_block": (
+                ("block_time", "wavelength"),
+                _stack_block(results, "reference_valid_fraction_block"),
+            ),
+            "rayleigh_reference_diagnostic_cost_block": (
+                ("block_time", "wavelength"),
+                _stack_block(results, "reference_diagnostic_cost_block"),
+            ),
+            "rayleigh_reference_snr_median_block": (
+                ("block_time", "wavelength"),
+                _stack_block(results, "reference_snr_median_block"),
+            ),
+            "rayleigh_reference_effective_resolution_m_block": (
+                ("block_time", "wavelength"),
+                _stack_block(results, "reference_effective_resolution_m_block"),
+            ),
+            "rayleigh_reference_source_bin_count_block": (
+                ("block_time", "wavelength"),
+                _stack_block(results, "reference_source_bin_count_block").astype(np.int32),
             ),
             "contiguous_path_top_altitude_m_block": (
                 ("block_time", "wavelength"),
@@ -709,9 +794,25 @@ def build_method_v5_level2_dataset(
                 ("block_time", "wavelength"),
                 _stack_block(results, "single_channel_fallback_flag_block").astype(np.int8),
             ),
+            "gluing_start_altitude_m": (
+                ("block_time", "wavelength"),
+                _stack_block(results, "gluing_start_altitude_m_block"),
+            ),
             "gluing_split_altitude_m": (
                 ("block_time", "wavelength"),
                 _stack_block(results, "gluing_split_altitude_m_block"),
+            ),
+            "gluing_stop_altitude_m": (
+                ("block_time", "wavelength"),
+                _stack_block(results, "gluing_stop_altitude_m_block"),
+            ),
+            "gluing_slope": (
+                ("block_time", "wavelength"),
+                _stack_block(results, "gluing_slope_block"),
+            ),
+            "gluing_intercept": (
+                ("block_time", "wavelength"),
+                _stack_block(results, "gluing_intercept_block"),
             ),
             "gluing_correlation": (
                 ("block_time", "wavelength"),
@@ -786,7 +887,10 @@ def build_method_v5_level2_dataset(
 
     ds["altitude"].attrs.update({"units": "m", "positive": "up"})
     ds["effective_vertical_resolution_m"].attrs.update(
-        {"units": "m", "long_name": "effective vertical cell width on the progressive retrieval grid"}
+        {
+            "units": "m",
+            "long_name": "effective vertical cell width on the progressive retrieval grid",
+        }
     )
     ds["source_bin_count"].attrs["long_name"] = (
         "number of contiguous native Level-1 altitude bins represented by each progressive cell"
@@ -801,6 +905,10 @@ def build_method_v5_level2_dataset(
     ds["selection_success_fraction_block"].attrs["long_name"] = (
         "fraction of Monte-Carlo realizations in which tiered reference selection succeeds"
     )
+    ds["rayleigh_reference_diagnostic_cost_block"].attrs["long_name"] = (
+        "selected native-grid Rayleigh candidate relative_slope plus relative_variance"
+    )
+    ds["rayleigh_reference_effective_resolution_m_block"].attrs["units"] = "m"
     return ds
 
 
