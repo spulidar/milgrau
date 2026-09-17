@@ -164,32 +164,31 @@ def test_zero_uncertainty_is_supported_and_distinct_from_missing_uncertainty() -
     assert np.all(np.isfinite(beta_std[: case.reference_index + 1]))
 
 
-def test_uncertainty_dependence_policy_is_machine_readable() -> None:
+def test_method_v5_uncertainty_policy_is_machine_readable() -> None:
     metadata = elastic_inversion_algorithm_metadata()
 
-    assert metadata["optical_block_uncertainty_correlation_policy"] == (
-        "fully_correlated_upper_bound"
-    )
-    assert metadata["optical_block_uncertainty_aggregation_formula"] == (
-        "sigma_mean=sum(sigma_block)/n_effective on common value/error support"
-    )
-    assert "lidar-ratio nuisance shared across blocks" in metadata[
-        "uncertainty_component_dependence"
+    assert metadata["uncertainty_method"] == "selection-aware Monte Carlo"
+    assert "reference selection" in metadata[
+        "reference_selection_uncertainty_policy"
     ]
+    assert "outer deterministic sensitivity scenario" in metadata[
+        "boundary_systematic_policy"
+    ]
+    assert "not converted to a pass/fail cutoff" in metadata["mc_support_policy"]
     assert "slope/intercept uncertainty excluded" in metadata[
         "gluing_uncertainty_scope"
     ]
 
 
-def test_method_v4_preserves_v3_uncertainty_semantics_and_versions_rayleigh_selection() -> None:
+def test_productive_method_is_v5_with_tiered_reference_selection() -> None:
     metadata = elastic_inversion_algorithm_metadata()
 
-    assert LEVEL2_RETRIEVAL_METHOD_VERSION == "4"
-    assert metadata["optical_block_uncertainty_correlation_policy"] == (
-        "fully_correlated_upper_bound"
-    )
-    assert "enumerate complete candidates" in metadata[
+    assert LEVEL2_RETRIEVAL_METHOD_VERSION == "5"
+    assert "declared altitude tiers" in metadata[
         "rayleigh_reference_selection_policy"
+    ]
+    assert "not a molecular-purity claim" in metadata[
+        "rayleigh_reference_altitude_policy"
     ]
     assert metadata["rayleigh_reference_snr_policy"] == (
         "diagnostic_only_no_hard_threshold"
