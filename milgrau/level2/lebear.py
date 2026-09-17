@@ -13,7 +13,7 @@ import numpy as np
 import xarray as xr
 
 from milgrau.incremental import output_is_current
-from milgrau.io.contracts import netcdf_satisfies_contract, validate_level1_contract, validate_level2_contract
+from milgrau.io.contracts import netcdf_satisfies_contract, validate_level1_contract
 from milgrau.io.filesystem import ensure_directories
 from milgrau.io.logging_utils import bind_log_context
 from milgrau.io.paths import level2_output_path, logging_save_id
@@ -49,6 +49,7 @@ from milgrau.level2.method_v5_product import (
 )
 from milgrau.level2.retrieval import RetrievalStageError, process_wavelength
 from milgrau.level2.qa import generate_level2_qa, level2_qa_enabled
+from milgrau.level2.schema_v5 import validate_method_v5_level2_contract
 from milgrau.level2.time_window import subset_level1_time_window
 
 
@@ -67,13 +68,12 @@ def level2_output_is_current(
     if not output.is_file():
         return False
     requested = list(canonical_wavelengths(get_wavelengths_to_process(config)))
-    expected_kfs_mode = get_kfs_mode(config)
     expected_algorithm_metadata = elastic_inversion_algorithm_metadata()
     expected_gluing_metadata = gluing_selection_score_metadata()
     try:
         source_level1_sha256 = file_sha256(nc_file)
         with xr.open_dataset(output) as ds:
-            validate_level2_contract(ds)
+            validate_method_v5_level2_contract(ds)
             if (
                 str(ds.attrs.get("level2_product_schema_version", ""))
                 != LEVEL2_PRODUCT_SCHEMA_VERSION
@@ -84,8 +84,6 @@ def level2_output_is_current(
                 or str(ds.attrs.get("product_status", "")) not in {"success", "partial"}
                 or "requested_wavelengths" not in ds
             ):
-                return False
-            if str(ds.attrs.get("KFS_Mode", "")).strip().lower() != expected_kfs_mode:
                 return False
             if any(
                 str(ds.attrs.get(key, "")) != str(value)
@@ -108,7 +106,9 @@ def level2_output_is_current(
         output,
         [nc_file],
         config=config,
-        integrity_check=lambda path: netcdf_satisfies_contract(path, validate_level2_contract),
+        integrity_check=lambda path: netcdf_satisfies_contract(
+            path, validate_method_v5_level2_contract
+        ),
     )
 
 
@@ -276,7 +276,7 @@ def process_single_level1_file(
                 file_logger,
             )
             stage = "level2.validation.output"
-            validate_level2_contract(ds_l2)
+            validate_method_v5_level2_contract(ds_l2)
 
         stage = "level2.write"
         output_path = level2_output_path(nc_path, variant_tag=output_tag)
