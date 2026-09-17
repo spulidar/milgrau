@@ -41,6 +41,35 @@ def test_configuration_provenance_is_human_readable(tmp_path: Path) -> None:
     assert not any("sha" in key.lower() for key in attrs)
 
 
+def test_configuration_provenance_normalizes_legacy_station_profile_from_source(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    station_path = tmp_path / "station.yaml"
+    config_path.write_text("processing: {}\n", encoding="utf-8")
+    station_path.write_text("station: {}\n", encoding="utf-8")
+    config = {
+        "_config_file": str(config_path),
+        "_station_config_path": str(station_path),
+        "_station_catalog": {
+            "profiles": [
+                {
+                    "id": "spu-merionc-2024",
+                    "calibration_id": "spu-channel-corrections-v1",
+                }
+            ]
+        },
+    }
+
+    attrs = configuration_provenance(
+        config,
+        source_attrs={"Station_Profile": "spu-merionc-2024"},
+    )
+
+    assert attrs["station_profile_id"] == "spu-merionc-2024"
+    assert attrs["instrument_calibration_id"] == "spu-channel-corrections-v1"
+
+
 def test_netcdf_provenance_embeds_exact_yaml_with_indexed_vlen_strings(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     station_path = tmp_path / "station.yaml"
