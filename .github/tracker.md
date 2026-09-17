@@ -499,11 +499,44 @@ Critical design decision:
 
 Open next:
 
-* [ ] Build an offline helper that populates this vector for every relevant schema-v3 candidate in `20251107sapm`.
+* [x] Implement an offline helper joining schema-v3 candidate slots to `HighColumnEvidence`: `milgrau/level2/high_column_export.py` and `milgrau/cli/high_column_evidence.py`.
+* [ ] Execute the helper on the checksum-matched frozen `20251107sapm` NetCDF; individual observational records have not yet been exported.
 * [ ] Persist/export the analysis in an auditable table/summary.
 * [ ] Inspect how evidence dimensions behave with altitude before defining any decision rule.
 * [ ] Determine which diagnostics are redundant and which identify genuinely different failure modes.
 * [ ] Do not replace missing evidence with favorable defaults.
+
+---
+
+### Offline export implementation — 2026-09-17
+
+* **Question:** can each persisted candidate be joined to separate uncertainty,
+  temporal and subwindow diagnostics without changing selection or inventing
+  missing evidence?
+* **Implementation:** CSV/strict-JSON candidate tables plus altitude-stratified
+  summaries; original selected/rejected/unevaluated states are retained. Explicit
+  block weights, resolution declaration, input SHA-256 and exporter source
+  identity accompany the analysis. See `docs/high_column_evidence_export.md`.
+* **Evidence:** `tests/test_high_column_export.py` covers analytical clean-window
+  SNR, unequal temporal weights, rejected/unevaluated slots, missing error,
+  exact native geometry, export round trip, input checksum and no-overwrite.
+  Local syntax/whitespace checks passed. Repository [CI run 35230577260](https://github.com/spulidar/milgrau/actions/runs/35230577260)
+  passed Ruff and the full pytest suite on Ubuntu/Windows with Python 3.12/3.14
+  for implementation commit `febfe8175f690d8e9464e823df30650da85529b4`
+  (485 tests passed on Ubuntu/Python 3.12). Local pytest was unavailable because
+  required dependencies could not be installed in the local environment.
+* **Finding:** source code and aggregate frozen summaries are available, but the
+  original NetCDF is not in the repository/workspace. Aggregates cannot recover
+  per-candidate evidence. No new observational finding is claimed.
+* **Decision / scope:** diagnostic-only infrastructure; the observational gate
+  remains open. Contamination and empirical covariance diagnostics remain null.
+  Exact-window persistence is explicitly distinct from availability of any
+  candidate above a target altitude. Subwindow agreement does not prove purity.
+* **Versioning:** productive schema 3 / method 4 unchanged; no new thresholds,
+  estimator promotion or resolution choice.
+* **Next gate:** obtain the frozen NetCDF, run the documented checksum-guarded
+  command, reconcile counts/selected references and inspect distributions before
+  any experimental high-boundary retrieval.
 
 ---
 
@@ -763,7 +796,7 @@ Release preparation must not force unfinished P5 R&D into the productive method.
 
 Do these in order unless new evidence invalidates the sequence:
 
-1. **Populate `HighColumnEvidence` offline** for the existing `20251107sapm` schema-v3 candidates.
+1. **Run the implemented offline `HighColumnEvidence` exporter** on the checksum-matched `20251107sapm` schema-v3 NetCDF (not versioned in this repository); see `docs/high_column_evidence_export.md`. The real-data gate remains open.
 2. Produce an auditable candidate/evidence summary without creating a composite score or threshold.
 3. Extend synthetic fitted-boundary tests with:
 
@@ -823,4 +856,5 @@ If those answers are unavailable, the item is still open even if code exists.
 
 # 21. Current one-paragraph handoff
 
-MILGRAU currently has a stable productive Level 2 baseline at schema v3 / retrieval method v4 using QA-first Rayleigh candidate selection and backward KFS with the exact measured RCS bin as the boundary. Altitude-resolved inversion support, candidate provenance and partial uncertainty semantics are explicit and tested. The current primary R&D question is whether higher-altitude information already present in real measurements can be used through fitted-window boundary estimation and/or declared pre-retrieval vertical aggregation without biasing the established lower column, hiding contamination, temporal nonstationarity or resolution loss. `20251107sapm` shows many high-altitude shape-QA candidates but weak single-bin SNR and large exact-vs-window boundary disagreement aloft; fitted-window information is promising but contamination can produce precise biased boundaries. The immediate task is therefore to populate the existing `HighColumnEvidence` vector from the frozen schema-v3 catalogue, strengthen contamination/noise synthetic evidence, and only then perform the first offline non-productive higher-boundary retrieval comparison. No high-column threshold, estimator, aggregation width, ensemble, cascade or method-v5 change has yet been authorized.
+MILGRAU currently has a stable productive Level 2 baseline at schema v3 / retrieval method v4 using QA-first Rayleigh candidate selection and backward KFS with the exact measured RCS bin as the boundary. Altitude-resolved inversion support, candidate provenance and partial uncertainty semantics are explicit and tested. The current primary R&D question is whether higher-altitude information already present in real measurements can be used through fitted-window boundary estimation and/or declared pre-retrieval vertical aggregation without biasing the established lower column, hiding contamination, temporal nonstationarity or resolution loss. `20251107sapm` shows many high-altitude shape-QA candidates but weak single-bin SNR and large exact-vs-window boundary disagreement aloft; fitted-window information is promising but contamination can produce precise biased boundaries. The offline `HighColumnEvidence` exporter is implemented with auditable tables and synthetic tests, but the frozen observational NetCDF was unavailable in this checkout. The immediate task is therefore to run that exporter on the checksum-matched schema-v3 product, inspect the candidate distributions, strengthen contamination/noise synthetic evidence, and only then perform the first offline non-productive higher-boundary retrieval comparison. No high-column threshold, estimator, aggregation width, ensemble, cascade or method-v5 change has yet been authorized.
+
