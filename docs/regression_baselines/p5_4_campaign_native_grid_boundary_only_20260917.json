@@ -1,0 +1,33 @@
+{
+  "evidence_type": "p5_4_campaign_native_grid_boundary_only_rnd",
+  "created_date": "2026-09-17",
+  "productive_identity": "schema_v3_method_v4_backward_kfs_unchanged",
+  "experiment": "Keep the native 7.5 m grid and change only the exact KFS boundary to the pre-existing all-block accepted candidate nearest 10 km, or the highest all-block accepted candidate when persistence does not reach 10 km. No vertical aggregation and no rerun of Rayleigh QA. Compare to persisted productive method-v4 aerosol backscatter only where the productive retrieval is finite.",
+  "global_summary": {
+    "input_valid_block_wavelength_runs": 161,
+    "invalid_exact_reference_runs": 2,
+    "valid_exact_reference_runs": 159,
+    "all_300_simulations_complete_runs": 111,
+    "minimum_complete_fraction": 0.0,
+    "median_complete_fraction": 1.0,
+    "median_lower_0p6_6km_relative_l2_difference_vs_productive": 0.1313017340,
+    "p95_lower_0p6_6km_relative_l2_difference_vs_productive": 0.4715837426,
+    "median_absolute_integrated_column_relative_difference_vs_productive": 0.1646476430,
+    "p95_absolute_integrated_column_relative_difference_vs_productive": 0.6123923342
+  },
+  "selected_cases": {
+    "20240621sant_355_10001p25m": {"all_300_complete": "18/18", "median_lower_l2": 0.30401, "p95_lower_l2": 0.57797},
+    "20241202saam_355_6896p25m": {"all_300_complete": "6/7", "minimum_complete_fraction": 0.99, "median_lower_l2": 0.01325},
+    "20250509sant_355_10001p25m": {"all_300_complete": "4/5", "minimum_complete_fraction": 0.99667, "median_lower_l2": 0.11694, "p95_lower_l2": 0.32409},
+    "20250629sant_532_10001p25m": {"all_300_complete": "14/14", "median_lower_l2": 0.24627, "p95_lower_l2": 0.56907, "p95_integrated_column_abs_difference": 0.69219},
+    "20250716sapm_355_9881p25m": {"all_300_complete": "1/8", "minimum_complete_fraction": 0.0, "median_lower_l2": 0.08715},
+    "20251107sapm_532_10001p25m": {"all_300_complete": "0/5", "minimum_complete_fraction": 0.08333, "median_lower_l2": 0.29131, "p95_integrated_column_abs_difference": 0.99755}
+  },
+  "interpretation": [
+    "Moving only the exact boundary on the native grid already changes the lower-column retrieval materially across the campaign.",
+    "The boundary-only median and p95 lower-column differences are larger than the same-boundary aggregation experiment, so high-boundary sensitivity is not primarily a vertical-rebinning artifact.",
+    "Even cases with complete paths at the higher boundary can show large lower-column differences, demonstrating that path completeness and Rayleigh-window shape QA do not validate the aerosol-free boundary assumption beta_aer(ref)=0.",
+    "The two invalid exact-reference runs reproduce the known semantic distinction between window QA and exact-bin KFS usability."
+  ],
+  "decision": "A future high-column method cannot select a higher boundary solely from Rayleigh shape QA, persistence and path completeness. Boundary-condition validity must be addressed explicitly before any method-v5 proposal."
+}
