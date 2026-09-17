@@ -1,0 +1,56 @@
+{
+  "evidence_type": "p5_4_boundary_existing_diagnostic_association_rnd",
+  "created_date": "2026-09-17",
+  "sample": "142 native-grid boundary-only runs with a valid exact reference and a finite productive method-v4 lower-column control.",
+  "question": "Do existing Rayleigh candidate diagnostics rank the risk of lower-column change when an accepted higher boundary is used? This is diagnostic association only; no threshold or predictive model is fitted.",
+  "pooled_spearman": {
+    "lower_0p6_6km_relative_l2": {
+      "calibration_factor": 0.389,
+      "probe_altitude": 0.388,
+      "candidate_snr": 0.387,
+      "diagnostic_cost": -0.362,
+      "relative_slope": -0.340,
+      "relative_variance": -0.307,
+      "complete_mc_fraction": 0.170,
+      "valid_fraction": 0.116,
+      "free_intercept": -0.030
+    },
+    "absolute_integrated_column_difference": {
+      "calibration_factor": 0.479,
+      "diagnostic_cost": -0.364,
+      "candidate_snr": 0.354,
+      "relative_slope": -0.332,
+      "probe_altitude": 0.318,
+      "relative_variance": -0.295,
+      "complete_mc_fraction": 0.150,
+      "valid_fraction": 0.117,
+      "free_intercept": -0.060
+    }
+  },
+  "within_measurement_wavelength_spearman_summary": {
+    "groups_with_at_least_4_comparable_blocks": 17,
+    "lower_relative_l2_median_rho": {
+      "relative_slope": -0.20,
+      "relative_variance": 0.00,
+      "candidate_snr": 0.095,
+      "diagnostic_cost": 0.00,
+      "calibration_factor": 0.20,
+      "free_intercept": 0.154
+    },
+    "absolute_integrated_column_difference_median_rho": {
+      "relative_slope": -0.20,
+      "relative_variance": 0.00,
+      "candidate_snr": 0.143,
+      "diagnostic_cost": 0.00,
+      "calibration_factor": 0.257,
+      "free_intercept": 0.117
+    },
+    "interpretation": "Within-case associations are weak and inconsistent in sign across events. Pooled correlations are confounded by regime and probe altitude and must not be treated as a predictive law."
+  },
+  "interpretation": [
+    "Existing shape QA, SNR, diagnostic cost and path completeness do not consistently rank lower-column sensitivity to a higher boundary across heterogeneous observations.",
+    "Some pooled associations are counter-intuitive: better/lower shape cost or higher SNR can coexist with larger lower-column changes because the diagnostics characterize signal shape/precision rather than the aerosol-free boundary assumption.",
+    "The result argues against solving P5.4 by merely reweighting the current candidate cost."
+  ],
+  "decision": "Treat physical validity of beta_aer(ref)=0 as a distinct unresolved boundary-condition problem. Do not create a composite Rayleigh score or tuned threshold from these associations."
+}
