@@ -66,5 +66,7 @@ def test_method_v5_rnd_runs_grid_selector_and_nested_mc_without_productive_gate(
         2,
         result.prepared.grid.n_cells,
     )
-    assert np.all(result.monte_carlo.backward_valid_fraction >= 0.0)
-    assert np.all(result.monte_carlo.backward_valid_fraction <= 1.0)
+    assert 0.0 <= result.monte_carlo.selection_success_fraction <= 1.0
+    assert result.monte_carlo.selection_success_count <= result.monte_carlo.n_iterations
+    assert np.all(result.monte_carlo.aerosol_backscatter_valid_fraction >= 0.0)
+    assert np.all(result.monte_carlo.aerosol_backscatter_valid_fraction <= 1.0)
