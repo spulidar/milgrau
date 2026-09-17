@@ -90,14 +90,35 @@ def _write_level1(path: Path) -> Path:
     ds = xr.Dataset(
         data_vars={
             "corrected_signal": (("time", "channel", "altitude"), rcs.copy()),
-            "corrected_signal_error": (("time", "channel", "altitude"), rcs_error.copy()),
+            "corrected_signal_error": (
+                ("time", "channel", "altitude"),
+                rcs_error.copy(),
+            ),
             "range_corrected_signal": (("time", "channel", "altitude"), rcs),
-            "range_corrected_signal_error": (("time", "channel", "altitude"), rcs_error),
-            "pc_saturation_mask": (("time", "channel", "altitude"), np.zeros_like(rcs, dtype=np.int8)),
-            "pc_saturation_characterized": (("channel",), np.array([0, 1], dtype=np.int8)),
-            "channel_correction_success": (("channel",), np.ones(channel.size, dtype=np.int8)),
-            "Atmospheric_Temperature_K": (("altitude",), temperature_k.astype(np.float64)),
-            "Atmospheric_Pressure_hPa": (("altitude",), pressure_hpa.astype(np.float64)),
+            "range_corrected_signal_error": (
+                ("time", "channel", "altitude"),
+                rcs_error,
+            ),
+            "pc_saturation_mask": (
+                ("time", "channel", "altitude"),
+                np.zeros_like(rcs, dtype=np.int8),
+            ),
+            "pc_saturation_characterized": (
+                ("channel",),
+                np.array([0, 1], dtype=np.int8),
+            ),
+            "channel_correction_success": (
+                ("channel",),
+                np.ones(channel.size, dtype=np.int8),
+            ),
+            "Atmospheric_Temperature_K": (
+                ("altitude",),
+                temperature_k.astype(np.float64),
+            ),
+            "Atmospheric_Pressure_hPa": (
+                ("altitude",),
+                pressure_hpa.astype(np.float64),
+            ),
         },
         coords={"time": time, "channel": channel, "altitude": altitude},
         attrs={
@@ -123,7 +144,7 @@ def _config(tmp_path: Path) -> dict:
             "kfs_mode": "backward",
             "monte_carlo_iterations": 5,
             "random_seed": 123,
-            "beta_ref_relative_std": 0.10,
+            "beta_ref_relative_std": 0.0,
             "aerosol_ref_fraction": 0.0,
             "min_lidar_ratio_sr": 10.0,
             "allow_negative_aerosol": False,
@@ -134,6 +155,14 @@ def _config(tmp_path: Path) -> dict:
                 "max_relative_slope": 10.0,
                 "max_relative_variance": 10.0,
                 "min_valid_fraction": 0.10,
+            },
+            "method_v5": {
+                "reference_tier_min_altitudes_m": [1200.0, 900.0, 600.0],
+                "reference_search_max_m": 1500.0,
+                "path_start_altitude_m": 7.5,
+                "residual_aerosol_fractions": [0.0, 0.02],
+                "uncertainty_mode": "independent",
+                "progressive_grid_schedule": [[0.0, 7.5]],
             },
             "gluing": {
                 "window_length_bins": 20,
@@ -158,25 +187,61 @@ def _config(tmp_path: Path) -> dict:
     }
 
 
-def test_level2_saves_rayleigh_reference_qa_variables(tmp_path: Path) -> None:
+def test_level2_saves_method_v5_selected_reference_qa_variables(tmp_path: Path) -> None:
     level1 = _write_level1(tmp_path / "20240101sant_level1_rcs.nc")
 
     summary = lebear.process_single_level1_file(level1, _config(tmp_path), _logger())
 
     assert summary.results[0].status is ExecutionStatus.OK
     with xr.open_dataset(level2_output_path(level1)) as ds:
-        assert "rayleigh_reference_success_flag" in ds
-        assert "rayleigh_reference_relative_slope" in ds
-        assert "rayleigh_reference_relative_variance" in ds
-        assert "rayleigh_reference_valid_fraction" in ds
-        assert "Rayleigh_Reference_Max_Relative_Slope" in ds.attrs
-        assert "Rayleigh_Reference_Max_Relative_Variance" in ds.attrs
-        assert "Rayleigh_Reference_Min_Valid_Fraction" in ds.attrs
-        assert int(ds["rayleigh_reference_success_flag"].isel(wavelength=0)) in {0, 1}
-        assert float(ds["rayleigh_reference_valid_fraction"].isel(wavelength=0)) >= 0.0
-        assert ds.attrs["KFS_Mode"] == "backward"
+        required = {
+            "rayleigh_reference_altitude_m_block",
+            "rayleigh_reference_relative_slope_block",
+            "rayleigh_reference_relative_variance_block",
+            "rayleigh_reference_valid_fraction_block",
+            "rayleigh_reference_diagnostic_cost_block",
+            "rayleigh_reference_snr_median_block",
+            "rayleigh_reference_effective_resolution_m_block",
+            "rayleigh_reference_source_bin_count_block",
+            "rayleigh_reference_tier_min_altitude_m_block",
+            "rayleigh_reference_fallback_used_block",
+        }
+        assert required <= set(ds.data_vars)
+        assert ds.attrs["level2_retrieval_method_version"] == "5"
         assert ds.attrs["integration_mode"] == "backward"
-        assert "backward" in ds.attrs["KFS_Mode_Description"].lower()
-        description = ds["retrieval_success_flag"].attrs["description"]
-        assert "backward KFS" in description
-        assert "not attempted or rejected" in description
+        assert "highest_supported_declared_tier" in ds.attrs[
+            "reference_selection_policy"
+        ]
+        success = ds["retrieval_success_flag"].isel(block_time=0, wavelength=0).item()
+        assert int(success) == 1
+        assert float(
+            ds["rayleigh_reference_valid_fraction_block"].isel(
+                block_time=0, wavelength=0
+            )
+        ) >= 0.0
+        assert float(
+            ds["rayleigh_reference_effective_resolution_m_block"].isel(
+                block_time=0, wavelength=0
+            )
+        ) > 0.0
+        assert int(
+            ds["rayleigh_reference_source_bin_count_block"].isel(
+                block_time=0, wavelength=0
+            )
+        ) > 0
+        cost = float(
+            ds["rayleigh_reference_diagnostic_cost_block"].isel(
+                block_time=0, wavelength=0
+            )
+        )
+        slope = float(
+            ds["rayleigh_reference_relative_slope_block"].isel(
+                block_time=0, wavelength=0
+            )
+        )
+        variance = float(
+            ds["rayleigh_reference_relative_variance_block"].isel(
+                block_time=0, wavelength=0
+            )
+        )
+        assert np.isclose(cost, slope + variance)
