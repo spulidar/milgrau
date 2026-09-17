@@ -184,10 +184,18 @@ def aggregate_to_progressive_grid(
 ) -> AggregatedGridValues:
     """Strictly aggregate one native profile onto ``grid``.
 
-    A cell is valid only when **all** of its source values are finite and, when
-    requested, positive.  If uncertainty is supplied, all contributing
-    one-sigma values must also be finite and nonnegative.  Therefore aggregation
-    cannot hide or bridge one invalid native sample.
+    A cell is valid only when **all** source samples required by that cell are
+    finite.  When ``require_positive=True`` they must also all be positive.
+    If uncertainty is supplied, all contributing one-sigma values must be
+    finite and nonnegative.  Therefore aggregation cannot hide or bridge a
+    missing/masked native sample.
+
+    Background-subtracted elastic RCS is a special case: a finite negative
+    native sample can be a legitimate noisy measurement rather than a missing
+    sample.  For RCS the intended v5 use is ``require_positive=False`` during
+    aggregation, followed by the KFS physical requirement that the **aggregated
+    cell estimate** itself be positive.  This is averaging at the declared
+    effective resolution, not gap filling.
 
     ``independent`` propagates the uncertainty of the arithmetic mean as
     ``sqrt(sum(sigma_i**2)) / N``.  ``fully_correlated`` uses
