@@ -1,0 +1,60 @@
+{
+  "evidence_type": "p5_4_synthetic_boundary_residual_noise_lr_separation",
+  "created_date": "2026-09-17",
+  "design": {
+    "wavelength_nm": 532,
+    "native_grid_m": 7.5,
+    "reference_altitude_m": 9997.5,
+    "truth_aerosol_lidar_ratio_sr": 55,
+    "aggregation": "none",
+    "residual_fraction_definition": "f=beta_aer(ref)/beta_m(ref) from the broad smooth high-altitude component",
+    "signal_noise": "independent multiplicative Gaussian perturbation, 100 realizations per case",
+    "purpose": "Separate boundary residual aerosol, signal noise and lidar-ratio mismatch rather than allowing one nuisance term to be blamed for another."
+  },
+  "signal_noise_sweep": {
+    "f_0": {
+      "noise_0pct": {"qa_pass_fraction": 1.0, "median_lower_l2": 0.0000013, "median_column_bias": -0.0000010},
+      "noise_1pct": {"qa_pass_fraction": 1.0, "median_lower_l2": 0.0206, "median_column_bias": 0.00018},
+      "noise_3pct": {"qa_pass_fraction": 1.0, "median_lower_l2": 0.0619, "median_column_bias": 0.00287},
+      "noise_5pct": {"qa_pass_fraction": 1.0, "median_lower_l2": 0.1017, "median_column_bias": -0.00372}
+    },
+    "f_0p1": {
+      "noise_0pct": {"qa_pass_fraction": 1.0, "median_lower_l2": 0.0795, "median_column_bias": -0.1013},
+      "noise_1pct": {"qa_pass_fraction": 1.0, "median_lower_l2": 0.0829, "median_column_bias": -0.1028},
+      "noise_3pct": {"qa_pass_fraction": 1.0, "median_lower_l2": 0.1008, "median_column_bias": -0.1048},
+      "noise_5pct": {"qa_pass_fraction": 1.0, "median_lower_l2": 0.1240, "median_column_bias": -0.1027}
+    },
+    "f_0p2": {
+      "noise_0pct": {"qa_pass_fraction": 1.0, "median_lower_l2": 0.1500, "median_column_bias": -0.1905},
+      "noise_1pct": {"qa_pass_fraction": 1.0, "median_lower_l2": 0.1512, "median_column_bias": -0.1903},
+      "noise_3pct": {"qa_pass_fraction": 1.0, "median_lower_l2": 0.1617, "median_column_bias": -0.1937},
+      "noise_5pct": {"qa_pass_fraction": 1.0, "median_lower_l2": 0.1776, "median_column_bias": -0.1924}
+    }
+  },
+  "lidar_ratio_sweep_no_noise": {
+    "f_0": {
+      "LR45_correct_boundary": {"lower_l2": 0.0799, "column_bias": 0.0655},
+      "LR55_correct_boundary": {"lower_l2": 0.0000013, "column_bias": -0.0000010},
+      "LR65_correct_boundary": {"lower_l2": 0.0689, "column_bias": -0.0576}
+    },
+    "f_0p1": {
+      "LR45_correct_boundary": {"lower_l2": 0.0822, "column_bias": 0.0691},
+      "LR45_aerosol_free_boundary": {"lower_l2": 0.0587, "column_bias": -0.0481},
+      "LR55_aerosol_free_boundary": {"lower_l2": 0.0795, "column_bias": -0.1013},
+      "LR65_aerosol_free_boundary": {"lower_l2": 0.1288, "column_bias": -0.1486}
+    },
+    "f_0p2": {
+      "LR45_correct_boundary": {"lower_l2": 0.0845, "column_bias": 0.0726},
+      "LR45_aerosol_free_boundary": {"lower_l2": 0.1190, "column_bias": -0.1476},
+      "LR55_aerosol_free_boundary": {"lower_l2": 0.1500, "column_bias": -0.1905},
+      "LR65_aerosol_free_boundary": {"lower_l2": 0.1892, "column_bias": -0.2292}
+    }
+  },
+  "interpretation": [
+    "Signal noise increases profile-shape error but does not remove the systematic integrated-column underestimation produced by an aerosol-free boundary assumption when residual aerosol is present.",
+    "The existing Rayleigh-window QA remains permissive in this controlled broad-contamination family even as noise is added.",
+    "Lidar-ratio error is an independent source of lower-column bias. It can partially cancel or exacerbate boundary-condition bias, so agreement with a control under one assumed lidar ratio cannot by itself validate the boundary.",
+    "Boundary residual, signal noise and lidar-ratio uncertainty must remain distinct dimensions in any future method-v5 uncertainty/validation design."
+  ],
+  "decision": "Do not infer boundary validity from apparent lower-column agreement when lidar ratio is uncertain; compensating nuisance errors are possible."
+}
