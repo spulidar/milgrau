@@ -1,0 +1,75 @@
+{
+  "evidence_type": "p5_4_heterogeneous_observational_case_matrix",
+  "created_date": "2026-09-17",
+  "productive_method": {"schema_version": "3", "retrieval_method_version": "4"},
+  "label_provenance": "Atmospheric condition labels were supplied by the user and are observational annotations, not independent aerosol/cloud ground truth.",
+  "source_selection_caveat": "Every successfully processed wavelength block in these supplied products used post-QA analog single-channel fallback. The matrix therefore stresses Rayleigh/KFS behavior under heterogeneous atmospheres but does not validate glued or photon-counting high-column behavior.",
+  "cases": [
+    {
+      "measurement_id": "20240620sant",
+      "condition": "plume",
+      "period": "night",
+      "file_sha256": "c50c2206724dd5404e2dbeac8ef2ebac6a1cb604515a45f4a0cd31500b5d4395",
+      "source_level1_sha256": "8a42edd70bf4a3dbcf6be98131212284e0d4a8f533bb9109ef016810da9373ab",
+      "source_revision": "831ac2f4666c670fb3fec877fd581903a397a60d",
+      "wavelengths": {
+        "355": {"blocks": 18, "analog_fallback": 18, "retrieval_success": 18, "accepted_slots": 36683, "accepted_fraction": 0.80424, "highest_all_block_candidate_m": 20456.25, "selected_reference_median_m": 5733.75, "selected_reference_max_m": 7353.75, "accepted_snr_median_5_10_10_15_15_20_20_25km": [5.3314, 0.9876, 0.2257, 0.0927]},
+        "532": {"blocks": 18, "analog_fallback": 18, "retrieval_success": 16, "accepted_slots": 33891, "accepted_fraction": 0.74303, "highest_all_block_candidate_m": 20216.25, "selected_reference_median_m": 6401.25, "selected_reference_max_m": 15521.25, "retrieval_top_median_m": 6135.0, "low_column_sr_peak": {"altitude_m": 1203.75, "value": 2.85768}, "accepted_snr_median_5_10_10_15_15_20_20_25km": [14.5543, 3.2451, 0.9282, 0.1888]}
+      }
+    },
+    {
+      "measurement_id": "20240621sant",
+      "condition": null,
+      "label_source": "unlabeled_adjacent_day",
+      "file_sha256": "a4554e35ba2e4a034f02b9430fc63ae179ae49e50018f022763965337f58e986",
+      "source_level1_sha256": "21eb84bf5dc6cbda4131c1f9deaa8612c86f18ec2bdf9b0ded7f30a1d07b8637",
+      "source_revision": "831ac2f4666c670fb3fec877fd581903a397a60d",
+      "processed_wavelengths_nm": [355],
+      "failed_wavelengths_nm": [532],
+      "failed_wavelength_message": "[rayleigh_kfs] The range-corrected signal must be finite and positive at ref_idx.",
+      "wavelengths": {"355": {"blocks": 18, "analog_fallback": 18, "retrieval_success": 18, "accepted_slots": 38133, "highest_all_block_candidate_m": 20006.25, "selected_reference_median_m": 6907.5, "accepted_snr_median_5_10_10_15_15_20_20_25km": [67.9853, 12.4714, 3.1234, 1.0021]}}
+    },
+    {
+      "measurement_id": "20240902sant",
+      "condition": "biomass_burning",
+      "period": "morning",
+      "file_sha256": "99da2d8efdda0ed67f140f02af368535868232607b6c45e5ea7602247e5ba36f",
+      "source_level1_sha256": "ace8a627269a8a77080daa046900799b87bbbc776486c115fbaf9ac30c834dd4",
+      "source_revision": "831ac2f4666c670fb3fec877fd581903a397a60d",
+      "processed_wavelengths_nm": [532],
+      "failed_wavelengths_nm": [355],
+      "failed_wavelength_message": "[rayleigh_kfs] The range-corrected signal must be finite and positive at ref_idx.",
+      "wavelengths": {"532": {"blocks": 7, "analog_fallback": 7, "retrieval_success": 4, "accepted_slots": 5392, "highest_all_block_candidate_m": 11448.75, "highest_half_block_candidate_m": 15018.75, "selected_reference_median_m": 5906.25, "retrieval_top_median_m": 5801.25, "selected_relative_slope_median": 0.0110, "selected_relative_variance_median": 0.04382, "low_column_sr_peak": {"altitude_m": 1848.75, "value": 51.05}, "accepted_snr_median_5_10_10_15_15_20_20_25km": [4.70, 1.493, 1.083, 1.075]}}
+    },
+    {
+      "measurement_id": "20241202saam",
+      "condition": "low_cloud",
+      "period": "morning",
+      "file_sha256": "caa72f89061796ca56a6433b66342dd90b1504b905f08ac7bbceedc7deecdb79",
+      "source_level1_sha256": "4400c0570124a705270663781201a16c879a8e3003392eb9cf6e9e6ddf1e0240",
+      "source_revision": "831ac2f4666c670fb3fec877fd581903a397a60d",
+      "wavelengths": {
+        "355": {"blocks": 7, "analog_fallback": 7, "retrieval_success": 7, "accepted_slots": 3655, "selected_reference_median_m": 5583.75, "low_column_sr_peak": {"altitude_m": 791.25, "value": 31.97}, "accepted_snr_median_5_10_10_15_15_20_20_25km": [7.72, 0.957, 0.655, 0.709]},
+        "532": {"blocks": 7, "analog_fallback": 7, "retrieval_success": 6, "accepted_slots": 2868, "selected_reference_median_m": 5906.25, "selected_reference_max_m": 11148.75, "low_column_sr_peak": {"altitude_m": 776.25, "value": 85.86}, "accepted_snr_median_5_10_10_15_15_20_20_25km": [5.87, 0.688, 0.425, 0.504]}
+      }
+    },
+    {
+      "measurement_id": "20250509sant",
+      "condition": "high_cloud",
+      "period": "night",
+      "file_sha256": "afc909066fef49d9a0e5b2ba2369adc861e41f9adfae3636793692c0efa1a4e1",
+      "source_level1_sha256": "d50cd4de2ba2a3227749e10f41ec0fd5b4e5620c82f25a76ccc7d9196070c988",
+      "source_revision": "831ac2f4666c670fb3fec877fd581903a397a60d",
+      "wavelengths": {
+        "355": {"blocks": 5, "analog_fallback": 5, "retrieval_success": 5, "accepted_slots": 5979, "highest_all_block_candidate_m": 15506.25, "selected_reference_median_m": 5628.75, "high_cloud_sr_peak": {"altitude_m": 14373.75, "value": 5.1293}, "all_block_candidate_islands_above_cloud_m": [[15258.75,15311.25],[15423.75,15438.75],[15498.75,15506.25]], "accepted_snr_median_5_10_10_15_15_20_20_25km": [14.4697, 3.5527, 0.7603, 0.5086]},
+        "532": {"blocks": 5, "analog_fallback": 5, "retrieval_success": 5, "accepted_slots": 6951, "highest_all_block_candidate_m": 17501.25, "selected_reference_median_m": 6153.75, "high_cloud_sr_peak": {"altitude_m": 14358.75, "value": 15.5266}, "all_block_candidate_islands_above_cloud_m": [[15303.75,15311.25],[15333.75,15371.25],[15438.75,15536.25],[15611.25,15678.75],[15746.25,15903.75],[17351.25,17403.75],[17501.25,17501.25]], "accepted_snr_median_5_10_10_15_15_20_20_25km": [10.9284, 3.1688, 0.5334, 0.4166]}
+      }
+    }
+  ],
+  "interpretation": {
+    "heterogeneous_real_regime_gate": "Met for observational stress-case coverage: plume, biomass-burning annotation, low cloud, high cloud, plus one adjacent unlabeled day.",
+    "high_cloud_finding": "A strong scattering-ratio layer near 14.36-14.37 km locally removes many candidates, but all-block accepted candidate islands reappear above the layer. Shape QA and persistence therefore cannot by themselves certify an uncontaminated molecular boundary.",
+    "exact_reference_failure": "20240621sant/532 and 20240902sant/355 show that a method-v4 Rayleigh window can pass minimum QA while the exact center/reference bin required by KFS is non-finite or non-positive. This should be handled as block-local KFS rejection, not a wavelength-fatal exception.",
+    "method_decision": "Keep productive schema v3 / method v4 unchanged. Do not introduce a new center-bin Rayleigh gate, a cloud veto, or a higher/window boundary from these observations alone."
+  }
+}
