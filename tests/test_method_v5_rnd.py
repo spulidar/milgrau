@@ -56,10 +56,17 @@ def test_method_v5_rnd_runs_grid_selector_and_nested_mc_without_productive_gate(
         rayleigh_window_m=1000.0,
     )
 
-    assert result.selector_name == "minimum_existing_rayleigh_cost_after_qa_and_path"
+    assert result.selector_name == (
+        "highest_supported_reference_tier_then_minimum_existing_rayleigh_cost_"
+        "after_qa_and_path"
+    )
     assert result.selected_reference.accepted
     assert result.selected_reference.nominal_path_admissible
     assert 10_000.0 <= result.selected_reference.altitude_m <= 18_000.0
+    assert result.reference_tier_min_altitudes_m == (10_000.0,)
+    assert result.selected_reference_tier_min_altitude_m == 10_000.0
+    assert result.selected_reference_tier_index == 0
+    assert not result.selected_reference_fallback_used
     assert result.monte_carlo.residual_aerosol_fraction_of_molecular.tolist() == [0.0, 0.05]
     assert result.monte_carlo.aerosol_backscatter_mean.shape[0] == 2
     assert result.monte_carlo.aerosol_backscatter_valid_fraction.shape == (
@@ -68,5 +75,7 @@ def test_method_v5_rnd_runs_grid_selector_and_nested_mc_without_productive_gate(
     )
     assert 0.0 <= result.monte_carlo.selection_success_fraction <= 1.0
     assert result.monte_carlo.selection_success_count <= result.monte_carlo.n_iterations
+    assert result.monte_carlo.selected_reference_tier_min_altitude_m_samples.shape == (20,)
+    assert result.monte_carlo.selected_reference_tier_index_samples.shape == (20,)
     assert np.all(result.monte_carlo.aerosol_backscatter_valid_fraction >= 0.0)
     assert np.all(result.monte_carlo.aerosol_backscatter_valid_fraction <= 1.0)
