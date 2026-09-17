@@ -1,0 +1,59 @@
+{
+  "evidence_type": "p5_4_raman_metadata_gate",
+  "created_date": "2026-09-17",
+  "productive_method_unchanged": {"schema_version": "3", "retrieval_method_version": "4"},
+  "current_profile": "spu-merionc-2024",
+  "current_system_evidence": {
+    "source": "Silva et al. 2025, Atmosphere 16(9), 1022, doi:10.3390/atmos16091022",
+    "supported_claims": [
+      "current SPU system uses 100 Hz Nd:YAG operation",
+      "elastic detection at 355, 532 and 1064 nm",
+      "Raman-shifted detection identities at 387 nm N2, 530 nm N2 and 408 nm H2O",
+      "reported current spatial resolution 7.5 m",
+      "reported current complete overlap at 300 m a.g.l."
+    ],
+    "not_supported_by_source": [
+      "active MerionC Raman filter transmission curves",
+      "active MerionC Raman passband/FWHM",
+      "effective detection wavelength under the active filter response"
+    ]
+  },
+  "historical_receiver_evidence": {
+    "source": "SPU Lidar Station public instruments page",
+    "status": "historical_provenance_not_promoted_to_merionc",
+    "reason": "The page reports detailed historical spectral filters together with receiver/FOV/overlap/resolution details that are not demonstrably identical to the post-2024 MerionC profile."
+  },
+  "supplied_scc_file": {
+    "filename": "20250629sant_scc.nc",
+    "sha256": "8d52f534525c73e64badec5d4007cdf4ea3609e5e962a9045a1bdaf178314af0",
+    "measurement_id": "20250629sant",
+    "station_profile": "spu-merionc-2024",
+    "scc_configuration_id": 1046,
+    "channel_mapping": {
+      "530.PC": 4074,
+      "530.AN": 4075,
+      "387.AN": 4076,
+      "387.PC": 4077
+    },
+    "spectral_metadata_fields_found": [],
+    "interpretation": "The SCC-ready file confirms channel identity/mapping but carries no passband, bandwidth, effective-wavelength or spectral-response metadata for quantitative Raman physics."
+  },
+  "repository_changes": {
+    "station_yaml": "spu-merionc-2024 now records Raman identity separately from unresolved current spectral response",
+    "contract_test": "tests/test_spu_raman_metadata_contract.py prevents silent insertion of numeric current passbands while evidence status is unresolved",
+    "provenance_doc": "docs/spu_raman_channel_provenance.md",
+    "physics_contract_doc": "docs/raman_boundary_validation_rnd.md"
+  },
+  "decision": {
+    "metadata_gate_status": "partially_closed_identity_open_spectral_response",
+    "387_355": "first preferred future quantitative Raman path once current 387 spectral/overlap metadata is traceable",
+    "530_532": "requires explicit rotational-Raman temperature and filter-response treatment before quantitative use",
+    "productive_change": "none"
+  },
+  "next_required_instrument_evidence": [
+    "current 387/530 filter manufacturer/model or measured transmission curves",
+    "effective active passbands/effective wavelengths",
+    "Raman-vs-elastic overlap/calibration semantics for the MerionC receiver path",
+    "documentation of post-2024 receiver/filter changes or continuity"
+  ]
+}
