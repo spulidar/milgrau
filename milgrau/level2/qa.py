@@ -25,10 +25,10 @@ def level2_qa_enabled(config: Mapping[str, Any]) -> bool:
 
 
 def _load_plotter() -> Level2QAPlotter:
-    """Import the Matplotlib-backed plotter only when QA is requested."""
-    from milgrau.viz.level2_qa import plot_all_level2_qa
+    """Import the support-aware Matplotlib plotter only when QA is requested."""
+    from milgrau.viz.level2_qa_support import plot_all_level2_qa_with_support
 
-    return plot_all_level2_qa
+    return plot_all_level2_qa_with_support
 
 
 def _qa_dependencies(level1_path: Path, level2_path: Path, root_path: Path) -> tuple[list[Path], list[Path]]:
