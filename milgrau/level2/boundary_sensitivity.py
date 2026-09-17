@@ -10,7 +10,6 @@ signal noise, lidar-ratio uncertainty and vertical aggregation.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping
 
 import numpy as np
 
@@ -56,7 +55,9 @@ def boundary_fraction_sensitivity_profiles(
     if not (signal.shape == altitude.shape == molecular.shape):
         raise ValueError("rcs, altitude_m and beta_mol must have identical shapes.")
     if fractions.ndim != 1 or fractions.size == 0:
-        raise ValueError("residual_fractions must be a non-empty one-dimensional sequence.")
+        raise ValueError(
+            "residual_fractions must be a non-empty one-dimensional sequence."
+        )
     if np.any(~np.isfinite(fractions)) or np.any(fractions < 0.0):
         raise ValueError("residual_fractions must contain finite non-negative values.")
     if np.unique(fractions).size != fractions.size:
