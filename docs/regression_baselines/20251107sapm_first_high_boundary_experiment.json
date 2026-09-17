@@ -1,0 +1,126 @@
+{
+  "measurement_id": "20251107sapm",
+  "evidence_type": "first_offline_nonproductive_high_boundary_comparison",
+  "scientific_scope": "R&D_diagnostic_only_not_ground_truth_not_method_change",
+  "active_baseline_level2_sha256": "bba3b454387ef34c9b4bee3b0ab69e286e611cc44f9a4a6358b779f6d9f236d8",
+  "productive_identity": {"level2_product_schema_version": "3", "level2_retrieval_method_version": "4"},
+  "analysis_validation": {
+    "method": "local equation-equivalent reproduction of milgrau.level2.kfs productive Monte Carlo using product-resolved parameters",
+    "productive_block_wavelength_cases_reproduced": 10,
+    "productive_beta_mean_max_relative_l2_difference": 0.0,
+    "productive_beta_std_max_relative_l2_difference": 0.0,
+    "interpretation": "The analysis path exactly reproduced persisted productive block backscatter means and standard deviations on supported bins before experimental boundaries were tested."
+  },
+  "productive_mc_parameters": {
+    "iterations": 300,
+    "random_seed": 143,
+    "beta_ref_relative_std": 0.1,
+    "aerosol_ref_fraction": 0.0,
+    "min_lidar_ratio_sr": 10.0,
+    "allow_negative_aerosol": false,
+    "kfs_mode": "backward",
+    "molecular_lidar_ratio_sr": "8*pi/3",
+    "lidar_ratio_assumed_sr": {"355": 91.06, "532": 57.11},
+    "lidar_ratio_std_sr": {"355": 15.0, "532": 10.0}
+  },
+  "candidate_design": {
+    "principle": "No composite score and no altitude target is used as a productive gate. Two explicit probes are compared plus one graceful-failure stress diagnostic.",
+    "moderate_probe": {
+      "definition": "accepted in all five blocks and nearest 10 km, used only to probe a higher-boundary regime",
+      "355_altitude_m": 10001.25,
+      "532_altitude_m": 10001.25
+    },
+    "support_edge_probe": {
+      "definition": "highest candidate accepted in all five blocks whose nominal exact backward path has complete finite positive signal/error/molecular support in all five blocks",
+      "355_altitude_m": 12176.25,
+      "532_altitude_m": 12393.75
+    },
+    "extreme_high_graceful_failure_probe": {
+      "definition": "highest candidate accepted in all five blocks regardless of backward path completeness; used to test whether candidate acceptance alone is a usable KFS boundary",
+      "355_altitude_m": 15386.25,
+      "532_altitude_m": 18873.75
+    }
+  },
+  "candidate_evidence_medians": [
+    {"case":"moderate","wavelength_nm":355,"altitude_m":10001.25,"bin_snr":6.3554,"window_snr_independent":72.8067,"window_snr_fully_correlated":6.3136,"exact_window_persistence":1.0,"subwindow_disagreement":0.04093},
+    {"case":"moderate","wavelength_nm":532,"altitude_m":10001.25,"bin_snr":7.5795,"window_snr_independent":88.0211,"window_snr_fully_correlated":7.6332,"exact_window_persistence":1.0,"subwindow_disagreement":0.01398},
+    {"case":"support_edge","wavelength_nm":355,"altitude_m":12176.25,"bin_snr":3.2421,"window_snr_independent":37.5322,"window_snr_fully_correlated":3.2547,"exact_window_persistence":1.0,"subwindow_disagreement":0.04435},
+    {"case":"support_edge","wavelength_nm":532,"altitude_m":12393.75,"bin_snr":3.6614,"window_snr_independent":44.1894,"window_snr_fully_correlated":3.8319,"exact_window_persistence":1.0,"subwindow_disagreement":0.03298},
+    {"case":"extreme_high","wavelength_nm":355,"altitude_m":15386.25,"bin_snr":1.3530,"window_snr_independent":15.6829,"window_snr_fully_correlated":1.4911,"exact_window_persistence":1.0,"subwindow_disagreement":0.09708},
+    {"case":"extreme_high","wavelength_nm":532,"altitude_m":18873.75,"bin_snr":1.0583,"window_snr_independent":10.1874,"window_snr_fully_correlated":1.0384,"exact_window_persistence":1.0,"subwindow_disagreement":0.06792}
+  ],
+  "moderate_probe_results": [
+    {
+      "wavelength_nm": 355,
+      "reference_altitude_m": 10001.25,
+      "median_fitted_to_exact_boundary_signal_ratio": 1.01943,
+      "median_exact_lower_0_6km_beta_relative_l2_vs_method_v4": 0.02812,
+      "median_fitted_lower_0_6km_beta_relative_l2_vs_method_v4": 0.00907,
+      "median_fitted_vs_exact_lower_0_6km_beta_relative_l2": 0.00709,
+      "minimum_exact_mc_complete_fraction_across_blocks": 0.99667,
+      "minimum_fitted_mc_complete_fraction_across_blocks": 0.96667
+    },
+    {
+      "wavelength_nm": 532,
+      "reference_altitude_m": 10001.25,
+      "median_fitted_to_exact_boundary_signal_ratio": 1.05059,
+      "median_exact_lower_0_6km_beta_relative_l2_vs_method_v4": 0.12616,
+      "median_fitted_lower_0_6km_beta_relative_l2_vs_method_v4": 0.06806,
+      "median_fitted_vs_exact_lower_0_6km_beta_relative_l2": 0.04854,
+      "minimum_exact_mc_complete_fraction_across_blocks": 1.0,
+      "minimum_fitted_mc_complete_fraction_across_blocks": 1.0
+    }
+  ],
+  "support_edge_results": [
+    {
+      "wavelength_nm": 355,
+      "reference_altitude_m": 12176.25,
+      "median_fitted_to_exact_boundary_signal_ratio": 0.84823,
+      "median_exact_lower_0_6km_beta_relative_l2_vs_method_v4": 0.01635,
+      "median_fitted_lower_0_6km_beta_relative_l2_vs_method_v4": 0.03605,
+      "minimum_exact_mc_complete_fraction_across_blocks": 0.19333,
+      "minimum_fitted_mc_complete_fraction_across_blocks": 0.00333
+    },
+    {
+      "wavelength_nm": 532,
+      "reference_altitude_m": 12393.75,
+      "median_fitted_to_exact_boundary_signal_ratio": 1.10965,
+      "median_exact_lower_0_6km_beta_relative_l2_vs_method_v4": 0.14164,
+      "median_fitted_lower_0_6km_beta_relative_l2_vs_method_v4": 0.01371,
+      "minimum_exact_mc_complete_fraction_across_blocks": 0.13333,
+      "minimum_fitted_mc_complete_fraction_across_blocks": 0.00333
+    }
+  ],
+  "extreme_high_graceful_failure": {
+    "355": {
+      "reference_altitude_m": 15386.25,
+      "accepted_in_all_five_blocks": true,
+      "center_signal_positive_blocks": 3,
+      "blocks_with_complete_nominal_backward_path": 0,
+      "finding": "Local candidate QA/persistence does not imply a usable exact KFS boundary; non-positive center/path bins terminate backward support."
+    },
+    "532": {
+      "reference_altitude_m": 18873.75,
+      "accepted_in_all_five_blocks": true,
+      "center_signal_positive_blocks": 5,
+      "blocks_with_complete_nominal_backward_path": 0,
+      "finding": "Even with positive center bins, internal non-positive path bins prevent a contiguous backward inversion to the lower column."
+    }
+  },
+  "interpretation": [
+    "The experiment reproduces productive method-v4 numerical outputs before changing the boundary, so observed differences are attributable to the experimental boundary choice/estimator under the stated model.",
+    "A higher locally accepted and temporally persistent Rayleigh candidate is not sufficient for a backward KFS boundary because full contiguous inversion support is a separate requirement.",
+    "The support-edge probes are nominally path-complete but become highly fragile under the existing 300-member uncertainty perturbations: only a minority of exact-boundary simulations and approximately 0.3% of fitted-boundary simulations remain complete in the worst blocks.",
+    "The 10-km moderate probe remains substantially more stable, but 355-nm fitted/exact experiments can still lose at least one Monte Carlo realization under current all-simulations-valid productive semantics.",
+    "Differences from method v4 are regression/sensitivity differences, not truth errors; a smaller difference from method v4 does not validate an experimental boundary estimator.",
+    "No interpolation or gap bridging is introduced. The extreme-high cases are retained as graceful support-failure evidence rather than forced retrievals."
+  ],
+  "decision": "Do not promote a high boundary, fitted boundary, hard SNR threshold or method v5. Current evidence shows that contiguous path support and perturbation robustness become limiting before the highest shape-QA/persistent candidates.",
+  "next_gate": [
+    "characterize why Monte Carlo perturbations break path completeness near 10-12 km and whether this is dominated by single-bin weak-signal tails or dependence assumptions",
+    "add correlated-noise/leave-part-out tests and preserve strict no-gap semantics",
+    "repeat on a materially different SPU case before deriving any rule",
+    "only then decide whether vertical aggregation or another declared-resolution strategy merits a second high-boundary experiment"
+  ],
+  "local_detailed_analysis_sha256": "be40eabb2e9736462dd6bf89634212f28820ed3ed2e24f2ae01be57148e4814a"
+}
