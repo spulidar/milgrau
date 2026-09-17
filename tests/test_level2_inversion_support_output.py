@@ -1,4 +1,4 @@
-"""Schema-facing tests for altitude-resolved backward inversion support."""
+"""Legacy-helper tests for altitude-resolved backward inversion support."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ from types import SimpleNamespace
 import numpy as np
 
 from milgrau.level2.support import assemble_level2_inversion_support
-from milgrau.scientific import LEVEL2_PRODUCT_SCHEMA_VERSION
 
 
 def _result(
@@ -64,9 +63,8 @@ def test_support_reports_altitude_resolved_block_count_and_distinct_block_tops()
 
     support = assemble_level2_inversion_support([result], altitude)
 
-    # Schema 3 retains the schema-2 inversion-support semantics and adds the
-    # auditable Rayleigh candidate catalogue without changing this contract.
-    assert LEVEL2_PRODUCT_SCHEMA_VERSION == "3"
+    # This helper remains regression-tested as a numerical legacy component;
+    # productive schema-4 method-v5 support is defined by period_support_*.
     assert support.flag.shape == (1, 6)
     assert support.flag_block.shape == (2, 1, 6)
     assert support.flag[0].tolist() == [1, 1, 1, 1, 1, 0]
@@ -87,10 +85,7 @@ def test_aggregate_support_does_not_bridge_disjoint_vertical_domains() -> None:
 
     support = assemble_level2_inversion_support([result], altitude)
 
-    # Block support exists below and above a true unsupported gap at 300 m.
     assert support.effective_block_count[0].tolist() == [1, 1, 0, 1, 1, 0]
-    # Aggregate support is the contiguous path reaching the highest supported top;
-    # it never jumps across the 300 m gap to promote the lower segment.
     assert support.flag[0].tolist() == [0, 0, 0, 1, 1, 0]
     assert support.bottom_altitude_m.tolist() == [400.0]
     assert support.top_altitude_m.tolist() == [500.0]
