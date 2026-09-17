@@ -1,15 +1,15 @@
 """Real-Level-1 validation harness for elastic method-v5 R&D.
 
-This module is intentionally not part of productive LEBEAR method v4.  It reuses
+This module is intentionally not part of productive LEBEAR method v4. It reuses
 productive signal selection/gluing and the productive molecular model, then
-runs the experimental method-v5 chain block by block.  The goal is to compare
-v4 and v5 from the *same* Level-1 input without treating v4 as physical truth.
+runs the experimental method-v5 chain block by block. The goal is to compare v4
+and v5 from the same Level-1 input without treating v4 as physical truth.
 
-The harness deliberately keeps the residual-aerosol boundary fraction ``f`` as
-an outer systematic scenario.  By default it disables the legacy extra
-``beta_ref_relative_std`` term for v5 validation because that term has not yet
-been given an independent physical interpretation once native signal noise,
-reference re-selection, and explicit ``f`` sensitivity are propagated.
+Residual-aerosol boundary fraction ``f`` remains an outer systematic scenario.
+The legacy extra ``beta_ref_relative_std`` term is disabled by default because
+its independent physical meaning is not established once native signal noise,
+reference re-selection, tier fallback and explicit ``f`` sensitivity are
+propagated.
 """
 
 from __future__ import annotations
@@ -23,7 +23,12 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 import xarray as xr
 
-from milgrau.level2.config import get_kfs_config, get_molecular_fit_config
+from milgrau.level2.block_average import block_groups
+from milgrau.level2.config import (
+    get_block_average_minutes,
+    get_kfs_config,
+    get_molecular_fit_config,
+)
 from milgrau.level2.high_column_rnd import contiguous_usable_top_index
 from milgrau.level2.kfs import fernald_inversion
 from milgrau.level2.method_v5_rnd import retrieve_method_v5_rnd
@@ -36,6 +41,8 @@ class V5BlockValidationSummary:
 
     block_index: int
     block_time_utc: str
+    block_start_utc: str
+    block_end_utc: str
     retrieval_input_valid: bool
     signal_source_flag: int
     v4_retrieval_success: bool
@@ -43,6 +50,10 @@ class V5BlockValidationSummary:
     v5_success: bool
     v5_failure: str
     v5_reference_altitude_m: float
+    v5_retrieval_top_altitude_m: float
+    v5_reference_tier_min_altitude_m: float
+    v5_reference_tier_index: int
+    v5_reference_fallback_used: bool
     v5_reference_effective_resolution_m: float
     v5_reference_diagnostic_cost: float
     v5_accepted_admissible_candidates: int
@@ -50,6 +61,7 @@ class V5BlockValidationSummary:
     mc_selection_success_fraction: float
     mc_reference_altitude_median: float
     mc_reference_altitude_std: float
+    mc_reference_tier_counts: dict[str, int]
     mc_lower_valid_fraction_min: float
     v4_v5_lower_relative_l2: float
     residual_fraction_lower_relative_l2: dict[str, float]
@@ -67,6 +79,7 @@ class Level1V5ValidationSummary:
     n_iterations: int
     beta_ref_relative_std: float
     uncertainty_mode: str
+    reference_tier_min_altitudes_m: tuple[float, ...]
     blocks: tuple[V5BlockValidationSummary, ...]
 
 
@@ -146,6 +159,84 @@ def _lower_relative_l2_between_grids(
     return _relative_l2(native, progressive) if native.size else float("nan")
 
 
+def _block_periods(
+    ds_l1: xr.Dataset,
+    *,
+    minutes: int,
+    expected_blocks: int,
+) -> list[tuple[str, str]]:
+    """Return actual first/last Level-1 sample times contributing to each block."""
+    if "time" not in ds_l1:
+        return [("", "")] * expected_blocks
+    _, groups = block_groups(ds_l1["time"].values, int(minutes))
+    if len(groups) != expected_blocks:
+        return [("", "")] * expected_blocks
+    periods: list[tuple[str, str]] = []
+    times = np.asarray(ds_l1["time"].values)
+    for group in groups:
+        if group.size == 0:
+            periods.append(("", ""))
+            continue
+        block_times = times[group]
+        periods.append((_time_string(block_times[0]), _time_string(block_times[-1])))
+    return periods
+
+
+def _tier_counts(samples: np.ndarray) -> dict[str, int]:
+    """Count finite MC tier selections using altitude minima as audit keys."""
+    values = np.asarray(samples, dtype=np.float64)
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        return {}
+    unique, counts = np.unique(finite, return_counts=True)
+    return {
+        f"{float(value):.6g}": int(count)
+        for value, count in zip(unique, counts, strict=True)
+    }
+
+
+def _empty_block_summary(
+    *,
+    block_index: int,
+    block_time_utc: str,
+    block_start_utc: str,
+    block_end_utc: str,
+    retrieval_input_valid: bool,
+    signal_source_flag: int,
+    v4_retrieval_success: bool,
+    v4_reference_altitude_m: float,
+    failure: str,
+) -> V5BlockValidationSummary:
+    return V5BlockValidationSummary(
+        block_index=block_index,
+        block_time_utc=block_time_utc,
+        block_start_utc=block_start_utc,
+        block_end_utc=block_end_utc,
+        retrieval_input_valid=retrieval_input_valid,
+        signal_source_flag=signal_source_flag,
+        v4_retrieval_success=v4_retrieval_success,
+        v4_reference_altitude_m=v4_reference_altitude_m,
+        v5_success=False,
+        v5_failure=failure,
+        v5_reference_altitude_m=float("nan"),
+        v5_retrieval_top_altitude_m=float("nan"),
+        v5_reference_tier_min_altitude_m=float("nan"),
+        v5_reference_tier_index=-1,
+        v5_reference_fallback_used=False,
+        v5_reference_effective_resolution_m=float("nan"),
+        v5_reference_diagnostic_cost=float("nan"),
+        v5_accepted_admissible_candidates=0,
+        v5_contiguous_top_altitude_m=float("nan"),
+        mc_selection_success_fraction=float("nan"),
+        mc_reference_altitude_median=float("nan"),
+        mc_reference_altitude_std=float("nan"),
+        mc_reference_tier_counts={},
+        mc_lower_valid_fraction_min=float("nan"),
+        v4_v5_lower_relative_l2=float("nan"),
+        residual_fraction_lower_relative_l2={},
+    )
+
+
 def validate_level1_wavelength_v5_rnd(
     ds_l1: xr.Dataset,
     wavelength_nm: int,
@@ -157,17 +248,19 @@ def validate_level1_wavelength_v5_rnd(
     n_iterations: int | None = None,
     beta_ref_relative_std: float = 0.0,
     uncertainty_mode: str = "independent",
+    reference_tier_min_altitudes_m: Sequence[float] = (10_000.0, 9_000.0, 8_000.0, 6_000.0),
 ) -> Level1V5ValidationSummary:
-    """Run productive preprocessing plus experimental v5 on every valid block.
-
-    Productive ``process_wavelength`` is used as the shared preprocessing path,
-    so v4 and v5 see the same selected/glued signal and molecular atmosphere.
-    The v4 optical result is retained only as a regression comparator.
-    """
+    """Run productive preprocessing plus experimental v5 on every valid block."""
     altitude = np.asarray(altitude_m, dtype=np.float64)
     productive = process_wavelength(ds_l1, int(wavelength_nm), altitude, config, logger)
     fit_cfg = get_molecular_fit_config(config)
     kfs_cfg = get_kfs_config(config)
+    minutes = int(get_block_average_minutes(config))
+    periods = _block_periods(
+        ds_l1,
+        minutes=minutes,
+        expected_blocks=int(productive.block_time.size),
+    )
     iterations = (
         int(kfs_cfg["monte_carlo_iterations"])
         if n_iterations is None
@@ -178,9 +271,12 @@ def validate_level1_wavelength_v5_rnd(
     fractions = tuple(float(value) for value in residual_fractions)
     if not fractions or 0.0 not in fractions:
         raise ValueError("residual_fractions must include the nominal f=0 scenario.")
+    tiers = tuple(float(value) for value in reference_tier_min_altitudes_m)
 
     summaries: list[V5BlockValidationSummary] = []
     for block_index in range(productive.block_time.size):
+        block_time = _time_string(productive.block_time[block_index])
+        block_start, block_end = periods[block_index]
         input_valid = bool(
             int(productive.signal_selection.retrieval_input_valid_flag_block[block_index]) == 1
         )
@@ -189,26 +285,16 @@ def validate_level1_wavelength_v5_rnd(
         v4_reference = float(productive.rayleigh.reference_altitude_m_block[block_index])
         if not input_valid:
             summaries.append(
-                V5BlockValidationSummary(
+                _empty_block_summary(
                     block_index=block_index,
-                    block_time_utc=_time_string(productive.block_time[block_index]),
+                    block_time_utc=block_time,
+                    block_start_utc=block_start,
+                    block_end_utc=block_end,
                     retrieval_input_valid=False,
                     signal_source_flag=source_flag,
                     v4_retrieval_success=v4_success,
                     v4_reference_altitude_m=v4_reference,
-                    v5_success=False,
-                    v5_failure="productive retrieval input invalid before v5",
-                    v5_reference_altitude_m=float("nan"),
-                    v5_reference_effective_resolution_m=float("nan"),
-                    v5_reference_diagnostic_cost=float("nan"),
-                    v5_accepted_admissible_candidates=0,
-                    v5_contiguous_top_altitude_m=float("nan"),
-                    mc_selection_success_fraction=float("nan"),
-                    mc_reference_altitude_median=float("nan"),
-                    mc_reference_altitude_std=float("nan"),
-                    mc_lower_valid_fraction_min=float("nan"),
-                    v4_v5_lower_relative_l2=float("nan"),
-                    residual_fraction_lower_relative_l2={},
+                    failure="productive retrieval input invalid before v5",
                 )
             )
             continue
@@ -224,7 +310,9 @@ def validate_level1_wavelength_v5_rnd(
             result = retrieve_method_v5_rnd(
                 range_corrected_signal=signal,
                 range_corrected_signal_error=signal_error,
-                molecular_backscatter=np.asarray(productive.molecular.backscatter, dtype=np.float64),
+                molecular_backscatter=np.asarray(
+                    productive.molecular.backscatter, dtype=np.float64
+                ),
                 simulated_molecular_range_corrected_signal=np.asarray(
                     productive.molecular.simulated_range_corrected_signal,
                     dtype=np.float64,
@@ -242,6 +330,7 @@ def validate_level1_wavelength_v5_rnd(
                 max_relative_variance=float(fit_cfg["max_relative_variance"]),
                 min_valid_fraction=float(fit_cfg["min_valid_fraction"]),
                 uncertainty_mode=uncertainty_mode,  # type: ignore[arg-type]
+                reference_tier_min_altitudes_m=tiers,
                 rayleigh_window_m=float(fit_cfg["ref_window_m"]),
             )
 
@@ -261,7 +350,10 @@ def validate_level1_wavelength_v5_rnd(
             )
             v4_v5_l2 = _lower_relative_l2_between_grids(
                 altitude,
-                np.asarray(productive.optical.aerosol_backscatter_block[block_index], dtype=np.float64),
+                np.asarray(
+                    productive.optical.aerosol_backscatter_block[block_index],
+                    dtype=np.float64,
+                ),
                 prepared.grid.altitude_m,
                 np.asarray(nominal_beta, dtype=np.float64),
             )
@@ -320,7 +412,9 @@ def validate_level1_wavelength_v5_rnd(
             summaries.append(
                 V5BlockValidationSummary(
                     block_index=block_index,
-                    block_time_utc=_time_string(productive.block_time[block_index]),
+                    block_time_utc=block_time,
+                    block_start_utc=block_start,
+                    block_end_utc=block_end,
                     retrieval_input_valid=True,
                     signal_source_flag=source_flag,
                     v4_retrieval_success=v4_success,
@@ -328,6 +422,14 @@ def validate_level1_wavelength_v5_rnd(
                     v5_success=True,
                     v5_failure="",
                     v5_reference_altitude_m=float(selected.altitude_m),
+                    v5_retrieval_top_altitude_m=float(selected.altitude_m),
+                    v5_reference_tier_min_altitude_m=float(
+                        result.selected_reference_tier_min_altitude_m
+                    ),
+                    v5_reference_tier_index=int(result.selected_reference_tier_index),
+                    v5_reference_fallback_used=bool(
+                        result.selected_reference_fallback_used
+                    ),
                     v5_reference_effective_resolution_m=float(
                         selected.effective_resolution_m
                     ),
@@ -343,6 +445,9 @@ def validate_level1_wavelength_v5_rnd(
                     ),
                     mc_reference_altitude_median=mc_reference_median,
                     mc_reference_altitude_std=mc_reference_std,
+                    mc_reference_tier_counts=_tier_counts(
+                        result.monte_carlo.selected_reference_tier_min_altitude_m_samples
+                    ),
                     mc_lower_valid_fraction_min=lower_valid_min,
                     v4_v5_lower_relative_l2=v4_v5_l2,
                     residual_fraction_lower_relative_l2=fraction_sensitivity,
@@ -350,26 +455,16 @@ def validate_level1_wavelength_v5_rnd(
             )
         except Exception as exc:
             summaries.append(
-                V5BlockValidationSummary(
+                _empty_block_summary(
                     block_index=block_index,
-                    block_time_utc=_time_string(productive.block_time[block_index]),
+                    block_time_utc=block_time,
+                    block_start_utc=block_start,
+                    block_end_utc=block_end,
                     retrieval_input_valid=True,
                     signal_source_flag=source_flag,
                     v4_retrieval_success=v4_success,
                     v4_reference_altitude_m=v4_reference,
-                    v5_success=False,
-                    v5_failure=f"{type(exc).__name__}: {exc}",
-                    v5_reference_altitude_m=float("nan"),
-                    v5_reference_effective_resolution_m=float("nan"),
-                    v5_reference_diagnostic_cost=float("nan"),
-                    v5_accepted_admissible_candidates=0,
-                    v5_contiguous_top_altitude_m=float("nan"),
-                    mc_selection_success_fraction=float("nan"),
-                    mc_reference_altitude_median=float("nan"),
-                    mc_reference_altitude_std=float("nan"),
-                    mc_lower_valid_fraction_min=float("nan"),
-                    v4_v5_lower_relative_l2=float("nan"),
-                    residual_fraction_lower_relative_l2={},
+                    failure=f"{type(exc).__name__}: {exc}",
                 )
             )
 
@@ -382,6 +477,7 @@ def validate_level1_wavelength_v5_rnd(
         n_iterations=iterations,
         beta_ref_relative_std=float(beta_ref_relative_std),
         uncertainty_mode=str(uncertainty_mode),
+        reference_tier_min_altitudes_m=tiers,
         blocks=tuple(summaries),
     )
 
