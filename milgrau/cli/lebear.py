@@ -11,7 +11,7 @@ from typing import Sequence
 from milgrau.cli.common import finish_cli, run_guarded
 from milgrau.config.loader import load_config
 from milgrau.io.logging_utils import bind_log_context, setup_logger
-from milgrau.io.paths import LEVEL1_SUFFIX, level2_output_path, measurement_product_dir, product_save_id
+from milgrau.io.paths import LEVEL1_SUFFIX, is_save_id, level2_output_path, measurement_product_dir, product_save_id
 from milgrau.level2.lebear import level2_output_is_current, process_single_level1_file
 from milgrau.level2.discovery import discover_level1_files
 from milgrau.level2.qa import generate_level2_qa, level2_qa_enabled
@@ -36,9 +36,9 @@ def _build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Examples:\n"
             "  milgrau-lebear\n"
-            "  milgrau-lebear --input 20250612sant\n"
-            "  milgrau-lebear --input 20250612sant --time-window 4:00 5:00\n"
-            "  milgrau-lebear --input 20250612sant --force\n"
+            "  milgrau-lebear --input 20250612sa03z\n"
+            "  milgrau-lebear --input 20250612sa03z --time-window 4:00 5:00\n"
+            "  milgrau-lebear --input 20250612sa03z --force\n"
         ),
     )
     parser.add_argument(
@@ -47,7 +47,7 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="inputs",
         action="append",
         default=[],
-        help="Level 1 file, Level 1 directory, or save ID (YYYYMMDDsa<am/pm/nt>). Repeatable.",
+        help="Level 1 file, Level 1 directory, or save ID (for example YYYYMMDDsa03z). Repeatable.",
     )
     parser.add_argument(
         "--time-window",
@@ -69,8 +69,8 @@ def _expand_level1_inputs(inputs: Sequence[str], config: dict) -> list[Path]:
             resolved.extend(sorted(path.rglob("*_level1_rcs.nc")))
         elif path.name.endswith(LEVEL1_SUFFIX):
             resolved.append(path)
-        elif re.fullmatch(r"\d{8}sa(?:am|pm|nt)", raw):
-            stem = raw
+        elif is_save_id(raw):
+            stem = str(raw).strip().lower()
             resolved.append(measurement_product_dir(stem, config) / f"{stem}{LEVEL1_SUFFIX}")
         else:
             if path.exists():
