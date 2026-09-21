@@ -6,6 +6,7 @@ from copy import deepcopy
 from datetime import date, datetime
 from numbers import Integral, Real
 from typing import Any, Mapping, Sequence
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import numpy as np
 
@@ -194,8 +195,13 @@ def validate_station_config(catalog: Mapping[str, Any]) -> None:
         raise ValueError(
             f"station keys invalid; missing={missing_station}, unknown={unknown_station}."
         )
-    for key in ("id", "name", "institution", "timezone"):
+    for key in ("id", "name", "institution"):
         _text(station[key], f"station.{key}")
+    timezone_name = _text(station["timezone"], "station.timezone")
+    try:
+        ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError as exc:
+        raise ValueError(f"station.timezone is not a valid IANA timezone: {timezone_name!r}.") from exc
 
     site = _mapping(station["site"], "station.site")
     required_site = {"latitude", "longitude", "station_altitude_m"}
@@ -256,13 +262,21 @@ def validate_station_config(catalog: Mapping[str, Any]) -> None:
             raise ValueError(f"Station profile validity overlaps: {left[2]} and {right[2]}.")
 
 
-def _period_mode(period: str) -> str:
-    value = str(period).strip().lower()
-    if value in {"nt", "night", "nighttime"}:
-        return "night"
-    if value in {"am", "pm", "day", "daytime"}:
-        return "day"
-    raise ValueError(f"Unknown measurement period {period!r}; expected am, pm, or nt.")
+def _local_measurement_time(station: Mapping[str, Any], measurement_time: datetime) -> datetime:
+    """Convert an aware measurement timestamp to the station IANA timezone."""
+    if measurement_time.tzinfo is None or measurement_time.utcoffset() is None:
+        raise ValueError("measurement_time must be timezone-aware.")
+    timezone_name = _text(station.get("timezone"), "station.timezone")
+    try:
+        station_timezone = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError as exc:
+        raise ValueError(f"station.timezone is not a valid IANA timezone: {timezone_name!r}.") from exc
+    return measurement_time.astimezone(station_timezone)
+
+
+def _measurement_mode(local_time: datetime) -> str:
+    """Return the SCC day/night mode from station-local clock time."""
+    return "day" if 6 <= local_time.hour < 18 else "night"
 
 
 def _default_lr_input(catalog: Mapping[str, Any], scc_config: Mapping[str, Any]) -> dict[str, int]:
@@ -296,14 +310,15 @@ def _resolve_lr_input(catalog: Mapping[str, Any], scc_config: Mapping[str, Any])
 def resolve_station_context(
     config: Mapping[str, Any],
     measurement_time: datetime,
-    period: str,
     available_channels: Sequence[str],
 ) -> dict[str, Any]:
     """Resolve one temporal station profile, calibration set, and optional SCC map."""
     catalog = config.get("_station_catalog")
     if not isinstance(catalog, Mapping):
         raise KeyError("No station catalog is loaded; configure station_config in config.yaml.")
-    when = measurement_time.date()
+    station = catalog["station"]
+    local_measurement_time = _local_measurement_time(station, measurement_time)
+    when = local_measurement_time.date()
     matches = []
     for profile in catalog["profiles"]:
         start = _date(profile["valid_from"], f"profiles.{profile['id']}.valid_from")
@@ -314,8 +329,7 @@ def resolve_station_context(
         raise ValueError(f"Expected exactly one station profile for {when.isoformat()}, found {[p['id'] for p in matches]}.")
 
     profile = matches[0]
-    station = catalog["station"]
-    mode = _period_mode(period)
+    mode = _measurement_mode(local_measurement_time)
     available = [str(channel) for channel in available_channels]
     available_set = set(available)
     resolved_site = deepcopy(station["site"])
@@ -333,6 +347,7 @@ def resolve_station_context(
         "valid_from": profile["valid_from"],
         "valid_to": profile.get("valid_to"),
         "mode": mode,
+        "timezone": str(station["timezone"]),
         "site": resolved_site,
         "laser": deepcopy(profile.get("laser", {})),
         "overlap": resolve_overlap_context(catalog, profile),
