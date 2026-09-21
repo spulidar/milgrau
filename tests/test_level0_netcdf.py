@@ -79,7 +79,7 @@ def test_validate_lidar_tensors_rejects_shape_mismatch() -> None:
 def test_build_level0_netcdf_writes_resolved_station_and_scc_metadata(tmp_path: Path) -> None:
     output_path = tmp_path / "level0_scc.nc"
     build_level0_netcdf(
-        str(output_path), "20240101sa03z", "00-06", _lidar_data(), _group_df(tmp_path, False),
+        str(output_path), "20240101_spu_00", "00-06", _lidar_data(), _group_df(tmp_path, False),
         {"temperature_c": 23.0, "pressure_hpa": 935.0}, _config(), logging.getLogger("test")
     )
     with xr.open_dataset(output_path) as ds:
@@ -108,7 +108,7 @@ def test_pointing_angle_has_no_physics_fallback(tmp_path: Path) -> None:
     config = _config()
     config["physics"]["laser_pointing_angle_deg"] = 17.0
     build_level0_netcdf(
-        str(output_path), "20240101sa03z", "00-06", _lidar_data(), _group_df(tmp_path, False),
+        str(output_path), "20240101_spu_00", "00-06", _lidar_data(), _group_df(tmp_path, False),
         {"temperature_c": 23.0, "pressure_hpa": 935.0}, config, logging.getLogger("test")
     )
     with xr.open_dataset(output_path) as ds:
@@ -120,7 +120,7 @@ def test_build_level0_netcdf_requires_station_pointing_geometry(tmp_path: Path) 
     del config["_station_catalog"]["station"]["lidar_geometry"]
     with pytest.raises(RuntimeError, match="lidar_geometry"):
         build_level0_netcdf(
-            str(tmp_path / "missing_geometry.nc"), "20240101sa03z", "00-06", _lidar_data(), _group_df(tmp_path, False),
+            str(tmp_path / "missing_geometry.nc"), "20240101_spu_00", "00-06", _lidar_data(), _group_df(tmp_path, False),
             {"temperature_c": 23.0, "pressure_hpa": 935.0}, config, logging.getLogger("test")
         )
 
@@ -134,7 +134,7 @@ def test_build_level0_netcdf_rejects_missing_native_bin_width_even_with_legacy_v
 
     with pytest.raises(RuntimeError, match="range resolution cannot be invented"):
         build_level0_netcdf(
-            str(output_path), "20240101sa03z", "00-06", lidar_data, _group_df(tmp_path, False),
+            str(output_path), "20240101_spu_00", "00-06", lidar_data, _group_df(tmp_path, False),
             {"temperature_c": 23.0, "pressure_hpa": 935.0}, config, logging.getLogger("test")
         )
 
@@ -144,7 +144,7 @@ def test_build_level0_netcdf_requires_explicit_background_window(tmp_path: Path)
     del config["level1"]
     with pytest.raises(RuntimeError, match="level1.*background"):
         build_level0_netcdf(
-            str(tmp_path / "missing_background.nc"), "20240101sa03z", "00-06", _lidar_data(), _group_df(tmp_path, False),
+            str(tmp_path / "missing_background.nc"), "20240101_spu_00", "00-06", _lidar_data(), _group_df(tmp_path, False),
             {"temperature_c": 23.0, "pressure_hpa": 935.0}, config, logging.getLogger("test")
         )
 
@@ -154,7 +154,7 @@ def test_build_level0_netcdf_truncates_time_axis_and_shots(tmp_path: Path) -> No
     lidar_data = _lidar_data()
     lidar_data["tensors"] = {"532.AN": np.ones((1, 4)), "532.PC": np.ones((1, 4)) * 2.0}
     build_level0_netcdf(
-        str(output_path), "20240101sa03z", "00-06", lidar_data, _group_df(tmp_path, False),
+        str(output_path), "20240101_spu_00", "00-06", lidar_data, _group_df(tmp_path, False),
         {"temperature_c": 23.0, "pressure_hpa": 935.0}, _config(), logging.getLogger("test")
     )
     with xr.open_dataset(output_path) as ds:
@@ -167,7 +167,7 @@ def test_build_level0_netcdf_rejects_missing_resolved_scc_channel_id(tmp_path: P
     config["_resolved_station"]["channel_ids"] = {"532.AN": 722}
     with pytest.raises(RuntimeError, match="no SCC channel ID"):
         build_level0_netcdf(
-            str(tmp_path / "missing_channel_id.nc"), "20240101sa03z", "00-06", _lidar_data(), _group_df(tmp_path, False),
+            str(tmp_path / "missing_channel_id.nc"), "20240101_spu_00", "00-06", _lidar_data(), _group_df(tmp_path, False),
             {"temperature_c": 23.0, "pressure_hpa": 935.0}, config, logging.getLogger("test")
         )
 
@@ -177,7 +177,7 @@ def test_legacy_hardware_map_cannot_override_resolved_station_mapping(tmp_path: 
     config = _config()
     config["hardware"] = {"name_to_id": {"532.AN": 1, "532.PC": 2}}
     build_level0_netcdf(
-        str(output_path), "20240101sa03z", "00-06", _lidar_data(), _group_df(tmp_path, False),
+        str(output_path), "20240101_spu_00", "00-06", _lidar_data(), _group_df(tmp_path, False),
         {"temperature_c": 23.0, "pressure_hpa": 935.0}, config, logging.getLogger("test")
     )
     with xr.open_dataset(output_path) as ds:
@@ -187,7 +187,7 @@ def test_legacy_hardware_map_cannot_override_resolved_station_mapping(tmp_path: 
 def test_missing_surface_weather_is_persisted_as_nan_without_25_940_fallback(tmp_path: Path) -> None:
     output_path = tmp_path / "level0_missing_weather.nc"
     build_level0_netcdf(
-        str(output_path), "20240101sa03z", "00-06", _lidar_data(), _group_df(tmp_path, False),
+        str(output_path), "20240101_spu_00", "00-06", _lidar_data(), _group_df(tmp_path, False),
         {"temperature_c": np.nan, "pressure_hpa": np.nan}, _config(), logging.getLogger("test")
     )
     with xr.open_dataset(output_path) as ds:
@@ -210,7 +210,7 @@ def test_build_level0_netcdf_writes_dark_current_scc_times_and_provenance(tmp_pa
     )
     output_path = tmp_path / "level0.nc"
     build_level0_netcdf(
-        str(output_path), "20240101sa03z", "00-06", _lidar_data(), _group_df(tmp_path, True),
+        str(output_path), "20240101_spu_00", "00-06", _lidar_data(), _group_df(tmp_path, True),
         {"temperature_c": 23.0, "pressure_hpa": 935.0}, _config(), logging.getLogger("test")
     )
     with xr.open_dataset(output_path) as ds:
@@ -236,7 +236,7 @@ def test_build_level0_netcdf_flags_missing_dark_current_channel(tmp_path: Path, 
     )
     output_path = tmp_path / "level0_missing_dc_channel.nc"
     build_level0_netcdf(
-        str(output_path), "20240101sa03z", "00-06", _lidar_data(), _group_df(tmp_path, True),
+        str(output_path), "20240101_spu_00", "00-06", _lidar_data(), _group_df(tmp_path, True),
         {"temperature_c": 23.0, "pressure_hpa": 935.0}, _config(), logging.getLogger("test")
     )
     with xr.open_dataset(output_path) as ds:
@@ -250,7 +250,7 @@ def test_build_level0_netcdf_flags_missing_dark_current_channel(tmp_path: Path, 
 def test_build_level0_netcdf_without_dark_current_writes_unavailable_flags(tmp_path: Path) -> None:
     output_path = tmp_path / "level0_no_dc.nc"
     build_level0_netcdf(
-        str(output_path), "20240101sa03z", "00-06", _lidar_data(), _group_df(tmp_path, False),
+        str(output_path), "20240101_spu_00", "00-06", _lidar_data(), _group_df(tmp_path, False),
         {"temperature_c": 23.0, "pressure_hpa": 935.0}, _config(), logging.getLogger("test")
     )
     with xr.open_dataset(output_path) as ds:
