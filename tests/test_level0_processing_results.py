@@ -27,11 +27,11 @@ def _logger() -> logging.Logger:
 def test_measurement_group_without_measurements_is_explicit_skip(tmp_path: Path) -> None:
     group = pd.DataFrame({"meas_type": ["dark_current"], "filepath": [str(tmp_path / "dark")]})
 
-    result = processing.process_measurement_group("20240101am", group, _config(tmp_path), _logger())
+    result = processing.process_measurement_group("2024010109z", group, _config(tmp_path), _logger())
 
     assert result.status is ExecutionStatus.SKIPPED
     assert result.stage == "level0.measurements"
-    assert result.metadata["save_id"] == "20240101saam"
+    assert result.metadata["save_id"] == "20240101sa09z"
 
 
 def test_measurement_group_preserves_parse_failure_stage_and_cause(tmp_path: Path, monkeypatch) -> None:
@@ -45,7 +45,7 @@ def test_measurement_group_preserves_parse_failure_stage_and_cause(tmp_path: Pat
 
     monkeypatch.setattr(processing, "parse_licel_group", fail_parse)
 
-    result = processing.process_measurement_group("20240101am", group, _config(tmp_path), _logger())
+    result = processing.process_measurement_group("2024010109z", group, _config(tmp_path), _logger())
 
     assert result.status is ExecutionStatus.ERROR
     assert result.stage == "level0.parse"
@@ -56,7 +56,9 @@ def test_measurement_group_preserves_parse_failure_stage_and_cause(tmp_path: Pat
 def test_measurement_group_success_keeps_only_level0_file_effect(tmp_path: Path, monkeypatch) -> None:
     input_path = tmp_path / "measurement"
     input_path.write_text("raw lidar", encoding="utf-8")
-    group = pd.DataFrame({"meas_type": ["measurements"], "filepath": [str(input_path)]})
+    group = pd.DataFrame(
+        {"meas_type": ["measurements"], "filepath": [str(input_path)], "period": ["06-12"]}
+    )
     monkeypatch.setattr(processing, "fetch_group_weather", lambda *_args: {})
     monkeypatch.setattr(
         processing,
@@ -66,7 +68,7 @@ def test_measurement_group_success_keeps_only_level0_file_effect(tmp_path: Path,
     monkeypatch.setattr(
         processing,
         "_resolve_group_station_config",
-        lambda _group, _period, lidar, config, _logger: (dict(config), dict(lidar), {}),
+        lambda _group, lidar, config, _logger: (dict(config), dict(lidar), {}),
     )
 
     def fake_build(**kwargs) -> None:
@@ -75,7 +77,7 @@ def test_measurement_group_success_keeps_only_level0_file_effect(tmp_path: Path,
     monkeypatch.setattr(processing, "build_level0_netcdf", fake_build)
     monkeypatch.setattr(processing, "write_netcdf_provenance", lambda *_args, **_kwargs: {})
 
-    result = processing.process_measurement_group("20240101am", group, _config(tmp_path), _logger())
+    result = processing.process_measurement_group("2024010109z", group, _config(tmp_path), _logger())
 
     assert result.status is ExecutionStatus.OK
     assert result.stage == "level0.complete"
