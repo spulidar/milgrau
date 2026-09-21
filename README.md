@@ -99,15 +99,15 @@ milgrau-lebear
 The primary CLIs accept repeatable input selectors and `--force`, for example:
 
 ```bash
-milgrau-libids --input 20250509nt --force
-milgrau-lipancora --input 20250509sant --force
-milgrau-lebear --input 20250509sant --force
+milgrau-libids --input 2025050903z --force
+milgrau-lipancora --input 20250509sa03z --force
+milgrau-lebear --input 20250509sa03z --force
 ```
 
 LEBEAR can also process a restricted UTC interval without changing the original Level 1 product:
 
 ```bash
-milgrau-lebear --input 20250509sant --time-window 04:00 05:00
+milgrau-lebear --input 20250509sa03z --time-window 04:00 05:00
 ```
 
 Shell status is deliberately operational. Scientific QA belongs in the NetCDF diagnostics rather than being compressed into an exit code.
