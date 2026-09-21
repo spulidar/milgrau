@@ -16,6 +16,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 import logging
 from pathlib import Path
+import time
 from typing import Any
 
 import numpy as np
@@ -345,6 +346,14 @@ def retrieve_wavelength_method_v5(
     for block_index in range(n_block):
         if int(glued.retrieval_input_valid_flag[block_index]) != 1:
             continue
+        block_started = time.perf_counter()
+        logger.info(
+            "  -> %d nm v5 block %d/%d selection-aware MC start | iterations=%d",
+            int(wavelength_nm),
+            int(block_index + 1),
+            int(n_block),
+            int(iterations),
+        )
         native_signal = np.asarray(glued.range_corrected_signal[block_index], dtype=np.float64)
         native_error = np.asarray(glued.range_corrected_signal_error[block_index], dtype=np.float64)
         prepared = prepare_high_column_profile(
@@ -400,9 +409,11 @@ def retrieve_wavelength_method_v5(
             )
         except ValueError as exc:
             logger.warning(
-                "  -> %d nm v5 block %d unsupported: %s",
+                "  -> %d nm v5 block %d/%d unsupported after %.1f s: %s",
                 int(wavelength_nm),
-                int(block_index),
+                int(block_index + 1),
+                int(n_block),
+                time.perf_counter() - block_started,
                 exc,
             )
             continue
@@ -440,6 +451,15 @@ def retrieve_wavelength_method_v5(
         reference_source_bin_count[block_index] = int(selected.source_count)
         selection_success_fraction[block_index] = float(
             result.monte_carlo.selection_success_fraction
+        )
+        logger.info(
+            "  -> %d nm v5 block %d/%d MC done | ref=%.1f m | success=%.1f%% | %.1f s",
+            int(wavelength_nm),
+            int(block_index + 1),
+            int(n_block),
+            float(selected.altitude_m),
+            100.0 * float(result.monte_carlo.selection_success_fraction),
+            time.perf_counter() - block_started,
         )
         beta_mc_mean[block_index] = result.monte_carlo.aerosol_backscatter_mean
         beta_mc_std[block_index] = result.monte_carlo.aerosol_backscatter_random_std
