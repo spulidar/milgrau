@@ -14,15 +14,8 @@ from milgrau.config.station import resolve_station_context
 from milgrau.incremental import output_is_current
 from milgrau.io.contracts import netcdf_satisfies_contract, validate_level0_contract
 from milgrau.io.logging_utils import bind_log_context
-from milgrau.io.paths import (
-    is_measurement_id,
-    is_save_id,
-    level0_output_path,
-    level0_scc_output_path,
-    measurement_id_from_save_id,
-    measurement_save_id,
-    raw_data_root,
-)
+from milgrau.io.paths import level0_output_path, level0_scc_output_path, raw_data_root
+from milgrau.io.selection import parse_input_selection, select_available_measurement_ids
 from milgrau.level0.common import incremental_enabled
 from milgrau.level0.config import resolve_level0_config, validate_level0_config
 from milgrau.level0.inventory import build_measurement_inventory
@@ -113,20 +106,31 @@ def _level0_is_current(meas_id: str, group_df, config: dict, output_path) -> boo
     )
 
 
-def _normalize_requested_measurements(values: Sequence[str] | None) -> set[str] | None:
-    if not values:
+def _requested_measurement_ids(values, config: dict, df_raw) -> set[str] | None:
+    """Resolve CLI selectors against the current raw inventory."""
+    selection = parse_input_selection(values, config)
+    if selection.is_empty:
         return None
-    normalized: set[str] = set()
-    for raw in values:
-        value = str(raw).strip().lower()
-        if is_save_id(value):
-            value = measurement_id_from_save_id(value)
-        if not is_measurement_id(value):
-            raise ValueError(
-                f"LIBIDS input must be YYYYMMDD<UTC period start>z or YYYYMMDDsa<UTC period start>z; got {raw!r}."
-            )
-        normalized.add(value)
-    return normalized
+
+    available_ids = [str(value) for value in df_raw["meas_id"].dropna().unique()]
+    selected = select_available_measurement_ids(selection, available_ids)
+
+    if selection.paths:
+        resolved_inventory_paths = df_raw["filepath"].map(lambda value: Path(str(value)).expanduser().resolve())
+        for selected_path in selection.paths:
+            if selected_path.is_dir():
+                mask = resolved_inventory_paths.map(
+                    lambda value: value == selected_path or selected_path in value.parents
+                )
+            else:
+                mask = resolved_inventory_paths == selected_path
+            matches = set(df_raw.loc[mask, "meas_id"].astype(str))
+            if not matches:
+                raise FileNotFoundError(
+                    f"Explicit raw input {selected_path} was not found in the LIBIDS inventory."
+                )
+            selected.update(matches)
+    return selected
 
 
 def process_level_0(
@@ -140,15 +144,12 @@ def process_level_0(
     validate_level0_config(config)
     level0_config = resolve_level0_config(config)
     pipeline_logger = bind_log_context(logger, pipeline="L0")
-    requested = _normalize_requested_measurements(inputs)
-
     raw_dir = raw_data_root(config)
     df_raw = build_measurement_inventory(str(raw_dir), config, pipeline_logger)
-    if requested is not None and not df_raw.empty:
-        df_raw = df_raw[df_raw["meas_id"].astype(str).isin(requested)].copy()
-        missing = sorted(requested - set(df_raw["meas_id"].astype(str).unique()))
-        if missing:
-            raise FileNotFoundError(f"Requested LIBIDS measurement group(s) not found: {', '.join(missing)}")
+    if not df_raw.empty:
+        requested = _requested_measurement_ids(inputs, config, df_raw)
+        if requested is not None:
+            df_raw = df_raw[df_raw["meas_id"].astype(str).isin(requested)].copy()
     if df_raw.empty:
         bind_log_context(pipeline_logger, stage="discovery").info("no raw measurements found")
         return ExecutionSummary.from_results(
@@ -170,12 +171,11 @@ def process_level_0(
     incremental = incremental_enabled(config)
     results: list[ExecutionResult] = []
     for meas_id, group_df in df_good.groupby("meas_id"):
-        save_id = measurement_save_id(meas_id)
-        group_logger = bind_log_context(pipeline_logger, save_id=save_id)
+        group_logger = bind_log_context(pipeline_logger, measurement_id=meas_id)
         netcdf_path = level0_output_path(meas_id, config)
         if not force and incremental and _level0_is_current(meas_id, group_df, config, netcdf_path):
             bind_log_context(group_logger, stage="skip").info("up to date | %s", netcdf_path.name)
-            results.append(ExecutionResult.skipped("level0.incremental", "Level 0 is up to date", output_path=netcdf_path, metadata={"pipeline": "L0", "save_id": save_id}))
+            results.append(ExecutionResult.skipped("level0.incremental", "Level 0 is up to date", output_path=netcdf_path, metadata={"pipeline": "L0", "measurement_id": meas_id}))
             continue
 
         measurement_count = int((group_df["meas_type"] == "measurements").sum())
@@ -185,7 +185,7 @@ def process_level_0(
             if not isinstance(result, ExecutionResult):
                 raise TypeError(f"process_measurement_group returned {type(result).__name__}; expected ExecutionResult.")
         except Exception as exc:
-            result = ExecutionResult.failure("level0.group", "unexpected group conversion error", output_path=netcdf_path, cause=exc, include_traceback=True, metadata={"pipeline": "L0", "save_id": save_id})
+            result = ExecutionResult.failure("level0.group", "unexpected group conversion error", output_path=netcdf_path, cause=exc, include_traceback=True, metadata={"pipeline": "L0", "measurement_id": meas_id})
         if result.status is ExecutionStatus.OK:
             duration = 0.0 if result.duration_seconds is None else result.duration_seconds
             bind_log_context(group_logger, stage="done").info("%s | %.1f s", netcdf_path.name, duration)
