@@ -41,5 +41,5 @@ def test_altitude_subset_preserves_meter_coordinate() -> None:
 
 
 def test_output_path_is_small_json_evidence_file(tmp_path) -> None:
-    path = _output_path(tmp_path, tmp_path / "20250629sa03z_level1_rcs.nc", 532)
-    assert path.name == "20250629sa03z_level1_rcs_v5_validation_532nm.json"
+    path = _output_path(tmp_path, tmp_path / "20250629_spu_00_L1.nc", 532)
+    assert path.name == "20250629_spu_00_L1_v5_validation_532nm.json"
