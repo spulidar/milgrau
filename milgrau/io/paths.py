@@ -1,42 +1,33 @@
-"""Canonical path builders for MILGRAU products.
-
-This module centralizes file-name and directory conventions so pipeline stages do
-not need to duplicate product layout logic. All functions are intentionally
-small and side-effect free; directory creation remains the responsibility of the
-calling pipeline.
-"""
+"""Canonical path and identity builders for MILGRAU products."""
 
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping
 
 DEFAULT_CACHE_DIR = ".cache"
 DEFAULT_SURFACE_WEATHER_CACHE_DIRNAME = "weather"
 DEFAULT_RADIOSONDE_CACHE_DIRNAME = "radiosonde"
-LEVEL0_SUFFIX = ".nc"
-LEVEL0_SCC_SUFFIX = "_scc.nc"
-LEVEL1_SUFFIX = "_level1_rcs.nc"
-LEVEL2_SUFFIX = "_level2_optical.nc"
 
-MEASUREMENT_ID_RE = re.compile(r"^\d{8}\d{2}(?:\d{2})?z$")
-SAVE_ID_RE = re.compile(r"^\d{8}sa\d{2}(?:\d{2})?z$")
+LEVEL0_SUFFIX = "_L0.nc"
+LEVEL0_SCC_SUFFIX = "_L0_scc.nc"
+LEVEL1_SUFFIX = "_L1.nc"
+LEVEL1_SCC_SUFFIX = "_L1_scc.nc"
+LEVEL2_SUFFIX = "_L2.nc"
 
-
-def is_measurement_id(value: str) -> bool:
-    return MEASUREMENT_ID_RE.fullmatch(str(value).strip().lower()) is not None
-
-
-def is_save_id(value: str) -> bool:
-    return SAVE_ID_RE.fullmatch(str(value).strip().lower()) is not None
-
-
-def measurement_id_from_save_id(save_id: str) -> str:
-    value = str(save_id).strip().lower()
-    if not is_save_id(value):
-        raise ValueError(f"Invalid save_id: {save_id!r}")
-    return value[:8] + value[10:]
+LOCAL_PERIOD_STARTS = ("00", "06", "12", "18")
+_STATION_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+MEASUREMENT_ID_RE = re.compile(
+    r"^(?P<date>\d{8})_(?P<station>[a-z0-9][a-z0-9-]*)_(?P<period>00|06|12|18)$",
+    flags=re.IGNORECASE,
+)
+_PRODUCT_RE = re.compile(
+    r"^(?P<measurement_id>\d{8}_[a-z0-9][a-z0-9-]*_(?:00|06|12|18))"
+    r"(?P<suffix>_L0(?:_scc)?|_L1(?:_scc)?|(?:_[A-Za-z0-9_.-]+)?_L2)\.nc$",
+    flags=re.IGNORECASE,
+)
 
 
 def project_root(root_dir: str | Path | None = None) -> Path:
@@ -55,7 +46,6 @@ def _configured_directory(
     key: str,
     root_dir: str | Path | None = None,
 ) -> Path:
-    """Return one explicitly configured directory; never invent a production path."""
     directories = config.get("directories")
     if not isinstance(directories, Mapping):
         raise KeyError("Configuration directories section is required.")
@@ -79,68 +69,148 @@ def log_output_root(config: Mapping[str, Any], root_dir: str | Path | None = Non
     return _configured_directory(config, "log_dir", root_dir=root_dir)
 
 
-def surface_weather_cache_dir(config: Mapping[str, Any] | None = None, root_dir: str | Path | None = None) -> Path:
+def surface_weather_cache_dir(
+    config: Mapping[str, Any] | None = None,
+    root_dir: str | Path | None = None,
+) -> Path:
     if config:
         surface_weather = config.get("surface_weather", {})
         if isinstance(surface_weather, Mapping):
             cache_dir = surface_weather.get("cache_dir")
             if cache_dir:
                 return resolve_project_path(str(cache_dir), root_dir=root_dir)
-    return resolve_project_path(f"{DEFAULT_CACHE_DIR}/{DEFAULT_SURFACE_WEATHER_CACHE_DIRNAME}", root_dir=root_dir)
+    return resolve_project_path(
+        f"{DEFAULT_CACHE_DIR}/{DEFAULT_SURFACE_WEATHER_CACHE_DIRNAME}",
+        root_dir=root_dir,
+    )
 
 
-def radiosonde_cache_dir(config: Mapping[str, Any] | None = None, root_dir: str | Path | None = None) -> Path:
+def radiosonde_cache_dir(
+    config: Mapping[str, Any] | None = None,
+    root_dir: str | Path | None = None,
+) -> Path:
     if config:
         radiosonde = config.get("radiosonde", {})
         if isinstance(radiosonde, Mapping):
             cache_dir = radiosonde.get("cache_dir")
             if cache_dir:
                 return resolve_project_path(str(cache_dir), root_dir=root_dir)
-    return resolve_project_path(f"{DEFAULT_CACHE_DIR}/{DEFAULT_RADIOSONDE_CACHE_DIRNAME}", root_dir=root_dir)
+    return resolve_project_path(
+        f"{DEFAULT_CACHE_DIR}/{DEFAULT_RADIOSONDE_CACHE_DIRNAME}",
+        root_dir=root_dir,
+    )
 
 
-def measurement_save_id(measurement_id: str) -> str:
-    """Return the canonical SCC-style MILGRAU save ID for a measurement group."""
-    value = str(measurement_id).strip().lower()
-    if not is_measurement_id(value):
-        raise ValueError(f"Invalid measurement_id: {measurement_id!r}")
-    return f"{value[:8]}sa{value[8:]}"
+def station_id(config: Mapping[str, Any]) -> str:
+    """Return the canonical lowercase station identifier from station.yaml."""
+    catalog = config.get("_station_catalog")
+    if not isinstance(catalog, Mapping):
+        raise KeyError("No station catalog is loaded; configure station_config in config.yaml.")
+    station = catalog.get("station")
+    if not isinstance(station, Mapping):
+        raise KeyError("Station catalog must contain station metadata.")
+    value = str(station.get("id", "")).strip().lower()
+    if not _STATION_ID_RE.fullmatch(value):
+        raise ValueError(f"station.id must be a lowercase filename-safe identifier; got {value!r}.")
+    return value
 
 
-def product_save_id(product_path: str | Path) -> str:
-    """Extract the canonical save ID from a MILGRAU Level 0/1/2 product path."""
-    name = Path(product_path).name
-    for suffix in (LEVEL2_SUFFIX, LEVEL1_SUFFIX, LEVEL0_SCC_SUFFIX, LEVEL0_SUFFIX):
-        if name.endswith(suffix):
-            stem = name.removesuffix(suffix)
-            save_id = stem.split("_", 1)[0].lower()
-            if is_save_id(save_id):
-                return save_id
-            raise ValueError(f"Product name does not contain a canonical save_id: {name!r}")
-    raise ValueError(f"Unrecognized MILGRAU product filename: {name!r}")
+def normalize_period_start(value: str | int) -> str:
+    """Return one canonical local six-hour period start."""
+    raw = str(value).strip()
+    if not raw.isdigit():
+        raise ValueError(f"Invalid local period start: {value!r}")
+    normalized = f"{int(raw):02d}"
+    if normalized not in LOCAL_PERIOD_STARTS:
+        raise ValueError(
+            f"Invalid local period start {value!r}; expected one of {', '.join(LOCAL_PERIOD_STARTS)}."
+        )
+    return normalized
 
 
-def logging_save_id(product_path: str | Path) -> str:
-    """Return canonical save ID for logging, or '-' for a non-canonical input name.
-
-    Product validation remains strict through :func:`product_save_id`; this helper
-    exists only so error reporting itself never masks the underlying pipeline error.
-    """
+def build_measurement_id(date_value: str, station: str, period_start: str | int) -> str:
+    """Build YYYYMMDD_station_HH, where HH is the local six-hour period start."""
+    date_text = str(date_value).strip()
     try:
-        return product_save_id(product_path)
+        datetime.strptime(date_text, "%Y%m%d")
+    except ValueError as exc:
+        raise ValueError(f"Invalid measurement date {date_value!r}; expected YYYYMMDD.") from exc
+    station_text = str(station).strip().lower()
+    if not _STATION_ID_RE.fullmatch(station_text):
+        raise ValueError(f"Invalid station id: {station!r}")
+    period = normalize_period_start(period_start)
+    return f"{date_text}_{station_text}_{period}"
+
+
+def measurement_id_parts(measurement_id: str) -> tuple[str, str, str]:
+    """Return (YYYYMMDD, station, HH) for one canonical measurement ID."""
+    value = str(measurement_id).strip().lower()
+    match = MEASUREMENT_ID_RE.fullmatch(value)
+    if match is None:
+        raise ValueError(
+            f"Invalid measurement_id {measurement_id!r}; expected YYYYMMDD_station_HH."
+        )
+    date_text = match.group("date")
+    try:
+        datetime.strptime(date_text, "%Y%m%d")
+    except ValueError as exc:
+        raise ValueError(f"Invalid measurement date in {measurement_id!r}.") from exc
+    return date_text, match.group("station"), match.group("period")
+
+
+def is_measurement_id(value: str) -> bool:
+    try:
+        measurement_id_parts(value)
     except ValueError:
-        return "-"
+        return False
+    return True
 
 
-def measurement_product_dir(
-    save_id: str,
+def validate_measurement_id_for_config(measurement_id: str, config: Mapping[str, Any]) -> str:
+    """Validate a canonical ID and require its station to match station.yaml."""
+    date_text, station, period = measurement_id_parts(measurement_id)
+    expected_station = station_id(config)
+    if station != expected_station:
+        raise ValueError(
+            f"Measurement ID station {station!r} does not match loaded station {expected_station!r}."
+        )
+    return build_measurement_id(date_text, station, period)
+
+
+def measurement_day_dir(
+    measurement_id: str,
     config: Mapping[str, Any],
     root_dir: str | Path | None = None,
 ) -> Path:
-    save_id = str(save_id).strip().lower()
-    if not is_save_id(save_id):
-        raise ValueError(f"Invalid save_id: {save_id!r}")
-    return processed_data_root(config, root_dir=root_dir) / save_id[:4] / save_id[4:6] / save_id
+    """Return processed/station/YYYY/MM/YYYYMMDD for one canonical measurement."""
+    value = validate_measurement_id_for_config(measurement_id, config)
+    date_text, station, _period = measurement_id_parts(value)
+    return (
+        processed_data_root(config, root_dir=root_dir)
+        / station
+        / date_text[:4]
+        / date_text[4:6]
+        / date_text
+    )
+
+
+def product_measurement_id(product_path: str | Path) -> str:
+    """Extract the canonical measurement ID from a MILGRAU product filename."""
+    name = Path(product_path).name
+    match = _PRODUCT_RE.fullmatch(name)
+    if match is None:
+        raise ValueError(f"Unrecognized MILGRAU product filename: {name!r}")
+    value = match.group("measurement_id").lower()
+    measurement_id_parts(value)
+    return value
+
+
+def logging_measurement_id(product_path: str | Path) -> str:
+    """Return canonical measurement ID for logging, or '-' for external inputs."""
+    try:
+        return product_measurement_id(product_path)
+    except ValueError:
+        return "-"
 
 
 def level0_output_path(
@@ -148,8 +218,8 @@ def level0_output_path(
     config: Mapping[str, Any],
     root_dir: str | Path | None = None,
 ) -> Path:
-    save_id = measurement_save_id(measurement_id)
-    return measurement_product_dir(save_id, config, root_dir=root_dir) / f"{save_id}{LEVEL0_SUFFIX}"
+    value = validate_measurement_id_for_config(measurement_id, config)
+    return measurement_day_dir(value, config, root_dir=root_dir) / f"{value}{LEVEL0_SUFFIX}"
 
 
 def level0_scc_output_path(
@@ -157,8 +227,8 @@ def level0_scc_output_path(
     config: Mapping[str, Any],
     root_dir: str | Path | None = None,
 ) -> Path:
-    save_id = measurement_save_id(measurement_id)
-    return measurement_product_dir(save_id, config, root_dir=root_dir) / f"{save_id}{LEVEL0_SCC_SUFFIX}"
+    value = validate_measurement_id_for_config(measurement_id, config)
+    return measurement_day_dir(value, config, root_dir=root_dir) / f"{value}{LEVEL0_SCC_SUFFIX}"
 
 
 def level1_output_path(
@@ -166,33 +236,38 @@ def level1_output_path(
     config: Mapping[str, Any],
     root_dir: str | Path | None = None,
 ) -> Path:
-    """Return a predictable Level 1 path for canonical or explicit external Level 0 input.
-
-    Canonical MILGRAU inputs, including ``*_scc.nc``, stay inside the canonical
-    measurement directory while preserving their input stem in the output name.
-    An explicitly supplied non-canonical external Level 0/SCC file is written
-    beside that source file rather than inventing a date/product tree from its
-    filename.
-    """
+    """Return the Level 1 path for canonical MILGRAU or explicit external Level 0 input."""
     source = Path(level0_file)
-    stem = source.stem
+    name = source.name
     try:
-        save_id = product_save_id(source)
+        measurement_id = product_measurement_id(source)
     except ValueError:
-        return source.with_name(f"{stem}{LEVEL1_SUFFIX}")
-    return measurement_product_dir(save_id, config, root_dir=root_dir) / f"{stem}{LEVEL1_SUFFIX}"
+        return source.with_name(f"{source.stem}{LEVEL1_SUFFIX}")
+
+    if name.endswith(LEVEL0_SCC_SUFFIX):
+        filename = f"{measurement_id}{LEVEL1_SCC_SUFFIX}"
+    elif name.endswith(LEVEL0_SUFFIX):
+        filename = f"{measurement_id}{LEVEL1_SUFFIX}"
+    else:
+        raise ValueError(f"Expected a Level 0 product, got {name!r}.")
+    return measurement_day_dir(measurement_id, config, root_dir=root_dir) / filename
 
 
 def level2_output_path(level1_file: str | Path, variant_tag: str | None = None) -> Path:
+    """Return the Level 2 path, preserving SCC provenance and optional UTC-window tag."""
     path = Path(level1_file)
-    if not path.name.endswith(LEVEL1_SUFFIX):
-        raise ValueError(f"Expected a Level 1 file ending with {LEVEL1_SUFFIX}: {path}")
-    stem = path.name.removesuffix(LEVEL1_SUFFIX)
+    measurement_id = product_measurement_id(path)
+    is_scc = path.name.endswith(LEVEL1_SCC_SUFFIX)
+    if not is_scc and not path.name.endswith(LEVEL1_SUFFIX):
+        raise ValueError(f"Expected a Level 1 file: {path}")
+
+    variant = ""
     if variant_tag:
-        safe_tag = str(variant_tag).strip().replace(" ", "_")
+        safe_tag = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(variant_tag).strip()).strip("_")
         if safe_tag:
-            stem = f"{stem}_{safe_tag}"
-    return path.parent / f"{stem}{LEVEL2_SUFFIX}"
+            variant = f"_{safe_tag}"
+    scc_suffix = "_scc" if is_scc else ""
+    return path.parent / f"{measurement_id}{variant}_L2{scc_suffix}.nc"
 
 
 def quicklook_output_path(
@@ -202,9 +277,13 @@ def quicklook_output_path(
     max_altitude_km: float,
     output_format: str,
 ) -> Path:
+    """Return an RCS quicklook path inside the day's quicklooks directory."""
     safe_channel = str(formatted_channel_name).replace(" ", "_")
     suffix = str(output_format).lstrip(".").lower()
-    return Path(output_folder) / f"Quicklook_{file_name_prefix}_{safe_channel}_{float(max_altitude_km):g}km.{suffix}"
+    return (
+        Path(output_folder)
+        / f"rcs_{file_name_prefix}_{safe_channel}_{float(max_altitude_km):g}km.{suffix}"
+    )
 
 
 def global_mean_rcs_output_path(
@@ -213,4 +292,4 @@ def global_mean_rcs_output_path(
     output_format: str,
 ) -> Path:
     suffix = str(output_format).lstrip(".").lower()
-    return Path(output_folder) / f"GlobalMeanRCS_{file_name_prefix}.{suffix}"
+    return Path(output_folder) / f"rcs_{file_name_prefix}_mean.{suffix}"
