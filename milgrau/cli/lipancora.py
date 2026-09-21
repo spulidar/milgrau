@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import argparse
-import re
 from pathlib import Path
 
 from milgrau.cli.common import finish_cli, run_guarded
 from milgrau.config.loader import load_config
 from milgrau.io.logging_utils import bind_log_context, setup_logger
-from milgrau.io.paths import logging_save_id, measurement_product_dir
+from milgrau.io.paths import is_save_id, logging_save_id, measurement_product_dir
 from milgrau.level1.lipancora import _files_requiring_level1, process_level_1, process_single_file
 from milgrau.operations import ExecutionStatus, ExecutionSummary
 from milgrau.version import __version__
@@ -23,7 +22,7 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="inputs",
         action="append",
         default=[],
-        help="Level 0 file, product directory, or save ID (YYYYMMDDsaam/sapm/sant). Repeatable.",
+        help="Level 0 file, product directory, or save ID (for example YYYYMMDDsa03z). Repeatable.",
     )
     parser.add_argument("--force", action="store_true", help="Reprocess even when the Level 1 product is current.")
     parser.add_argument("--version", action="version", version=f"MILGRAU {__version__}")
@@ -38,8 +37,9 @@ def _expand_inputs(inputs: list[str], config: dict) -> list[Path]:
             resolved.extend(sorted(p for p in path.rglob("*.nc") if "level" not in p.name and p.parent.name == p.stem))
         elif path.exists() and path.is_file():
             resolved.append(path)
-        elif re.fullmatch(r"\d{8}sa(?:am|pm|nt)", raw):
-            resolved.append(measurement_product_dir(raw, config) / f"{raw}.nc")
+        elif is_save_id(raw):
+            save_id = str(raw).strip().lower()
+            resolved.append(measurement_product_dir(save_id, config) / f"{save_id}.nc")
         else:
             raise FileNotFoundError(f"Input {raw!r} is not a Level 0 file, product directory, or save ID.")
     unique = sorted(dict.fromkeys(resolved))
