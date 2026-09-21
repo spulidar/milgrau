@@ -1,4 +1,4 @@
-"""Tests for canonical MILGRAU path builders."""
+"""Tests for canonical MILGRAU path and identity builders."""
 
 from __future__ import annotations
 
@@ -7,15 +7,16 @@ from pathlib import Path
 import pytest
 
 from milgrau.io.paths import (
+    build_measurement_id,
     global_mean_rcs_output_path,
     level0_output_path,
+    level0_scc_output_path,
     level1_output_path,
     level2_output_path,
     log_output_root,
-    logging_save_id,
-    measurement_product_dir,
-    measurement_save_id,
-    product_save_id,
+    logging_measurement_id,
+    measurement_day_dir,
+    product_measurement_id,
     quicklook_output_path,
     radiosonde_cache_dir,
     raw_data_root,
@@ -24,72 +25,88 @@ from milgrau.io.paths import (
 
 
 def _config() -> dict:
-    return {"directories": {"processed_data": "processed"}}
+    return {
+        "directories": {"processed_data": "processed"},
+        "_station_catalog": {"station": {"id": "spu"}},
+    }
 
 
-def test_measurement_save_id_inserts_sa_marker() -> None:
-    assert measurement_save_id("2024010103z") == "20240101sa03z"
-    assert measurement_save_id("2024010109z") == "20240101sa09z"
-    assert measurement_save_id("202401010330z") == "20240101sa0330z"
-    with pytest.raises(ValueError, match="Invalid measurement_id"):
-        measurement_save_id("20240101nt")
+def test_measurement_id_is_local_date_station_and_period_start() -> None:
+    assert build_measurement_id("20240101", "spu", "00") == "20240101_spu_00"
+    assert build_measurement_id("20240101", "SPU", 6) == "20240101_spu_06"
+    with pytest.raises(ValueError, match="period start"):
+        build_measurement_id("20240101", "spu", "03")
+    with pytest.raises(ValueError, match="measurement date"):
+        build_measurement_id("20240231", "spu", "06")
 
 
-def test_product_save_id_is_stable_across_processing_levels() -> None:
-    assert product_save_id("20240101sa03z.nc") == "20240101sa03z"
-    assert product_save_id("20240101sa03z_scc.nc") == "20240101sa03z"
-    assert product_save_id("20240101sa03z_level1_rcs.nc") == "20240101sa03z"
-    assert product_save_id("20240101sa03z_level2_optical.nc") == "20240101sa03z"
-    assert product_save_id("20240101sa03z_0400-0500_level2_optical.nc") == "20240101sa03z"
+def test_product_measurement_id_is_stable_across_processing_levels() -> None:
+    expected = "20240101_spu_06"
+    assert product_measurement_id("20240101_spu_06_L0.nc") == expected
+    assert product_measurement_id("20240101_spu_06_L0_scc.nc") == expected
+    assert product_measurement_id("20240101_spu_06_L1.nc") == expected
+    assert product_measurement_id("20240101_spu_06_L1_scc.nc") == expected
+    assert product_measurement_id("20240101_spu_06_L2.nc") == expected
+    assert product_measurement_id("20240101_spu_06_0400-0500Z_L2.nc") == expected
     with pytest.raises(ValueError, match="Unrecognized"):
-        product_save_id("arbitrary.nc.txt")
+        product_measurement_id("arbitrary.nc.txt")
 
 
-def test_logging_save_id_never_masks_an_unrelated_pipeline_error() -> None:
-    assert logging_save_id("20240101sa03z_level1_rcs.nc") == "20240101sa03z"
-    assert logging_save_id("noncanonical_level1_rcs.nc") == "-"
-    assert logging_save_id("arbitrary.txt") == "-"
+def test_logging_measurement_id_never_masks_an_unrelated_pipeline_error() -> None:
+    assert logging_measurement_id("20240101_spu_06_L1.nc") == "20240101_spu_06"
+    assert logging_measurement_id("noncanonical_L1.nc") == "-"
+    assert logging_measurement_id("arbitrary.txt") == "-"
 
 
-def test_level_product_paths_are_canonical(tmp_path: Path) -> None:
+def test_level_product_paths_are_grouped_by_station_and_local_day(tmp_path: Path) -> None:
     config = _config()
-    level0 = level0_output_path("2024010103z", config, root_dir=tmp_path)
-    assert level0 == tmp_path / "processed" / "2024" / "01" / "20240101sa03z" / "20240101sa03z.nc"
-    assert measurement_product_dir("20240101sa03z", config, root_dir=tmp_path) == level0.parent
+    measurement_id = "20240101_spu_06"
+    day_dir = tmp_path / "processed" / "spu" / "2024" / "01" / "20240101"
+
+    level0 = level0_output_path(measurement_id, config, root_dir=tmp_path)
+    assert level0 == day_dir / "20240101_spu_06_L0.nc"
+    assert measurement_day_dir(measurement_id, config, root_dir=tmp_path) == day_dir
+
+    scc = level0_scc_output_path(measurement_id, config, root_dir=tmp_path)
+    assert scc == day_dir / "20240101_spu_06_L0_scc.nc"
+
     level1 = level1_output_path(level0, config, root_dir=tmp_path)
-    assert level1 == level0.parent / "20240101sa03z_level1_rcs.nc"
+    assert level1 == day_dir / "20240101_spu_06_L1.nc"
+
     level2 = level2_output_path(level1)
-    assert level2 == level0.parent / "20240101sa03z_level2_optical.nc"
+    assert level2 == day_dir / "20240101_spu_06_L2.nc"
 
 
-def test_scc_level0_keeps_level1_in_canonical_measurement_directory(tmp_path: Path) -> None:
+def test_scc_level0_keeps_distinct_scc_lineage(tmp_path: Path) -> None:
     config = _config()
-    measurement_dir = measurement_product_dir("20240101sa03z", config, root_dir=tmp_path)
-    scc = measurement_dir / "20240101sa03z_scc.nc"
+    scc = level0_scc_output_path("20240101_spu_06", config, root_dir=tmp_path)
     level1 = level1_output_path(scc, config, root_dir=tmp_path)
-    assert level1 == measurement_dir / "20240101sa03z_scc_level1_rcs.nc"
+    assert level1 == scc.parent / "20240101_spu_06_L1_scc.nc"
+    assert level2_output_path(level1) == scc.parent / "20240101_spu_06_L2_scc.nc"
 
 
 def test_noncanonical_external_level0_writes_level1_beside_source(tmp_path: Path) -> None:
     config = _config()
     external = tmp_path / "imports" / "foreign_station_scc_raw.nc"
     level1 = level1_output_path(external, config, root_dir=tmp_path)
-    assert level1 == external.parent / "foreign_station_scc_raw_level1_rcs.nc"
+    assert level1 == external.parent / "foreign_station_scc_raw_L1.nc"
 
 
-def test_level2_output_path_supports_variant_tags(tmp_path: Path) -> None:
+def test_level2_output_path_supports_explicit_utc_variant_tags(tmp_path: Path) -> None:
     config = _config()
-    level0 = level0_output_path("2024010103z", config, root_dir=tmp_path)
+    level0 = level0_output_path("20240101_spu_06", config, root_dir=tmp_path)
     level1 = level1_output_path(level0, config, root_dir=tmp_path)
-    tagged = level2_output_path(level1, variant_tag="0400-0500")
-    assert tagged == level0.parent / "20240101sa03z_0400-0500_level2_optical.nc"
+    tagged = level2_output_path(level1, variant_tag="0400-0500Z")
+    assert tagged == level0.parent / "20240101_spu_06_0400-0500Z_L2.nc"
 
 
 def test_visual_product_paths() -> None:
-    assert quicklook_output_path("plots", "measure", "532nm AN", 15, "webp") == Path(
-        "plots/Quicklook_measure_532nm_AN_15km.webp"
+    assert quicklook_output_path("plots", "20240101_spu_06", "532nm AN", 15, "webp") == Path(
+        "plots/rcs_20240101_spu_06_532nm_AN_15km.webp"
     )
-    assert global_mean_rcs_output_path("plots", "measure", ".png") == Path("plots/GlobalMeanRCS_measure.png")
+    assert global_mean_rcs_output_path("plots", "20240101_spu_06", ".png") == Path(
+        "plots/rcs_20240101_spu_06_mean.png"
+    )
 
 
 def test_configured_roots_are_resolved_from_directories_section(tmp_path: Path) -> None:
