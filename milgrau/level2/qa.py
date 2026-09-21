@@ -20,7 +20,7 @@ _QA_LOGO_NAMES = ("CC_BY-NC-ND.png", "lalinet_logo2.png", "logo_leal2.png")
 
 def level2_qa_enabled(config: Mapping[str, Any]) -> bool:
     """Return whether Level 2 QA generation is enabled in configuration."""
-    qa_config = config.get("visualization", {}).get("level2_qa", {}) or {}
+    qa_config = config.get("visualization", {}).get("qa", {}) or {}
     return bool(qa_config.get("enabled", True))
 
 
@@ -52,7 +52,7 @@ def level2_qa_is_current(
     level1_path = Path(input_path)
     level2_path = Path(product_path)
     root_path = Path.cwd() if root_dir is None else Path(root_dir)
-    qa_dir = level2_path.parent / "level2_qa"
+    qa_dir = level2_path.parent / "qa"
     if not qa_dir.is_dir():
         return False
     outputs = [
@@ -88,7 +88,7 @@ def generate_level2_qa(
     started_at = time.perf_counter()
     level1_path = Path(input_path)
     level2_path = Path(product_path)
-    qa_dir = level2_path.parent / "level2_qa"
+    qa_dir = level2_path.parent / "qa"
     root_path = Path.cwd() if root_dir is None else Path(root_dir)
     try:
         incremental = bool(config.get("processing", {}).get("incremental", False))
@@ -118,7 +118,7 @@ def generate_level2_qa(
                 root_dir=root_path,
                 ds_l1=ds_l1,
             )
-        qa_config = config.get("visualization", {}).get("level2_qa", {}) or {}
+        qa_config = config.get("visualization", {}).get("qa", {}) or {}
         requested = any(
             bool(qa_config.get(name, True))
             for name in (
