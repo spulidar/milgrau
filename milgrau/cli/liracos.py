@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import argparse
-import re
 from pathlib import Path
 
 from milgrau.cli.common import finish_cli, run_guarded
 from milgrau.config.loader import load_config
 from milgrau.io.logging_utils import bind_log_context, setup_logger
-from milgrau.io.paths import LEVEL1_SUFFIX, measurement_product_dir, product_save_id
+from milgrau.io.paths import LEVEL1_SUFFIX, is_save_id, measurement_product_dir, product_save_id
 from milgrau.operations import ExecutionStatus, ExecutionSummary
 from milgrau.version import __version__
 from milgrau.viz.liracos import process_all_level1_files, process_single_nc
@@ -23,7 +22,7 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="inputs",
         action="append",
         default=[],
-        help="Level 1 file, product directory, or save ID (YYYYMMDDsaam/sapm/sant). Repeatable.",
+        help="Level 1 file, product directory, or save ID (for example YYYYMMDDsa03z). Repeatable.",
     )
     parser.add_argument("--force", action="store_true", help="Regenerate plots even when incremental outputs are current.")
     parser.add_argument("--version", action="version", version=f"MILGRAU {__version__}")
@@ -38,8 +37,9 @@ def _expand_inputs(inputs: list[str], config: dict) -> list[Path]:
             resolved.extend(sorted(path.rglob(f"*{LEVEL1_SUFFIX}")))
         elif path.exists() and path.is_file():
             resolved.append(path)
-        elif re.fullmatch(r"\d{8}sa(?:am|pm|nt)", raw):
-            resolved.append(measurement_product_dir(raw, config) / f"{raw}{LEVEL1_SUFFIX}")
+        elif is_save_id(raw):
+            save_id = str(raw).strip().lower()
+            resolved.append(measurement_product_dir(save_id, config) / f"{save_id}{LEVEL1_SUFFIX}")
         else:
             raise FileNotFoundError(f"Input {raw!r} is not a Level 1 file, product directory, or save ID.")
     unique = sorted(dict.fromkeys(resolved))
