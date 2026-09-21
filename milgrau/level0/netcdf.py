@@ -105,13 +105,13 @@ def _measurement_rows(group_df: pd.DataFrame) -> pd.DataFrame:
 def _truncate_time_axis(
     measurement_rows: pd.DataFrame,
     num_times_tensor: int,
-    save_id: str,
+    measurement_id: str,
     logger: logging.Logger,
 ) -> tuple[pd.DataFrame, int]:
     if len(measurement_rows) != num_times_tensor:
         n_copy = min(len(measurement_rows), num_times_tensor)
         logger.warning(
-            f"  -> Time axis mismatch for {save_id}: metadata has {len(measurement_rows)} profiles "
+            f"  -> Time axis mismatch for {measurement_id}: metadata has {len(measurement_rows)} profiles "
             f"but tensor has {num_times_tensor}. Truncating to {n_copy}."
         )
         measurement_rows = measurement_rows.iloc[:n_copy].reset_index(drop=True)
@@ -398,7 +398,7 @@ def _dark_current_attributes(group_df: pd.DataFrame) -> dict:
 
 
 def build_level0_global_attributes(
-    save_id: str,
+    measurement_id: str,
     period: str,
     lidar_data: dict,
     group_df: pd.DataFrame,
@@ -420,7 +420,7 @@ def build_level0_global_attributes(
         raise ValueError("Resolved station latitude/longitude must be finite.")
     ready = _scc_ready(config)
     attrs = {
-        "Measurement_ID": save_id,
+        "Measurement_ID": measurement_id,
         "measurement_start_time": min_start_utc.isoformat().replace("+00:00", "Z"),
         "measurement_end_time": max_stop_utc.isoformat().replace("+00:00", "Z"),
         "period": str(period),
@@ -590,7 +590,7 @@ def write_dark_current_profile(
 
 def build_level0_netcdf(
     netcdf_path: str,
-    save_id: str,
+    measurement_id: str,
     period: str,
     lidar_data: dict,
     group_df: pd.DataFrame,
@@ -605,7 +605,7 @@ def build_level0_netcdf(
         num_times_tensor, num_points = validate_lidar_tensors(tensors, channels)
         num_channels = len(channels)
         measurement_rows = _measurement_rows(group_df)
-        measurement_rows, num_times = _truncate_time_axis(measurement_rows, num_times_tensor, save_id, logger)
+        measurement_rows, num_times = _truncate_time_axis(measurement_rows, num_times_tensor, measurement_id, logger)
         if num_times <= 0:
             raise ValueError("No valid time profiles available after tensor/time-axis validation.")
         measurement_start_times = pd.to_datetime(measurement_rows["start_time_utc"], utc=True)
@@ -622,7 +622,7 @@ def build_level0_netcdf(
         temperature_c = _surface_value(weather_data, "temperature_c")
         laser_shots = _laser_shot_matrix(lidar_data, num_times, num_channels)
         with nc.Dataset(netcdf_path, "w", format="NETCDF4") as ds:
-            ds.setncatts(build_level0_global_attributes(save_id, period, lidar_data, group_df, weather_data, config))
+            ds.setncatts(build_level0_global_attributes(measurement_id, period, lidar_data, group_df, weather_data, config))
             if normalization_attrs:
                 ds.setncatts(normalization_attrs)
                 normalized_stop_time = reference_time + pd.to_timedelta(int(np.max(stop_offsets)), unit="s")
