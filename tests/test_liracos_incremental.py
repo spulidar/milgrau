@@ -114,7 +114,7 @@ def test_time_gap_markers_insert_nan_profiles() -> None:
 
 
 def test_global_mean_timestamp_skips_current_plot(tmp_path: Path, monkeypatch) -> None:
-    level1 = _write_level1(tmp_path / "20240101sa03z_level1_rcs.nc", ["532.AN"])
+    level1 = _write_level1(tmp_path / "20240101_spu_00_L1.nc", ["532.AN"])
     logger = _ListLogger()
     calls = {"quicklook": 0, "global": 0}
 
@@ -126,7 +126,7 @@ def test_global_mean_timestamp_skips_current_plot(tmp_path: Path, monkeypatch) -
 
     def fake_global(ds, output_folder, file_name_prefix, config, root_dir):
         calls["global"] += 1
-        out_path = Path(output_folder) / f"GlobalMeanRCS_{file_name_prefix}.png"
+        out_path = Path(output_folder) / f"rcs_{file_name_prefix}_mean.png"
         out_path.write_text("global", encoding="utf-8")
         return out_path
 
@@ -142,11 +142,11 @@ def test_global_mean_timestamp_skips_current_plot(tmp_path: Path, monkeypatch) -
     assert second.metadata["generated"] == 1
     assert second.metadata["skipped"] == 1
     assert calls["global"] == 1
-    assert any("up to date: GlobalMeanRCS_20240101sa03z.png" in message for message in logger.messages)
+    assert any("up to date: rcs_20240101_spu_00_mean.png" in message for message in logger.messages)
 
 
 def test_global_mean_regenerates_when_config_file_changes(tmp_path: Path, monkeypatch) -> None:
-    level1 = _write_level1(tmp_path / "20240101sa03z_level1_rcs.nc", ["532.AN", "355.AN"])
+    level1 = _write_level1(tmp_path / "20240101_spu_00_L1.nc", ["532.AN", "355.AN"])
     config_file = tmp_path / "config.yaml"
     config_file.write_text("first", encoding="utf-8")
     logger = _ListLogger()
@@ -160,7 +160,7 @@ def test_global_mean_regenerates_when_config_file_changes(tmp_path: Path, monkey
 
     def fake_global(ds, output_folder, file_name_prefix, config, root_dir):
         calls["global"] += 1
-        out_path = Path(output_folder) / f"GlobalMeanRCS_{file_name_prefix}.png"
+        out_path = Path(output_folder) / f"rcs_{file_name_prefix}_mean.png"
         out_path.write_text(f"global {calls['global']}", encoding="utf-8")
         return out_path
 
@@ -170,7 +170,7 @@ def test_global_mean_regenerates_when_config_file_changes(tmp_path: Path, monkey
     first_config = _config(["532.AN"], incremental=True, config_file=config_file)
     liracos.process_single_nc((level1, first_config, tmp_path, logger))
 
-    global_path = tmp_path / "quicklooks" / "GlobalMeanRCS_20240101sa03z.png"
+    global_path = tmp_path / "quicklooks" / "rcs_20240101_spu_00_mean.png"
     newer_ns = global_path.stat().st_mtime_ns + 1_000_000_000
     config_file.write_text("changed", encoding="utf-8")
     os.utime(config_file, ns=(newer_ns, newer_ns))
