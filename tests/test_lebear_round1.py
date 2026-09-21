@@ -112,9 +112,9 @@ def test_level2_currentness_requires_requested_set_and_valid_product_status(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    level1 = tmp_path / "20240101sant_level1_rcs.nc"
+    level1 = tmp_path / "20240101sa03z_level1_rcs.nc"
     level1.write_text("synthetic upstream", encoding="utf-8")
-    output = tmp_path / "20240101sant_level2_optical.nc"
+    output = tmp_path / "20240101sa03z_level2_optical.nc"
     _write_completeness_shell(
         output,
         requested=[355, 532],
@@ -154,8 +154,8 @@ def test_level2_currentness_requires_requested_set_and_valid_product_status(
 
 def test_process_level2_skips_only_current_product(tmp_path: Path, monkeypatch) -> None:
     files = [
-        tmp_path / "20240101saam_level1_rcs.nc",
-        tmp_path / "20240101sapm_level1_rcs.nc",
+        tmp_path / "20240101sa09z_level1_rcs.nc",
+        tmp_path / "20240101sa15z_level1_rcs.nc",
     ]
     for path in files:
         path.write_text("synthetic", encoding="utf-8")
@@ -195,8 +195,8 @@ def test_process_level2_skips_only_current_product(tmp_path: Path, monkeypatch) 
 
 def test_process_level2_continues_after_processing_error(tmp_path: Path, monkeypatch) -> None:
     files = [
-        tmp_path / "20240101saam_level1_rcs.nc",
-        tmp_path / "20240101sapm_level1_rcs.nc",
+        tmp_path / "20240101sa09z_level1_rcs.nc",
+        tmp_path / "20240101sa15z_level1_rcs.nc",
     ]
     for path in files:
         path.write_text("synthetic", encoding="utf-8")
