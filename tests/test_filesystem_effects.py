@@ -151,7 +151,7 @@ def test_explicit_quarantine_uses_dated_reason_bucket_and_audit_sidecar(tmp_path
         logger,
         reason="invalid Licel header",
         stage="level0.inventory",
-        measurement_id="20260911am",
+        measurement_id="2026091109z",
         quarantined_at_utc=when,
     )
     repeat = quarantine_files(
@@ -160,7 +160,7 @@ def test_explicit_quarantine_uses_dated_reason_bucket_and_audit_sidecar(tmp_path
         logger,
         reason="invalid Licel header",
         stage="level0.inventory",
-        measurement_id="20260911am",
+        measurement_id="2026091109z",
         quarantined_at_utc=when,
     )
 
@@ -179,7 +179,7 @@ def test_explicit_quarantine_uses_dated_reason_bucket_and_audit_sidecar(tmp_path
     assert first_sidecar["schema_version"] == 1
     assert first_sidecar["reason"] == "invalid Licel header"
     assert first_sidecar["stage"] == "level0.inventory"
-    assert first_sidecar["measurement_id"] == "20260911am"
+    assert first_sidecar["measurement_id"] == "2026091109z"
     assert first_sidecar["sha256"] == sha256(b"first").hexdigest()
     assert first_sidecar["size_bytes"] == 5
     assert second_sidecar["sha256"] == sha256(b"second").hexdigest()
