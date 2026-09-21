@@ -1,7 +1,7 @@
 # MILGRAU scientific engineering tracker
 
 Branch: `new-architecture`
-Tracker snapshot: 2026-09-17
+Tracker snapshot: 2026-09-21
 
 This is the active scientific/engineering source of truth. Detailed evidence remains in Git, executable tests and `docs/regression_baselines/`.
 
@@ -21,6 +21,9 @@ The tracker keeps a compact status summary **and** actionable checklists. A chec
 * A fitted/window or vertically aggregated boundary is a retrieval assumption and must remain explicit.
 * Clean center bin != clean molecular window; narrow Monte Carlo spread != absence of bias.
 * Rayleigh-window shape compatibility is not proof that `beta_aer(ref)=0`.
+* Rayleigh evidence may be evaluated on both the native measurement grid and the effective KFS grid, but vertical aggregation can improve precision only; it is never molecular-purity evidence by itself.
+* Uncertainty-weighted molecular fits are R&D until real Level-1 covariance/dependence is characterized; `1/sigma_Y(z)^2` weighting must not silently imply independent bins.
+* A two-sided KFS branch above the reference is a distinct oriented retrieval branch: finite forward values are not automatically supported full-column aerosol retrieval, and forward support must stop on invalid samples or a nonphysical denominator.
 * Thresholds are not chosen to reach a desired altitude.
 * Productive semantic changes require explicit method/schema/provenance/baseline versioning.
 
@@ -106,8 +109,8 @@ Raman feasibility evidence remains preserved but is **deferred** as a future ind
 | P3 | **CORE FAIR COMPLETE** | MIT selected; recipe/provenance strong; schema-4/method-v5 traceability active; release polish moves to P6 |
 | P4 | PARALLEL EVIDENCE | overlap, detector and gluing characterization |
 | P5.0–P5.2 | FROZEN FOUNDATION | baseline, support semantics, QA-first catalogue |
-| P5.3 | COMPLETE FOR V5 POLICY | existing Rayleigh diagnostics retained; no new purity score justified |
-| P5.4 | **PRODUCTIVE V5 IMPLEMENTED / REAL-L1 VALIDATION OPEN** | progressive grid, tiered selector, selection-aware MC, schema 4 and productive LEBEAR are implemented |
+| P5.3 | COMPLETE FOR V5 POLICY / R&D EXTENSION OPEN | native Rayleigh policy is productive; multi-resolution and uncertainty-weighted fit diagnostics are now explicit R&D |
+| P5.4 | **PRODUCTIVE V5 IMPLEMENTED / REAL-L1 VALIDATION OPEN** | progressive grid, tiered selector, selection-aware MC, schema 4 and productive LEBEAR are implemented; two-sided full-column use is R&D only |
 | P5.5 | PENDING / CONDITIONAL | ensemble only if remaining ambiguity exceeds explicit `f` sensitivity |
 | P5.6–P5.7 | DEFERRED | cascade / stitching |
 | P5.8 | PARALLEL R&D | molecular semantics / uncertainty consistency |
@@ -262,6 +265,37 @@ Implementation: `milgrau/level2/selection_aware_mc_rnd.py`, `milgrau/level2/meth
 
 Implementation: `milgrau/level2/high_column_selector.py`, `milgrau/level2/method_v5_rnd.py`.
 
+### 5.9a Rayleigh molecular-fit R&D — native vs effective grid and uncertainty weighting
+
+Goal: improve precision and auditability of the molecular comparison without allowing smoothing/aggregation or weighting to become an implicit molecular-purity certificate.
+
+* [x] Productive baseline remains the 1-km Rayleigh QA window evaluated on the native measurement grid.
+* [ ] Add a second **effective-grid Rayleigh fit** evaluated on the exact progressive representation used by KFS (7.5 / 15 / 30 / 60 / ~97.5 m according to altitude), while preserving the same physical-window semantics in meters.
+* [ ] Persist/compare native-grid and effective-grid diagnostics for the same candidate: relative slope, relative variance, valid fraction, SNR, calibration factor, intercept, effective resolution and source-bin count.
+* [ ] Do not replace native QA with the effective-grid result by default; use disagreement between the two as contamination/resolution evidence until controlled truth supports a promotion rule.
+* [ ] Add an R&D **uncertainty-weighted zero-intercept molecular fit** using `w(z)=1/sigma_Y(z)^2` and `C_w=sum(wXY)/sum(wX^2)`, with explicit handling of unsupported/zero uncertainty.
+* [ ] Compare the diagonal weighted fit against an empirical-covariance / generalized-least-squares alternative after real 355/532 Level-1 covariance is characterized; do not interpret diagonal weighting as independent-bin evidence.
+* [ ] Expose weighted residual diagnostics and fit uncertainty separately from Rayleigh shape QA; do not collapse them into one purity score without synthetic/observational evidence.
+* [ ] Add temporal-consensus diagnostics: compare the same candidate across productive 20-min blocks and against a whole-period mean only as supporting evidence. A long-period mean must expose block contributions and may not overrule transient contamination.
+* [ ] Challenge all variants with molecular-only truth, weak-signal truth, narrow and broad aerosol contamination, high cloud / elevated aerosol, 355/532 wavelength-specific noise and real Level-1 covariance.
+* [ ] Decide from those studies whether any effective-grid or weighted-fit quantity should influence productive reference selection; until then they remain diagnostic R&D.
+
+### 5.9b Two-sided KFS / full-column R&D
+
+Goal: test whether the existing exact-boundary Fernald kernel can recover scientifically useful aerosol information **above** the selected reference as well as below it, maximizing observable column without padding or extrapolation.
+
+* [x] Core `fernald_inversion` already supports `backward`, `forward` and `two_sided` modes with one shared exact reference bin and branch-local graceful failure.
+* [ ] Add an offline method-v5 two-sided experiment using the **same tier-selected reference, same progressive grid, same LR assumptions and same `f=0/0.02/0.05` boundary scenarios** as productive v5.
+* [ ] Require the backward branch from a two-sided run to reproduce the productive backward-only result for the same reference within numerical tolerance; the new forward branch must not change the established lower-column solution.
+* [ ] Extend selection-aware Monte Carlo so every perturbed realization rebuilds the progressive grid, reruns Rayleigh QA/reference selection, then performs both backward and forward KFS branches.
+* [ ] Define branch-specific support: backward and forward endpoints, reference bin, direction flag, branch validity, altitude-resolved MC valid fraction and denominator/failure diagnostics. Do not represent a finite forward array as generic scientific support.
+* [ ] Forward support must terminate at the first unsupported/non-positive required signal cell or nonphysical Fernald denominator; no interpolation, gap bridging, padding or forced extension to 30 km.
+* [ ] Build controlled two-sided truth atmospheres containing at least: strong low aerosol (0–3 km), weak aerosol (3–8 km), a near-molecular candidate region (~8–12 km), an elevated aerosol/cloud layer (~12–18 km), and a molecular upper column to ~30 km. Vary LR, boundary residual aerosol, noise and reference altitude independently.
+* [ ] Quantify branch-specific deterministic bias, integrated-column error, interval coverage, denominator margin/failure altitude and reference-distance sensitivity. Achieved top altitude remains a reported outcome, not an acceptance metric.
+* [ ] Add a tropopause/elevated-layer observational stress test. Candidate topology: the supplied **2020-01-26 21:00–23:15 UTC 532.PC** RCS quicklook shows a persistent enhanced layer near ~15 km, with CPT ~18.4 km and LRT ~17.1 km. Treat the image as qualitative topology only; quantitative validation requires the corresponding traceable Level-1 data/product.
+* [ ] Compare two-sided retrieval against backward-only v5, Rayleigh diagnostics, residual-`f` sensitivity and, when available, independent SCC/Raman/AOD evidence.
+* [ ] Promote two-sided behavior only if synthetic truth and heterogeneous real Level-1 evidence show useful forward information with explicit uncertainty/support. Productive promotion requires deliberate retrieval-method/schema/provenance/baseline review.
+
 ## 5.10 Method/schema promotion
 
 * [x] End-to-end selected-reference v5 execution exists.
@@ -295,6 +329,12 @@ Implementation: `milgrau/level2/high_column_selector.py`, `milgrau/level2/method
 * [ ] real 355/532 high-altitude noise/covariance characterization and comparison with synthetic assumptions;
 * [ ] executable productive v5 across the broader heterogeneous campaign;
 * [ ] at least one glued/PC-dominant successful regime before instrument-wide generalization.
+* [ ] native-grid vs effective-grid Rayleigh-fit truth/contamination comparison.
+* [ ] uncertainty-weighted Rayleigh fit tested against unweighted and covariance-aware alternatives.
+* [ ] two-sided KFS molecular-only truth with exact backward-branch regression.
+* [ ] two-sided truth containing an elevated 12–18 km aerosol/cloud layer and clean upper molecular column.
+* [ ] two-sided selection-aware MC interval/support evaluation above and below the selected reference.
+* [ ] observational elevated-layer/tropopause challenge using traceable Level-1 data for a case like 2020-01-26 21:00–23:15 UTC before any full-column productive claim.
 
 ---
 
@@ -417,13 +457,16 @@ Promotion made some old R&D/compatibility labels stale even though they do not c
 The productive architecture decision is closed; the next work is validation/cleanup, not another selector redesign.
 
 1. [ ] Run the supplied real Level-1 files through productive method v5 and the real-Level1 validation harness.
-2. [ ] Characterize actual 355/532 high-altitude noise/covariance from those Level-1 files and compare it with the synthetic noise model.
+2. [ ] Characterize actual 355/532 high-altitude noise/covariance from those Level-1 files and compare it with the synthetic noise model; use this evidence to constrain the weighted-Rayleigh-fit experiment.
 3. [ ] Complete molecular-only progressive-grid truth and direct native-vs-progressive retrieval representation-error tests.
-4. [ ] Add integrated-column comparison to the real-Level1 validation harness and define uncertainty-normalized lower-column regression diagnostics.
-5. [ ] Freeze the first accepted real method-v5 Level-2 baseline with exact Level-1 hash, code identity, schema/method identity and configuration provenance.
-6. [ ] Extend the executable method-v5 run to the broader heterogeneous campaign.
-7. [ ] Obtain at least one valid glued/PC-dominant high-column regime before claiming instrument-wide detector-mode generality.
-8. [ ] Clean stale R&D/v4 naming and documentation now that v5 is productive.
+4. [ ] Implement offline native-vs-effective-grid Rayleigh diagnostics plus unweighted/weighted fit comparison without changing the productive selector.
+5. [ ] Implement offline two-sided method-v5 retrieval and selection-aware MC, with branch-specific support and exact backward-branch regression.
+6. [ ] Run controlled two-sided truth including an elevated 12–18 km layer and a molecular upper column, then challenge a traceable real elevated-layer/tropopause case such as the supplied 2020-01-26 topology if its Level-1 data can be obtained.
+7. [ ] Add integrated-column comparison to the real-Level1 validation harness and define uncertainty-normalized lower-column regression diagnostics.
+8. [ ] Freeze the first accepted real method-v5 Level-2 baseline with exact Level-1 hash, code identity, schema/method identity and configuration provenance.
+9. [ ] Extend the executable method-v5 run to the broader heterogeneous campaign.
+10. [ ] Obtain at least one valid glued/PC-dominant high-column regime before claiming instrument-wide detector-mode generality.
+11. [ ] Clean stale R&D/v4 naming and documentation now that v5 is productive.
 
 No target altitude, MC fraction, SNR value or percent lower-column agreement is preselected as an acceptance threshold.
 
@@ -435,4 +478,4 @@ MILGRAU `new-architecture` productive Level 2 is now **schema v4 / method v5**. 
 
 The productive elastic method is conditional: nominal `f=0`, explicit `f=0.02/0.05` systematic scenarios, selection-aware random MC, native Rayleigh QA, tiered 10/9/8/6 km reference fallback, progressive KFS grid preserving <6 km at 7.5 m and coarsening to <=100 m aloft, and a 20-min temporal baseline. Reference altitude and achieved top remain measurement-dependent and are not success metrics by themselves.
 
-The main scientific work still open is **real Level-1 validation**, direct progressive-representation truth testing, real detector/noise characterization, real lower-column regression diagnostics and a glued/PC-dominant validation case. The main engineering work still open is cleanup of stale R&D/v4 naming/documentation and eventual P6 release hardening.
+The main scientific work still open is **real Level-1 validation**, direct progressive-representation truth testing, real detector/noise characterization, native-vs-effective-grid / uncertainty-weighted Rayleigh-fit R&D, two-sided full-column KFS truth/support experiments, real lower-column regression diagnostics and a glued/PC-dominant validation case. The main engineering work still open is cleanup of stale R&D/v4 naming/documentation and eventual P6 release hardening.
