@@ -15,7 +15,7 @@ from milgrau.config.station import resolve_station_context, select_lidar_channel
 from milgrau.io.filesystem import ensure_directories
 from milgrau.io.licel import parse_licel_group
 from milgrau.io.logging_utils import bind_log_context
-from milgrau.io.paths import level0_output_path, level0_scc_output_path, measurement_save_id
+from milgrau.io.paths import level0_output_path, level0_scc_output_path
 from milgrau.io.weather import fetch_surface_weather
 from milgrau.level0.config import resolve_level0_config, station_coordinates
 from milgrau.level0.netcdf import build_level0_netcdf
@@ -103,7 +103,7 @@ def _internal_level0_config(effective_config: Mapping[str, Any]) -> dict[str, An
 
 def _write_scc_export(
     meas_id: str,
-    save_id: str,
+    measurement_id: str,
     period: str,
     lidar_data: Mapping[str, Any],
     group_df: pd.DataFrame,
@@ -125,7 +125,7 @@ def _write_scc_export(
     ensure_directories(scc_path.parent)
     build_level0_netcdf(
         netcdf_path=str(scc_path),
-        save_id=save_id,
+        measurement_id=measurement_id,
         period=period,
         lidar_data=scc_lidar,
         group_df=group_df,
@@ -152,7 +152,7 @@ def process_measurement_group(
 ) -> ExecutionResult:
     """Process one measurement group into full-channel and optional SCC Level 0 products."""
     started_at = time.perf_counter()
-    save_id = measurement_save_id(meas_id)
+    measurement_id = meas_id
     netcdf_path = level0_output_path(meas_id, config)
     out_dir = netcdf_path.parent
     stage = "level0.measurements"
@@ -165,7 +165,7 @@ def process_measurement_group(
                 stage,
                 "No measurement files found",
                 output_path=netcdf_path,
-                metadata={"pipeline": "L0", "save_id": save_id},
+                metadata={"pipeline": "L0", "measurement_id": measurement_id},
             )
         stage = "level0.parse"
         parse_logger = bind_log_context(logger, stage="parse")
@@ -176,7 +176,7 @@ def process_measurement_group(
                 "No valid lidar tensors parsed",
                 input_path=files_meas[0],
                 output_path=netcdf_path,
-                metadata={"pipeline": "L0", "save_id": save_id},
+                metadata={"pipeline": "L0", "measurement_id": measurement_id},
             )
         parse_logger.debug(
             "files=%d | channels=%d", len(files_meas), len(lidar_data_tensors.get("channels", []))
@@ -196,7 +196,7 @@ def process_measurement_group(
         primary_config = _internal_level0_config(effective_config)
         build_level0_netcdf(
             netcdf_path=str(netcdf_path),
-            save_id=save_id,
+            measurement_id=measurement_id,
             period=period,
             lidar_data=lidar_data_tensors,
             group_df=group_df,
@@ -216,7 +216,7 @@ def process_measurement_group(
         stage = "level0.scc_export"
         scc_path = _write_scc_export(
             meas_id=meas_id,
-            save_id=save_id,
+            measurement_id=measurement_id,
             period=period,
             lidar_data=lidar_data_tensors,
             group_df=group_df,
@@ -227,7 +227,7 @@ def process_measurement_group(
         )
         result_metadata = {
             "pipeline": "L0",
-            "save_id": save_id,
+            "measurement_id": measurement_id,
             "period": period,
             "file_count": len(files_meas),
             "level0_channel_count": len(lidar_data_tensors.get("channels", [])),
@@ -260,5 +260,5 @@ def process_measurement_group(
             cause=exc,
             include_traceback=True,
             duration_seconds=time.perf_counter() - started_at,
-            metadata={"pipeline": "L0", "save_id": save_id},
+            metadata={"pipeline": "L0", "measurement_id": measurement_id},
         )
