@@ -17,10 +17,11 @@ from milgrau.io.contracts import validate_level1_contract
 from milgrau.io.filesystem import ensure_directories
 from milgrau.io.logging_utils import bind_log_context
 from milgrau.io.paths import (
+    LEVEL1_SUFFIX,
     global_mean_rcs_output_path,
-    logging_save_id,
+    logging_measurement_id,
     processed_data_root,
-    product_save_id,
+    product_measurement_id,
     quicklook_output_path,
 )
 from milgrau.operations import ExecutionResult, ExecutionSummary
@@ -115,16 +116,19 @@ def process_single_nc(args: tuple[str | Path, dict[str, Any], str | Path, loggin
     """Render all Level 1 quicklooks for one NetCDF file."""
     nc_file_path, config, root_dir, logger = args
     nc_file = Path(nc_file_path)
-    save_id = logging_save_id(nc_file)
-    file_logger = bind_log_context(logger, pipeline="VIZ", save_id=save_id)
+    measurement_id = logging_measurement_id(nc_file)
+    file_logger = bind_log_context(logger, pipeline="VIZ", measurement_id=measurement_id)
     root_path = Path(root_dir)
     started_at = time.perf_counter()
     output_folder: Path | None = None
     stage = "visualization.initialize"
     try:
-        file_name_prefix = product_save_id(nc_file)
-        save_id = file_name_prefix
-        file_logger = bind_log_context(logger, pipeline="VIZ", save_id=save_id)
+        try:
+            file_name_prefix = product_measurement_id(nc_file)
+        except ValueError:
+            file_name_prefix = nc_file.stem.removesuffix("_L1")
+        measurement_id = logging_measurement_id(nc_file)
+        file_logger = bind_log_context(logger, pipeline="VIZ", measurement_id=measurement_id)
         resolved = resolve_visualization_config(config)
         output_folder = nc_file.parent / "quicklooks"
         ensure_directories(output_folder)
@@ -224,7 +228,7 @@ def process_single_nc(args: tuple[str | Path, dict[str, Any], str | Path, loggin
             input_path=nc_file,
             output_path=output_folder,
             duration_seconds=duration,
-            metadata={"pipeline": "VIZ", "save_id": save_id, "generated": generated_count, "skipped": skipped_count},
+            metadata={"pipeline": "VIZ", "measurement_id": measurement_id, "generated": generated_count, "skipped": skipped_count},
         )
     except KeyError as exc:
         return ExecutionResult.skipped(
@@ -232,7 +236,7 @@ def process_single_nc(args: tuple[str | Path, dict[str, Any], str | Path, loggin
             f"{nc_file.name} incompatible with current Level 1 contract: {exc}",
             input_path=nc_file,
             output_path=output_folder,
-            metadata={"pipeline": "VIZ", "save_id": save_id, "cause_type": type(exc).__name__},
+            metadata={"pipeline": "VIZ", "measurement_id": measurement_id, "cause_type": type(exc).__name__},
         )
     except Exception as exc:
         bind_log_context(file_logger, stage=stage.removeprefix("visualization.")).error("plotting failed: %s", exc)
@@ -245,7 +249,7 @@ def process_single_nc(args: tuple[str | Path, dict[str, Any], str | Path, loggin
             cause=exc,
             include_traceback=True,
             duration_seconds=time.perf_counter() - started_at,
-            metadata={"pipeline": "VIZ", "save_id": save_id},
+            metadata={"pipeline": "VIZ", "measurement_id": measurement_id},
         )
 
 
@@ -260,7 +264,7 @@ def process_all_level1_files(
     pipeline_logger = bind_log_context(logger, pipeline="VIZ")
     root_path = Path.cwd() if root_dir is None else Path(root_dir)
     base_data_folder = processed_data_root(config, root_dir=root_path)
-    nc_files = sorted(base_data_folder.rglob("*_level1_rcs.nc"))
+    nc_files = sorted(base_data_folder.rglob(f"*{LEVEL1_SUFFIX}"))
     if not nc_files:
         bind_log_context(pipeline_logger, stage="discovery").warning("no Level 1 files found | %s", base_data_folder)
         return ExecutionSummary.from_results(
@@ -271,6 +275,6 @@ def process_all_level1_files(
     for nc_file in nc_files:
         result = process_single_nc((nc_file, config, root_path, pipeline_logger))
         if result.status.is_failure:
-            bind_log_context(pipeline_logger, save_id=result.metadata.get("save_id"), stage="failed").warning("%s", result.message)
+            bind_log_context(pipeline_logger, measurement_id=result.metadata.get("measurement_id"), stage="failed").warning("%s", result.message)
         results.append(result)
     return ExecutionSummary.from_results(results)
