@@ -42,7 +42,7 @@ def test_finite_mean_matches_altitude_resolved_support() -> None:
 def test_profile_output_path_is_explicitly_rnd(tmp_path) -> None:
     path = _profile_output_path(
         tmp_path,
-        tmp_path / "20240902sant_level1_rcs.nc",
+        tmp_path / "20240902sa03z_level1_rcs.nc",
         532,
     )
-    assert path.name == "20240902sant_level1_rcs_method_v5_rnd_532nm.nc"
+    assert path.name == "20240902sa03z_level1_rcs_method_v5_rnd_532nm.nc"
