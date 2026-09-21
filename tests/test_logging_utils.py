@@ -42,7 +42,7 @@ def test_debug_messages_reach_console_and_file_when_configured(tmp_path: Path, c
 def test_console_context_matches_compact_pipeline_style(tmp_path: Path, capsys) -> None:
     logger = setup_logger("TEST_CONTEXT", config=_config(tmp_path))
     try:
-        contextual = bind_log_context(logger, pipeline="L1", save_id="20240101sa03z", stage="atmosphere")
+        contextual = bind_log_context(logger, pipeline="L1", measurement_id="20240101_spu_00", stage="atmosphere")
         contextual.warning("radiosonde | delta=2.0 h | USSA76 extension=14.2%")
         for handler in logger.handlers:
             handler.flush()
@@ -50,7 +50,7 @@ def test_console_context_matches_compact_pipeline_style(tmp_path: Path, capsys) 
         stderr = capsys.readouterr().err
         assert "WARN" in stderr
         assert "L1" in stderr
-        assert "20240101sa03z" in stderr
+        assert "20240101_spu_00" in stderr
         assert "atmosphere" in stderr
         assert "radiosonde | delta=2.0 h | USSA76 extension=14.2%" in stderr
     finally:
@@ -60,7 +60,7 @@ def test_console_context_matches_compact_pipeline_style(tmp_path: Path, capsys) 
 def test_info_is_concise_on_console_while_debug_stays_in_audit_file(tmp_path: Path, capsys) -> None:
     logger = setup_logger("TEST_SPLIT", config=_config(tmp_path, console_level="INFO", file_level="DEBUG"))
     try:
-        contextual = bind_log_context(logger, pipeline="L2", save_id="20240101sa03z", stage="355nm")
+        contextual = bind_log_context(logger, pipeline="L2", measurement_id="20240101_spu_00", stage="355nm")
         contextual.debug("candidate windows=84 best_rmse=0.012")
         contextual.info("retrieval complete")
         for handler in logger.handlers:
@@ -72,10 +72,10 @@ def test_info_is_concise_on_console_while_debug_stays_in_audit_file(tmp_path: Pa
         assert "retrieval complete" in stderr
         assert "candidate windows=84" in log_text
         assert "L2" in log_text
-        assert "20240101sa03z" in log_text
+        assert "20240101_spu_00" in log_text
         assert "355nm" in log_text
         assert "pipeline=" not in log_text
-        assert "save_id=" not in log_text
+        assert "measurement_id=" not in log_text
         assert "stage=" not in log_text
         assert re.match(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}", log_text)
     finally:
@@ -85,7 +85,7 @@ def test_info_is_concise_on_console_while_debug_stays_in_audit_file(tmp_path: Pa
 def test_legacy_arrows_and_multiline_external_errors_render_as_one_clean_row(tmp_path: Path, capsys) -> None:
     logger = setup_logger("TEST_CLEAN_ROW", config=_config(tmp_path))
     try:
-        contextual = bind_log_context(logger, pipeline="L1", save_id="20240101sa03z", stage="atmosphere")
+        contextual = bind_log_context(logger, pipeline="L1", measurement_id="20240101_spu_00", stage="atmosphere")
         contextual.warning("  -> ERA5 unavailable\nprocess not found\ndataset not found")
         for handler in logger.handlers:
             handler.flush()
@@ -101,13 +101,13 @@ def test_legacy_arrows_and_multiline_external_errors_render_as_one_clean_row(tmp
 def test_legacy_processing_phrasing_is_normalized_at_presentation_boundary(tmp_path: Path, capsys) -> None:
     logger = setup_logger("TEST_PHRASES", config=_config(tmp_path))
     try:
-        contextual = bind_log_context(logger, pipeline="L0", save_id="20240101sa03z", stage="write")
+        contextual = bind_log_context(logger, pipeline="L0", measurement_id="20240101_spu_00", stage="write")
         contextual.info("    -> Parsing 21 raw binary files...")
         contextual.info("  -> Successfully injected Dark Current matrix (21 profiles).")
         contextual.info(
             "  -> Measurement SCC time axis normalized to 30 s from upstream QA; adjusted 7/21 profiles (max 1 s)."
         )
-        bind_log_context(logger, pipeline="L1", save_id="20240101sa03z", stage="deadtime").warning(
+        bind_log_context(logger, pipeline="L1", measurement_id="20240101_spu_00", stage="deadtime").warning(
             "clipped: 532.PC(0.85%)"
         )
         for handler in logger.handlers:
@@ -129,8 +129,8 @@ def test_repeated_calibration_warning_is_deduplicated_only_on_console(tmp_path: 
     try:
         source_message = "uncharacterized PC: 355.PC, 532.PC"
         rendered_message = "uncharacterized PC | 355.PC, 532.PC"
-        bind_log_context(logger, pipeline="L1", save_id="20240101sa03z", stage="saturation").warning(source_message)
-        bind_log_context(logger, pipeline="L1", save_id="20240102sa03z", stage="saturation").warning(source_message)
+        bind_log_context(logger, pipeline="L1", measurement_id="20240101_spu_00", stage="saturation").warning(source_message)
+        bind_log_context(logger, pipeline="L1", measurement_id="20240102_spu_00", stage="saturation").warning(source_message)
         for handler in logger.handlers:
             handler.flush()
 
@@ -138,8 +138,8 @@ def test_repeated_calibration_warning_is_deduplicated_only_on_console(tmp_path: 
         log_text = (tmp_path / "test_dedup.log").read_text(encoding="utf-8")
         assert stderr.count(rendered_message) == 1
         assert log_text.count(rendered_message) == 2
-        assert "20240101sa03z" in log_text
-        assert "20240102sa03z" in log_text
+        assert "20240101_spu_00" in log_text
+        assert "20240102_spu_00" in log_text
     finally:
         _close_handlers(logger)
 
