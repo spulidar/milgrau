@@ -82,7 +82,7 @@ def test_profiles_resolve_named_instrument_calibration() -> None:
 def test_pre_scc_measurement_uses_legacy_profile_without_scc_mapping() -> None:
     config = load_config("config.yaml")
     channels = ["355.AN", "355.PC", "532.AN", "532.PC", "1064.AN"]
-    context = _context(config, "2015-06-01T12:00:00", "pm", channels)
+    context = _context(config, "2015-06-01T12:00:00", channels)
 
     assert context["profile_id"] == "spu-legacy"
     assert context["calibration_id"] == "spu-channel-corrections-v1"
@@ -100,7 +100,7 @@ def test_merion_night_configuration_contains_raman_channels_and_only_1064_lr_inp
         "532.AN", "532.PC", "1064.AN", "355.PC", "355.AN",
         "530.PC", "530.AN", "387.AN", "387.PC",
     ]
-    context = _context(config, "2025-01-01T23:00:00", "nt", channels)
+    context = _context(config, "2025-01-01T23:00:00", channels)
 
     assert context["scc_configuration_id"] == 1046
     assert context["channel_ids"]["530.PC"] == 4074
@@ -113,7 +113,7 @@ def test_merion_night_configuration_contains_raman_channels_and_only_1064_lr_inp
 def test_raman_2018_day_uses_raman_for_355_532_and_fixed_lr_only_for_1064() -> None:
     config = load_config("config.yaml")
     channels = ["1064.AN", "532.AN", "355.AN", "530.AN", "387.AN"]
-    context = _context(config, "2019-06-01T15:00:00", "pm", channels)
+    context = _context(config, "2019-06-01T15:00:00", channels)
 
     assert context["scc_configuration_id"] == 565
     assert context["lr_input"] == {"1064.AN": 1}
@@ -125,7 +125,7 @@ def test_station_resolver_preserves_all_raw_channels_and_separates_scc_subset() 
         "532.AN", "532.PC", "1064.AN", "355.PC", "355.AN",
         "530.PC", "530.AN", "387.AN", "387.PC",
     ]
-    context = _context(config, "2025-01-01T12:00:00", "am", channels)
+    context = _context(config, "2025-01-01T12:00:00", channels)
 
     assert context["selected_channels"] == channels
     assert context["scc_channels"] == ["532.AN", "532.PC", "1064.AN", "355.PC", "355.AN"]
@@ -137,7 +137,7 @@ def test_station_resolver_preserves_all_raw_channels_and_separates_scc_subset() 
 def test_missing_scc_channel_disables_only_scc_export() -> None:
     config = load_config("config.yaml")
     channels = ["532.AN", "532.PC", "1064.AN", "355.PC"]
-    context = _context(config, "2025-01-01T12:00:00", "am", channels)
+    context = _context(config, "2025-01-01T12:00:00", channels)
 
     assert context["selected_channels"] == channels
     assert context["missing_scc_channels"] == ["355.AN"]
@@ -148,7 +148,7 @@ def test_missing_scc_channel_disables_only_scc_export() -> None:
 def test_station_context_is_self_contained_for_productive_consumers() -> None:
     config = load_config("config.yaml")
     channels = ["532.AN", "532.PC", "1064.AN", "355.PC", "355.AN"]
-    context = _context(config, "2025-01-01T12:00:00", "am", channels)
+    context = _context(config, "2025-01-01T12:00:00", channels)
 
     assert context["site"]["station_altitude_m"] == 740.0
     assert context["channel_ids"] == {
