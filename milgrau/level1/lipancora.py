@@ -15,7 +15,7 @@ from milgrau.incremental import output_is_current
 from milgrau.io.contracts import netcdf_satisfies_contract, validate_level1_contract
 from milgrau.io.filesystem import ensure_directories
 from milgrau.io.logging_utils import bind_log_context
-from milgrau.io.paths import level1_output_path, logging_save_id, processed_data_root
+from milgrau.io.paths import LEVEL0_SUFFIX, level1_output_path, logging_measurement_id, processed_data_root
 from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary
 from milgrau.level1.common import (
     diagnostic_vector,
@@ -227,12 +227,8 @@ def _make_level1_netcdf_safe(ds: xr.Dataset) -> xr.Dataset:
 def _discover_level0_files(config: Mapping[str, Any]) -> list[Path]:
     in_dir = processed_data_root(config)
     discovered: list[Path] = []
-    for path in sorted(in_dir.rglob("*.nc")):
-        if "level" in path.name:
-            continue
-        if any(part in {"quicklooks", "level2_qa"} for part in path.parts):
-            continue
-        if path.parent.name != path.stem:
+    for path in sorted(in_dir.rglob(f"*{LEVEL0_SUFFIX}")):
+        if any(part in {"quicklooks", "qa"} for part in path.parts):
             continue
         discovered.append(path)
     return discovered
@@ -247,7 +243,7 @@ def _files_requiring_level1(
     files_to_process: list[Path] = []
     skipped_results: list[ExecutionResult] = []
     for file_path in files:
-        save_id = logging_save_id(file_path)
+        measurement_id = logging_measurement_id(file_path)
         output_path = level1_output_path(file_path, config)
         is_current = False
         if incremental and output_path.exists():
@@ -258,14 +254,14 @@ def _files_requiring_level1(
                 integrity_check=lambda path: netcdf_satisfies_contract(path, validate_level1_contract),
             )
         if is_current:
-            bind_log_context(logger, save_id=save_id, stage="skip").info("up to date | %s", output_path.name)
+            bind_log_context(logger, measurement_id=measurement_id, stage="skip").info("up to date | %s", output_path.name)
             skipped_results.append(
                 ExecutionResult.skipped(
                     "level1.incremental",
                     "Level 1 is up to date",
                     input_path=file_path,
                     output_path=output_path,
-                    metadata={"pipeline": "L1", "save_id": save_id},
+                    metadata={"pipeline": "L1", "measurement_id": measurement_id},
                 )
             )
             continue
@@ -350,8 +346,8 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
     nc_path, config, logger = args
     started_at = time.perf_counter()
     nc_file = Path(nc_path)
-    save_id = logging_save_id(nc_file)
-    file_logger = bind_log_context(logger, save_id=save_id)
+    measurement_id = logging_measurement_id(nc_file)
+    file_logger = bind_log_context(logger, measurement_id=measurement_id)
     save_path: Path | None = None
     stage = "level1.initialize"
     try:
@@ -396,7 +392,7 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
             input_path=nc_file,
             output_path=save_path,
             duration_seconds=time.perf_counter() - started_at,
-            metadata={"pipeline": "L1", "save_id": save_id, "channel_count": final_ds.sizes.get("channel", 0)},
+            metadata={"pipeline": "L1", "measurement_id": measurement_id, "channel_count": final_ds.sizes.get("channel", 0)},
         )
     except Exception as exc:
         return ExecutionResult.failure(
@@ -407,7 +403,7 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
             cause=exc,
             include_traceback=True,
             duration_seconds=time.perf_counter() - started_at,
-            metadata={"pipeline": "L1", "save_id": save_id},
+            metadata={"pipeline": "L1", "measurement_id": measurement_id},
         )
 
 
@@ -429,8 +425,8 @@ def process_level_1(config: Mapping[str, Any], logger: logging.Logger) -> Execut
     )
     results = list(skipped_results)
     for file_path in files_to_process:
-        save_id = logging_save_id(file_path)
-        file_logger = bind_log_context(logger, save_id=save_id)
+        measurement_id = logging_measurement_id(file_path)
+        file_logger = bind_log_context(logger, measurement_id=measurement_id)
         result = process_single_file((str(file_path), config, file_logger))
         if result.status is ExecutionStatus.OK:
             duration = 0.0 if result.duration_seconds is None else result.duration_seconds
