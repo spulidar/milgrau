@@ -75,11 +75,13 @@ def parse_input_selection(
     dates: set[str] = set()
     measurement_ids: set[str] = set()
     paths: list[Path] = []
-    canonical_station = station_id(config)
+    canonical_station: str | None = None
 
     for group in _groups(values):
         if _is_date(group[0]) and len(group) > 1 and all(_is_period_token(v) for v in group[1:]):
             date_text = group[0]
+            if canonical_station is None:
+                canonical_station = station_id(config)
             for period in group[1:]:
                 measurement_ids.add(
                     build_measurement_id(date_text, canonical_station, normalize_period_start(period))
@@ -96,6 +98,8 @@ def parse_input_selection(
                 measurement_ids.add(validate_measurement_id_for_config(value, config))
                 continue
             if _is_date(value):
+                if canonical_station is None:
+                    canonical_station = station_id(config)
                 dates.add(value)
                 continue
             raise ValueError(
