@@ -118,6 +118,20 @@ def generate_level2_qa(
                 root_dir=root_path,
                 ds_l1=ds_l1,
             )
+        qa_config = config.get("visualization", {}).get("level2_qa", {}) or {}
+        requested = any(
+            bool(qa_config.get(name, True))
+            for name in (
+                "generate_gluing_qa",
+                "generate_molecular_fit_qa",
+                "generate_scattering_ratio_qa",
+                "generate_kfs_qa",
+            )
+        )
+        if requested and not generated:
+            raise RuntimeError(
+                "Level 2 QA was enabled and panels were requested, but no compatible plot was generated."
+            )
         return ExecutionResult.success(
             "level2.qa",
             f"Generated {len(generated)} Level 2 QA plot(s)",
