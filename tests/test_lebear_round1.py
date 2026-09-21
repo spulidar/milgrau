@@ -112,9 +112,9 @@ def test_level2_currentness_requires_requested_set_and_valid_product_status(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    level1 = tmp_path / "20240101sa03z_level1_rcs.nc"
+    level1 = tmp_path / "20240101_spu_00_L1.nc"
     level1.write_text("synthetic upstream", encoding="utf-8")
-    output = tmp_path / "20240101sa03z_level2_optical.nc"
+    output = tmp_path / "20240101_spu_00_L2.nc"
     _write_completeness_shell(
         output,
         requested=[355, 532],
@@ -154,8 +154,8 @@ def test_level2_currentness_requires_requested_set_and_valid_product_status(
 
 def test_process_level2_skips_only_current_product(tmp_path: Path, monkeypatch) -> None:
     files = [
-        tmp_path / "20240101sa09z_level1_rcs.nc",
-        tmp_path / "20240101sa15z_level1_rcs.nc",
+        tmp_path / "20240101_spu_06_L1.nc",
+        tmp_path / "20240101_spu_12_L1.nc",
     ]
     for path in files:
         path.write_text("synthetic", encoding="utf-8")
@@ -195,8 +195,8 @@ def test_process_level2_skips_only_current_product(tmp_path: Path, monkeypatch) 
 
 def test_process_level2_continues_after_processing_error(tmp_path: Path, monkeypatch) -> None:
     files = [
-        tmp_path / "20240101sa09z_level1_rcs.nc",
-        tmp_path / "20240101sa15z_level1_rcs.nc",
+        tmp_path / "20240101_spu_06_L1.nc",
+        tmp_path / "20240101_spu_12_L1.nc",
     ]
     for path in files:
         path.write_text("synthetic", encoding="utf-8")
@@ -237,7 +237,7 @@ def test_atomic_level2_write_preserves_existing_product_and_removes_temporary_fi
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    output_path = tmp_path / "product_level2_optical.nc"
+    output_path = tmp_path / "product_L2.nc"
     output_path.write_text("stable product", encoding="utf-8")
     dataset = xr.Dataset({"value": (("x",), np.array([1.0]))})
 
