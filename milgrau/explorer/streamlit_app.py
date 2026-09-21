@@ -20,7 +20,7 @@ from plotly.subplots import make_subplots
 
 from milgrau.config.loader import load_config
 from milgrau.explorer.level2 import available_level2_wavelengths, level2_status_summary
-from milgrau.io.paths import LEVEL1_SUFFIX, LEVEL2_SUFFIX, processed_data_root
+from milgrau.io.paths import LEVEL0_SUFFIX, LEVEL1_SUFFIX, LEVEL2_SUFFIX, measurement_id_parts, processed_data_root
 from milgrau.viz.style import channel_color
 
 
@@ -101,26 +101,20 @@ def processed_root_from_config(config_path: str) -> Path:
     return processed_data_root(config, root_dir=config_file.parent)
 
 
-def parse_save_id(save_id: str) -> tuple[date | None, str]:
+def parse_measurement_id(measurement_id: str) -> tuple[date | None, str]:
     try:
-        day = datetime.strptime(save_id[:8], "%Y%m%d").date()
-    except ValueError:
-        day = None
-    return day, save_id[-2:] if len(save_id) >= 2 else "--"
+        date_text, _station, period_start = measurement_id_parts(measurement_id)
+        day = datetime.strptime(date_text, "%Y%m%d").date()
+        period = f"{period_start}-{int(period_start) + 6:02d}"
+        return day, period
+    except (TypeError, ValueError):
+        return None, "--"
 
 
-def product_paths(product_dir: Path) -> dict[str, str]:
-    save_id = product_dir.name
-    level0 = product_dir / f"{save_id}.nc"
-    if not level0.exists():
-        candidates = sorted(
-            path
-            for path in product_dir.glob("*.nc")
-            if not path.name.endswith(LEVEL1_SUFFIX) and not path.name.endswith(LEVEL2_SUFFIX)
-        )
-        level0 = candidates[0] if candidates else level0
-    level1 = product_dir / f"{save_id}{LEVEL1_SUFFIX}"
-    level2 = product_dir / f"{save_id}{LEVEL2_SUFFIX}"
+def product_paths(day_dir: Path, measurement_id: str) -> dict[str, str]:
+    level0 = day_dir / f"{measurement_id}{LEVEL0_SUFFIX}"
+    level1 = day_dir / f"{measurement_id}{LEVEL1_SUFFIX}"
+    level2 = day_dir / f"{measurement_id}{LEVEL2_SUFFIX}"
     return {
         "level0_path": str(level0) if level0.exists() else "",
         "level1_path": str(level1) if level1.exists() else "",
@@ -134,31 +128,56 @@ def discover_products(processed_root: str) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     if not root.exists():
         return pd.DataFrame()
-    for product_dir in sorted(root.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*")):
-        if not product_dir.is_dir():
-            continue
-        paths = product_paths(product_dir)
-        if not any(paths.values()):
-            continue
-        day, period = parse_save_id(product_dir.name)
-        mtimes = [Path(path).stat().st_mtime for path in paths.values() if path]
-        rows.append(
-            {
-                "date": day,
-                "year": day.year if day else None,
-                "month": day.month if day else None,
-                "day": day.day if day else None,
-                "save_id": product_dir.name,
-                "period": period,
-                "product_dir": str(product_dir),
-                **paths,
-                "available_levels": ", ".join(label for label, key in LEVEL_TO_PATH.items() if paths[key]),
-                "modified": datetime.fromtimestamp(max(mtimes)).isoformat(timespec="seconds") if mtimes else "",
-            }
-        )
+
+    day_dirs = sorted(
+        path
+        for path in root.glob("*/*/*/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]")
+        if path.is_dir()
+    )
+    for day_dir in day_dirs:
+        measurement_ids: set[str] = set()
+        for suffix in (LEVEL0_SUFFIX, LEVEL1_SUFFIX, LEVEL2_SUFFIX):
+            for product in day_dir.glob(f"*{suffix}"):
+                name = product.name.removesuffix(suffix)
+                try:
+                    measurement_id_parts(name)
+                except ValueError:
+                    continue
+                measurement_ids.add(name)
+
+        for measurement_id in sorted(measurement_ids):
+            paths = product_paths(day_dir, measurement_id)
+            if not any(paths.values()):
+                continue
+            day, period = parse_measurement_id(measurement_id)
+            mtimes = [Path(value).stat().st_mtime for value in paths.values() if value]
+            rows.append(
+                {
+                    "date": day,
+                    "year": day.year if day else None,
+                    "month": day.month if day else None,
+                    "day": day.day if day else None,
+                    "measurement_id": measurement_id,
+                    "period": period,
+                    "product_dir": str(day_dir),
+                    **paths,
+                    "available_levels": ", ".join(
+                        label for label, key in LEVEL_TO_PATH.items() if paths[key]
+                    ),
+                    "modified": (
+                        datetime.fromtimestamp(max(mtimes)).isoformat(timespec="seconds")
+                        if mtimes
+                        else ""
+                    ),
+                }
+            )
     if not rows:
         return pd.DataFrame()
-    return pd.DataFrame(rows).sort_values(["date", "save_id"], na_position="last").reset_index(drop=True)
+    return (
+        pd.DataFrame(rows)
+        .sort_values(["date", "measurement_id"], na_position="last")
+        .reset_index(drop=True)
+    )
 
 
 @st.cache_resource(show_spinner="Abrindo NetCDF...")
@@ -919,7 +938,7 @@ def render_level0(row: dict[str, Any]) -> None:
     if not variables:
         st.info("Não encontrei variáveis numéricas plottáveis no Level 0.")
         return
-    prefix = safe_key(row.get("save_id"), "level0")
+    prefix = safe_key(row.get("measurement_id"), "level0")
     c1, c2, c3, c4 = st.columns([1.4, 1, 1, 1])
     variable = c1.selectbox("Variável", variables, key=f"{prefix}_var")
     channels = coord_values(ds, channel_name(ds))
@@ -975,7 +994,7 @@ def render_level1(row: dict[str, Any]) -> None:
     if not channels:
         st.warning("Não encontrei coordenada de canal no Level 1.")
         return
-    prefix = safe_key(row.get("save_id"), "level1")
+    prefix = safe_key(row.get("measurement_id"), "level1")
     mode = st.radio("Plot", ["Quicklook RCS + perfil", "Global mean RCS", "Genérico"], horizontal=True, key=f"{prefix}_plot_mode")
     max_alt_km = st.number_input("Altitude máx. (km)", min_value=0.1, value=15.0, step=0.5, key=f"{prefix}_alt")
     smooth_bins = st.slider("Suavização vertical para perfis (bins)", 1, 80, 20, key=f"{prefix}_smooth")
@@ -1011,7 +1030,7 @@ def render_level2(row: dict[str, Any]) -> None:
     st.caption(f"Arquivo: `{path}`")
     ds_l2 = open_dataset(path)
     ds_l1 = open_dataset(row["level1_path"]) if row.get("level1_path") else None
-    prefix = safe_key(row.get("save_id"), "level2")
+    prefix = safe_key(row.get("measurement_id"), "level2")
     product_summary = level2_status_summary(ds_l2)
     processed_label = ", ".join(
         f"{value} nm" for value in product_summary["processed_wavelengths"]
@@ -1080,7 +1099,7 @@ def render_generic_level(row: dict[str, Any], level: str, ds: xr.Dataset | None 
     if not variables:
         st.info("Não encontrei variáveis numéricas plottáveis neste nível.")
         return
-    prefix = safe_key(row.get("save_id"), level, "generic")
+    prefix = safe_key(row.get("measurement_id"), level, "generic")
     c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
     variable = c1.selectbox("Variável", variables, key=f"{prefix}_var")
     channels = coord_values(ds, channel_name(ds))
@@ -1191,16 +1210,16 @@ def filter_inventory(inv: pd.DataFrame) -> pd.DataFrame:
         for level in selected_levels:
             mask = mask | filtered[LEVEL_TO_PATH[level]].astype(bool)
         filtered = filtered[mask]
-    search = st.text_input("Buscar save_id", value="", key="inventory_search")
+    search = st.text_input("Buscar measurement_id", value="", key="inventory_search")
     if search:
-        filtered = filtered[filtered["save_id"].astype(str).str.contains(search, case=False, na=False)]
+        filtered = filtered[filtered["measurement_id"].astype(str).str.contains(search, case=False, na=False)]
     return filtered
 
 
 def measurement_label(inv: pd.DataFrame, index: int) -> str:
     row = inv.loc[index]
     day = row["date"].isoformat() if pd.notna(row["date"]) else "sem data"
-    return f"{day} · {row['save_id']} · {row['available_levels']}"
+    return f"{day} · {row['measurement_id']} · {row['available_levels']}"
 
 
 def select_measurement(inv: pd.DataFrame) -> dict[str, Any]:
@@ -1210,7 +1229,7 @@ def select_measurement(inv: pd.DataFrame) -> dict[str, Any]:
     if filtered.empty:
         st.warning("Nenhuma medida bate com os filtros.")
         st.stop()
-    filtered = filtered.sort_values(["date", "save_id"], na_position="last")
+    filtered = filtered.sort_values(["date", "measurement_id"], na_position="last")
     selected_index = st.selectbox(
         "Abrir medida",
         list(filtered.index),
@@ -1218,7 +1237,7 @@ def select_measurement(inv: pd.DataFrame) -> dict[str, Any]:
         format_func=lambda index: measurement_label(filtered, index),
         key="selected_measurement",
     )
-    preview_cols = ["date", "save_id", "period", "available_levels", "modified"]
+    preview_cols = ["date", "measurement_id", "period", "available_levels", "modified"]
     st.dataframe(filtered[preview_cols], use_container_width=True, hide_index=True, height=220)
     return filtered.loc[selected_index].to_dict()
 
@@ -1248,7 +1267,7 @@ def main() -> None:
     tabs = st.tabs(["Resumo", "Level 0", "Level 1", "Level 2", "Metadados", "QA"])
     with tabs[0]:
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("save_id", row["save_id"])
+        c1.metric("measurement_id", row["measurement_id"])
         c2.metric("período", row["period"])
         c3.metric("níveis", row["available_levels"])
         c4.metric("modificado", row["modified"])
@@ -1261,8 +1280,8 @@ def main() -> None:
             render_level(row, level)
     with tabs[4]:
         available = [level for level, key in LEVEL_TO_PATH.items() if row.get(key)]
-        selected_level = st.selectbox("Nível", available, key=safe_key(row.get("save_id"), "metadata_level"))
-        render_metadata(open_dataset(row[LEVEL_TO_PATH[selected_level]]), key_prefix=f"{row.get('save_id')}_{selected_level}_main_metadata")
+        selected_level = st.selectbox("Nível", available, key=safe_key(row.get("measurement_id"), "metadata_level"))
+        render_metadata(open_dataset(row[LEVEL_TO_PATH[selected_level]]), key_prefix=f"{row.get('measurement_id')}_{selected_level}_main_metadata")
     with tabs[5]:
         for level, key in LEVEL_TO_PATH.items():
             if row.get(key):
