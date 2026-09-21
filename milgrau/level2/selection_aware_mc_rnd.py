@@ -224,6 +224,7 @@ def selection_aware_boundary_monte_carlo_rnd(
             altitude_m=native_altitude,
             uncertainty_mode=uncertainty_mode,
             schedule=progressive_grid_schedule,
+            grid=baseline_prepared.grid,
         )
         if not np.array_equal(prepared.grid.altitude_m, output_altitude):
             raise RuntimeError("progressive-grid geometry changed across MC realizations.")
