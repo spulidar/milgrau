@@ -28,6 +28,26 @@ def _decode_level0_time_axis(ds: xr.Dataset) -> pd.DatetimeIndex:
     return pd.to_datetime(values.astype(float), unit="s", utc=True).tz_localize(None)
 
 
+def _station_local_time(config: Mapping[str, Any], measurement_time: pd.Timestamp) -> pd.Timestamp:
+    catalog = config.get("_station_catalog")
+    if not isinstance(catalog, Mapping):
+        raise ValueError(
+            "SCC raw input without channel_string requires a loaded station catalog so channel_ID values can be mapped."
+        )
+    station = catalog.get("station")
+    if not isinstance(station, Mapping):
+        raise ValueError("Station catalog must contain station metadata for SCC channel-ID mapping.")
+    timezone_name = station.get("timezone")
+    if not isinstance(timezone_name, str) or not timezone_name.strip():
+        raise ValueError("station.timezone must be available for SCC channel-ID mapping.")
+    timestamp = pd.Timestamp(measurement_time)
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.tz_localize("UTC")
+    else:
+        timestamp = timestamp.tz_convert("UTC")
+    return timestamp.tz_convert(timezone_name.strip())
+
+
 def _profile_for_measurement_time(config: Mapping[str, Any], measurement_time: pd.Timestamp) -> Mapping[str, Any]:
     catalog = config.get("_station_catalog")
     if not isinstance(catalog, Mapping):
@@ -37,7 +57,7 @@ def _profile_for_measurement_time(config: Mapping[str, Any], measurement_time: p
     profiles = catalog.get("profiles")
     if not isinstance(profiles, list) or not profiles:
         raise ValueError("Station catalog profiles must be a non-empty list for SCC channel-ID mapping.")
-    measurement_date = pd.Timestamp(measurement_time).date()
+    measurement_date = _station_local_time(config, measurement_time).date()
     matches: list[Mapping[str, Any]] = []
     for raw in profiles:
         if not isinstance(raw, Mapping):
@@ -55,13 +75,9 @@ def _profile_for_measurement_time(config: Mapping[str, Any], measurement_time: p
     return matches[0]
 
 
-def _period_mode_hint(ds: xr.Dataset) -> str | None:
-    measurement_id = str(ds.attrs.get("Measurement_ID", "")).strip().lower()
-    if measurement_id.endswith(("saam", "sapm")):
-        return "day"
-    if measurement_id.endswith("sant"):
-        return "night"
-    return None
+def _measurement_mode_hint(config: Mapping[str, Any], time_index: pd.DatetimeIndex) -> str:
+    local_time = _station_local_time(config, pd.Timestamp(time_index[0]))
+    return "day" if 6 <= local_time.hour < 18 else "night"
 
 
 def _configuration_id_hint(ds: xr.Dataset) -> int | None:
@@ -115,7 +131,7 @@ def _channel_names_from_scc_ids(
             f"Station profile {profile.get('id', '')!r} has no SCC mapping, so external channel_ID values cannot be canonicalized."
         )
 
-    mode_hint = _period_mode_hint(ds)
+    mode_hint = _measurement_mode_hint(config, time_index)
     configuration_id_hint = _configuration_id_hint(ds)
     candidates: list[tuple[str, int, tuple[str, ...]]] = []
     for mode in ("day", "night"):
