@@ -180,13 +180,10 @@ def _stack_raw_lidar_data(
 def _channel_id(
     channel_name: str,
     hardware_map: Mapping[str, Any],
-    period: str,
-    logger: logging.Logger,
 ) -> int:
-    system_mode = "night" if period == "nt" else "day"
     if channel_name not in hardware_map:
         raise ValueError(
-            f"Channel {channel_name} has no SCC channel ID for {system_mode} mode; "
+            f"Channel {channel_name} has no SCC channel ID in the resolved station context; "
             "SCC export must be disabled rather than writing a fabricated ID."
         )
     return int(hardware_map[channel_name])
@@ -310,15 +307,13 @@ def _write_channel_metadata(
     channels: list[str],
     lidar_data: Mapping[str, Any],
     config: Mapping[str, Any],
-    period: str,
-    logger: logging.Logger,
 ) -> None:
     hardware_map = _hardware_map(config) if "channel_ids" in variables else {}
     background_start_m, background_stop_m = _background_window_m(config)
     for index, channel_name in enumerate(channels):
         variables["channel_names"][index] = channel_name
         if "channel_ids" in variables:
-            variables["channel_ids"][index] = _channel_id(channel_name, hardware_map, period, logger)
+            variables["channel_ids"][index] = _channel_id(channel_name, hardware_map)
         variables["id_timescale"][index] = 0
         variables["range_resolution"][index] = _channel_range_resolution_m(lidar_data, channel_name)
         variables["background_low"][index] = background_start_m
@@ -404,6 +399,7 @@ def _dark_current_attributes(group_df: pd.DataFrame) -> dict:
 
 def build_level0_global_attributes(
     save_id: str,
+    period: str,
     lidar_data: dict,
     group_df: pd.DataFrame,
     weather_data: dict,
@@ -425,6 +421,10 @@ def build_level0_global_attributes(
     ready = _scc_ready(config)
     attrs = {
         "Measurement_ID": save_id,
+        "measurement_start_time": min_start_utc.isoformat().replace("+00:00", "Z"),
+        "measurement_end_time": max_stop_utc.isoformat().replace("+00:00", "Z"),
+        "period": str(period),
+        "timezone": str(resolved["timezone"]),
         "System": str(resolved["station_name"]),
         "Processing_level": (
             "Level 0: Raw Licel to SCC-compatible NetCDF"
@@ -622,7 +622,7 @@ def build_level0_netcdf(
         temperature_c = _surface_value(weather_data, "temperature_c")
         laser_shots = _laser_shot_matrix(lidar_data, num_times, num_channels)
         with nc.Dataset(netcdf_path, "w", format="NETCDF4") as ds:
-            ds.setncatts(build_level0_global_attributes(save_id, lidar_data, group_df, weather_data, config))
+            ds.setncatts(build_level0_global_attributes(save_id, period, lidar_data, group_df, weather_data, config))
             if normalization_attrs:
                 ds.setncatts(normalization_attrs)
                 normalized_stop_time = reference_time + pd.to_timedelta(int(np.max(stop_offsets)), unit="s")
@@ -638,7 +638,7 @@ def build_level0_netcdf(
             variables["molecular_calc"].assignValue(np.int32(0))
             variables["pressure_at_station"].assignValue(np.float64(pressure_hpa))
             variables["temperature_at_station"].assignValue(np.float64(temperature_c))
-            _write_channel_metadata(variables, channels, lidar_data, config, period, logger)
+            _write_channel_metadata(variables, channels, lidar_data, config)
             _write_daq_range(ds, channels, lidar_data)
             _write_lr_input(ds, channels, config)
             write_dark_current_profile(
