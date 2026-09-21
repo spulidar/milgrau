@@ -8,10 +8,18 @@ import re
 from pathlib import Path
 from typing import Sequence
 
-from milgrau.cli.common import finish_cli, run_guarded
+from milgrau.cli.common import add_input_argument, finish_cli, run_guarded
 from milgrau.config.loader import load_config
 from milgrau.io.logging_utils import bind_log_context, setup_logger
-from milgrau.io.paths import LEVEL1_SUFFIX, is_save_id, level2_output_path, measurement_product_dir, product_save_id
+from milgrau.io.paths import (
+    LEVEL1_SUFFIX,
+    build_measurement_id,
+    level2_output_path,
+    logging_measurement_id,
+    measurement_day_dir,
+    station_id,
+)
+from milgrau.io.selection import parse_input_selection
 from milgrau.level2.lebear import level2_output_is_current, process_single_level1_file
 from milgrau.level2.discovery import discover_level1_files
 from milgrau.level2.qa import generate_level2_qa, level2_qa_enabled
@@ -36,21 +44,14 @@ def _build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Examples:\n"
             "  milgrau-lebear\n"
-            "  milgrau-lebear --input 20250612sa03z\n"
-            "  milgrau-lebear --input 20250612sa03z --time-window 4:00 5:00\n"
-            "  milgrau-lebear --input 20250612sa03z --force\n"
+            "  milgrau-lebear --input 20250612_spu_00\n"
+            "  milgrau-lebear --input 20250612_spu_00 --time-window-utc 4:00 5:00\n"
+            "  milgrau-lebear --input 20250612_spu_00 --force\n"
         ),
     )
+    add_input_argument(parser, source="Level 1 selection")
     parser.add_argument(
-        "-i",
-        "--input",
-        dest="inputs",
-        action="append",
-        default=[],
-        help="Level 1 file, Level 1 directory, or save ID (for example YYYYMMDDsa03z). Repeatable.",
-    )
-    parser.add_argument(
-        "--time-window",
+        "--time-window-utc",
         dest="time_window",
         nargs=2,
         metavar=("START_UTC", "STOP_UTC"),
@@ -61,32 +62,33 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _expand_level1_inputs(inputs: Sequence[str], config: dict) -> list[Path]:
+def _expand_level1_inputs(inputs, config: dict) -> list[Path]:
+    selection = parse_input_selection(inputs, config)
     resolved: list[Path] = []
-    for raw in inputs:
-        path = Path(raw)
-        if path.exists() and path.is_dir():
-            resolved.extend(sorted(path.rglob("*_level1_rcs.nc")))
-        elif path.name.endswith(LEVEL1_SUFFIX):
-            resolved.append(path)
-        elif is_save_id(raw):
-            stem = str(raw).strip().lower()
-            resolved.append(measurement_product_dir(stem, config) / f"{stem}{LEVEL1_SUFFIX}")
+    canonical_station = station_id(config)
+
+    for measurement_id in sorted(selection.measurement_ids):
+        resolved.append(measurement_day_dir(measurement_id, config) / f"{measurement_id}{LEVEL1_SUFFIX}")
+
+    for date_text in sorted(selection.dates):
+        anchor = build_measurement_id(date_text, canonical_station, "00")
+        day_dir = measurement_day_dir(anchor, config)
+        matches = sorted(day_dir.glob(f"{date_text}_{canonical_station}_??{LEVEL1_SUFFIX}"))
+        if not matches:
+            raise FileNotFoundError(f"No Level 1 products found for date {date_text}.")
+        resolved.extend(matches)
+
+    for path in selection.paths:
+        if path.is_dir():
+            resolved.extend(sorted(path.rglob(f"*{LEVEL1_SUFFIX}")))
         else:
-            if path.exists():
-                resolved.append(path)
-            else:
-                raise FileNotFoundError(f"Input {raw!r} is not a directory, Level 1 file, or known save ID.")
-    if not resolved:
-        return discover_level1_files(config)
-    unique: list[Path] = []
-    seen: set[Path] = set()
-    for path in resolved:
-        if path in seen:
-            continue
-        seen.add(path)
-        unique.append(path)
-    return sorted(unique)
+            resolved.append(path)
+
+    unique = sorted(dict.fromkeys(resolved))
+    missing = [path for path in unique if not path.is_file()]
+    if missing:
+        raise FileNotFoundError("Level 1 input(s) not found: " + ", ".join(str(path) for path in missing))
+    return unique
 
 
 def _format_time_window_tag(start_utc: str, stop_utc: str) -> str:
@@ -117,8 +119,8 @@ def _process_selected_files(args: argparse.Namespace, config: dict, logger: logg
     if args.time_window is not None:
         output_tag = _format_time_window_tag(args.time_window[0], args.time_window[1])
     for file_path in files:
-        save_id = product_save_id(file_path)
-        file_logger = bind_log_context(logger, save_id=save_id)
+        measurement_id = logging_measurement_id(file_path)
+        file_logger = bind_log_context(logger, measurement_id=measurement_id)
         output_path = level2_output_path(file_path, variant_tag=output_tag)
         if not args.force and incremental and level2_output_is_current(
             file_path,
@@ -135,7 +137,7 @@ def _process_selected_files(args: argparse.Namespace, config: dict, logger: logg
                     "Level 2 provenance is current",
                     input_path=file_path,
                     output_path=output_path,
-                    metadata={"pipeline": "L2", "save_id": save_id},
+                    metadata={"pipeline": "L2", "measurement_id": measurement_id},
                 )
             )
             if level2_qa_enabled(config):
@@ -150,11 +152,11 @@ def _process_selected_files(args: argparse.Namespace, config: dict, logger: logg
     bind_log_context(logger, stage="queue").info("%d files to process | %d skipped", len(files_to_process), len(skipped_results))
     results = list(skipped_results)
     for file_path in files_to_process:
-        save_id = product_save_id(file_path)
+        measurement_id = logging_measurement_id(file_path)
         file_summary = process_single_level1_file(
             file_path,
             config,
-            bind_log_context(logger, save_id=save_id),
+            bind_log_context(logger, measurement_id=measurement_id),
             start_utc=args.time_window[0] if args.time_window else None,
             stop_utc=args.time_window[1] if args.time_window else None,
             output_tag=output_tag,
