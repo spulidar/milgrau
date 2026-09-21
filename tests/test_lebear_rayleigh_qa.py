@@ -188,7 +188,7 @@ def _config(tmp_path: Path) -> dict:
 
 
 def test_level2_saves_method_v5_selected_reference_qa_variables(tmp_path: Path) -> None:
-    level1 = _write_level1(tmp_path / "20240101sant_level1_rcs.nc")
+    level1 = _write_level1(tmp_path / "20240101sa03z_level1_rcs.nc")
 
     summary = lebear.process_single_level1_file(level1, _config(tmp_path), _logger())
 
