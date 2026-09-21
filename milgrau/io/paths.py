@@ -254,18 +254,25 @@ def level1_output_path(
 
 
 def level2_output_path(level1_file: str | Path, variant_tag: str | None = None) -> Path:
-    """Return the Level 2 path, preserving SCC provenance and optional UTC-window tag."""
+    """Return the Level 2 path for canonical MILGRAU or explicit external Level 1 input."""
     path = Path(level1_file)
-    measurement_id = product_measurement_id(path)
-    is_scc = path.name.endswith(LEVEL1_SCC_SUFFIX)
-    if not is_scc and not path.name.endswith(LEVEL1_SUFFIX):
-        raise ValueError(f"Expected a Level 1 file: {path}")
-
     variant = ""
     if variant_tag:
         safe_tag = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(variant_tag).strip()).strip("_")
         if safe_tag:
             variant = f"_{safe_tag}"
+
+    try:
+        measurement_id = product_measurement_id(path)
+    except ValueError:
+        stem = path.stem
+        if stem.endswith("_L1"):
+            stem = stem.removesuffix("_L1")
+        return path.with_name(f"{stem}{variant}{LEVEL2_SUFFIX}")
+
+    is_scc = path.name.endswith(LEVEL1_SCC_SUFFIX)
+    if not is_scc and not path.name.endswith(LEVEL1_SUFFIX):
+        raise ValueError(f"Expected a Level 1 file: {path}")
     scc_suffix = "_scc" if is_scc else ""
     return path.parent / f"{measurement_id}{variant}_L2{scc_suffix}.nc"
 
