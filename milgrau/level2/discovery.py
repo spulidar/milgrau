@@ -11,8 +11,8 @@ from milgrau.io.paths import processed_data_root
 
 
 def discover_level1_files(config: Mapping[str, Any], root_dir: str | Path | None = None) -> list[Path]:
-    """Discover Level 1 RCS NetCDF files available for LEBEAR processing."""
-    return sorted(processed_data_root(config, root_dir=root_dir).rglob("*_level1_rcs.nc"))
+    """Discover canonical Level 1 NetCDF files available for LEBEAR processing."""
+    return sorted(processed_data_root(config, root_dir=root_dir).rglob("*_L1.nc"))
 
 
 def infer_channel_pair(ds_l1: xr.Dataset, wavelength_nm: int) -> tuple[str | None, str | None]:
