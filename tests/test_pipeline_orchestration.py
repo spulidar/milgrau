@@ -25,7 +25,7 @@ def _logger(name: str) -> logging.Logger:
 
 
 def test_level1_batch_continues_after_one_file_error(tmp_path: Path, monkeypatch) -> None:
-    files = [tmp_path / "20240101saam.nc", tmp_path / "20240101sapm.nc"]
+    files = [tmp_path / "20240101sa09z.nc", tmp_path / "20240101sa15z.nc"]
     config = {"directories": {"processed_data": str(tmp_path)}}
     calls: list[Path] = []
 
@@ -51,8 +51,8 @@ def test_level1_batch_continues_after_one_file_error(tmp_path: Path, monkeypatch
 
 def test_level2_batch_continues_after_one_file_error(tmp_path: Path, monkeypatch) -> None:
     files = [
-        tmp_path / "20240101saam_level1_rcs.nc",
-        tmp_path / "20240101sapm_level1_rcs.nc",
+        tmp_path / "20240101sa09z_level1_rcs.nc",
+        tmp_path / "20240101sa15z_level1_rcs.nc",
     ]
     config = {"processing": {"incremental": False}}
     calls: list[Path] = []
@@ -100,8 +100,8 @@ def _visualization_config(tmp_path: Path) -> dict:
 
 def test_liracos_batch_aggregates_skip_and_error(tmp_path: Path, monkeypatch) -> None:
     files = [
-        tmp_path / "20240101saam_level1_rcs.nc",
-        tmp_path / "20240101sapm_level1_rcs.nc",
+        tmp_path / "20240101sa09z_level1_rcs.nc",
+        tmp_path / "20240101sa15z_level1_rcs.nc",
     ]
     for path in files:
         path.write_text("synthetic", encoding="utf-8")
@@ -136,7 +136,7 @@ def test_liracos_invalid_filename_returns_structured_error(tmp_path: Path) -> No
 
 
 def test_libids_aggregates_ok_skip_and_error_groups(tmp_path: Path, monkeypatch) -> None:
-    group_ids = ["20240101am", "20240101pm", "20240101nt"]
+    group_ids = ["2024010103z", "2024010109z", "2024010115z"]
     inventory = pd.DataFrame(
         {
             "meas_id": group_ids,
@@ -158,11 +158,11 @@ def test_libids_aggregates_ok_skip_and_error_groups(tmp_path: Path, monkeypatch)
     monkeypatch.setattr(libids, "build_measurement_inventory", lambda *_args, **_kwargs: inventory)
     monkeypatch.setattr(libids, "filter_laser_shots", lambda df, *_args, **_kwargs: df)
     monkeypatch.setattr(libids, "incremental_enabled", lambda _config: True)
-    monkeypatch.setattr(libids, "_level0_is_current", lambda meas_id, *_args: meas_id == "20240101am")
+    monkeypatch.setattr(libids, "_level0_is_current", lambda meas_id, *_args: meas_id == "2024010103z")
 
     def fake_process(meas_id, _group, _config, _logger) -> ExecutionResult:
         calls.append(meas_id)
-        if meas_id == "20240101nt":
+        if meas_id == "2024010115z":
             raise RuntimeError("synthetic group failure")
         return ExecutionResult.success("level0.complete", meas_id)
 
@@ -170,7 +170,7 @@ def test_libids_aggregates_ok_skip_and_error_groups(tmp_path: Path, monkeypatch)
 
     summary = libids.process_level_0(config, _logger("test.orchestration.l0"))
 
-    assert set(calls) == {"20240101pm", "20240101nt"}
+    assert set(calls) == {"2024010109z", "2024010115z"}
     assert summary.counts == {
         ExecutionStatus.OK: 1,
         ExecutionStatus.SKIPPED: 1,
