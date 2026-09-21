@@ -2,12 +2,31 @@
 
 from __future__ import annotations
 
+import argparse
 import logging
 from collections.abc import Callable
 
 from milgrau.io.logging_utils import bind_log_context
 from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary
 
+
+
+def add_input_argument(parser: argparse.ArgumentParser, *, source: str) -> None:
+    """Add the shared flexible -i/--input selector to a primary CLI."""
+    parser.add_argument(
+        "-i",
+        "--input",
+        dest="inputs",
+        action="append",
+        nargs="+",
+        default=[],
+        metavar="SELECTOR",
+        help=(
+            f"{source}. Accepts YYYYMMDD_station_HH, YYYYMMDD, "
+            "YYYYMMDD followed by local period starts (for example: -i 20251107 06 12), "
+            "or an explicit file/directory path. Repeatable."
+        ),
+    )
 
 def run_guarded(stage: str, logger: logging.Logger, operation: Callable[[], ExecutionSummary]) -> ExecutionSummary:
     """Run one CLI operation and reserve exit code 2 for structural/unexpected failure."""
