@@ -57,6 +57,7 @@ def _station_config(
 ) -> dict:
     return {
         "_station_catalog": {
+            "station": {"timezone": "America/Sao_Paulo"},
             "profiles": [
                 {
                     "id": "test-profile",
@@ -153,10 +154,14 @@ def test_milgrau_scc_file_cross_checks_channel_string_against_channel_id(tmp_pat
     source = _write_level0(tmp_path / "canonical.nc", np.array([7.5, 7.5]))
     path = _write_scc_id_level0(
         source,
-        tmp_path / "20240101sapm_scc.nc",
+        tmp_path / "20240101sa09z_scc.nc",
         np.array([4069, 4070]),
         keep_channel_string=True,
-        attrs={"Measurement_ID": "20240101sapm", "SCC_Configuration_ID": 10},
+        attrs={
+            "Measurement_ID": "20240101sa09z",
+            "RawData_Start_Time_UT": "120000",
+            "SCC_Configuration_ID": 10,
+        },
     )
     logger = _ListLogger()
     config = _station_config({"532.AN": 4069, "532.PC": 4070})
@@ -180,7 +185,7 @@ def test_scc_channel_id_mapping_rejects_unknown_id(tmp_path: Path) -> None:
         load_and_prepare_level0(path, logger, config=config)
 
 
-def test_scc_channel_id_mapping_rejects_ambiguous_day_night_identity(tmp_path: Path) -> None:
+def test_scc_channel_id_mapping_uses_station_local_time_for_day_night_identity(tmp_path: Path) -> None:
     source = _write_level0(tmp_path / "canonical.nc", np.array([7.5, 7.5]))
     path = _write_scc_id_level0(source, tmp_path / "external_scc.nc", np.array([20, 21]))
     logger = _ListLogger()
@@ -189,8 +194,12 @@ def test_scc_channel_id_mapping_rejects_ambiguous_day_night_identity(tmp_path: P
         {"355.AN": 20, "355.PC": 21},
     )
 
-    with pytest.raises(ValueError, match="ambiguous"):
-        load_and_prepare_level0(path, logger, config=config)
+    ds, _ = load_and_prepare_level0(path, logger, config=config)
+    try:
+        np.testing.assert_array_equal(ds.channel.values.astype(str), np.array(["355.AN", "355.PC"]))
+        assert ds.attrs["milgrau_scc_mapping_modes"] == "night"
+    finally:
+        ds.close()
 
 
 def test_scc_configuration_id_disambiguates_channel_identity(tmp_path: Path) -> None:
