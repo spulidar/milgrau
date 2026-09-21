@@ -16,7 +16,7 @@ from milgrau.incremental import output_is_current
 from milgrau.io.contracts import netcdf_satisfies_contract, validate_level1_contract
 from milgrau.io.filesystem import ensure_directories
 from milgrau.io.logging_utils import bind_log_context
-from milgrau.io.paths import level2_output_path, logging_save_id
+from milgrau.io.paths import level2_output_path, logging_measurement_id
 from milgrau.operations import ExecutionResult, ExecutionSummary
 from milgrau.provenance import file_sha256, write_netcdf_provenance
 from milgrau.scientific import (
@@ -239,8 +239,8 @@ def process_single_level1_file(
 ) -> ExecutionSummary:
     """Generate one productive schema-4/method-v5 Level 2 product."""
     nc_path = Path(nc_file)
-    save_id = logging_save_id(nc_path)
-    file_logger = bind_log_context(logger, save_id=save_id)
+    measurement_id = logging_measurement_id(nc_path)
+    file_logger = bind_log_context(logger, measurement_id=measurement_id)
     started_at = time.perf_counter()
     output_path: Path | None = None
     stage = "level2.ingestion"
@@ -337,7 +337,7 @@ def process_single_level1_file(
         processed_wavelengths = _wavelength_values(ds_l2, "processed_wavelengths")
         metadata = {
             "pipeline": "L2",
-            "save_id": save_id,
+            "measurement_id": measurement_id,
             **_product_execution_metadata(ds_l2),
         }
         if failed_wavelengths:
@@ -387,8 +387,8 @@ def process_single_level1_file(
                 "level2.qa",
                 "Level 2 QA disabled by configuration",
                 input_path=output_path,
-                output_path=output_path.parent / "level2_qa",
-                metadata={"pipeline": "L2", "save_id": save_id},
+                output_path=output_path.parent / "qa",
+                metadata={"pipeline": "L2", "measurement_id": measurement_id},
             )
         if qa_result.status.is_failure:
             bind_log_context(file_logger, stage="qa").warning(
@@ -428,7 +428,7 @@ def process_single_level1_file(
                     cause=exc,
                     include_traceback=True,
                     duration_seconds=time.perf_counter() - started_at,
-                    metadata={"pipeline": "L2", "save_id": save_id},
+                    metadata={"pipeline": "L2", "measurement_id": measurement_id},
                 )
             ]
         )
@@ -453,8 +453,8 @@ def process_level_2(config: Mapping[str, Any], logger: logging.Logger) -> Execut
     files_to_process = []
     skipped_results: list[ExecutionResult] = []
     for file_path in files:
-        save_id = logging_save_id(file_path)
-        file_logger = bind_log_context(logger, save_id=save_id)
+        measurement_id = logging_measurement_id(file_path)
+        file_logger = bind_log_context(logger, measurement_id=measurement_id)
         output_path = level2_output_path(file_path)
         if incremental and level2_output_is_current(file_path, output_path, config):
             bind_log_context(file_logger, stage="skip").info(
@@ -466,7 +466,7 @@ def process_level_2(config: Mapping[str, Any], logger: logging.Logger) -> Execut
                     "Method-v5 Level 2 is up to date",
                     input_path=file_path,
                     output_path=output_path,
-                    metadata={"pipeline": "L2", "save_id": save_id},
+                    metadata={"pipeline": "L2", "measurement_id": measurement_id},
                 )
             )
             if level2_qa_enabled(config):
@@ -492,9 +492,9 @@ def process_level_2(config: Mapping[str, Any], logger: logging.Logger) -> Execut
     )
     results = list(skipped_results)
     for file_path in files_to_process:
-        save_id = logging_save_id(file_path)
+        measurement_id = logging_measurement_id(file_path)
         file_summary = process_single_level1_file(
-            file_path, config, bind_log_context(logger, save_id=save_id)
+            file_path, config, bind_log_context(logger, measurement_id=measurement_id)
         )
         results.extend(file_summary.results)
     return ExecutionSummary.from_results(results)
