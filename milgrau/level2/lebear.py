@@ -391,9 +391,17 @@ def process_single_level1_file(
                 metadata={"pipeline": "L2", "save_id": save_id},
             )
         if qa_result.status.is_failure:
-            bind_log_context(file_logger, stage="qa").warning("%s", qa_result.message)
+            bind_log_context(file_logger, stage="qa").warning(
+                "%s | %s",
+                qa_result.message,
+                qa_result.cause or "unknown QA failure",
+            )
         else:
-            bind_log_context(file_logger, stage="qa").debug("%s", qa_result.message)
+            bind_log_context(file_logger, stage="qa").info(
+                "%s | %.1f s",
+                qa_result.message,
+                0.0 if qa_result.duration_seconds is None else qa_result.duration_seconds,
+            )
         return ExecutionSummary.from_results([*product_results, qa_result])
     except Exception as exc:
         fatal_stages = {
