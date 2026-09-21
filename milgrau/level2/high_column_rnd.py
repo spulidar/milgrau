@@ -35,7 +35,7 @@ from milgrau.level2.boundary_sensitivity import (
 )
 from milgrau.level2.rayleigh_candidates import (
     RayleighReferenceCandidate,
-    evaluate_rayleigh_candidate,
+    evaluate_rayleigh_candidates,
 )
 
 
@@ -107,6 +107,7 @@ def prepare_high_column_profile(
     altitude_m: np.ndarray,
     uncertainty_mode: UncertaintyMode,
     schedule: Sequence[tuple[float, float]] = V5_PROGRESSIVE_GRID_SCHEDULE,
+    grid: ProgressiveGrid | None = None,
 ) -> PreparedHighColumnProfile:
     """Represent one native profile on the strict method-v5 progressive grid.
 
@@ -126,7 +127,10 @@ def prepare_high_column_profile(
     if not (altitude.shape == signal.shape == signal_error.shape == molecular.shape):
         raise ValueError("all high-column profile inputs must have identical shapes.")
 
-    grid = build_progressive_grid(altitude, schedule)
+    if grid is None:
+        grid = build_progressive_grid(altitude, schedule)
+    elif int(grid.source_stop_index[-1]) != altitude.size:
+        raise ValueError("provided progressive grid does not match native altitude length.")
     aggregated_signal: AggregatedGridValues = aggregate_to_progressive_grid(
         signal,
         grid,
@@ -254,33 +258,47 @@ def catalogue_high_column_reference_cells(
         prepared,
         path_start_altitude_m=path_start_altitude_m,
     )
-    cells: list[HighColumnReferenceCell] = []
 
-    for cell_index, cell_altitude in enumerate(prepared.grid.altitude_m):
-        if cell_altitude < search_min or cell_altitude > search_max:
-            continue
-        native_center = int(np.argmin(np.abs(native_altitude - cell_altitude)))
-        start = native_center - half
-        stop = start + window_bins
-        if start < 0 or stop > native_altitude.size:
-            continue
+    cell_altitude = np.asarray(prepared.grid.altitude_m, dtype=np.float64)
+    eligible_cell_indices = np.where(
+        (cell_altitude >= search_min) & (cell_altitude <= search_max)
+    )[0].astype(np.int64)
+    if eligible_cell_indices.size == 0:
+        cells: list[HighColumnReferenceCell] = []
+    else:
+        eligible_altitude = cell_altitude[eligible_cell_indices]
+        right = np.searchsorted(native_altitude, eligible_altitude, side="left")
+        right = np.clip(right, 1, native_altitude.size - 1)
+        left = right - 1
+        choose_left = (
+            np.abs(eligible_altitude - native_altitude[left])
+            <= np.abs(native_altitude[right] - eligible_altitude)
+        )
+        native_centers = np.where(choose_left, left, right).astype(np.int64)
+        starts = native_centers - half
+        stops = starts + window_bins
+        complete = (starts >= 0) & (stops <= native_altitude.size)
+        eligible_cell_indices = eligible_cell_indices[complete]
+        native_centers = native_centers[complete]
 
-        candidate = evaluate_rayleigh_candidate(
+        candidates = evaluate_rayleigh_candidates(
             native_signal,
             native_molecular,
             native_altitude,
-            center_index=native_center,
+            center_indices=native_centers,
             window_bins=window_bins,
             max_relative_slope=float(max_relative_slope),
             max_relative_variance=float(max_relative_variance),
             min_valid_fraction=float(min_valid_fraction),
             measured_signal_error=native_error,
         )
-        cells.append(
+        cells = [
             HighColumnReferenceCell(
                 cell_index=int(cell_index),
-                altitude_m=float(cell_altitude),
-                source_start_index=int(prepared.grid.source_start_index[cell_index]),
+                altitude_m=float(cell_altitude[cell_index]),
+                source_start_index=int(
+                    prepared.grid.source_start_index[cell_index]
+                ),
                 source_stop_index=int(prepared.grid.source_stop_index[cell_index]),
                 source_count=int(prepared.grid.source_count[cell_index]),
                 effective_resolution_m=float(
@@ -291,7 +309,10 @@ def catalogue_high_column_reference_cells(
                     contiguous_top is not None and cell_index <= contiguous_top
                 ),
             )
-        )
+            for cell_index, candidate in zip(
+                eligible_cell_indices, candidates, strict=True
+            )
+        ]
 
     return HighColumnReferenceCatalogue(
         cells=tuple(cells),
