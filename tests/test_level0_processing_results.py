@@ -12,7 +12,7 @@ from milgrau.operations import ExecutionStatus
 
 
 def _config(tmp_path: Path) -> dict:
-    return {"directories": {"processed_data": str(tmp_path / "processed")}}
+    return {"directories": {"processed_data": str(tmp_path / "processed")}, "_station_catalog": {"station": {"id": "spu"}}}
 
 
 def _logger() -> logging.Logger:
@@ -27,11 +27,11 @@ def _logger() -> logging.Logger:
 def test_measurement_group_without_measurements_is_explicit_skip(tmp_path: Path) -> None:
     group = pd.DataFrame({"meas_type": ["dark_current"], "filepath": [str(tmp_path / "dark")]})
 
-    result = processing.process_measurement_group("2024010109z", group, _config(tmp_path), _logger())
+    result = processing.process_measurement_group("20240101_spu_06", group, _config(tmp_path), _logger())
 
     assert result.status is ExecutionStatus.SKIPPED
     assert result.stage == "level0.measurements"
-    assert result.metadata["save_id"] == "20240101sa09z"
+    assert result.metadata["measurement_id"] == "20240101_spu_06"
 
 
 def test_measurement_group_preserves_parse_failure_stage_and_cause(tmp_path: Path, monkeypatch) -> None:
@@ -45,7 +45,7 @@ def test_measurement_group_preserves_parse_failure_stage_and_cause(tmp_path: Pat
 
     monkeypatch.setattr(processing, "parse_licel_group", fail_parse)
 
-    result = processing.process_measurement_group("2024010109z", group, _config(tmp_path), _logger())
+    result = processing.process_measurement_group("20240101_spu_06", group, _config(tmp_path), _logger())
 
     assert result.status is ExecutionStatus.ERROR
     assert result.stage == "level0.parse"
@@ -77,7 +77,7 @@ def test_measurement_group_success_keeps_only_level0_file_effect(tmp_path: Path,
     monkeypatch.setattr(processing, "build_level0_netcdf", fake_build)
     monkeypatch.setattr(processing, "write_netcdf_provenance", lambda *_args, **_kwargs: {})
 
-    result = processing.process_measurement_group("2024010109z", group, _config(tmp_path), _logger())
+    result = processing.process_measurement_group("20240101_spu_06", group, _config(tmp_path), _logger())
 
     assert result.status is ExecutionStatus.OK
     assert result.stage == "level0.complete"
