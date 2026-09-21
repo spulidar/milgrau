@@ -8,6 +8,7 @@ calling pipeline.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -18,6 +19,24 @@ LEVEL0_SUFFIX = ".nc"
 LEVEL0_SCC_SUFFIX = "_scc.nc"
 LEVEL1_SUFFIX = "_level1_rcs.nc"
 LEVEL2_SUFFIX = "_level2_optical.nc"
+
+MEASUREMENT_ID_RE = re.compile(r"^\d{8}\d{2}(?:\d{2})?z$")
+SAVE_ID_RE = re.compile(r"^\d{8}sa\d{2}(?:\d{2})?z$")
+
+
+def is_measurement_id(value: str) -> bool:
+    return MEASUREMENT_ID_RE.fullmatch(str(value).strip().lower()) is not None
+
+
+def is_save_id(value: str) -> bool:
+    return SAVE_ID_RE.fullmatch(str(value).strip().lower()) is not None
+
+
+def measurement_id_from_save_id(save_id: str) -> str:
+    value = str(save_id).strip().lower()
+    if not is_save_id(value):
+        raise ValueError(f"Invalid save_id: {save_id!r}")
+    return value[:8] + value[10:]
 
 
 def project_root(root_dir: str | Path | None = None) -> Path:
@@ -82,8 +101,8 @@ def radiosonde_cache_dir(config: Mapping[str, Any] | None = None, root_dir: str 
 
 def measurement_save_id(measurement_id: str) -> str:
     """Return the canonical SCC-style MILGRAU save ID for a measurement group."""
-    value = str(measurement_id)
-    if len(value) < 10:
+    value = str(measurement_id).strip().lower()
+    if not is_measurement_id(value):
         raise ValueError(f"Invalid measurement_id: {measurement_id!r}")
     return f"{value[:8]}sa{value[8:]}"
 
@@ -94,8 +113,8 @@ def product_save_id(product_path: str | Path) -> str:
     for suffix in (LEVEL2_SUFFIX, LEVEL1_SUFFIX, LEVEL0_SCC_SUFFIX, LEVEL0_SUFFIX):
         if name.endswith(suffix):
             stem = name.removesuffix(suffix)
-            save_id = stem.split("_", 1)[0]
-            if len(save_id) >= 10 and save_id[8:10] == "sa":
+            save_id = stem.split("_", 1)[0].lower()
+            if is_save_id(save_id):
                 return save_id
             raise ValueError(f"Product name does not contain a canonical save_id: {name!r}")
     raise ValueError(f"Unrecognized MILGRAU product filename: {name!r}")
@@ -118,8 +137,8 @@ def measurement_product_dir(
     config: Mapping[str, Any],
     root_dir: str | Path | None = None,
 ) -> Path:
-    save_id = str(save_id)
-    if len(save_id) < 6:
+    save_id = str(save_id).strip().lower()
+    if not is_save_id(save_id):
         raise ValueError(f"Invalid save_id: {save_id!r}")
     return processed_data_root(config, root_dir=root_dir) / save_id[:4] / save_id[4:6] / save_id
 
