@@ -16,11 +16,10 @@ from milgrau.config.station import (
 )
 
 
-def _context(config: dict, when: str, period: str, channels: list[str]) -> dict:
+def _context(config: dict, when: str, channels: list[str]) -> dict:
     return resolve_station_context(
         config,
         datetime.fromisoformat(when).replace(tzinfo=timezone.utc),
-        period,
         channels,
     )
 
@@ -31,19 +30,16 @@ def test_repository_station_catalog_covers_all_scc_eras() -> None:
     apel_day = _context(
         config,
         "2017-10-01T12:00:00",
-        "pm",
         ["532.PC", "532.AN", "355.PC", "355.AN", "607.AN", "607.PC", "387.PC", "387.AN", "1064.AN", "1064.PC", "408.AN", "408.PC"],
     )
     raman_night = _context(
         config,
         "2019-06-01T02:00:00",
-        "nt",
         ["532.PC", "532.AN", "355.PC", "355.AN", "387.PC", "387.AN", "1064.AN", "1064.PC", "408.AN", "408.PC", "530.PC", "530.AN"],
     )
     merion_day = _context(
         config,
         "2025-01-01T15:00:00",
-        "pm",
         ["532.AN", "532.PC", "1064.AN", "355.PC", "355.AN"],
     )
 
@@ -70,10 +66,10 @@ def test_repository_station_catalog_covers_all_scc_eras() -> None:
 def test_profiles_resolve_named_instrument_calibration() -> None:
     config = load_config("config.yaml")
     contexts = [
-        _context(config, "2015-06-01T12:00:00", "pm", ["355.PC"]),
-        _context(config, "2017-10-01T12:00:00", "pm", ["355.PC"]),
-        _context(config, "2019-06-01T12:00:00", "pm", ["355.PC"]),
-        _context(config, "2025-01-01T12:00:00", "pm", ["355.PC"]),
+        _context(config, "2015-06-01T12:00:00", ["355.PC"]),
+        _context(config, "2017-10-01T12:00:00", ["355.PC"]),
+        _context(config, "2019-06-01T12:00:00", ["355.PC"]),
+        _context(config, "2025-01-01T12:00:00", ["355.PC"]),
     ]
 
     assert {ctx["calibration_id"] for ctx in contexts} == {"spu-channel-corrections-v1"}
@@ -170,6 +166,7 @@ def test_station_context_is_self_contained_for_productive_consumers() -> None:
         "saturation": {"status": "not_characterized"},
     }
     assert context["calibration_id"] == "spu-channel-corrections-v1"
+    assert context["timezone"] == "America/Sao_Paulo"
     assert context["lr_input"]["532.AN"] == 1
     assert "hardware" not in config
     assert "site" not in config
@@ -233,3 +230,12 @@ def test_select_lidar_channels_reindexes_laser_shots() -> None:
     assert selected["channels"] == ["532.AN", "532.PC"]
     np.testing.assert_array_equal(selected["laser_shots"], np.array([[10, 30], [11, 31]], dtype=np.int32))
     assert set(selected["tensors"]) == {"532.AN", "532.PC"}
+
+
+def test_station_catalog_rejects_non_iana_timezone() -> None:
+    config = load_config("config.yaml")
+    catalog = deepcopy(config["_station_catalog"])
+    catalog["station"]["timezone"] = "UTC-3"
+
+    with pytest.raises(ValueError, match="valid IANA timezone"):
+        validate_station_config(catalog)
