@@ -63,6 +63,246 @@ def _candidate_bounds(center_index: int, window_bins: int, size: int) -> tuple[i
     return start, stop
 
 
+def _validate_candidate_inputs(
+    measured_signal: np.ndarray,
+    simulated_molecular_signal: np.ndarray,
+    altitude_m: np.ndarray,
+    measured_signal_error: np.ndarray | None,
+    *,
+    window_bins: int,
+    min_valid_fraction: float,
+    max_relative_slope: float,
+    max_relative_variance: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray | None, int]:
+    measured = np.asarray(measured_signal, dtype=np.float64)
+    simulated = np.asarray(simulated_molecular_signal, dtype=np.float64)
+    altitude = np.asarray(altitude_m, dtype=np.float64)
+    if not (measured.ndim == simulated.ndim == altitude.ndim == 1):
+        raise ValueError(
+            "measured_signal, simulated_molecular_signal, and altitude_m must be 1D."
+        )
+    if not (measured.shape == simulated.shape == altitude.shape):
+        raise ValueError("Rayleigh candidate inputs must have identical shapes.")
+    error = None if measured_signal_error is None else np.asarray(
+        measured_signal_error, dtype=np.float64
+    )
+    if error is not None and (error.ndim != 1 or error.shape != measured.shape):
+        raise ValueError(
+            "measured_signal_error must be 1D and match measured_signal."
+        )
+    if (
+        altitude.size < 3
+        or not np.all(np.isfinite(altitude))
+        or not np.all(np.diff(altitude) > 0.0)
+    ):
+        raise ValueError(
+            "altitude_m must be finite, strictly increasing, and contain at least three bins."
+        )
+    window = int(window_bins)
+    if window < 3:
+        raise ValueError("window_bins must be at least three.")
+    if not 0.0 <= float(min_valid_fraction) <= 1.0:
+        raise ValueError("min_valid_fraction must be between zero and one.")
+    if float(max_relative_slope) < 0.0 or float(max_relative_variance) < 0.0:
+        raise ValueError("Rayleigh QA limits must be non-negative.")
+    return measured, simulated, altitude, error, window
+
+
+def evaluate_rayleigh_candidates(
+    measured_signal: np.ndarray,
+    simulated_molecular_signal: np.ndarray,
+    altitude_m: np.ndarray,
+    *,
+    center_indices: Sequence[int] | np.ndarray,
+    window_bins: int,
+    max_relative_slope: float,
+    max_relative_variance: float,
+    min_valid_fraction: float,
+    measured_signal_error: np.ndarray | None = None,
+) -> tuple[RayleighReferenceCandidate, ...]:
+    """Evaluate multiple equal-width Rayleigh windows in one vectorized pass.
+
+    The scientific definitions are unchanged: zero-intercept calibration,
+    free-intercept diagnostic, relative ratio variance/slope and median
+    uncertainty SNR are identical quantities to the historical scalar loop.
+    Vectorization only removes repeated Python/polyfit overhead in method-v5 MC.
+    """
+    measured, simulated, altitude, error, window = _validate_candidate_inputs(
+        measured_signal,
+        simulated_molecular_signal,
+        altitude_m,
+        measured_signal_error,
+        window_bins=window_bins,
+        min_valid_fraction=min_valid_fraction,
+        max_relative_slope=max_relative_slope,
+        max_relative_variance=max_relative_variance,
+    )
+    centers = np.asarray(center_indices, dtype=np.int64)
+    if centers.ndim != 1:
+        raise ValueError("center_indices must be one-dimensional.")
+    if centers.size == 0:
+        return tuple()
+    half = max(window // 2, 1)
+    starts = centers - half
+    stops = starts + window
+    if (
+        np.any(centers < 0)
+        or np.any(centers >= altitude.size)
+        or np.any(starts < 0)
+        or np.any(stops > altitude.size)
+    ):
+        raise ValueError("Rayleigh candidate window lies outside the altitude grid.")
+
+    indices = starts[:, None] + np.arange(window, dtype=np.int64)[None, :]
+    x = simulated[indices]
+    y = measured[indices]
+    z = altitude[indices]
+    valid = (
+        np.isfinite(x)
+        & np.isfinite(y)
+        & np.isfinite(z)
+        & (x > 0.0)
+        & (y > 0.0)
+    )
+    valid_bins = np.count_nonzero(valid, axis=1).astype(np.int32)
+    total_bins = np.full(centers.size, window, dtype=np.int32)
+    valid_fraction = valid_bins.astype(np.float64) / float(window)
+    n = valid_bins.astype(np.float64)
+
+    x_valid = np.where(valid, x, 0.0)
+    y_valid = np.where(valid, y, 0.0)
+    z_valid = np.where(valid, z, 0.0)
+    sum_x = np.sum(x_valid, axis=1)
+    sum_y = np.sum(y_valid, axis=1)
+    sum_xx = np.sum(x_valid * x_valid, axis=1)
+    sum_xy = np.sum(x_valid * y_valid, axis=1)
+
+    factor = np.full(centers.size, np.nan, dtype=np.float64)
+    np.divide(sum_xy, sum_xx, out=factor, where=sum_xx > 0.0)
+
+    free_intercept = np.full(centers.size, np.nan, dtype=np.float64)
+    fit_denominator = n * sum_xx - sum_x * sum_x
+    free_slope = np.full(centers.size, np.nan, dtype=np.float64)
+    fit_ok = (valid_bins >= 2) & np.isfinite(fit_denominator) & (fit_denominator > 0.0)
+    np.divide(
+        n * sum_xy - sum_x * sum_y,
+        fit_denominator,
+        out=free_slope,
+        where=fit_ok,
+    )
+    intercept_ok = fit_ok & (n > 0.0)
+    np.divide(
+        sum_y - free_slope * sum_x,
+        n,
+        out=free_intercept,
+        where=intercept_ok,
+    )
+
+    ratio = np.full_like(y, np.nan, dtype=np.float64)
+    np.divide(y, x, out=ratio, where=valid)
+    sum_ratio = np.nansum(ratio, axis=1)
+    mean_ratio = np.full(centers.size, np.nan, dtype=np.float64)
+    np.divide(sum_ratio, n, out=mean_ratio, where=n > 0.0)
+
+    centered_ratio = np.where(valid, ratio - mean_ratio[:, None], 0.0)
+    ratio_variance = np.full(centers.size, np.inf, dtype=np.float64)
+    ratio_ok = (valid_bins >= 3) & np.isfinite(mean_ratio) & (mean_ratio > 0.0)
+    np.divide(
+        np.sum(centered_ratio * centered_ratio, axis=1),
+        n,
+        out=ratio_variance,
+        where=ratio_ok,
+    )
+    relative_variance = np.full(centers.size, np.inf, dtype=np.float64)
+    np.divide(
+        ratio_variance,
+        mean_ratio**2,
+        out=relative_variance,
+        where=ratio_ok,
+    )
+
+    sum_z = np.sum(z_valid, axis=1)
+    sum_zz = np.sum(z_valid * z_valid, axis=1)
+    sum_zr = np.sum(
+        np.where(valid, z * np.where(np.isfinite(ratio), ratio, 0.0), 0.0),
+        axis=1,
+    )
+    slope_denominator = n * sum_zz - sum_z * sum_z
+    ratio_slope = np.full(centers.size, np.nan, dtype=np.float64)
+    slope_ok = ratio_ok & np.isfinite(slope_denominator) & (slope_denominator > 0.0)
+    np.divide(
+        n * sum_zr - sum_z * sum_ratio,
+        slope_denominator,
+        out=ratio_slope,
+        where=slope_ok,
+    )
+    min_z = np.min(np.where(valid, z, np.inf), axis=1)
+    max_z = np.max(np.where(valid, z, -np.inf), axis=1)
+    span = np.maximum(max_z - min_z, 1.0)
+    relative_slope = np.full(centers.size, np.inf, dtype=np.float64)
+    relative_slope_ok = slope_ok & np.isfinite(ratio_slope)
+    np.divide(
+        np.abs(ratio_slope) * span,
+        mean_ratio,
+        out=relative_slope,
+        where=relative_slope_ok,
+    )
+
+    snr_median = np.full(centers.size, np.nan, dtype=np.float64)
+    snr_valid_bins = np.zeros(centers.size, dtype=np.int32)
+    if error is not None:
+        window_error = error[indices]
+        snr_valid = valid & np.isfinite(window_error) & (window_error > 0.0)
+        snr_valid_bins = np.count_nonzero(snr_valid, axis=1).astype(np.int32)
+        rows = snr_valid_bins > 0
+        if np.any(rows):
+            snr_values = np.full_like(y, np.nan, dtype=np.float64)
+            np.divide(y, window_error, out=snr_values, where=snr_valid)
+            snr_median[rows] = np.nanmedian(snr_values[rows], axis=1)
+
+    rejection = np.zeros(centers.size, dtype=np.int32)
+    rejection[valid_fraction < float(min_valid_fraction)] |= int(
+        RayleighCandidateRejection.INSUFFICIENT_VALID_FRACTION
+    )
+    rejection[(~np.isfinite(factor)) | (factor <= 0.0)] |= int(
+        RayleighCandidateRejection.INVALID_CALIBRATION
+    )
+    rejection[(~np.isfinite(relative_slope)) | (relative_slope > float(max_relative_slope))] |= int(
+        RayleighCandidateRejection.EXCESS_RELATIVE_SLOPE
+    )
+    rejection[(~np.isfinite(relative_variance)) | (relative_variance > float(max_relative_variance))] |= int(
+        RayleighCandidateRejection.EXCESS_RELATIVE_VARIANCE
+    )
+    diagnostic_cost = np.where(
+        np.isfinite(relative_slope) & np.isfinite(relative_variance),
+        relative_slope + relative_variance,
+        np.inf,
+    )
+
+    return tuple(
+        RayleighReferenceCandidate(
+            center_index=int(centers[i]),
+            start_index=int(starts[i]),
+            stop_index=int(stops[i]),
+            center_altitude_m=float(altitude[centers[i]]),
+            start_altitude_m=float(altitude[starts[i]]),
+            stop_altitude_m=float(altitude[stops[i] - 1]),
+            valid_bins=int(valid_bins[i]),
+            total_bins=int(total_bins[i]),
+            valid_fraction=float(valid_fraction[i]),
+            relative_slope=float(relative_slope[i]),
+            relative_variance=float(relative_variance[i]),
+            calibration_factor=float(factor[i]),
+            free_intercept=float(free_intercept[i]),
+            uncertainty_snr_median=float(snr_median[i]),
+            uncertainty_snr_valid_bins=int(snr_valid_bins[i]),
+            diagnostic_cost=float(diagnostic_cost[i]),
+            rejection_mask=int(rejection[i]),
+        )
+        for i in range(centers.size)
+    )
+
+
 def evaluate_rayleigh_candidate(
     measured_signal: np.ndarray,
     simulated_molecular_signal: np.ndarray,
@@ -75,111 +315,18 @@ def evaluate_rayleigh_candidate(
     min_valid_fraction: float,
     measured_signal_error: np.ndarray | None = None,
 ) -> RayleighReferenceCandidate:
-    """Evaluate one window without selecting or ranking it.
-
-    When propagated signal uncertainty is supplied, a median positive-signal
-    SNR diagnostic is recorded.  It is intentionally diagnostic-only here: no
-    hard SNR threshold is enabled until SPU evidence justifies one.
-    """
-    measured = np.asarray(measured_signal, dtype=np.float64)
-    simulated = np.asarray(simulated_molecular_signal, dtype=np.float64)
-    altitude = np.asarray(altitude_m, dtype=np.float64)
-    if not (measured.ndim == simulated.ndim == altitude.ndim == 1):
-        raise ValueError("measured_signal, simulated_molecular_signal, and altitude_m must be 1D.")
-    if not (measured.shape == simulated.shape == altitude.shape):
-        raise ValueError("Rayleigh candidate inputs must have identical shapes.")
-
-    error: np.ndarray | None
-    if measured_signal_error is None:
-        error = None
-    else:
-        error = np.asarray(measured_signal_error, dtype=np.float64)
-        if error.ndim != 1 or error.shape != measured.shape:
-            raise ValueError("measured_signal_error must be 1D and match measured_signal.")
-
-    if altitude.size < 3 or not np.all(np.isfinite(altitude)) or not np.all(np.diff(altitude) > 0.0):
-        raise ValueError("altitude_m must be finite, strictly increasing, and contain at least three bins.")
-    window = int(window_bins)
-    if window < 3:
-        raise ValueError("window_bins must be at least three.")
-    if not 0 <= int(center_index) < altitude.size:
-        raise ValueError("center_index is outside the altitude grid.")
-    if not 0.0 <= float(min_valid_fraction) <= 1.0:
-        raise ValueError("min_valid_fraction must be between zero and one.")
-    if float(max_relative_slope) < 0.0 or float(max_relative_variance) < 0.0:
-        raise ValueError("Rayleigh QA limits must be non-negative.")
-
-    start, stop = _candidate_bounds(int(center_index), window, altitude.size)
-    x = simulated[start:stop]
-    y = measured[start:stop]
-    z = altitude[start:stop]
-    valid = np.isfinite(x) & np.isfinite(y) & np.isfinite(z) & (x > 0.0) & (y > 0.0)
-    valid_bins = int(valid.sum())
-    total_bins = int(stop - start)
-    valid_fraction = float(valid_bins / max(total_bins, 1))
-
-    factor = np.nan
-    intercept = np.nan
-    relative_slope = np.inf
-    relative_variance = np.inf
-    if valid_bins >= 2:
-        denominator = float(np.sum(x[valid] ** 2))
-        if np.isfinite(denominator) and denominator > 0.0:
-            factor = float(np.sum(x[valid] * y[valid]) / denominator)
-        _, intercept = np.polyfit(x[valid], y[valid], 1)
-
-    if valid_bins >= 3:
-        ratio = y[valid] / x[valid]
-        mean_ratio = float(np.mean(ratio))
-        if np.isfinite(mean_ratio) and mean_ratio > 0.0:
-            relative_variance = float(np.var(ratio) / (mean_ratio**2))
-            slope, _ = np.polyfit(z[valid], ratio, 1)
-            span = max(float(np.max(z[valid]) - np.min(z[valid])), 1.0)
-            relative_slope = float(abs(slope) * span / mean_ratio)
-
-    snr_median = np.nan
-    snr_valid_bins = 0
-    if error is not None:
-        window_error = error[start:stop]
-        snr_valid = valid & np.isfinite(window_error) & (window_error > 0.0)
-        snr_valid_bins = int(snr_valid.sum())
-        if snr_valid_bins:
-            snr_median = float(np.median(y[snr_valid] / window_error[snr_valid]))
-
-    rejection = RayleighCandidateRejection.NONE
-    if valid_fraction < float(min_valid_fraction):
-        rejection |= RayleighCandidateRejection.INSUFFICIENT_VALID_FRACTION
-    if not np.isfinite(factor) or factor <= 0.0:
-        rejection |= RayleighCandidateRejection.INVALID_CALIBRATION
-    if not np.isfinite(relative_slope) or relative_slope > float(max_relative_slope):
-        rejection |= RayleighCandidateRejection.EXCESS_RELATIVE_SLOPE
-    if not np.isfinite(relative_variance) or relative_variance > float(max_relative_variance):
-        rejection |= RayleighCandidateRejection.EXCESS_RELATIVE_VARIANCE
-
-    cost = (
-        float(relative_slope + relative_variance)
-        if np.isfinite(relative_slope) and np.isfinite(relative_variance)
-        else float("inf")
-    )
-    return RayleighReferenceCandidate(
-        center_index=int(center_index),
-        start_index=start,
-        stop_index=stop,
-        center_altitude_m=float(altitude[int(center_index)]),
-        start_altitude_m=float(altitude[start]),
-        stop_altitude_m=float(altitude[stop - 1]),
-        valid_bins=valid_bins,
-        total_bins=total_bins,
-        valid_fraction=valid_fraction,
-        relative_slope=float(relative_slope),
-        relative_variance=float(relative_variance),
-        calibration_factor=float(factor),
-        free_intercept=float(intercept),
-        uncertainty_snr_median=float(snr_median),
-        uncertainty_snr_valid_bins=snr_valid_bins,
-        diagnostic_cost=cost,
-        rejection_mask=int(rejection),
-    )
+    """Evaluate one Rayleigh window using the shared vectorized definitions."""
+    return evaluate_rayleigh_candidates(
+        measured_signal,
+        simulated_molecular_signal,
+        altitude_m,
+        center_indices=(int(center_index),),
+        window_bins=window_bins,
+        max_relative_slope=max_relative_slope,
+        max_relative_variance=max_relative_variance,
+        min_valid_fraction=min_valid_fraction,
+        measured_signal_error=measured_signal_error,
+    )[0]
 
 
 def catalogue_rayleigh_candidates(
@@ -197,17 +344,6 @@ def catalogue_rayleigh_candidates(
 ) -> tuple[RayleighReferenceCandidate, ...]:
     """Return every fully contained candidate in the configured search interval."""
     altitude = np.asarray(altitude_m, dtype=np.float64)
-    measured = np.asarray(measured_signal, dtype=np.float64)
-    simulated = np.asarray(simulated_molecular_signal, dtype=np.float64)
-    if not (measured.ndim == simulated.ndim == altitude.ndim == 1):
-        raise ValueError("Rayleigh catalogue inputs must be one-dimensional.")
-    if not (measured.shape == simulated.shape == altitude.shape):
-        raise ValueError("Rayleigh catalogue inputs must have identical shapes.")
-    error = None if measured_signal_error is None else np.asarray(measured_signal_error, dtype=np.float64)
-    if error is not None and (error.ndim != 1 or error.shape != measured.shape):
-        raise ValueError("measured_signal_error must be 1D and match measured_signal.")
-    if not np.all(np.isfinite(altitude)) or not np.all(np.diff(altitude) > 0.0):
-        raise ValueError("altitude_m must be finite and strictly increasing.")
     lower = float(min_altitude_m)
     upper = float(max_altitude_m)
     if not np.isfinite(lower) or not np.isfinite(upper) or upper <= lower:
@@ -215,30 +351,31 @@ def catalogue_rayleigh_candidates(
     window = int(window_bins)
     if window < 3:
         raise ValueError("window_bins must be at least three.")
-
     half = max(window // 2, 1)
-    candidates: list[RayleighReferenceCandidate] = []
-    for center in range(half, altitude.size - (window - half) + 1):
-        start, stop = _candidate_bounds(center, window, altitude.size)
-        if altitude[start] < lower or altitude[stop - 1] > upper:
-            continue
-        candidates.append(
-            evaluate_rayleigh_candidate(
-                measured,
-                simulated,
-                altitude,
-                center_index=center,
-                window_bins=window,
-                max_relative_slope=max_relative_slope,
-                max_relative_variance=max_relative_variance,
-                min_valid_fraction=min_valid_fraction,
-                measured_signal_error=error,
-            )
+    centers = np.arange(
+        half,
+        altitude.size - (window - half) + 1,
+        dtype=np.int64,
+    )
+    starts = centers - half
+    stops = starts + window
+    inside = (altitude[starts] >= lower) & (altitude[stops - 1] <= upper)
+    centers = centers[inside]
+    if centers.size == 0:
+        raise ValueError(
+            "No complete Rayleigh candidate window exists inside the configured search interval."
         )
-    if not candidates:
-        raise ValueError("No complete Rayleigh candidate window exists inside the configured search interval.")
-    return tuple(candidates)
-
+    return evaluate_rayleigh_candidates(
+        measured_signal,
+        simulated_molecular_signal,
+        altitude,
+        center_indices=centers,
+        window_bins=window,
+        max_relative_slope=max_relative_slope,
+        max_relative_variance=max_relative_variance,
+        min_valid_fraction=min_valid_fraction,
+        measured_signal_error=measured_signal_error,
+    )
 
 def accepted_rayleigh_candidates(
     candidates: Sequence[RayleighReferenceCandidate],
