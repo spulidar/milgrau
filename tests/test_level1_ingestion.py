@@ -145,7 +145,7 @@ def test_scc_raw_channel_ids_are_canonicalized_from_station_mapping(tmp_path: Pa
         np.testing.assert_array_equal(ds.channel.values.astype(str), np.array(["532.AN", "532.PC"]))
         assert ds.attrs["milgrau_level0_input_schema"] == "scc_raw_channel_ID_canonicalized"
         assert ds.attrs["milgrau_channel_identity_source"] == "station.yaml_scc_channel_ID_mapping"
-        assert ds.attrs["milgrau_scc_mapping_modes"] == "day,night"
+        assert ds.attrs["milgrau_scc_mapping_modes"] == "night"
     finally:
         ds.close()
 
@@ -208,7 +208,10 @@ def test_scc_configuration_id_disambiguates_channel_identity(tmp_path: Path) -> 
         source,
         tmp_path / "external_scc.nc",
         np.array([20, 21]),
-        attrs={"SCC_Configuration_ID": 10},
+        attrs={
+            "RawData_Start_Time_UT": "120000",
+            "SCC_Configuration_ID": 10,
+        },
     )
     logger = _ListLogger()
     config = _station_config(
