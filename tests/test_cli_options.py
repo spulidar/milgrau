@@ -47,7 +47,7 @@ def test_lipancora_explicit_file_does_not_require_milgrau_filename(tmp_path: Pat
             "level1.complete",
             "test",
             input_path=path,
-            output_path=tmp_path / "foreign_station_level1_rcs.nc",
+            output_path=tmp_path / "foreign_station_L1.nc",
             duration_seconds=0.0,
         )
 
