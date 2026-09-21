@@ -182,78 +182,67 @@ def aggregate_to_progressive_grid(
     uncertainty_mode: UncertaintyMode = "independent",
     require_positive: bool = False,
 ) -> AggregatedGridValues:
-    """Strictly aggregate one native profile onto ``grid``.
+    """Strictly aggregate one native profile onto the progressive grid.
 
-    A cell is valid only when **all** source samples required by that cell are
-    finite.  When ``require_positive=True`` they must also all be positive.
-    If uncertainty is supplied, all contributing one-sigma values must be
-    finite and nonnegative.  Therefore aggregation cannot hide or bridge a
-    missing/masked native sample.
+    A cell is valid only when all source samples required by that cell are
+    finite. When require_positive=True they must also all be positive.
+    Uncertainty support follows the same strict rule.
 
-    Background-subtracted elastic RCS is a special case: a finite negative
-    native sample can be a legitimate noisy measurement rather than a missing
-    sample.  For RCS the intended v5 use is ``require_positive=False`` during
-    aggregation, followed by the KFS physical requirement that the **aggregated
-    cell estimate** itself be positive.  This is averaging at the declared
-    effective resolution, not gap filling.
-
-    ``independent`` propagates the uncertainty of the arithmetic mean as
-    ``sqrt(sum(sigma_i**2)) / N``.  ``fully_correlated`` uses
-    ``sum(sigma_i) / N``.  These are explicit dependence limits rather than an
-    implicit covariance assumption.
+    The implementation uses vectorized segmented reductions over immutable
+    grid geometry. This preserves the previous arithmetic semantics while
+    avoiding one Python loop per cell inside every Monte-Carlo realization.
     """
     source = np.asarray(values, dtype=np.float64)
     if source.ndim != 1:
         raise ValueError("values must be one-dimensional.")
     n_native = int(grid.source_stop_index[-1])
     if source.size != n_native:
-        raise ValueError("values length must match the native grid used to construct grid.")
+        raise ValueError(
+            "values length must match the native grid used to construct grid."
+        )
     if uncertainty_mode not in {"independent", "fully_correlated"}:
-        raise ValueError("uncertainty_mode must be 'independent' or 'fully_correlated'.")
+        raise ValueError(
+            "uncertainty_mode must be 'independent' or 'fully_correlated'."
+        )
+
+    starts = np.asarray(grid.source_start_index, dtype=np.intp)
+    counts = np.asarray(grid.source_count, dtype=np.float64)
+
+    value_valid = np.isfinite(source)
+    if require_positive:
+        value_valid &= source > 0.0
+    valid_counts = np.add.reduceat(value_valid.astype(np.int32), starts)
+    valid = valid_counts == grid.source_count
+
+    safe_source = np.where(value_valid, source, 0.0)
+    sums = np.add.reduceat(safe_source, starts)
+    out = np.full(grid.n_cells, np.nan, dtype=np.float64)
+    out[valid] = sums[valid] / counts[valid]
 
     if uncertainty is None:
-        source_uncertainty = None
+        out_uncertainty = None
     else:
-        source_uncertainty = np.asarray(uncertainty, dtype=np.float64)
-        if source_uncertainty.shape != source.shape:
+        sigma = np.asarray(uncertainty, dtype=np.float64)
+        if sigma.shape != source.shape:
             raise ValueError("uncertainty must have the same shape as values.")
+        sigma_valid = np.isfinite(sigma) & (sigma >= 0.0)
+        sigma_valid_counts = np.add.reduceat(sigma_valid.astype(np.int32), starts)
+        valid &= sigma_valid_counts == grid.source_count
+        out[~valid] = np.nan
 
-    out = np.full(grid.n_cells, np.nan, dtype=np.float64)
-    out_uncertainty = (
-        np.full(grid.n_cells, np.nan, dtype=np.float64)
-        if source_uncertainty is not None
-        else None
-    )
-    valid = np.zeros(grid.n_cells, dtype=bool)
-
-    for cell_index, (start, stop) in enumerate(
-        zip(grid.source_start_index, grid.source_stop_index, strict=True)
-    ):
-        chunk = source[int(start) : int(stop)]
-        chunk_valid = np.isfinite(chunk)
-        if require_positive:
-            chunk_valid &= chunk > 0.0
-        if not np.all(chunk_valid):
-            continue
-
-        if source_uncertainty is not None:
-            sigma = source_uncertainty[int(start) : int(stop)]
-            if not np.all(np.isfinite(sigma) & (sigma >= 0.0)):
-                continue
+        safe_sigma = np.where(sigma_valid, sigma, 0.0)
+        out_uncertainty = np.full(grid.n_cells, np.nan, dtype=np.float64)
+        if uncertainty_mode == "independent":
+            sigma_sum = np.add.reduceat(safe_sigma**2, starts)
+            out_uncertainty[valid] = (
+                np.sqrt(sigma_sum[valid]) / counts[valid]
+            )
         else:
-            sigma = None
-
-        out[cell_index] = float(np.mean(chunk))
-        valid[cell_index] = True
-        if sigma is not None and out_uncertainty is not None:
-            count = float(chunk.size)
-            if uncertainty_mode == "independent":
-                out_uncertainty[cell_index] = float(np.sqrt(np.sum(sigma**2)) / count)
-            else:
-                out_uncertainty[cell_index] = float(np.sum(sigma) / count)
+            sigma_sum = np.add.reduceat(safe_sigma, starts)
+            out_uncertainty[valid] = sigma_sum[valid] / counts[valid]
 
     return AggregatedGridValues(
         values=out,
         uncertainty=out_uncertainty,
-        valid=valid,
+        valid=np.asarray(valid, dtype=bool),
     )
