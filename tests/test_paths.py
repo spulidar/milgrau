@@ -28,43 +28,46 @@ def _config() -> dict:
 
 
 def test_measurement_save_id_inserts_sa_marker() -> None:
-    assert measurement_save_id("20240101nt") == "20240101sant"
-    assert measurement_save_id("20240101am") == "20240101saam"
+    assert measurement_save_id("2024010103z") == "20240101sa03z"
+    assert measurement_save_id("2024010109z") == "20240101sa09z"
+    assert measurement_save_id("202401010330z") == "20240101sa0330z"
+    with pytest.raises(ValueError, match="Invalid measurement_id"):
+        measurement_save_id("20240101nt")
 
 
 def test_product_save_id_is_stable_across_processing_levels() -> None:
-    assert product_save_id("20240101sant.nc") == "20240101sant"
-    assert product_save_id("20240101sant_scc.nc") == "20240101sant"
-    assert product_save_id("20240101sant_level1_rcs.nc") == "20240101sant"
-    assert product_save_id("20240101sant_level2_optical.nc") == "20240101sant"
-    assert product_save_id("20240101sant_0400-0500_level2_optical.nc") == "20240101sant"
+    assert product_save_id("20240101sa03z.nc") == "20240101sa03z"
+    assert product_save_id("20240101sa03z_scc.nc") == "20240101sa03z"
+    assert product_save_id("20240101sa03z_level1_rcs.nc") == "20240101sa03z"
+    assert product_save_id("20240101sa03z_level2_optical.nc") == "20240101sa03z"
+    assert product_save_id("20240101sa03z_0400-0500_level2_optical.nc") == "20240101sa03z"
     with pytest.raises(ValueError, match="Unrecognized"):
         product_save_id("arbitrary.nc.txt")
 
 
 def test_logging_save_id_never_masks_an_unrelated_pipeline_error() -> None:
-    assert logging_save_id("20240101sant_level1_rcs.nc") == "20240101sant"
+    assert logging_save_id("20240101sa03z_level1_rcs.nc") == "20240101sa03z"
     assert logging_save_id("noncanonical_level1_rcs.nc") == "-"
     assert logging_save_id("arbitrary.txt") == "-"
 
 
 def test_level_product_paths_are_canonical(tmp_path: Path) -> None:
     config = _config()
-    level0 = level0_output_path("20240101nt", config, root_dir=tmp_path)
-    assert level0 == tmp_path / "processed" / "2024" / "01" / "20240101sant" / "20240101sant.nc"
-    assert measurement_product_dir("20240101sant", config, root_dir=tmp_path) == level0.parent
+    level0 = level0_output_path("2024010103z", config, root_dir=tmp_path)
+    assert level0 == tmp_path / "processed" / "2024" / "01" / "20240101sa03z" / "20240101sa03z.nc"
+    assert measurement_product_dir("20240101sa03z", config, root_dir=tmp_path) == level0.parent
     level1 = level1_output_path(level0, config, root_dir=tmp_path)
-    assert level1 == level0.parent / "20240101sant_level1_rcs.nc"
+    assert level1 == level0.parent / "20240101sa03z_level1_rcs.nc"
     level2 = level2_output_path(level1)
-    assert level2 == level0.parent / "20240101sant_level2_optical.nc"
+    assert level2 == level0.parent / "20240101sa03z_level2_optical.nc"
 
 
 def test_scc_level0_keeps_level1_in_canonical_measurement_directory(tmp_path: Path) -> None:
     config = _config()
-    measurement_dir = measurement_product_dir("20240101sant", config, root_dir=tmp_path)
-    scc = measurement_dir / "20240101sant_scc.nc"
+    measurement_dir = measurement_product_dir("20240101sa03z", config, root_dir=tmp_path)
+    scc = measurement_dir / "20240101sa03z_scc.nc"
     level1 = level1_output_path(scc, config, root_dir=tmp_path)
-    assert level1 == measurement_dir / "20240101sant_scc_level1_rcs.nc"
+    assert level1 == measurement_dir / "20240101sa03z_scc_level1_rcs.nc"
 
 
 def test_noncanonical_external_level0_writes_level1_beside_source(tmp_path: Path) -> None:
@@ -76,10 +79,10 @@ def test_noncanonical_external_level0_writes_level1_beside_source(tmp_path: Path
 
 def test_level2_output_path_supports_variant_tags(tmp_path: Path) -> None:
     config = _config()
-    level0 = level0_output_path("20240101nt", config, root_dir=tmp_path)
+    level0 = level0_output_path("2024010103z", config, root_dir=tmp_path)
     level1 = level1_output_path(level0, config, root_dir=tmp_path)
     tagged = level2_output_path(level1, variant_tag="0400-0500")
-    assert tagged == level0.parent / "20240101sant_0400-0500_level2_optical.nc"
+    assert tagged == level0.parent / "20240101sa03z_0400-0500_level2_optical.nc"
 
 
 def test_visual_product_paths() -> None:
