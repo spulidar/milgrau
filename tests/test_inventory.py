@@ -145,8 +145,8 @@ def test_inventory_keeps_incremental_decision_out_of_inventory(tmp_path: Path, m
     assert df.iloc[0]["meas_type"] == "measurements"
 
 
-def test_inventory_keeps_post_midnight_measurements_on_same_civil_date(tmp_path: Path, monkeypatch) -> None:
-    """Night measurements after midnight should keep their actual civil date."""
+def test_inventory_assigns_midnight_local_measurements_to_first_six_hour_period(tmp_path: Path, monkeypatch) -> None:
+    """The local civil date owns the bin; its UTC label is derived from station timezone."""
     import milgrau.level0.inventory as inventory_module
 
     measurement_path = str(tmp_path / "night_measurement")
@@ -170,4 +170,42 @@ def test_inventory_keeps_post_midnight_measurements_on_same_civil_date(tmp_path:
     df = build_measurement_inventory(str(tmp_path), _config(), logging.getLogger("test"))
 
     assert len(df) == 1
-    assert df.iloc[0]["meas_id"] == "20240101nt"
+    assert df.iloc[0]["meas_id"] == "2024010103z"
+    assert df.iloc[0]["period"] == "00-06"
+
+
+def test_inventory_uses_four_fixed_local_six_hour_periods(tmp_path: Path, monkeypatch) -> None:
+    import milgrau.level0.inventory as inventory_module
+
+    paths = [str(tmp_path / f"measurement_{index}") for index in range(4)]
+    utc_hours = [3, 9, 15, 21]
+
+    def fake_scan_raw_files(
+        raw_dir,
+        *,
+        spurious_extensions,
+        quarantine_dir,
+        raw_scan_ignore_dirs,
+        logger=None,
+    ) -> tuple[list[str], list[str]]:
+        return paths, ["measurements"] * 4
+
+    def fake_read_licel_header(filepath: str, logger: logging.Logger):
+        index = paths.index(filepath)
+        hour = utc_hours[index]
+        start = datetime(2024, 1, 1, hour, 0, 0)
+        stop = pd.Timestamp(f"2024-01-01T{hour:02d}:05:00")
+        return start, stop, 300.0, 1200, 10.0
+
+    monkeypatch.setattr(inventory_module, "scan_raw_files", fake_scan_raw_files)
+    monkeypatch.setattr(inventory_module, "read_licel_header", fake_read_licel_header)
+
+    df = build_measurement_inventory(str(tmp_path), _config(), logging.getLogger("test-four-periods"))
+
+    assert df["period"].tolist() == ["00-06", "06-12", "12-18", "18-24"]
+    assert df["meas_id"].tolist() == [
+        "2024010103z",
+        "2024010109z",
+        "2024010115z",
+        "2024010121z",
+    ]
