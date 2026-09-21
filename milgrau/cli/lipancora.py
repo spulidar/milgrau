@@ -5,10 +5,18 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from milgrau.cli.common import finish_cli, run_guarded
+from milgrau.cli.common import add_input_argument, finish_cli, run_guarded
 from milgrau.config.loader import load_config
 from milgrau.io.logging_utils import bind_log_context, setup_logger
-from milgrau.io.paths import is_save_id, logging_save_id, measurement_product_dir
+from milgrau.io.paths import (
+    LEVEL0_SUFFIX,
+    build_measurement_id,
+    level0_output_path,
+    logging_measurement_id,
+    measurement_day_dir,
+    station_id,
+)
+from milgrau.io.selection import parse_input_selection
 from milgrau.level1.lipancora import _files_requiring_level1, process_level_1, process_single_file
 from milgrau.operations import ExecutionStatus, ExecutionSummary
 from milgrau.version import __version__
@@ -16,32 +24,34 @@ from milgrau.version import __version__
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="milgrau-lipancora", description="Run MILGRAU Level 1 processing.")
-    parser.add_argument(
-        "-i",
-        "--input",
-        dest="inputs",
-        action="append",
-        default=[],
-        help="Level 0 file, product directory, or save ID (for example YYYYMMDDsa03z). Repeatable.",
-    )
+    add_input_argument(parser, source="Level 0 selection")
     parser.add_argument("--force", action="store_true", help="Reprocess even when the Level 1 product is current.")
     parser.add_argument("--version", action="version", version=f"MILGRAU {__version__}")
     return parser
 
 
-def _expand_inputs(inputs: list[str], config: dict) -> list[Path]:
+def _expand_inputs(inputs, config: dict) -> list[Path]:
+    selection = parse_input_selection(inputs, config)
     resolved: list[Path] = []
-    for raw in inputs:
-        path = Path(raw)
-        if path.exists() and path.is_dir():
-            resolved.extend(sorted(p for p in path.rglob("*.nc") if "level" not in p.name and p.parent.name == p.stem))
-        elif path.exists() and path.is_file():
-            resolved.append(path)
-        elif is_save_id(raw):
-            save_id = str(raw).strip().lower()
-            resolved.append(measurement_product_dir(save_id, config) / f"{save_id}.nc")
+
+    for measurement_id in sorted(selection.measurement_ids):
+        resolved.append(level0_output_path(measurement_id, config))
+
+    canonical_station = station_id(config)
+    for date_text in sorted(selection.dates):
+        anchor = build_measurement_id(date_text, canonical_station, "00")
+        day_dir = measurement_day_dir(anchor, config)
+        matches = sorted(day_dir.glob(f"{date_text}_{canonical_station}_??{LEVEL0_SUFFIX}"))
+        if not matches:
+            raise FileNotFoundError(f"No Level 0 products found for date {date_text}.")
+        resolved.extend(matches)
+
+    for path in selection.paths:
+        if path.is_dir():
+            resolved.extend(sorted(path.rglob(f"*{LEVEL0_SUFFIX}")))
         else:
-            raise FileNotFoundError(f"Input {raw!r} is not a Level 0 file, product directory, or save ID.")
+            resolved.append(path)
+
     unique = sorted(dict.fromkeys(resolved))
     missing = [path for path in unique if not path.is_file()]
     if missing:
@@ -63,8 +73,8 @@ def _process_selected(args: argparse.Namespace, config: dict, logger) -> Executi
         files, skipped = _files_requiring_level1(files, config, logger)
     results = list(skipped)
     for path in files:
-        save_id = logging_save_id(path)
-        file_logger = bind_log_context(logger, save_id=save_id)
+        measurement_id = logging_measurement_id(path)
+        file_logger = bind_log_context(logger, measurement_id=measurement_id)
         result = process_single_file((path, config, file_logger))
         if result.status is ExecutionStatus.OK:
             duration = 0.0 if result.duration_seconds is None else result.duration_seconds
