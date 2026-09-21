@@ -242,7 +242,7 @@ def plot_quicklook(
     cb_ax.yaxis.set_label_position("left")
     add_footer_and_logos(fig, root_dir)
 
-    out_path = Path(output_folder) / f"Quicklook_{file_name_prefix}_{pretty_channel.replace(' ', '_')}_{float(max_altitude):g}km.{output_format}"
+    out_path = Path(output_folder) / f"rcs_{file_name_prefix}_{pretty_channel.replace(' ', '_')}_{float(max_altitude):g}km.{output_format}"
     return _save_figure(fig, out_path, dpi=dpi)
 
 
@@ -303,5 +303,5 @@ def plot_global_mean_rcs(
     ax.grid(True, which="both", alpha=0.5)
     add_footer_and_logos(fig, root_dir)
 
-    out_path = Path(output_folder) / f"GlobalMeanRCS_{file_name_prefix}.{output_format}"
+    out_path = Path(output_folder) / f"rcs_{file_name_prefix}_mean.{output_format}"
     return _save_figure(fig, out_path, dpi=dpi)
