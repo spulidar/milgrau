@@ -70,9 +70,9 @@ def parse_utc_time_window(
         raise ValueError("start_utc and stop_utc must not be equal.")
 
     if start_ts.date() == stop_ts.date():
-        tag = f"{start_ts:%H%M}-{stop_ts:%H%M}"
+        tag = f"{start_ts:%H%M}-{stop_ts:%H%M}Z"
     else:
-        tag = f"{start_ts:%Y%m%dT%H%M}-{stop_ts:%Y%m%dT%H%M}"
+        tag = f"{start_ts:%Y%m%dT%H%M}Z-{stop_ts:%Y%m%dT%H%M}Z"
     return start_ts, stop_ts, tag
 
 
