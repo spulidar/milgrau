@@ -51,7 +51,6 @@ def fetch_group_weather(group_df: pd.DataFrame, config: Mapping[str, Any], logge
 
 def _resolve_group_station_config(
     group_df: pd.DataFrame,
-    period: str,
     lidar_data: Mapping[str, Any],
     config: Mapping[str, Any],
     logger: logging.Logger,
@@ -66,7 +65,6 @@ def _resolve_group_station_config(
     context = resolve_station_context(
         config,
         measurement_time=measurement_time,
-        period=period,
         available_channels=lidar_data.get("channels", []),
     )
     effective_config = deepcopy(dict(config))
@@ -184,9 +182,12 @@ def process_measurement_group(
             "files=%d | channels=%d", len(files_meas), len(lidar_data_tensors.get("channels", []))
         )
         stage = "level0.station"
-        period = meas_id[8:]
+        periods = [str(value) for value in df_meas["period"].dropna().unique()]
+        if len(periods) != 1:
+            raise ValueError(f"Measurement group {meas_id!r} must contain exactly one local period; got {periods}.")
+        period = periods[0]
         effective_config, lidar_data_tensors, station_context = _resolve_group_station_config(
-            group_df, period, lidar_data_tensors, config, logger
+            group_df, lidar_data_tensors, config, logger
         )
         stage = "level0.weather"
         weather_data = fetch_group_weather(group_df, effective_config, logger)
@@ -227,6 +228,7 @@ def process_measurement_group(
         result_metadata = {
             "pipeline": "L0",
             "save_id": save_id,
+            "period": period,
             "file_count": len(files_meas),
             "level0_channel_count": len(lidar_data_tensors.get("channels", [])),
         }
