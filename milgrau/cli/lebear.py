@@ -101,7 +101,7 @@ def _format_time_window_tag(start_utc: str, stop_utc: str) -> str:
             second = int(parts[2]) if len(parts) > 2 else 0
             return f"{hour:02d}{minute:02d}" if second == 0 else f"{hour:02d}{minute:02d}{second:02d}"
         return value.replace(":", "").replace("-", "").replace(" ", "").replace("Z", "")
-    return f"{normalize(start_utc)}-{normalize(stop_utc)}"
+    return f"{normalize(start_utc)}-{normalize(stop_utc)}Z"
 
 
 def _process_selected_files(args: argparse.Namespace, config: dict, logger: logging.Logger) -> ExecutionSummary:
