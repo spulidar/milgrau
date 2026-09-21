@@ -19,7 +19,7 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="inputs",
         action="append",
         default=[],
-        help="Measurement ID (YYYYMMDDam/pm/nt) or save ID (YYYYMMDDsaam/sapm/sant). Repeatable.",
+        help="Measurement ID (for example YYYYMMDD03z) or save ID (for example YYYYMMDDsa03z). Repeatable.",
     )
     parser.add_argument("--force", action="store_true", help="Reprocess selected data even when incremental outputs are current.")
     parser.add_argument("--version", action="version", version=f"MILGRAU {__version__}")
