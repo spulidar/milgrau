@@ -7,7 +7,6 @@ import logging
 import pandas as pd
 
 from milgrau.io.logging_utils import bind_log_context
-from milgrau.io.paths import measurement_save_id
 from milgrau.level0.common import safe_mode
 
 
@@ -83,8 +82,7 @@ def filter_laser_shots(
     good_groups = []
 
     for meas_id, group in df_raw.groupby("meas_id"):
-        save_id = measurement_save_id(meas_id)
-        qa_logger = bind_log_context(logger, save_id=save_id, stage="qa")
+        qa_logger = bind_log_context(logger, measurement_id=str(meas_id), stage="qa")
         try:
             df_meas = group[group["meas_type"] == "measurements"].copy()
             df_dc = group[group["meas_type"] == "dark_current"].copy()
