@@ -28,6 +28,7 @@ from milgrau.viz.level2_qa import (
     plot_all_level2_qa,
 )
 from milgrau.viz.quicklooks import extract_datetime_strings
+from milgrau.viz.level2_qa_v5 import is_method_v5_dataset, plot_all_method_v5_qa
 from milgrau.viz.style import add_footer_and_logos, channel_color, get_output_settings
 
 
@@ -354,6 +355,16 @@ def plot_all_level2_qa_with_support(
     ds_l1: xr.Dataset | None = None,
 ) -> list[Path]:
     """Generate normal QA plus support-aware replacements for SR and KFS panels."""
+    if is_method_v5_dataset(ds_l2):
+        return plot_all_method_v5_qa(
+            ds_l2=ds_l2,
+            output_folder=output_folder,
+            file_name_prefix=file_name_prefix,
+            config=config,
+            root_dir=root_dir,
+            ds_l1=ds_l1,
+        )
+
     requested_cfg = config.get("visualization", {}).get("level2_qa", {}) or {}
     generate_sr = bool(requested_cfg.get("generate_scattering_ratio_qa", True))
     generate_kfs = bool(requested_cfg.get("generate_kfs_qa", True))
