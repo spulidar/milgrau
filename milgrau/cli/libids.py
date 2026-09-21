@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 
-from milgrau.cli.common import finish_cli, run_guarded
+from milgrau.cli.common import add_input_argument, finish_cli, run_guarded
 from milgrau.config.loader import load_config
 from milgrau.io.logging_utils import bind_log_context, setup_logger
 from milgrau.level0.libids import process_level_0
@@ -13,14 +13,7 @@ from milgrau.version import __version__
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="milgrau-libids", description="Run MILGRAU Level 0 processing.")
-    parser.add_argument(
-        "-i",
-        "--input",
-        dest="inputs",
-        action="append",
-        default=[],
-        help="Measurement ID (for example YYYYMMDD03z) or save ID (for example YYYYMMDDsa03z). Repeatable.",
-    )
+    add_input_argument(parser, source="Raw measurement selection")
     parser.add_argument("--force", action="store_true", help="Reprocess selected data even when incremental outputs are current.")
     parser.add_argument("--version", action="version", version=f"MILGRAU {__version__}")
     return parser
