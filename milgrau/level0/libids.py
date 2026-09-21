@@ -14,7 +14,15 @@ from milgrau.config.station import resolve_station_context
 from milgrau.incremental import output_is_current
 from milgrau.io.contracts import netcdf_satisfies_contract, validate_level0_contract
 from milgrau.io.logging_utils import bind_log_context
-from milgrau.io.paths import level0_output_path, level0_scc_output_path, measurement_save_id, raw_data_root
+from milgrau.io.paths import (
+    is_measurement_id,
+    is_save_id,
+    level0_output_path,
+    level0_scc_output_path,
+    measurement_id_from_save_id,
+    measurement_save_id,
+    raw_data_root,
+)
 from milgrau.level0.common import incremental_enabled
 from milgrau.level0.config import resolve_level0_config, validate_level0_config
 from milgrau.level0.inventory import build_measurement_inventory
@@ -42,7 +50,6 @@ def _resolve_expected_scc_context(meas_id: str, group_df, config: Mapping, outpu
         context = resolve_station_context(
             config,
             measurement_time=measurement_time,
-            period=meas_id[8:],
             available_channels=channels,
         )
     except Exception:
@@ -111,11 +118,13 @@ def _normalize_requested_measurements(values: Sequence[str] | None) -> set[str] 
         return None
     normalized: set[str] = set()
     for raw in values:
-        value = str(raw).strip()
-        if len(value) == 12 and value[8:10] == "sa":
-            value = value[:8] + value[10:]
-        if len(value) != 10 or value[8:] not in {"am", "pm", "nt"} or not value[:8].isdigit():
-            raise ValueError(f"LIBIDS input must be YYYYMMDDam/pm/nt or YYYYMMDDsaam/sapm/sant; got {raw!r}.")
+        value = str(raw).strip().lower()
+        if is_save_id(value):
+            value = measurement_id_from_save_id(value)
+        if not is_measurement_id(value):
+            raise ValueError(
+                f"LIBIDS input must be YYYYMMDD<UTC period start>z or YYYYMMDDsa<UTC period start>z; got {raw!r}."
+            )
         normalized.add(value)
     return normalized
 
