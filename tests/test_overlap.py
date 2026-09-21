@@ -20,7 +20,6 @@ def _context(config: dict, when: str) -> dict:
     return resolve_station_context(
         config,
         datetime.fromisoformat(when).replace(tzinfo=timezone.utc),
-        "pm",
         ["355.AN", "355.PC", "532.AN", "532.PC"],
     )
 
