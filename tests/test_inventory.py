@@ -20,6 +20,7 @@ def _config(*, incremental: bool = False, max_association_hours: float = 12.0) -
         },
         "_station_catalog": {
             "station": {
+                "id": "spu",
                 "timezone": "America/Sao_Paulo",
             }
         },
@@ -146,7 +147,7 @@ def test_inventory_keeps_incremental_decision_out_of_inventory(tmp_path: Path, m
 
 
 def test_inventory_assigns_midnight_local_measurements_to_first_six_hour_period(tmp_path: Path, monkeypatch) -> None:
-    """The local civil date owns the bin; its UTC label is derived from station timezone."""
+    """The local civil date and station-local period start define the canonical measurement ID."""
     import milgrau.level0.inventory as inventory_module
 
     measurement_path = str(tmp_path / "night_measurement")
@@ -170,7 +171,7 @@ def test_inventory_assigns_midnight_local_measurements_to_first_six_hour_period(
     df = build_measurement_inventory(str(tmp_path), _config(), logging.getLogger("test"))
 
     assert len(df) == 1
-    assert df.iloc[0]["meas_id"] == "2024010103z"
+    assert df.iloc[0]["meas_id"] == "20240101_spu_00"
     assert df.iloc[0]["period"] == "00-06"
 
 
@@ -204,8 +205,8 @@ def test_inventory_uses_four_fixed_local_six_hour_periods(tmp_path: Path, monkey
 
     assert df["period"].tolist() == ["00-06", "06-12", "12-18", "18-24"]
     assert df["meas_id"].tolist() == [
-        "2024010103z",
-        "2024010109z",
-        "2024010115z",
-        "2024010121z",
+        "20240101_spu_00",
+        "20240101_spu_06",
+        "20240101_spu_12",
+        "20240101_spu_18",
     ]
