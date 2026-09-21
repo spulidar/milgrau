@@ -11,7 +11,7 @@ from typing import Any, Mapping
 from milgrau.io.paths import log_output_root
 
 _MILGRAU_HANDLER_MARKER = "_milgrau_owned_handler"
-_CONTEXT_DEFAULTS = {"pipeline": "--", "save_id": "-", "stage": "-"}
+_CONTEXT_DEFAULTS = {"pipeline": "--", "measurement_id": "-", "stage": "-"}
 _LEVEL_LABELS = {
     logging.DEBUG: "DEBUG",
     logging.INFO: "INFO",
@@ -71,7 +71,7 @@ def _clean_log_message(message: str) -> str:
 
 
 class MilgrauLoggerAdapter(logging.LoggerAdapter):
-    """Logger adapter that carries pipeline/save-id/stage context through calls."""
+    """Logger adapter that carries pipeline/measurement-id/stage context through calls."""
 
     def process(self, msg: Any, kwargs: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
         extra = dict(self.extra)
@@ -135,7 +135,7 @@ def bind_log_context(
     logger: logging.Logger | logging.LoggerAdapter,
     *,
     pipeline: str | None = None,
-    save_id: str | None = None,
+    measurement_id: str | None = None,
     stage: str | None = None,
 ) -> MilgrauLoggerAdapter:
     """Return a logger carrying stable MILGRAU context without changing the base logger."""
@@ -147,8 +147,8 @@ def bind_log_context(
         context = {}
     if pipeline is not None:
         context["pipeline"] = str(pipeline)
-    if save_id is not None:
-        context["save_id"] = str(save_id)
+    if measurement_id is not None:
+        context["measurement_id"] = str(measurement_id)
     if stage is not None:
         context["stage"] = str(stage)
     return MilgrauLoggerAdapter(base_logger, context)
@@ -218,7 +218,7 @@ def setup_logger(
             logger.removeHandler(handler)
             handler.close()
 
-    row_format = "%(asctime)s %(levelshort)-5s %(pipeline)-3s %(save_id)-12s %(stage)-11s %(message)s"
+    row_format = "%(asctime)s %(levelshort)-5s %(pipeline)-3s %(measurement_id)-18s %(stage)-11s %(message)s"
     console_formatter = _ContextFormatter(row_format, datefmt="%H:%M:%S")
     file_formatter = _ContextFormatter(row_format, datefmt=_ISO_OFFSET_DATEFMT)
 
