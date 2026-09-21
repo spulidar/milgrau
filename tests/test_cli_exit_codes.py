@@ -97,8 +97,8 @@ def test_lebear_cli_reserves_two_for_command_that_cannot_run(monkeypatch) -> Non
 
 def test_lebear_selected_batch_continues_and_aggregates_mixed_results(tmp_path: Path, monkeypatch) -> None:
     files = [
-        tmp_path / "20240101saam_level1_rcs.nc",
-        tmp_path / "20240101sapm_level1_rcs.nc",
+        tmp_path / "20240101sa09z_level1_rcs.nc",
+        tmp_path / "20240101sa15z_level1_rcs.nc",
     ]
     for path in files:
         path.write_text("synthetic", encoding="utf-8")
