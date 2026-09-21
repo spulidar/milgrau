@@ -24,7 +24,7 @@ def _row(
 ) -> dict:
     return {
         "filepath": filepath,
-        "meas_id": "20250914pm",
+        "meas_id": "2025091415z",
         "meas_type": meas_type,
         "nshots": nshots,
         "duration": duration,
