@@ -32,6 +32,20 @@ def is_method_v5_dataset(ds_l2: xr.Dataset) -> bool:
     return required.issubset(set(ds_l2.data_vars))
 
 
+def _date_title(ds_l2: xr.Dataset) -> str:
+    """Return a readable observation interval for method-v5 block products."""
+    if "time" in ds_l2.coords:
+        return extract_datetime_strings(ds_l2)[0]
+    if "block_time" not in ds_l2.coords or ds_l2.sizes.get("block_time", 0) == 0:
+        return "Unknown date"
+    values = np.asarray(ds_l2["block_time"].values)
+    try:
+        start = np.datetime_as_string(values.min(), unit="m").replace("T", " ")
+        stop = np.datetime_as_string(values.max(), unit="m").replace("T", " ")
+        return f"{start} to {stop} UTC"
+    except Exception:
+        return "Unknown date"
+
 def _block_x(ds_l2: xr.Dataset) -> tuple[np.ndarray, list[str]]:
     n = int(ds_l2.sizes.get("block_time", 0))
     x = np.arange(n, dtype=np.int32)
@@ -80,7 +94,7 @@ def plot_v5_reference_qa(
         return None
 
     output_format, dpi = get_output_settings(config)
-    date_title, _ = extract_datetime_strings(ds_l2)
+    date_title = _date_title(ds_l2)
     x, labels = _block_x(ds_l2)
     sel = dict(wavelength=wavelength)
     ref = np.asarray(ds_l2["rayleigh_reference_altitude_m_block"].sel(**sel).values, dtype=float) / 1000.0
@@ -175,7 +189,7 @@ def plot_v5_kfs_support_qa(
         return None
 
     output_format, dpi = get_output_settings(config)
-    date_title, _ = extract_datetime_strings(ds_l2)
+    date_title = _date_title(ds_l2)
     altitude_km = altitude_to_km(ds_l2["altitude"].values)
     valid_alt = altitude_km <= min(30.0, float(np.nanmax(altitude_km)))
     sel = dict(wavelength=wavelength)
@@ -251,7 +265,7 @@ def plot_v5_mc_reference_qa(
     if "selected_reference_altitude_m_mc" not in ds_l2:
         return None
     output_format, dpi = get_output_settings(config)
-    date_title, _ = extract_datetime_strings(ds_l2)
+    date_title = _date_title(ds_l2)
     samples = np.asarray(
         ds_l2["selected_reference_altitude_m_mc"].sel(wavelength=wavelength).values,
         dtype=float,
@@ -314,7 +328,7 @@ def plot_v5_gluing_qa(
     if not required.issubset(set(ds_l2.data_vars)):
         return None
     output_format, dpi = get_output_settings(config)
-    date_title, _ = extract_datetime_strings(ds_l2)
+    date_title = _date_title(ds_l2)
     x, labels = _block_x(ds_l2)
     sel = dict(wavelength=wavelength)
 
