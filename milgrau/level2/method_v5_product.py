@@ -347,7 +347,7 @@ def retrieve_wavelength_method_v5(
         if int(glued.retrieval_input_valid_flag[block_index]) != 1:
             continue
         block_started = time.perf_counter()
-        logger.info(
+        logger.debug(
             "  -> %d nm v5 block %d/%d selection-aware MC start | iterations=%d",
             int(wavelength_nm),
             int(block_index + 1),
@@ -452,7 +452,7 @@ def retrieve_wavelength_method_v5(
         selection_success_fraction[block_index] = float(
             result.monte_carlo.selection_success_fraction
         )
-        logger.info(
+        logger.debug(
             "  -> %d nm v5 block %d/%d MC done | ref=%.1f m | success=%.1f%% | %.1f s",
             int(wavelength_nm),
             int(block_index + 1),
