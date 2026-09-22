@@ -25,7 +25,7 @@ MEASUREMENT_ID_RE = re.compile(
 )
 _PRODUCT_RE = re.compile(
     r"^(?P<measurement_id>\d{8}_[a-z0-9][a-z0-9-]*_(?:00|06|12|18))"
-    r"(?P<suffix>_L0(?:_scc)?|_L1(?:_scc)?|(?:_[A-Za-z0-9_.-]+)?_L2)\.nc$",
+    r"(?P<suffix>_L0(?:_scc)?|_L1(?:_scc)?|(?:_[A-Za-z0-9_.-]+)?_L2(?:_scc)?)\.nc$",
     flags=re.IGNORECASE,
 )
 
