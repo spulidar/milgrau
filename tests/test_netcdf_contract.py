@@ -189,7 +189,7 @@ def test_lebear_generates_schema4_method5_from_level1_atmosphere(tmp_path: Path)
     logger = _ListLogger()
 
     summary = process_single_level1_file(path, _level2_config(tmp_path), logger)
-    output_path = tmp_path / "synthetic_level2_optical.nc"
+    output_path = tmp_path / "synthetic_level1_rcs_L2.nc"
     assert summary.results[0].status is ExecutionStatus.OK
     assert output_path.exists()
 
