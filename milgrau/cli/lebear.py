@@ -65,12 +65,14 @@ def _build_parser() -> argparse.ArgumentParser:
 def _expand_level1_inputs(inputs, config: dict) -> list[Path]:
     selection = parse_input_selection(inputs, config)
     resolved: list[Path] = []
-    canonical_station = station_id(config)
+    canonical_station: str | None = None
 
     for measurement_id in sorted(selection.measurement_ids):
         resolved.append(measurement_day_dir(measurement_id, config) / f"{measurement_id}{LEVEL1_SUFFIX}")
 
     for date_text in sorted(selection.dates):
+        if canonical_station is None:
+            canonical_station = station_id(config)
         anchor = build_measurement_id(date_text, canonical_station, "00")
         day_dir = measurement_day_dir(anchor, config)
         matches = sorted(day_dir.glob(f"{date_text}_{canonical_station}_??{LEVEL1_SUFFIX}"))
