@@ -187,6 +187,7 @@ def test_plot_quicklook_renders_full_canonical_period(tmp_path: Path, monkeypatc
         ax = fig.axes[0]
         captured["xlim"] = ax.get_xlim()
         captured["title"] = ax.get_title()
+        captured["footer_texts"] = [item.get_text() for item in fig.texts]
         captured["facecolor"] = ax.get_facecolor()
         plt.close(fig)
         return Path(out_path)
@@ -210,7 +211,8 @@ def test_plot_quicklook_renders_full_canonical_period(tmp_path: Path, monkeypatc
     left, right = captured["xlim"]
     assert np.isclose(left, mdates.date2num(pd.Timestamp("2020-01-26T03:00:00").to_pydatetime()))
     assert np.isclose(right, mdates.date2num(pd.Timestamp("2020-01-26T09:00:00").to_pydatetime()))
-    assert "Local period: 00:00–06:00 America/Sao_Paulo" in str(captured["title"])
+    assert "Local period:" not in str(captured["title"])
+    assert "Local period: 00:00–06:00 America/Sao_Paulo" in captured["footer_texts"]
 
 
 def test_liracos_passes_canonical_filename_period_and_station_timezone(tmp_path: Path, monkeypatch) -> None:
