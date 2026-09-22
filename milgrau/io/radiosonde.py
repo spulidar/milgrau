@@ -14,7 +14,6 @@ from siphon.simplewebservice.wyoming import WyomingUpperAir
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from milgrau.io.paths import resolve_project_path
-from milgrau.io.weather import return_none_on_failure
 
 
 def _metadata_file_for(cache_file: Path) -> Path:
@@ -90,7 +89,7 @@ def select_radiosonde_target_datetime(
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=2, max=10),
-    retry_error_callback=return_none_on_failure,
+    reraise=True,
 )
 def fetch_wyoming_radiosonde(
     measurement_dt_utc: datetime | pd.Timestamp,
