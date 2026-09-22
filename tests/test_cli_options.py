@@ -80,6 +80,9 @@ def test_shared_input_parser_accepts_measurement_date_and_period_forms() -> None
     quoted_style = parse_input_selection(["20251107 06 12"], config)
     assert quoted_style.measurement_ids == periods.measurement_ids
 
+    argparse_quoted_style = parse_input_selection([["20251107 06 12"]], config)
+    assert argparse_quoted_style.measurement_ids == periods.measurement_ids
+
 
 def test_shared_input_parser_preserves_explicit_path_with_spaces(tmp_path: Path) -> None:
     input_path = tmp_path / "foreign level 1.nc"
