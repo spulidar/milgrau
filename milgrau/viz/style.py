@@ -51,8 +51,12 @@ def get_output_settings(config: dict[str, Any]) -> tuple[str, int]:
     return resolved.output_format, resolved.dpi
 
 
-def add_footer_and_logos(fig: Any, root_dir: str | Path) -> None:
-    """Add SPU-Lidar footer and institutional logos to a Matplotlib figure."""
+def add_footer_and_logos(
+    fig: Any,
+    root_dir: str | Path,
+    subtitle: str | None = None,
+) -> None:
+    """Add SPU-Lidar footer, optional measurement metadata, and institutional logos."""
     fig.text(
         0.08,
         0.04,
@@ -62,6 +66,15 @@ def add_footer_and_logos(fig: Any, root_dir: str | Path) -> None:
         color="#333333",
         va="center",
     )
+    if subtitle:
+        fig.text(
+            0.08,
+            0.018,
+            subtitle,
+            fontsize=10,
+            color="#555555",
+            va="center",
+        )
     root_path = Path(root_dir)
     spacing = 0.010
     y_pos = 0.01
