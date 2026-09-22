@@ -37,7 +37,7 @@ def _expand_inputs(inputs, config: dict) -> list[Path]:
     for measurement_id in sorted(selection.measurement_ids):
         resolved.append(level0_output_path(measurement_id, config))
 
-    canonical_station = station_id(config)
+    canonical_station: str | None = None
     for date_text in sorted(selection.dates):
         if canonical_station is None:
             canonical_station = station_id(config)
@@ -66,7 +66,7 @@ def _process_selected(args: argparse.Namespace, config: dict, logger) -> Executi
 
     External SCC raw files may use provider-specific names. File naming is not a
     scientific identity source, so logging falls back to ``-`` when a canonical
-    MILGRAU save ID cannot be parsed. Ingestion resolves channel identity from
+    MILGRAU measurement ID cannot be parsed. Ingestion resolves channel identity from
     file metadata plus station.yaml instead.
     """
     files = _expand_inputs(args.inputs, config)
