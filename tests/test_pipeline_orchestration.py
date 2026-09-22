@@ -131,7 +131,7 @@ def test_liracos_invalid_filename_returns_structured_error(tmp_path: Path) -> No
     )
 
     assert result.status is ExecutionStatus.ERROR
-    assert result.stage == "visualization.initialize"
+    assert result.stage == "visualization.ingestion"
     assert result.metadata["measurement_id"] == "-"
 
 
