@@ -6,8 +6,6 @@ import argparse
 import logging
 import re
 from pathlib import Path
-from typing import Sequence
-
 from milgrau.cli.common import add_input_argument, finish_cli, run_guarded
 from milgrau.config.loader import load_config
 from milgrau.io.logging_utils import bind_log_context, setup_logger
@@ -64,6 +62,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _expand_level1_inputs(inputs, config: dict) -> list[Path]:
     selection = parse_input_selection(inputs, config)
+    if selection.is_empty:
+        return discover_level1_files(config)
     resolved: list[Path] = []
     canonical_station: str | None = None
 
