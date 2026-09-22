@@ -35,11 +35,19 @@ def _groups(values: Sequence[Any] | None) -> list[list[str]]:
         return []
     groups: list[list[str]] = []
     for raw_group in values:
-        if isinstance(raw_group, (list, tuple)):
-            tokens = [str(value) for value in raw_group if str(value).strip()]
-        else:
-            raw = str(raw_group)
-            tokens = shlex.split(raw) or [raw]
+        raw_tokens = (
+            [str(value) for value in raw_group]
+            if isinstance(raw_group, (list, tuple))
+            else [str(raw_group)]
+        )
+        tokens: list[str] = []
+        for raw in raw_tokens:
+            if not raw.strip():
+                continue
+            if Path(raw).expanduser().exists():
+                tokens.append(raw)
+            else:
+                tokens.extend(shlex.split(raw) or [raw])
         if tokens:
             groups.append(tokens)
     return groups
