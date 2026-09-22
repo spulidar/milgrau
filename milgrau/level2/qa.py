@@ -19,7 +19,7 @@ _QA_LOGO_NAMES = ("CC_BY-NC-ND.png", "lalinet_logo2.png", "logo_leal2.png")
 
 def level2_qa_enabled(config: Mapping[str, Any]) -> bool:
     """Return whether Level 2 QA generation is enabled in configuration."""
-    qa_config = config.get("visualization", {}).get("qa", {}) or {}
+    qa_config = config.get("visualization", {}).get("level2_qa", {}) or {}
     return bool(qa_config.get("enabled", True))
 
 
