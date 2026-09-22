@@ -147,9 +147,14 @@ def _fixed_period_utc_window(
     timezone_name: str | None = None,
 ) -> tuple[pd.Timestamp, pd.Timestamp, str] | None:
     """Return the canonical local six-hour period expressed on the UTC plot axis."""
+    explicit_context = measurement_id is not None or timezone_name is not None
     measurement_id = str(measurement_id or ds.attrs.get("Measurement_ID", "")).strip()
     timezone_name = str(timezone_name or ds.attrs.get("timezone", "")).strip()
     if not measurement_id or not timezone_name:
+        if explicit_context:
+            raise ValueError(
+                "Canonical quicklook period context requires both measurement_id and station timezone."
+            )
         return None
     try:
         date_text, _station, period = measurement_id_parts(measurement_id)
@@ -161,10 +166,36 @@ def _fixed_period_utc_window(
         start_utc = pd.Timestamp(local_start.astimezone(timezone.utc).replace(tzinfo=None))
         end_utc = pd.Timestamp(local_end.astimezone(timezone.utc).replace(tzinfo=None))
     except (ValueError, KeyError, TypeError, ZoneInfoNotFoundError):
+        if explicit_context:
+            raise
         return None
 
     label = f"{period}:00–{int(period) + 6:02d}:00 {timezone_name}"
     return start_utc, end_utc, label
+
+
+def _apply_fixed_period_axis(
+    ax: Any,
+    ds: xr.Dataset,
+    config: dict[str, Any],
+    *,
+    measurement_id: str | None = None,
+    timezone_name: str | None = None,
+) -> str | None:
+    """Apply the canonical six-hour UTC plot window and missing-data background."""
+    fixed_window = _fixed_period_utc_window(
+        ds,
+        measurement_id=measurement_id,
+        timezone_name=timezone_name,
+    )
+    if fixed_window is None:
+        return None
+
+    start_utc, end_utc, label = fixed_window
+    ax.set_facecolor(resolve_visualization_config(config).quicklook.missing_data_color)
+    ax.set_xlim(start_utc, end_utc)
+    ax.xaxis.set_major_locator(mdates.HourLocator(interval=1))
+    return label
 
 
 def plot_quicklook(
@@ -208,8 +239,16 @@ def plot_quicklook(
     )
 
     lower_altitude = 0.16 if "AN" in pretty_channel else 0.5
+    period_label = _apply_fixed_period_axis(
+        ax0,
+        ds,
+        config,
+        measurement_id=measurement_id,
+        timezone_name=timezone_name,
+    )
+    period_title = f"\nLocal period: {period_label}" if period_label else ""
     ax0.set_title(
-        f"RCS at {pretty_channel} (0 - {float(max_altitude):g} km)\n{date_title}",
+        f"RCS at {pretty_channel} (0 - {float(max_altitude):g} km)\n{date_title}{period_title}",
         fontsize=15,
         fontweight="bold",
         loc="center",
