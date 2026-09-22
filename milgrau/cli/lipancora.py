@@ -39,6 +39,8 @@ def _expand_inputs(inputs, config: dict) -> list[Path]:
 
     canonical_station = station_id(config)
     for date_text in sorted(selection.dates):
+        if canonical_station is None:
+            canonical_station = station_id(config)
         anchor = build_measurement_id(date_text, canonical_station, "00")
         day_dir = measurement_day_dir(anchor, config)
         matches = sorted(day_dir.glob(f"{date_text}_{canonical_station}_??{LEVEL0_SUFFIX}"))
