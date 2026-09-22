@@ -17,6 +17,7 @@ from milgrau.io.contracts import validate_level1_contract
 from milgrau.io.filesystem import ensure_directories
 from milgrau.io.logging_utils import bind_log_context
 from milgrau.io.paths import (
+    LEVEL1_SCC_SUFFIX,
     LEVEL1_SUFFIX,
     global_mean_rcs_output_path,
     logging_measurement_id,
@@ -124,7 +125,12 @@ def process_single_nc(args: tuple[str | Path, dict[str, Any], str | Path, loggin
     stage = "visualization.initialize"
     try:
         try:
-            file_name_prefix = product_measurement_id(nc_file)
+            canonical_id = product_measurement_id(nc_file)
+            file_name_prefix = (
+                f"{canonical_id}_scc"
+                if nc_file.name.endswith(LEVEL1_SCC_SUFFIX)
+                else canonical_id
+            )
         except ValueError:
             file_name_prefix = nc_file.stem.removesuffix("_L1")
         measurement_id = logging_measurement_id(nc_file)
