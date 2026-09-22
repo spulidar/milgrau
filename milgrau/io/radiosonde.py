@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+from importlib.metadata import PackageNotFoundError, version as package_version
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
@@ -14,6 +15,25 @@ from siphon.simplewebservice.wyoming import WyomingUpperAir
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from milgrau.io.paths import resolve_project_path
+
+
+def _require_current_siphon() -> str:
+    """Require the Wyoming client generation compatible with the current server."""
+    try:
+        resolved = package_version("siphon")
+    except PackageNotFoundError as exc:
+        raise RuntimeError("Siphon is not installed; install MILGRAU runtime dependencies.") from exc
+
+    try:
+        major, minor = (int(part) for part in resolved.split(".")[:2])
+    except (TypeError, ValueError):
+        return resolved
+    if (major, minor) < (0, 11):
+        raise RuntimeError(
+            f"Siphon {resolved} is incompatible with the current University of Wyoming "
+            "upper-air server; upgrade to siphon>=0.11.0."
+        )
+    return resolved
 
 
 def _metadata_file_for(cache_file: Path) -> Path:
@@ -102,6 +122,7 @@ def fetch_wyoming_radiosonde(
     max_time_delta_hours: float,
 ) -> Optional[pd.DataFrame]:
     """Fetch one Wyoming sounding using only the explicitly configured policy."""
+    siphon_version = _require_current_siphon()
     measurement_dt = _as_utc_datetime(measurement_dt_utc)
     station_id = str(station_id).strip()
     if not station_id:
@@ -144,10 +165,12 @@ def fetch_wyoming_radiosonde(
         metadata = {**default_metadata, **_read_metadata(metadata_file)}
         return _attach_metadata(pd.read_csv(cache_file), metadata)
 
-    logger.debug(
-        "radiosonde fetch: %sZ | station=%s",
+    logger.info(
+        "radiosonde target | %sZ | station=%s | Δt=%.2f h | siphon=%s",
         target_dt.strftime("%Y-%m-%d %H:%M"),
         station_id,
+        abs((target_dt - measurement_dt).total_seconds()) / 3600.0,
+        siphon_version,
     )
     df_raw = WyomingUpperAir.request_data(target_dt, station_id)
     df = df_raw.drop_duplicates(subset=["height"], keep="first").sort_values("height")
