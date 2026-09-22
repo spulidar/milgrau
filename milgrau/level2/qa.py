@@ -11,7 +11,6 @@ from typing import Any
 import xarray as xr
 
 from milgrau.incremental import output_is_current
-from milgrau.io.paths import LEVEL2_SUFFIX
 from milgrau.operations import ExecutionResult
 
 type Level2QAPlotter = Callable[..., list[Path]]
@@ -29,6 +28,16 @@ def _load_plotter() -> Level2QAPlotter:
     from milgrau.viz.level2_qa_support import plot_all_level2_qa_with_support
 
     return plot_all_level2_qa_with_support
+
+
+def _qa_file_prefix(level2_path: Path) -> str:
+    """Return a QA prefix without the Level 2 product suffix."""
+    stem = level2_path.stem
+    if stem.endswith("_L2_scc"):
+        return f"{stem.removesuffix('_L2_scc')}_scc"
+    if stem.endswith("_L2"):
+        return stem.removesuffix("_L2")
+    return stem
 
 
 def _qa_dependencies(level1_path: Path, level2_path: Path, root_path: Path) -> tuple[list[Path], list[Path]]:
@@ -113,7 +122,7 @@ def generate_level2_qa(
             generated = plotter(
                 ds_l2=ds_l2,
                 output_folder=qa_dir,
-                file_name_prefix=level2_path.name.replace(LEVEL2_SUFFIX, ""),
+                file_name_prefix=_qa_file_prefix(level2_path),
                 config=dict(config),
                 root_dir=root_path,
                 ds_l1=ds_l1,
