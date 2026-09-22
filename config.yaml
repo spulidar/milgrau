@@ -16,7 +16,7 @@ processing:
   # Audit file: retains channel/source/cache/retrieval diagnostics.
   file_level: "DEBUG"
   # Explicit non-Licel suffixes that may coexist in historical raw trees.
-  spurious_extensions: [".dpp", ".zip", ".txt", ".json"]
+  spurious_extensions: [".dpp", ".zip", ".txt", ".json", ".7z", ".tar"]
   # Quarantine is auditable retained evidence, not disposable cache.
   quarantine_dir: "quarantine"
   # Current caches live outside the raw-data tree. These names are retained so
