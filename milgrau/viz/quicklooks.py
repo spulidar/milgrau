@@ -141,10 +141,14 @@ def _quicklook_colormap(config: dict[str, Any]):
     return cmap
 
 
-def _fixed_period_utc_window(ds: xr.Dataset) -> tuple[pd.Timestamp, pd.Timestamp, str] | None:
+def _fixed_period_utc_window(
+    ds: xr.Dataset,
+    measurement_id: str | None = None,
+    timezone_name: str | None = None,
+) -> tuple[pd.Timestamp, pd.Timestamp, str] | None:
     """Return the canonical local six-hour period expressed on the UTC plot axis."""
-    measurement_id = str(ds.attrs.get("Measurement_ID", "")).strip()
-    timezone_name = str(ds.attrs.get("timezone", "")).strip()
+    measurement_id = str(measurement_id or ds.attrs.get("Measurement_ID", "")).strip()
+    timezone_name = str(timezone_name or ds.attrs.get("timezone", "")).strip()
     if not measurement_id or not timezone_name:
         return None
     try:
@@ -173,6 +177,8 @@ def plot_quicklook(
     file_name_prefix: str,
     config: dict[str, Any],
     root_dir: str | Path,
+    measurement_id: str | None = None,
+    timezone_name: str | None = None,
     pbl_da: xr.DataArray | None = None,
     cpt_km: float = np.nan,
     lrt_km: float = np.nan,
