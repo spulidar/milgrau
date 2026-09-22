@@ -13,7 +13,6 @@ from milgrau.io.paths import (
     build_measurement_id,
     logging_measurement_id,
     measurement_day_dir,
-    product_measurement_id,
     station_id,
 )
 from milgrau.io.selection import parse_input_selection
