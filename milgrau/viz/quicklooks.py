@@ -153,7 +153,7 @@ def _fixed_period_utc_window(ds: xr.Dataset) -> tuple[pd.Timestamp, pd.Timestamp
         local_end = local_end_naive.replace(tzinfo=zone)
         start_utc = pd.Timestamp(local_start.astimezone(timezone.utc).replace(tzinfo=None))
         end_utc = pd.Timestamp(local_end.astimezone(timezone.utc).replace(tzinfo=None))
-    except (ValueError, KeyError, TypeError, ZoneInfo.KeyError):
+    except (ValueError, KeyError, TypeError, ZoneInfoNotFoundError):
         return None
 
     label = f"{period}:00–{int(period) + 6:02d}:00 {timezone_name}"
