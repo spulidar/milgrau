@@ -33,6 +33,9 @@ from milgrau.viz.style import DEFAULT_LOGO_SPECS
 RCS_VARIABLE = "range_corrected_signal"
 RCS_ERROR_VARIABLE = "range_corrected_signal_error"
 
+_LIRACOS_SOURCE_PATH = Path(__file__)
+_QUICKLOOK_SOURCE_PATH = Path(plot_quicklook.__code__.co_filename)
+
 
 def _incremental_enabled(config: Mapping[str, Any]) -> bool:
     processing = config.get("processing")
@@ -82,11 +85,25 @@ def _get_altitude_ranges_km(config: dict[str, Any]) -> list[float]:
 
 
 def _visual_dependencies(root_path: Path) -> list[Path]:
-    return [
+    dependencies = [_LIRACOS_SOURCE_PATH, _QUICKLOOK_SOURCE_PATH]
+    dependencies.extend(
         logo_path
         for logo_name, _height in DEFAULT_LOGO_SPECS
         if (logo_path := root_path / "img" / logo_name).is_file()
-    ]
+    )
+    return dependencies
+
+
+def _station_timezone_name(config: Mapping[str, Any]) -> str | None:
+    """Return the loaded station IANA timezone when available."""
+    catalog = config.get("_station_catalog")
+    if not isinstance(catalog, Mapping):
+        return None
+    station = catalog.get("station")
+    if not isinstance(station, Mapping):
+        return None
+    value = str(station.get("timezone", "")).strip()
+    return value or None
 
 
 def _prepare_level1_for_visualization(ds: xr.Dataset) -> xr.Dataset:
@@ -124,6 +141,7 @@ def process_single_nc(args: tuple[str | Path, dict[str, Any], str | Path, loggin
     output_folder: Path | None = None
     stage = "visualization.initialize"
     try:
+        canonical_id: str | None = None
         try:
             canonical_id = product_measurement_id(nc_file)
             file_name_prefix = (
@@ -140,6 +158,7 @@ def process_single_nc(args: tuple[str | Path, dict[str, Any], str | Path, loggin
         ensure_directories(output_folder)
         incremental = _incremental_enabled(config)
         dependencies = _visual_dependencies(root_path)
+        station_timezone_name = _station_timezone_name(config)
         generated_count = 0
         skipped_count = 0
 
@@ -194,6 +213,8 @@ def process_single_nc(args: tuple[str | Path, dict[str, Any], str | Path, loggin
                         file_name_prefix=file_name_prefix,
                         config=config,
                         root_dir=str(root_path),
+                        measurement_id=canonical_id,
+                        timezone_name=station_timezone_name,
                         pbl_da=pbl_da,
                         cpt_km=cpt_km,
                         lrt_km=lrt_km,
