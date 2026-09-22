@@ -246,9 +246,8 @@ def plot_quicklook(
         measurement_id=measurement_id,
         timezone_name=timezone_name,
     )
-    period_title = f"\nLocal period: {period_label}" if period_label else ""
     ax0.set_title(
-        f"RCS at {pretty_channel} (0 - {float(max_altitude):g} km)\n{date_title}{period_title}",
+        f"RCS at {pretty_channel} (0 - {float(max_altitude):g} km)\n{date_title}",
         fontsize=15,
         fontweight="bold",
         loc="center",
@@ -310,7 +309,8 @@ def plot_quicklook(
     cb.set_label("Intensity [a.u.]", fontsize=12, fontweight="bold")
     cb_ax.yaxis.set_ticks_position("left")
     cb_ax.yaxis.set_label_position("left")
-    add_footer_and_logos(fig, root_dir)
+    footer_subtitle = f"Local period: {period_label}" if period_label else None
+    add_footer_and_logos(fig, root_dir, subtitle=footer_subtitle)
 
     out_path = Path(output_folder) / f"rcs_{file_name_prefix}_{pretty_channel.replace(' ', '_')}_{float(max_altitude):g}km.{output_format}"
     return _save_figure(fig, out_path, dpi=dpi)
