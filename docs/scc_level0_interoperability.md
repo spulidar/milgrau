@@ -24,7 +24,7 @@ LIPANCORA ingestion accepts two identity paths:
 
 When both `channel_string` and `channel_ID` are present, and a station catalog is available, LIPANCORA verifies that they agree. An SCC ID is never used to infer wavelength or detector mode without station metadata.
 
-Resolution may use the measurement date plus optional file hints such as `Measurement_ID` day/night suffix and `SCC_Configuration_ID`. Unknown IDs, duplicate IDs, or genuinely ambiguous mappings fail explicitly.
+Resolution uses measurement time together with the station timezone and may additionally use `SCC_Configuration_ID`. The MILGRAU filename period is not used to infer SCC day/night identity. Unknown IDs, duplicate IDs, or genuinely ambiguous mappings fail explicitly.
 
 The alternative SCC `channel_string_ID` convention is not currently a productive input identity path because MILGRAU's station catalog intentionally uses numeric SCC channel IDs. It can be added later through an explicit station-owned mapping if a real interoperability case requires it.
 
@@ -52,16 +52,16 @@ LIBIDS writes `*_scc.nc` with the same Level 0 writer used for the full-channel 
 Use an explicit file path when the full Level 0 and SCC subset coexist, for example:
 
 ```bash
-milgrau-lipancora -i /path/to/20251107sapm_scc.nc --force
+milgrau-lipancora -i /path/to/20251107_spu_12_L0_scc.nc --force
 ```
 
 Automatic no-argument discovery deliberately continues to prefer the canonical full-channel Level 0 product. It does not also process the colocated SCC subset, avoiding duplicate Level 1 products from the same acquisition.
 
-For a canonical MILGRAU SCC input, the resulting `*_scc_level1_rcs.nc` is written inside the original canonical measurement directory rather than creating a separate `_scc` measurement directory. For an explicitly supplied non-canonical external SCC filename, the Level 1 product is written beside that source file instead of inventing a date hierarchy from the filename.
+For a canonical MILGRAU SCC input, the resulting `*_L1_scc.nc` is written inside the same local-day directory. For an explicitly supplied non-canonical external SCC filename, the Level 1 product is written beside that source file instead of inventing a date hierarchy from the filename.
 
 ### Real-data regression evidence
 
-On `20251107sapm`, the MILGRAU SCC export contains the five SCC channels `532.AN`, `532.PC`, `1064.AN`, `355.PC`, and `355.AN`. Running that `*_scc.nc` explicitly through LIPANCORA produced a five-channel Level 1 product whose corresponding scientific arrays and diagnostics were exactly equal to the same five channels extracted from the full-channel Level 1 product. The checked equality included corrected signal and uncertainty, range-corrected signal and uncertainty, PC saturation mask, correction-status diagnostics, dead-time clipping diagnostics, observed PC-rate diagnostics, bin-shift diagnostics, PBL height, altitude/time coordinates, and thermodynamic profiles.
+On the historical `20251107sapm` regression case (legacy filename), the MILGRAU SCC export contains the five SCC channels `532.AN`, `532.PC`, `1064.AN`, `355.PC`, and `355.AN`. Running that `*_scc.nc` explicitly through LIPANCORA produced a five-channel Level 1 product whose corresponding scientific arrays and diagnostics were exactly equal to the same five channels extracted from the full-channel Level 1 product. The checked equality included corrected signal and uncertainty, range-corrected signal and uncertainty, PC saturation mask, correction-status diagnostics, dead-time clipping diagnostics, observed PC-rate diagnostics, bin-shift diagnostics, PBL height, altitude/time coordinates, and thermodynamic profiles.
 
 This is end-to-end behavioral/regression evidence for the MILGRAU-generated SCC path. It is not a claim that arbitrary SCC converters or station calibrations are interchangeable without validation.
 
