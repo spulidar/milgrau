@@ -12,7 +12,7 @@ import xarray as xr
 
 from milgrau.operations import ExecutionStatus
 from milgrau.viz import liracos
-from milgrau.viz.quicklooks import _insert_time_gap_markers
+from milgrau.viz.quicklooks import _fixed_period_utc_window, _insert_time_gap_markers
 
 
 class _ListLogger(logging.Logger):
@@ -111,6 +111,39 @@ def test_time_gap_markers_insert_nan_profiles() -> None:
     assert result.sizes["time"] == 5
     assert np.isnan(result.isel(time=2).values).all()
     assert np.isnan(result.isel(time=3).values).all()
+
+
+def test_fixed_period_utc_window_uses_local_station_period() -> None:
+    ds = xr.Dataset(
+        attrs={
+            "Measurement_ID": "20251107_spu_06",
+            "timezone": "America/Sao_Paulo",
+        }
+    )
+
+    window = _fixed_period_utc_window(ds)
+
+    assert window is not None
+    start_utc, end_utc, label = window
+    assert start_utc == pd.Timestamp("2025-11-07T09:00:00")
+    assert end_utc == pd.Timestamp("2025-11-07T15:00:00")
+    assert label == "06:00–12:00 America/Sao_Paulo"
+
+
+def test_fixed_period_utc_window_preserves_historical_dst_offsets() -> None:
+    ds = xr.Dataset(
+        attrs={
+            "Measurement_ID": "20181104_spu_00",
+            "timezone": "America/Sao_Paulo",
+        }
+    )
+
+    window = _fixed_period_utc_window(ds)
+
+    assert window is not None
+    start_utc, end_utc, _label = window
+    assert start_utc == pd.Timestamp("2018-11-04T03:00:00")
+    assert end_utc == pd.Timestamp("2018-11-04T08:00:00")
 
 
 def test_global_mean_timestamp_skips_current_plot(tmp_path: Path, monkeypatch) -> None:
