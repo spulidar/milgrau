@@ -19,7 +19,7 @@ from milgrau.io.era5 import (
     fetch_era5_pressure_level_profile,
     nearest_era5_analysis_hour,
 )
-from milgrau.io.radiosonde import select_radiosonde_target_datetime
+from milgrau.io.radiosonde import _require_current_siphon, select_radiosonde_target_datetime
 from milgrau.level1.thermodynamics import integrate_thermodynamics
 from milgrau.level2.retrieval import build_thermodynamic_profile
 from milgrau.physics.atmosphere import get_standard_atmosphere
@@ -61,6 +61,17 @@ def test_ussa76_fallback_uses_stratified_layers() -> None:
 def test_ussa76_rejects_silent_extrapolation_above_supported_domain() -> None:
     with pytest.raises(ValueError, match="84"):
         get_standard_atmosphere(np.array([0.0, 100_000.0]))
+
+
+def test_radiosonde_rejects_wyoming_client_older_than_011(monkeypatch) -> None:
+    monkeypatch.setattr("milgrau.io.radiosonde.package_version", lambda _name: "0.10.0")
+    with pytest.raises(RuntimeError, match="siphon>=0.11.0"):
+        _require_current_siphon()
+
+
+def test_radiosonde_accepts_current_wyoming_client(monkeypatch) -> None:
+    monkeypatch.setattr("milgrau.io.radiosonde.package_version", lambda _name: "0.11.0")
+    assert _require_current_siphon() == "0.11.0"
 
 
 def test_radiosonde_nearest_selection_uses_explicit_synoptic_hours() -> None:
