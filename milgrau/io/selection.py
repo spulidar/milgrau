@@ -36,13 +36,10 @@ def _groups(values: Sequence[Any] | None) -> list[list[str]]:
     groups: list[list[str]] = []
     for raw_group in values:
         if isinstance(raw_group, (list, tuple)):
-            raw_tokens = [str(value) for value in raw_group]
+            tokens = [str(value) for value in raw_group if str(value).strip()]
         else:
-            raw_tokens = [str(raw_group)]
-        tokens: list[str] = []
-        for raw in raw_tokens:
-            split = shlex.split(raw)
-            tokens.extend(split if split else [raw])
+            raw = str(raw_group)
+            tokens = shlex.split(raw) or [raw]
         if tokens:
             groups.append(tokens)
     return groups
