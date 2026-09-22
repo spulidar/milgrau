@@ -154,11 +154,11 @@ def test_milgrau_scc_file_cross_checks_channel_string_against_channel_id(tmp_pat
     source = _write_level0(tmp_path / "canonical.nc", np.array([7.5, 7.5]))
     path = _write_scc_id_level0(
         source,
-        tmp_path / "20240101sa09z_scc.nc",
+        tmp_path / "20240101_spu_06_L0_scc.nc",
         np.array([4069, 4070]),
         keep_channel_string=True,
         attrs={
-            "Measurement_ID": "20240101sa09z",
+            "Measurement_ID": "20240101_spu_06",
             "RawData_Start_Time_UT": "120000",
             "SCC_Configuration_ID": 10,
         },
