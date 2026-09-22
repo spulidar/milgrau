@@ -96,19 +96,24 @@ milgrau-liracos
 milgrau-lebear
 ```
 
-The primary CLIs accept repeatable input selectors and `--force`, for example:
+The primary CLIs share the same flexible `-i/--input` selectors. A selector may be one canonical measurement ID, one local civil date, a date followed by one or more local six-hour period starts, or an explicit file/directory path:
 
 ```bash
-milgrau-libids --input 2025050903z --force
-milgrau-lipancora --input 20250509sa03z --force
-milgrau-lebear --input 20250509sa03z --force
+milgrau-libids -i 20250509_spu_06 --force
+milgrau-lipancora -i 20250509
+milgrau-liracos -i 20250509 06 12
+milgrau-lebear -i 20250509_spu_12
 ```
+
+Canonical measurement IDs use `YYYYMMDD_station_HH`, where `HH` is the start of one of the fixed station-local periods `00`, `06`, `12`, or `18`. Products are grouped by station and local day, for example `processed/spu/2025/05/20250509/20250509_spu_06_L1.nc`.
 
 LEBEAR can also process a restricted UTC interval without changing the original Level 1 product:
 
 ```bash
-milgrau-lebear --input 20250509sa03z --time-window 04:00 05:00
+milgrau-lebear -i 20250509_spu_00 --time-window-utc 04:00 05:00
 ```
+
+The resulting Level 2 filename carries the explicit UTC window tag, for example `20250509_spu_00_0400-0500Z_L2.nc`.
 
 Shell status is deliberately operational. Scientific QA belongs in the NetCDF diagnostics rather than being compressed into an exit code.
 
