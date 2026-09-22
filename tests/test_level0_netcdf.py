@@ -47,11 +47,11 @@ def _config() -> dict:
 
 def _group_df(tmp_path: Path, include_dark_current: bool = True) -> pd.DataFrame:
     records = [
-        {"filepath": str(tmp_path / "meas_0001"), "meas_type": "measurements", "start_time_utc": pd.Timestamp("2024-01-01T00:00:00Z"), "stop_time": pd.Timestamp("2024-01-01T00:05:00Z"), "original_meas_id": "2023123103z", "association_method": "measurement", "dark_current_association_delta_hours": np.nan},
-        {"filepath": str(tmp_path / "meas_0002"), "meas_type": "measurements", "start_time_utc": pd.Timestamp("2024-01-01T00:05:00Z"), "stop_time": pd.Timestamp("2024-01-01T00:10:00Z"), "original_meas_id": "2023123103z", "association_method": "measurement", "dark_current_association_delta_hours": np.nan},
+        {"filepath": str(tmp_path / "meas_0001"), "meas_type": "measurements", "start_time_utc": pd.Timestamp("2024-01-01T00:00:00Z"), "stop_time": pd.Timestamp("2024-01-01T00:05:00Z"), "original_meas_id": "20231231_spu_00", "association_method": "measurement", "dark_current_association_delta_hours": np.nan},
+        {"filepath": str(tmp_path / "meas_0002"), "meas_type": "measurements", "start_time_utc": pd.Timestamp("2024-01-01T00:05:00Z"), "stop_time": pd.Timestamp("2024-01-01T00:10:00Z"), "original_meas_id": "20231231_spu_00", "association_method": "measurement", "dark_current_association_delta_hours": np.nan},
     ]
     if include_dark_current:
-        records.append({"filepath": str(tmp_path / "dark_0001"), "meas_type": "dark_current", "start_time_utc": pd.Timestamp("2023-12-31T23:40:00Z"), "stop_time": pd.Timestamp("2023-12-31T23:45:00Z"), "original_meas_id": "2023123121z", "association_method": "nearest_measurement", "dark_current_association_delta_hours": 0.5})
+        records.append({"filepath": str(tmp_path / "dark_0001"), "meas_type": "dark_current", "start_time_utc": pd.Timestamp("2023-12-31T23:40:00Z"), "stop_time": pd.Timestamp("2023-12-31T23:45:00Z"), "original_meas_id": "20231231_spu_18", "association_method": "nearest_measurement", "dark_current_association_delta_hours": 0.5})
     return pd.DataFrame.from_records(records)
 
 
