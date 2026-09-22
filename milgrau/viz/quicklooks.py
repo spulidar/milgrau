@@ -138,6 +138,28 @@ def _quicklook_colormap(config: dict[str, Any]):
     return cmap
 
 
+def _fixed_period_utc_window(ds: xr.Dataset) -> tuple[pd.Timestamp, pd.Timestamp, str] | None:
+    """Return the canonical local six-hour period expressed on the UTC plot axis."""
+    measurement_id = str(ds.attrs.get("Measurement_ID", "")).strip()
+    timezone_name = str(ds.attrs.get("timezone", "")).strip()
+    if not measurement_id or not timezone_name:
+        return None
+    try:
+        date_text, _station, period = measurement_id_parts(measurement_id)
+        zone = ZoneInfo(timezone_name)
+        local_start_naive = datetime.strptime(f"{date_text}{period}", "%Y%m%d%H")
+        local_end_naive = local_start_naive + timedelta(hours=6)
+        local_start = local_start_naive.replace(tzinfo=zone)
+        local_end = local_end_naive.replace(tzinfo=zone)
+        start_utc = pd.Timestamp(local_start.astimezone(timezone.utc).replace(tzinfo=None))
+        end_utc = pd.Timestamp(local_end.astimezone(timezone.utc).replace(tzinfo=None))
+    except (ValueError, KeyError, TypeError, ZoneInfo.KeyError):
+        return None
+
+    label = f"{period}:00–{int(period) + 6:02d}:00 {timezone_name}"
+    return start_utc, end_utc, label
+
+
 def plot_quicklook(
     data_slice: xr.DataArray,
     error_slice: xr.DataArray,
