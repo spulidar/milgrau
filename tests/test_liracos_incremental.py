@@ -146,6 +146,54 @@ def test_fixed_period_utc_window_preserves_historical_dst_offsets() -> None:
     assert end_utc == pd.Timestamp("2018-11-04T08:00:00")
 
 
+def test_liracos_passes_canonical_filename_period_and_station_timezone(tmp_path: Path, monkeypatch) -> None:
+    level1 = _write_level1(tmp_path / "20200126_spu_00_L1.nc", ["532.AN"])
+    logger = _ListLogger()
+    captured: dict[str, str | None] = {}
+
+    def fake_quicklook(**kwargs):
+        captured["measurement_id"] = kwargs["measurement_id"]
+        captured["timezone_name"] = kwargs["timezone_name"]
+        out_path = Path(kwargs["output_folder"]) / "fake_quicklook.png"
+        out_path.write_text("quicklook", encoding="utf-8")
+        return out_path
+
+    def fake_global(ds, output_folder, file_name_prefix, config, root_dir):
+        out_path = Path(output_folder) / f"rcs_{file_name_prefix}_mean.png"
+        out_path.write_text("global", encoding="utf-8")
+        return out_path
+
+    monkeypatch.setattr(liracos, "plot_quicklook", fake_quicklook)
+    monkeypatch.setattr(liracos, "plot_global_mean_rcs", fake_global)
+
+    config = _config(["532.AN"], incremental=False)
+    config["_station_catalog"] = {"station": {"timezone": "America/Sao_Paulo"}}
+
+    result = liracos.process_single_nc((level1, config, tmp_path, logger))
+
+    assert result.status is ExecutionStatus.OK
+    assert captured == {
+        "measurement_id": "20200126_spu_00",
+        "timezone_name": "America/Sao_Paulo",
+    }
+
+
+def test_fixed_period_window_can_use_explicit_context_without_level1_attrs() -> None:
+    ds = xr.Dataset()
+
+    window = _fixed_period_utc_window(
+        ds,
+        measurement_id="20200126_spu_00",
+        timezone_name="America/Sao_Paulo",
+    )
+
+    assert window is not None
+    start_utc, end_utc, label = window
+    assert start_utc == pd.Timestamp("2020-01-26T03:00:00")
+    assert end_utc == pd.Timestamp("2020-01-26T09:00:00")
+    assert label == "00:00–06:00 America/Sao_Paulo"
+
+
 def test_global_mean_timestamp_skips_current_plot(tmp_path: Path, monkeypatch) -> None:
     level1 = _write_level1(tmp_path / "20240101_spu_00_L1.nc", ["532.AN"])
     logger = _ListLogger()
