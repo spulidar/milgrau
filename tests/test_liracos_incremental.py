@@ -13,7 +13,7 @@ import pandas as pd
 import xarray as xr
 
 from milgrau.operations import ExecutionStatus
-from milgrau.viz import liracos
+from milgrau.viz import liracos, quicklooks
 from milgrau.viz.quicklooks import (
     _apply_fixed_period_axis,
     _fixed_period_utc_window,
@@ -170,6 +170,47 @@ def test_fixed_period_axis_is_applied_to_rendered_quicklook() -> None:
         assert label == "00:00–06:00 America/Sao_Paulo"
     finally:
         plt.close(fig)
+
+
+def test_plot_quicklook_renders_full_canonical_period(tmp_path: Path, monkeypatch) -> None:
+    times = pd.to_datetime(["2020-01-26T05:23:00", "2020-01-26T06:30:00", "2020-01-26T08:59:00"])
+    altitude = np.array([0.5, 1.0, 1.5])
+    data = xr.DataArray(
+        np.ones((3, 3)),
+        dims=("time", "altitude"),
+        coords={"time": times, "altitude": altitude},
+    )
+    captured: dict[str, object] = {}
+
+    def fake_save(fig, out_path, dpi):
+        del dpi
+        ax = fig.axes[0]
+        captured["xlim"] = ax.get_xlim()
+        captured["title"] = ax.get_title()
+        captured["facecolor"] = ax.get_facecolor()
+        plt.close(fig)
+        return Path(out_path)
+
+    monkeypatch.setattr(quicklooks, "_save_figure", fake_save)
+
+    quicklooks.plot_quicklook(
+        data_slice=data,
+        error_slice=data * 0.05,
+        max_altitude=1.5,
+        channel_name="532.PC",
+        ds=xr.Dataset(coords={"time": times}),
+        output_folder=tmp_path,
+        file_name_prefix="20200126_spu_00",
+        config=_config(["532.PC"]),
+        root_dir=tmp_path,
+        measurement_id="20200126_spu_00",
+        timezone_name="America/Sao_Paulo",
+    )
+
+    left, right = captured["xlim"]
+    assert np.isclose(left, mdates.date2num(pd.Timestamp("2020-01-26T03:00:00").to_pydatetime()))
+    assert np.isclose(right, mdates.date2num(pd.Timestamp("2020-01-26T09:00:00").to_pydatetime()))
+    assert "Local period: 00:00–06:00 America/Sao_Paulo" in str(captured["title"])
 
 
 def test_liracos_passes_canonical_filename_period_and_station_timezone(tmp_path: Path, monkeypatch) -> None:
