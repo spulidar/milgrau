@@ -6,13 +6,19 @@ import logging
 import os
 from pathlib import Path
 
+import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import xarray as xr
 
 from milgrau.operations import ExecutionStatus
 from milgrau.viz import liracos
-from milgrau.viz.quicklooks import _fixed_period_utc_window, _insert_time_gap_markers
+from milgrau.viz.quicklooks import (
+    _apply_fixed_period_axis,
+    _fixed_period_utc_window,
+    _insert_time_gap_markers,
+)
 
 
 class _ListLogger(logging.Logger):
@@ -144,6 +150,26 @@ def test_fixed_period_utc_window_preserves_historical_dst_offsets() -> None:
     start_utc, end_utc, _label = window
     assert start_utc == pd.Timestamp("2018-11-04T03:00:00")
     assert end_utc == pd.Timestamp("2018-11-04T08:00:00")
+
+
+def test_fixed_period_axis_is_applied_to_rendered_quicklook() -> None:
+    ds = xr.Dataset()
+    fig, ax = plt.subplots()
+    try:
+        label = _apply_fixed_period_axis(
+            ax,
+            ds,
+            _config(["532.AN"]),
+            measurement_id="20200126_spu_00",
+            timezone_name="America/Sao_Paulo",
+        )
+
+        left, right = ax.get_xlim()
+        assert np.isclose(left, mdates.date2num(pd.Timestamp("2020-01-26T03:00:00").to_pydatetime()))
+        assert np.isclose(right, mdates.date2num(pd.Timestamp("2020-01-26T09:00:00").to_pydatetime()))
+        assert label == "00:00–06:00 America/Sao_Paulo"
+    finally:
+        plt.close(fig)
 
 
 def test_liracos_passes_canonical_filename_period_and_station_timezone(tmp_path: Path, monkeypatch) -> None:
