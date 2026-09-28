@@ -32,7 +32,7 @@ See [`docs/processing_levels.md`](docs/processing_levels.md) for the stable cont
 
 ## Current Level 2 scientific baseline
 
-The productive Level 2 path uses **two-sided elastic Klett–Fernald–Sasano** retrieval for configured elastic wavelengths. It preserves the validated backward branch below the selected molecular reference and retrieves forward only while contiguous measured support and the Fernald numerics remain valid. Current method hardening includes:
+The Level 2 uses **two-sided elastic Klett–Fernald–Sasano** retrieval for configured elastic wavelengths. It preserves the validated backward branch below the selected molecular reference and retrieves forward only while contiguous measured support and the Fernald numerics remain valid. Current method includes:
 
 - one common support mask for signal means and their reported uncertainties;
 - missing signal uncertainty is unsupported, never silently converted to zero Monte Carlo noise;
