@@ -9,6 +9,11 @@ project:
   name: "MILGRAU"
   full_name: "Multi-Indexed LALINET GeneRAlized and Unified algorithm"
 
+directories:
+  raw_data: "01-data"
+  processed_data: "02-processed_data"
+  log_dir: "logs"
+
 processing:
   incremental: true
   # Operator console: concise stage/save-id progress and actionable warnings.
@@ -19,17 +24,9 @@ processing:
   spurious_extensions: [".dpp", ".zip", ".txt", ".json", ".7z", ".tar"]
   # Quarantine is auditable retained evidence, not disposable cache.
   quarantine_dir: "quarantine"
-  # Current caches live outside the raw-data tree. These names are retained so
-  # historical working trees are never reinterpreted as Licel acquisition data.
-  raw_scan_ignore_dirs: ["openmeteo_cache", "wyoming_cache"]
+  raw_scan_ignore_dirs: []
 
-directories:
-  raw_data: "01-data"
-  processed_data: "02-processed_data"
-  log_dir: "logs"
-
-# Productive LIBIDS Level 0 processing policy. These values are required
-# explicitly before discovery/processing; code must not invent replacements.
+# LIBIDS Level 0 processing.
 level0:
   acquisition_qa:
     laser_shot_tolerance_fraction: 0.002
@@ -41,8 +38,7 @@ level0:
     # invented temperature/pressure pair. Use "fail" for a strict run.
     missing_policy: "nan"
 
-# Productive LIPANCORA scientific/instrument-processing recipe. These values are
-# required explicitly; Level 1 code must not provide semantic defaults.
+# LIPANCORA Level 1 scientific/instrument-processing recipe. 
 level1:
   background:
     start_altitude_m: 29000.0
@@ -59,8 +55,8 @@ level1:
     smooth_bins: 15
 
   # Historical files may contain channels for which no traceable instrument
-  # calibration survives in the repository. This policy keeps those files
-  # processable without pretending that a measured calibration exists.
+  # calibration can be found. This keeps those files processable
+  # without pretending that a measured calibration exists.
   missing_channel_calibration:
     policy: "neutral_with_warning"
     neutral_values:
@@ -69,8 +65,6 @@ level1:
       background_offset: 0.0
 
   atmosphere:
-    # Source order is scientific policy. Exhaustion without a usable source is
-    # a processing failure unless a later source is explicitly listed here.
     source_priority: ["radiosonde", "era5", "ussa76"]
 
     # External profiles rarely span the complete lidar altitude grid. The
@@ -121,7 +115,7 @@ visualization:
     generate_scattering_ratio_qa: false
     generate_kfs_qa: true
 
-# Level 2 scientific retrieval recipe. This is the sole productive path.
+# LEBEAR Level 2 scientific retrieval processing.
 inversion:
   wavelengths_to_process: [355, 532]
   block_average_minutes: 20
@@ -134,21 +128,16 @@ inversion:
     save_uncertainty: true
     save_quality_flags: true
 
-  # Routine default. Dedicated convergence/sensitivity studies may raise this.
   monte_carlo_iterations: 150
   random_seed: 143
   # The retrieval propagates native-signal noise through the effective
   # boundary estimator and reference re-selection. Keep an additional random
   # beta_ref term at zero unless independent calibration evidence justifies it.
   beta_ref_relative_std: 0.0
-  # Nominal boundary condition remains f=0. Non-zero f values are explicit
-  # outer systematic sensitivity scenarios configured below.
   aerosol_ref_fraction: 0.0
   min_lidar_ratio_sr: 10.0
   allow_negative_aerosol: false
 
-  # Native-grid Rayleigh QA window. One kilometer is retained as a configurable
-  # precision-versus-vertical-mixing compromise pending a 0.5/1.0/1.5-km study.
   molecular_fit:
     ref_alt_min_m: 5000.0
     ref_alt_max_m: 25000.0
@@ -157,17 +146,11 @@ inversion:
     max_relative_variance: 0.50
     min_valid_fraction: 0.50
 
-  # Ordered reference domains. The 10-15 km primary range is attempted first;
-  # 5-20 km is an explicit availability fallback. Within the first supported
-  # range, relative_slope + relative_variance is minimized. Range altitude is a
-  # search policy, never an aerosol-free/purity claim.
   retrieval:
     reference_search_ranges_m:
       - [10000.0, 15000.0]
       - [5000.0, 20000.0]
     path_start_altitude_m: 600.0
-    # Routine product is nominal f=0. Additional values remain configurable for
-    # dedicated boundary-sensitivity runs.
     residual_aerosol_fractions: [0.0]
     uncertainty_mode: "independent"
     progressive_grid_schedule:
@@ -193,8 +176,7 @@ inversion:
     allow_single_channel_fallback: true
     single_channel_priority: "photon_counting"
 
-  # Cloud screening is an explicit policy. While disabled, no detector values
-  # are interpreted. Enabling it requires the complete detector configuration.
+  # not available
   cloud_screening:
     enabled: false
 
