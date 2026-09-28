@@ -9,34 +9,6 @@ station:
     station_altitude_m: 766.0
   lidar_geometry:
     pointing_angle_deg_from_zenith: 0.0
-  overlap:
-    # Diagnostic-only first-order geometry. These values are intentionally
-    # explicit estimates/assumptions pending an experimental overlap campaign.
-    # They must not be promoted to a productive signal correction as written.
-    model: "coaxial_uniform_disk_geometric_v1"
-    status: "estimated_unvalidated"
-    correction_policy: "diagnostic_only_no_correction"
-    receiver:
-      telescope_diameter_m: 0.30
-      focal_length_m: 1.50
-      field_stop_diameter_m: 0.001
-      field_stop_status: "experimental_pending"
-      field_of_view_full_angle_mrad: 0.78
-      field_of_view_status: "experimental_pending"
-    transmitter_fallback:
-      beam_diameter_m: 0.04
-      beam_diameter_status: "experimental_pending"
-      divergence_full_angle_mrad: 0.10
-      divergence_status: "upper_bound_unverified_used_as_model_value"
-      axis_separation_m: 0.0
-      axis_tilt_mrad: 0.0
-      alignment_status: "assumed_coaxial_parallel"
-    reported_full_overlap:
-      altitude_m_agl: 500.0
-      status: "reported_unverified"
-      source: "experimental overlap campaign pending"
-    provenance:
-      source: "SPU"
   radiosonde:
     station_id: "83779"
     station_name: "SBMT Marte Civ"
@@ -88,6 +60,32 @@ station:
         "10": 33.44
         "11": 30.83
         "12": 41.43
+
+  overlap:
+    model: "coaxial_uniform_disk_geometric_v1"
+    status: "estimated_unvalidated"
+    correction_policy: "diagnostic_only_no_correction"
+    receiver:
+      telescope_diameter_m: 0.30
+      focal_length_m: 1.50
+      field_stop_diameter_m: 0.001
+      field_stop_status: "experimental_pending"
+      field_of_view_full_angle_mrad: 0.78
+      field_of_view_status: "experimental_pending"
+    transmitter_fallback:
+      beam_diameter_m: 0.026
+      beam_diameter_status: "experimental_pending"
+      divergence_full_angle_mrad: 0.10
+      divergence_status: "upper_bound_unverified_used_as_model_value"
+      axis_separation_m: 0.0
+      axis_tilt_mrad: 0.0
+      alignment_status: "assumed_coaxial_parallel"
+    reported_full_overlap:
+      altitude_m_agl: 500.0
+      status: "reported_unverified"
+      source: "experimental overlap campaign pending"
+    provenance:
+      source: "SPU"
 
 # SCC policy is station/instrument metadata, not a processing fallback.
 # fixed_value=1 tells ELPP to use the fixed lidar ratio stored in the SCC database.
@@ -286,8 +284,6 @@ profiles:
     raman_detection:
       status: "partial_current_metadata"
       provenance:
-        current_identity_source: "Silva et al. 2025, Atmosphere 16(9), 1022, doi:10.3390/atmos16091022"
-        historical_receiver_source: "SPU Lidar Station instruments page; historical spectral values not promoted to MerionC"
       channels:
         "387":
           companion_elastic_nm: 355
