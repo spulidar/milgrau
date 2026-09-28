@@ -1,0 +1,338 @@
+station:
+  id: "spu"
+  name: "SPU-Lidar"
+  institution: "IPEN/USP"
+  timezone: "America/Sao_Paulo"
+  site:
+    latitude: -23.5607
+    longitude: -46.7398
+    station_altitude_m: 766.0
+  lidar_geometry:
+    pointing_angle_deg_from_zenith: 0.0
+  overlap:
+    # Diagnostic-only first-order geometry. These values are intentionally
+    # explicit estimates/assumptions pending an experimental overlap campaign.
+    # They must not be promoted to a productive signal correction as written.
+    model: "coaxial_uniform_disk_geometric_v1"
+    status: "estimated_unvalidated"
+    correction_policy: "diagnostic_only_no_correction"
+    receiver:
+      telescope_diameter_m: 0.30
+      focal_length_m: 1.50
+      field_stop_diameter_m: 0.001
+      field_stop_status: "experimental_pending"
+      field_of_view_full_angle_mrad: 0.78
+      field_of_view_status: "experimental_pending"
+    transmitter_fallback:
+      beam_diameter_m: 0.04
+      beam_diameter_status: "experimental_pending"
+      divergence_full_angle_mrad: 0.10
+      divergence_status: "upper_bound_unverified_used_as_model_value"
+      axis_separation_m: 0.0
+      axis_tilt_mrad: 0.0
+      alignment_status: "assumed_coaxial_parallel"
+    reported_full_overlap:
+      altitude_m_agl: 500.0
+      status: "reported_unverified"
+      source: "experimental overlap campaign pending"
+    provenance:
+      source: "SPU"
+  radiosonde:
+    station_id: "83779"
+    station_name: "SBMT Marte Civ"
+
+  lidar_ratio_climatology:
+    provenance:
+      source: "climatology"
+    std_sr:
+      "355": 15.0
+      "532": 10.0
+      "1064": 10.0
+    monthly_sr:
+      "355":
+        "01": 75.95
+        "02": 116.08
+        "03": 93.00
+        "04": 96.05
+        "05": 81.16
+        "06": 78.26
+        "07": 78.21
+        "08": 81.14
+        "09": 84.69
+        "10": 84.87
+        "11": 91.06
+        "12": 99.35
+      "532":
+        "01": 58.11
+        "02": 66.06
+        "03": 61.93
+        "04": 69.50
+        "05": 62.07
+        "06": 61.73
+        "07": 58.88
+        "08": 55.05
+        "09": 55.78
+        "10": 57.83
+        "11": 57.11
+        "12": 75.17
+      "1064":
+        "01": 35.94
+        "02": 25.52
+        "03": 35.37
+        "04": 40.76
+        "05": 39.81
+        "06": 43.76
+        "07": 36.92
+        "08": 30.85
+        "09": 29.74
+        "10": 33.44
+        "11": 30.83
+        "12": 41.43
+
+# SCC policy is station/instrument metadata, not a processing fallback.
+# fixed_value=1 tells ELPP to use the fixed lidar ratio stored in the SCC database.
+# When a Raman companion wavelength is present, LR_Input is left undefined for
+# the elastic wavelength. A concrete day/night SCC configuration may still
+# provide its own explicit lr_input mapping.
+scc_policy:
+  lr_input:
+    fixed_value: 1
+    raman_companions_nm:
+      "355": [387, 408]
+      "532": [530, 607]
+      "1064": []
+
+calibrations:
+  spu-channel-corrections-v1:
+    provenance:
+      source: "experimental"
+    channels:
+      "355.PC":
+        detector_mode: "photon_counting"
+        deadtime_us: 0.0020
+        bin_shift_bins: -2
+        background_offset: 0.0005
+        saturation: {status: "not_characterized"}
+      "355.AN":
+        detector_mode: "analog"
+        deadtime_us: 0.0000
+        bin_shift_bins: -11
+        background_offset: 0.0000
+      "387.PC":
+        detector_mode: "photon_counting"
+        deadtime_us: 0.0000
+        bin_shift_bins: -2
+        background_offset: 0.0000
+        saturation: {status: "not_characterized"}
+      "387.AN":
+        detector_mode: "analog"
+        deadtime_us: 0.0000
+        bin_shift_bins: 8
+        background_offset: 0.0000
+      "408.PC":
+        detector_mode: "photon_counting"
+        deadtime_us: 0.0000
+        bin_shift_bins: -2
+        background_offset: 0.0000
+        saturation: {status: "not_characterized"}
+      "408.AN":
+        detector_mode: "analog"
+        deadtime_us: 0.0000
+        bin_shift_bins: 8
+        background_offset: 0.0000
+      "530.PC":
+        detector_mode: "photon_counting"
+        deadtime_us: 0.0000
+        bin_shift_bins: -2
+        background_offset: 0.0000
+        saturation: {status: "not_characterized"}
+      "530.AN":
+        detector_mode: "analog"
+        deadtime_us: 0.0000
+        bin_shift_bins: 7
+        background_offset: 0.0000
+      "532.PC":
+        detector_mode: "photon_counting"
+        deadtime_us: 0.0035
+        bin_shift_bins: -3
+        background_offset: 0.0000
+        saturation: {status: "not_characterized"}
+      "532.AN":
+        detector_mode: "analog"
+        deadtime_us: 0.0000
+        bin_shift_bins: -12
+        background_offset: 0.0000
+      "1064.PC":
+        detector_mode: "photon_counting"
+        deadtime_us: 0.0000
+        bin_shift_bins: 0
+        background_offset: 0.0000
+        saturation: {status: "not_characterized"}
+      "1064.AN":
+        detector_mode: "analog"
+        deadtime_us: 0.0000
+        bin_shift_bins: 1
+        background_offset: 0.0000
+
+profiles:
+  - id: "spu-legacy"
+    # Historical measurements before the first SCC configuration. These data
+    # remain usable by MILGRAU L0/L1/L2 but are not SCC-compatible.
+    valid_from: "2000-01-01"
+    valid_to: "2017-03-07"
+    calibration_id: "spu-channel-corrections-v1"
+    site:
+      station_altitude_m: 766.0
+
+  - id: "spu-apel-2017"
+    valid_from: "2017-03-08"
+    valid_to: "2018-03-18"
+    calibration_id: "spu-channel-corrections-v1"
+    site:
+      station_altitude_m: 766.0
+    laser:
+      manufacturer: "Quantel Brillant"
+      model: "B -10 Hz"
+      repetition_rate_hz: 10
+    scc:
+      day:
+        configuration_id: 248
+        name: "apel config - Day"
+        channels:
+          "532.PC": 716
+          "532.AN": 722
+          "355.PC": 736
+          "355.AN": 737
+          "607.AN": 739
+          "607.PC": 741
+          "387.PC": 748
+          "387.AN": 749
+          "1064.AN": 934
+          "1064.PC": 935
+          "408.AN": 1446
+          "408.PC": 1447
+      night:
+        configuration_id: 294
+        name: "apel config - Night"
+        channels:
+          "532.PC": 716
+          "532.AN": 722
+          "355.PC": 736
+          "355.AN": 737
+          "607.AN": 739
+          "607.PC": 741
+          "387.PC": 748
+          "387.AN": 749
+          "1064.AN": 934
+          "1064.PC": 935
+          "408.AN": 1446
+          "408.PC": 1447
+
+  - id: "spu-raman-2018"
+    valid_from: "2018-03-19"
+    valid_to: "2024-09-09"
+    calibration_id: "spu-channel-corrections-v1"
+    site:
+      station_altitude_m: 766.0
+    laser:
+      manufacturer: "Quantel Brillant"
+      model: "B -10 Hz"
+      repetition_rate_hz: 10
+    scc:
+      day:
+        configuration_id: 565
+        name: "Sao Paolo Lidar - Daytime-19March2018"
+        channels:
+          "1064.AN": 934
+          "532.AN": 1593
+          "355.AN": 1594
+          "530.AN": 1595
+          "387.AN": 1596
+      night:
+        configuration_id: 484
+        name: "SPU-Lidar - Nigthtime19March2018"
+        channels:
+          "532.PC": 716
+          "532.AN": 722
+          "355.PC": 736
+          "355.AN": 737
+          "387.PC": 748
+          "387.AN": 749
+          "1064.AN": 934
+          "1064.PC": 935
+          "408.AN": 1446
+          "408.PC": 1447
+          "530.PC": 1557
+          "530.AN": 1558
+
+  - id: "spu-merionc-2024"
+    valid_from: "2024-09-10"
+    valid_to: null
+    calibration_id: "spu-channel-corrections-v1"
+    site:
+      station_altitude_m: 740.0
+    laser:
+      manufacturer: "Quantel"
+      model: "MerionC"
+      repetition_rate_hz: 100
+      overlap_geometry:
+        beam_diameter_m: 0.04
+        beam_diameter_status: "estimated_unverified"
+        divergence_full_angle_mrad: 0.10
+        divergence_status: "upper_bound_unverified_used_as_model_value"
+        axis_separation_m: 0.0
+        axis_tilt_mrad: 0.0
+        alignment_status: "assumed_coaxial_parallel"
+    raman_detection:
+      status: "partial_current_metadata"
+      provenance:
+        current_identity_source: "Silva et al. 2025, Atmosphere 16(9), 1022, doi:10.3390/atmos16091022"
+        historical_receiver_source: "SPU Lidar Station instruments page; historical spectral values not promoted to MerionC"
+      channels:
+        "387":
+          companion_elastic_nm: 355
+          species: "N2"
+          scattering_type: "vibrational_raman"
+          nominal_detection_wavelength_nm: 387
+          scc_night_channel_ids: {AN: 4076, PC: 4077}
+          current_spectral_response:
+            status: "current_instrument_evidence_required"
+        "408":
+          companion_elastic_nm: 355
+          species: "H2O"
+          scattering_type: "vibrational_raman"
+          nominal_detection_wavelength_nm: 408
+          scc_mapping_status: "published_current_identity_not_exposed_in_scc_1046"
+          current_spectral_response:
+            status: "current_instrument_evidence_required"
+        "530":
+          companion_elastic_nm: 532
+          species: "N2"
+          scattering_type: "rotational_raman"
+          nominal_detection_wavelength_nm: 530
+          scc_night_channel_ids: {AN: 4075, PC: 4074}
+          current_spectral_response:
+            status: "current_instrument_evidence_required"
+    scc:
+      day:
+        configuration_id: 1047
+        name: "Sao Paolo Lidar - Daytime-10September2024"
+        channels:
+          "532.AN": 4069
+          "532.PC": 4070
+          "1064.AN": 4071
+          "355.PC": 4072
+          "355.AN": 4073
+      night:
+        configuration_id: 1046
+        name: "SPU-Lidar - Nigthtime-10September2024"
+        channels:
+          "532.AN": 4069
+          "532.PC": 4070
+          "1064.AN": 4071
+          "355.PC": 4072
+          "355.AN": 4073
+          "530.PC": 4074
+          "530.AN": 4075
+          "387.AN": 4076
+          "387.PC": 4077

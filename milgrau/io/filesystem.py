@@ -1,0 +1,333 @@
+"""Filesystem helpers for MILGRAU raw-data discovery and safe sanitization."""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import re
+import shutil
+from collections.abc import Iterable
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from enum import StrEnum
+from hashlib import sha256
+from pathlib import Path
+from typing import Optional
+
+from milgrau.operations import ExecutionResult, ExecutionSummary
+
+
+class RawFileKind(StrEnum):
+    """Read-only classification assigned during raw-data discovery."""
+
+    MEASUREMENT = "measurements"
+    DARK_CURRENT = "dark_current"
+    SPURIOUS = "spurious"
+
+
+@dataclass(frozen=True, slots=True)
+class RawFileCandidate:
+    """One path and its validation/classification result."""
+
+    path: Path
+    kind: RawFileKind
+    reason: str
+
+
+def ensure_directories(*directories: str | Path) -> None:
+    """Create one or more directories if they do not already exist."""
+    for directory in directories:
+        Path(directory).mkdir(parents=True, exist_ok=True)
+
+
+def _file_sha256(path: Path) -> str:
+    digest = sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _reason_slug(reason: str) -> str:
+    text = str(reason).strip().lower()
+    if not text:
+        raise ValueError("Quarantine reason must be a non-empty string.")
+    slug = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
+    return slug or "unspecified"
+
+
+def _as_utc_datetime(value: datetime | None) -> datetime:
+    if value is None:
+        return datetime.now(timezone.utc)
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _quarantine_bucket(quarantine_root: Path, when_utc: datetime, reason: str) -> Path:
+    """Return YYYY/MM/DD/reason retained-evidence bucket."""
+    return (
+        quarantine_root
+        / when_utc.strftime("%Y")
+        / when_utc.strftime("%m")
+        / when_utc.strftime("%d")
+        / _reason_slug(reason)
+    )
+
+
+def _quarantine_destination(path: Path, quarantine_bucket: Path) -> Path:
+    """Return a collision-safe destination preserving the original filename."""
+    destination = quarantine_bucket / path.name
+    if not destination.exists():
+        return destination
+    source_digest = sha256(str(path.absolute()).encode("utf-8")).hexdigest()[:12]
+    destination = quarantine_bucket / f"{path.stem}_{source_digest}{path.suffix}"
+    collision_index = 1
+    while destination.exists():
+        destination = quarantine_bucket / f"{path.stem}_{source_digest}_{collision_index}{path.suffix}"
+        collision_index += 1
+    return destination
+
+
+def _quarantine_sidecar_path(destination: Path) -> Path:
+    return destination.with_name(f"{destination.name}.json")
+
+
+def quarantine_file(
+    path: str | Path,
+    quarantine_root: str | Path,
+    logger: Optional[logging.Logger] = None,
+    *,
+    reason: str,
+    stage: str = "filesystem",
+    measurement_id: str | None = None,
+    quarantined_at_utc: datetime | None = None,
+) -> ExecutionResult:
+    """Explicitly move one file into an auditable retained-evidence quarantine.
+
+    Quarantine is never triggered by raw discovery. The caller must supply a
+    reason. Each retained file receives a JSON sidecar with origin, timestamp,
+    content hash, size, stage, and optional measurement identifier.
+    """
+    source = Path(path)
+    quarantine = Path(quarantine_root)
+    reason_text = str(reason).strip()
+    stage_text = str(stage).strip()
+    if not reason_text:
+        raise ValueError("Quarantine reason must be a non-empty string.")
+    if not stage_text:
+        raise ValueError("Quarantine stage must be a non-empty string.")
+
+    if not source.exists():
+        result = ExecutionResult.skipped("filesystem.quarantine", "Source file is already absent", input_path=source)
+    elif not source.is_file():
+        result = ExecutionResult.failure(
+            "filesystem.quarantine",
+            "Only regular files can be quarantined",
+            input_path=source,
+            cause=IsADirectoryError(source),
+        )
+    else:
+        when_utc = _as_utc_datetime(quarantined_at_utc)
+        bucket = _quarantine_bucket(quarantine, when_utc, reason_text)
+        destination = _quarantine_destination(source, bucket)
+        sidecar = _quarantine_sidecar_path(destination)
+        try:
+            source_hash = _file_sha256(source)
+            source_size = int(source.stat().st_size)
+            original_path = str(source.absolute())
+            ensure_directories(bucket)
+            shutil.move(str(source), str(destination))
+            metadata = {
+                "schema_version": 1,
+                "quarantined_at_utc": when_utc.isoformat(),
+                "reason": reason_text,
+                "reason_slug": _reason_slug(reason_text),
+                "stage": stage_text,
+                "original_path": original_path,
+                "source_filename": source.name,
+                "quarantined_filename": destination.name,
+                "sha256": source_hash,
+                "size_bytes": source_size,
+                "measurement_id": measurement_id,
+            }
+            sidecar.write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")
+            result = ExecutionResult.success(
+                "filesystem.quarantine",
+                "File quarantined with audit sidecar",
+                input_path=source,
+                output_path=destination,
+                metadata={
+                    "reason": reason_text,
+                    "stage": stage_text,
+                    "sha256": source_hash,
+                    "sidecar": str(sidecar),
+                    "measurement_id": measurement_id,
+                },
+            )
+        except Exception as exc:
+            result = ExecutionResult.failure(
+                "filesystem.quarantine",
+                "Could not quarantine file with audit metadata",
+                input_path=source,
+                output_path=destination,
+                cause=exc,
+                include_traceback=True,
+            )
+    if logger:
+        result.log(logger)
+    return result
+
+
+def delete_file(path: str | Path, logger: Optional[logging.Logger] = None) -> ExecutionResult:
+    """Explicitly delete one regular file; repeated calls are safe skips."""
+    target = Path(path)
+    if not target.exists():
+        result = ExecutionResult.skipped("filesystem.delete", "File is already absent", input_path=target)
+    elif not target.is_file():
+        result = ExecutionResult.failure(
+            "filesystem.delete",
+            "Only regular files can be deleted",
+            input_path=target,
+            cause=IsADirectoryError(target),
+        )
+    else:
+        try:
+            target.unlink()
+            result = ExecutionResult.success("filesystem.delete", "File deleted", input_path=target)
+        except Exception as exc:
+            result = ExecutionResult.failure(
+                "filesystem.delete",
+                "Could not delete file",
+                input_path=target,
+                cause=exc,
+                include_traceback=True,
+            )
+    if logger:
+        result.log(logger)
+    return result
+
+
+def quarantine_files(
+    paths: Iterable[str | Path],
+    quarantine_root: str | Path,
+    logger: Optional[logging.Logger] = None,
+    *,
+    reason: str,
+    stage: str = "filesystem",
+    measurement_id: str | None = None,
+    quarantined_at_utc: datetime | None = None,
+) -> ExecutionSummary:
+    """Explicitly quarantine a finite collection under one audit context."""
+    return ExecutionSummary.from_results(
+        quarantine_file(
+            path,
+            quarantine_root,
+            logger,
+            reason=reason,
+            stage=stage,
+            measurement_id=measurement_id,
+            quarantined_at_utc=quarantined_at_utc,
+        )
+        for path in paths
+    )
+
+
+def delete_files(paths: Iterable[str | Path], logger: Optional[logging.Logger] = None) -> ExecutionSummary:
+    """Explicitly delete a finite collection of regular files."""
+    return ExecutionSummary.from_results(delete_file(path, logger) for path in paths)
+
+
+def _ignored_raw_scan_dirs(raw_scan_ignore_dirs: Iterable[str], quarantine_dir: Path) -> set[str]:
+    """Return directory basenames excluded from a raw Licel tree walk."""
+    ignored = {".git", "__pycache__", quarantine_dir.name}
+    ignored.update(str(name) for name in raw_scan_ignore_dirs)
+    return ignored
+
+
+def classify_raw_file(path: str | Path, spurious_extensions: Iterable[str]) -> RawFileCandidate:
+    """Validate/classify one path without modifying it."""
+    candidate = Path(path)
+    normalized_extensions = {str(extension).lower() for extension in spurious_extensions}
+    if candidate.suffix.lower() in normalized_extensions:
+        return RawFileCandidate(
+            candidate,
+            RawFileKind.SPURIOUS,
+            f"extension {candidate.suffix.lower()} is configured as spurious",
+        )
+    if "dark" in str(candidate).lower():
+        return RawFileCandidate(candidate, RawFileKind.DARK_CURRENT, "path contains dark-current marker")
+    return RawFileCandidate(candidate, RawFileKind.MEASUREMENT, "candidate measurement file")
+
+
+def discover_raw_files(
+    datadir_name: str | Path,
+    *,
+    spurious_extensions: Iterable[str],
+    quarantine_dir: str | Path,
+    raw_scan_ignore_dirs: Iterable[str],
+    logger: Optional[logging.Logger] = None,
+) -> tuple[RawFileCandidate, ...]:
+    """Discover/classify a raw tree using only explicitly supplied policy."""
+    candidates: list[RawFileCandidate] = []
+    raw_root = Path(datadir_name)
+    quarantine = Path(quarantine_dir)
+
+    if not raw_root.exists():
+        if logger:
+            logger.error(f"Raw data directory not found: {raw_root}")
+        return ()
+
+    ignored_dirs = _ignored_raw_scan_dirs(raw_scan_ignore_dirs, quarantine)
+    try:
+        quarantine_resolved = quarantine.resolve()
+    except (OSError, RuntimeError):
+        quarantine_resolved = None
+
+    for dirpath, dirnames, files in os.walk(raw_root):
+        dirnames.sort()
+        files.sort()
+        retained_dirs: list[str] = []
+        for dirname in dirnames:
+            if dirname in ignored_dirs:
+                continue
+            if quarantine_resolved is not None:
+                try:
+                    if Path(dirpath, dirname).resolve() == quarantine_resolved:
+                        continue
+                except (OSError, RuntimeError):
+                    pass
+            retained_dirs.append(dirname)
+        dirnames[:] = retained_dirs
+
+        for file_name in files:
+            full_path = Path(dirpath) / file_name
+            candidate = classify_raw_file(full_path, spurious_extensions)
+            candidates.append(candidate)
+            if logger and candidate.kind is RawFileKind.SPURIOUS:
+                logger.info(f"  -> Spurious file detected; no action taken: {full_path}")
+
+    return tuple(candidates)
+
+
+def scan_raw_files(
+    datadir_name: str | Path,
+    *,
+    spurious_extensions: Iterable[str],
+    quarantine_dir: str | Path,
+    raw_scan_ignore_dirs: Iterable[str],
+    logger: Optional[logging.Logger] = None,
+) -> tuple[list[str], list[str]]:
+    """Return Licel candidates from a strictly read-only raw-data scan."""
+    candidates = discover_raw_files(
+        datadir_name,
+        spurious_extensions=spurious_extensions,
+        quarantine_dir=quarantine_dir,
+        raw_scan_ignore_dirs=raw_scan_ignore_dirs,
+        logger=logger,
+    )
+    licel_candidates = [candidate for candidate in candidates if candidate.kind is not RawFileKind.SPURIOUS]
+    filepath = [str(candidate.path) for candidate in licel_candidates]
+    meas_type = [candidate.kind.value for candidate in licel_candidates]
+    return filepath, meas_type

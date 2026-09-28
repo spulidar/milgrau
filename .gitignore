@@ -1,0 +1,41 @@
+# ==========================================
+# Python & Environment
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+.coverage
+coverage.xml
+htmlcov/
+.venv/
+.vscode
+.pytest_cache
+venv/
+env/
+test.py
+milgrau.egg-info/
+build/
+
+# ==========================================
+# MILGRAU Data Directories (Do NOT commit heavy data)
+# ==========================================
+01-data/
+02-processed_data/
+measurements/
+.cache/
+quarantine/
+campaign-output/
+two_sided_campaign_results/
+ql-measurements/
+
+# ==========================================
+# Logs & Temp Files
+# ==========================================
+logs/
+*.log
+*.tmp
+
+# ==========================================
+# Security & Credentials (CRITICAL)
+# ==========================================
+credentials.py

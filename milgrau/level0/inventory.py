@@ -1,0 +1,124 @@
+"""Measurement inventory construction for MILGRAU Level 0 processing."""
+
+from __future__ import annotations
+
+import logging
+
+import numpy as np
+import pandas as pd
+
+from milgrau.io.filesystem import scan_raw_files
+from milgrau.io.licel import read_licel_header
+from milgrau.io.paths import station_id
+from milgrau.level0.config import resolve_level0_config, station_timezone
+from milgrau.level0.time import classify_period, measurement_id_for_local_time
+
+
+def _initialize_association_columns(df_raw: pd.DataFrame) -> pd.DataFrame:
+    """Add dark-current association audit columns to the raw inventory."""
+    df_raw = df_raw.copy()
+    df_raw["original_meas_id"] = df_raw["meas_id"]
+    df_raw["association_method"] = np.where(
+        df_raw["meas_type"] == "measurements",
+        "measurement",
+        "same_period",
+    )
+    df_raw["dark_current_association_delta_hours"] = np.nan
+    return df_raw
+
+
+def _reassign_orphan_dark_currents(df_raw: pd.DataFrame, config: dict, logger: logging.Logger) -> pd.DataFrame:
+    """Reassign dark-current-only groups to nearby measurement groups when possible."""
+    valid_mids = df_raw.loc[df_raw["meas_type"] == "measurements", "meas_id"].unique()
+    orphan_mids = set(df_raw["meas_id"].unique()) - set(valid_mids)
+
+    if not orphan_mids:
+        return df_raw
+
+    logger.info(f"   -> Reassigning orphaned Dark Current groups: {orphan_mids} to nearest measurements...")
+    valid_df = df_raw[df_raw["meas_id"].isin(valid_mids)].copy()
+    max_hours = resolve_level0_config(config).dark_current.max_association_hours
+
+    if valid_df.empty:
+        logger.warning("   -> No measurement groups available. Dropping orphan dark-current groups from inventory.")
+        return df_raw[~df_raw["meas_id"].isin(orphan_mids)].copy()
+
+    orphan_mask = df_raw["meas_id"].isin(orphan_mids)
+    for idx, row in df_raw[orphan_mask].iterrows():
+        time_diffs = abs(valid_df["start_time_utc"] - row["start_time_utc"])
+        closest_idx = time_diffs.idxmin()
+        closest_diff_h = time_diffs.loc[closest_idx].total_seconds() / 3600.0
+
+        if closest_diff_h > max_hours:
+            logger.warning(
+                "   -> Orphan dark current not reassigned; nearest measurement "
+                f"is {closest_diff_h:.2f} h away (configured maximum {max_hours:.2f} h): {row['filepath']}"
+            )
+            continue
+
+        df_raw.at[idx, "meas_id"] = valid_df.at[closest_idx, "meas_id"]
+        df_raw.at[idx, "association_method"] = "nearest_measurement"
+        df_raw.at[idx, "dark_current_association_delta_hours"] = float(closest_diff_h)
+
+    return df_raw
+
+
+def build_measurement_inventory(
+    raw_dir: str,
+    config: dict,
+    logger: logging.Logger,
+) -> pd.DataFrame:
+    """Build the Level-0 processing inventory from raw Licel files.
+
+    Incremental skipping is intentionally handled by the LIBIDS pipeline, not by
+    this inventory layer. The inventory should report all discoverable raw files
+    and preserve dark-current association metadata for NetCDF provenance.
+    """
+    logger.info("Building raw data inventory...")
+    level0_config = resolve_level0_config(config)
+    discovery = level0_config.discovery
+
+    file_paths, file_types = scan_raw_files(
+        raw_dir,
+        spurious_extensions=discovery.spurious_extensions,
+        quarantine_dir=discovery.quarantine_dir,
+        raw_scan_ignore_dirs=discovery.raw_scan_ignore_dirs,
+        logger=logger,
+    )
+    if not file_paths:
+        return pd.DataFrame()
+
+    records = []
+    for filepath, file_type in zip(file_paths, file_types):
+        start_time_utc, stop_time, duration, n_shots, laser_freq = read_licel_header(filepath, logger=logger)
+        if start_time_utc is None:
+            continue
+
+        records.append(
+            {
+                "filepath": filepath,
+                "meas_type": file_type,
+                "start_time_utc": start_time_utc,
+                "stop_time": stop_time,
+                "nshots": n_shots,
+                "duration": duration,
+                "laser_freq": laser_freq,
+            }
+        )
+
+    df_raw = pd.DataFrame.from_records(records)
+    if df_raw.empty:
+        return df_raw
+
+    timezone = station_timezone(config)
+    df_raw["start_time_utc"] = pd.to_datetime(df_raw["start_time_utc"]).dt.tz_localize("UTC")
+    df_raw["start_time_local"] = df_raw["start_time_utc"].dt.tz_convert(timezone)
+    df_raw["period"] = df_raw["start_time_local"].apply(classify_period)
+    canonical_station_id = station_id(config)
+    df_raw["meas_id"] = df_raw["start_time_local"].apply(
+        lambda value: measurement_id_for_local_time(value, canonical_station_id)
+    )
+    df_raw = _initialize_association_columns(df_raw)
+    df_raw = _reassign_orphan_dark_currents(df_raw, config, logger)
+
+    return df_raw.reset_index(drop=True)

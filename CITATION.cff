@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Mello"
+  given-names: "Luisa"
+  orcid: "https://orcid.org/0000-0001-6390-3571"
+- family-names: "Lopes"
+  given-names: "Fábio"
+  orcid: "https://orcid.org/0000-0001-7243-7197"
+- family-names: "Yoshida"
+  given-names: "Alexandre"
+  orcid: "https://orcid.org/0000-0001-7806-2461"
+- family-names: "Cacheffo"
+  given-names: "Alexandre"
+  orcid: "https://orcid.org/0000-0002-8801-7434"
+title: "MILGRAU"
+version: "2026.9"
+doi: 10.5281/zenodo.20330638
+date-released: 2026-09-11
+url: "https://github.com/spulidar/milgrau"
+license: MIT

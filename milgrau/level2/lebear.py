@@ -1,0 +1,432 @@
+"""LEBEAR Level 2 optical inversion orchestration."""
+
+from __future__ import annotations
+
+import logging
+import os
+import tempfile
+import time
+from pathlib import Path
+from typing import Any, Mapping
+
+import numpy as np
+import xarray as xr
+
+from milgrau.incremental import output_is_current
+from milgrau.io.contracts import netcdf_satisfies_contract, validate_level1_contract
+from milgrau.io.filesystem import ensure_directories
+from milgrau.io.logging_utils import bind_log_context
+from milgrau.io.paths import level2_output_path, logging_measurement_id
+from milgrau.operations import ExecutionResult, ExecutionSummary
+from milgrau.provenance import file_sha256, write_netcdf_provenance
+from milgrau.scientific import (
+    LEVEL2_PRODUCT_SCHEMA_VERSION,
+    elastic_inversion_algorithm_metadata,
+)
+from milgrau.level2.completeness import canonical_wavelengths
+from milgrau.level2.config import (
+    get_gluing_config,
+    get_kfs_config,
+    get_kfs_mode,
+    get_lidar_ratio,
+    get_molecular_fit_config,
+    get_wavelengths_to_process,
+    incremental_enabled,
+)
+from milgrau.level2.discovery import discover_level1_files
+from milgrau.level2.gluing import gluing_selection_score_metadata
+from milgrau.level2.level2_dataset import (
+    build_level2_dataset,
+    get_retrieval_config,
+)
+from milgrau.level2.qa import generate_level2_qa, level2_qa_enabled
+from milgrau.level2.level2_schema import validate_level2_contract
+from milgrau.level2.time_window import subset_level1_time_window
+
+
+def level2_output_is_current(
+    nc_file: str | Path,
+    output_path: str | Path,
+    config: Mapping[str, Any],
+    *,
+    start_utc: str | None = None,
+    stop_utc: str | None = None,
+    output_tag: str | None = None,
+) -> bool:
+    """Return whether one Level 2 output is intact and current."""
+    del start_utc, stop_utc, output_tag
+    output = Path(output_path)
+    if not output.is_file():
+        return False
+    requested = list(canonical_wavelengths(get_wavelengths_to_process(config)))
+    expected_algorithm_metadata = elastic_inversion_algorithm_metadata(
+        get_kfs_mode(config)
+    )
+    expected_gluing_metadata = gluing_selection_score_metadata()
+    try:
+        source_level1_sha256 = file_sha256(nc_file)
+        with xr.open_dataset(output) as ds:
+            validate_level2_contract(ds)
+            if (
+                str(ds.attrs.get("level2_product_schema_version", ""))
+                != LEVEL2_PRODUCT_SCHEMA_VERSION
+                or str(ds.attrs.get("source_level1_sha256", ""))
+                != source_level1_sha256
+                or str(ds.attrs.get("product_status", "")) not in {"success", "partial"}
+                or "requested_wavelengths" not in ds
+            ):
+                return False
+            if any(
+                str(ds.attrs.get(key, "")) != str(value)
+                for key, value in expected_algorithm_metadata.items()
+            ):
+                return False
+            if any(
+                str(ds.attrs.get(key, "")) != str(value)
+                for key, value in expected_gluing_metadata.items()
+            ):
+                return False
+            requested_written = sorted(
+                int(value)
+                for value in np.asarray(ds["requested_wavelengths"].values).tolist()
+            )
+            if requested_written != requested:
+                return False
+    except Exception:
+        return False
+    return output_is_current(
+        output,
+        [nc_file],
+        config=config,
+        integrity_check=lambda path: netcdf_satisfies_contract(
+            path, validate_level2_contract
+        ),
+    )
+
+
+def _write_level2_atomically(
+    ds: xr.Dataset,
+    output_path: Path,
+    encoding: Mapping[str, Mapping[str, int | bool]],
+) -> None:
+    """Write beside the destination and atomically replace it only after success."""
+    ensure_directories(output_path.parent)
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=output_path.parent,
+        prefix=f".{output_path.name}.",
+        suffix=".tmp",
+    )
+    os.close(descriptor)
+    temporary_path = Path(temporary_name)
+    try:
+        ds.to_netcdf(temporary_path, encoding=dict(encoding))
+        os.replace(temporary_path, output_path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+def _lidar_ratio_source(config: Mapping[str, Any]) -> str:
+    """Return a readable description of the authoritative LR recipe source."""
+    catalog = config.get("_station_catalog")
+    if isinstance(catalog, Mapping):
+        station = catalog.get("station")
+        if isinstance(station, Mapping) and isinstance(
+            station.get("lidar_ratio_climatology"), Mapping
+        ):
+            filename = str(config.get("_station_config_file", "station.yaml"))
+            return f"{filename}: station.lidar_ratio_climatology"
+    filename = Path(str(config.get("_config_file", "config.yaml"))).name
+    return f"{filename}: inversion.lidar_ratios_sr"
+
+
+def _wavelength_values(ds_l2: xr.Dataset, name: str) -> list[int]:
+    return [int(value) for value in np.asarray(ds_l2[name].values).tolist()]
+
+
+def _product_execution_metadata(ds_l2: xr.Dataset) -> dict[str, Any]:
+    """Return operational metadata using JSON-scalar values only."""
+    requested = _wavelength_values(ds_l2, "requested_wavelengths")
+    processed = _wavelength_values(ds_l2, "processed_wavelengths")
+    failed = _wavelength_values(ds_l2, "failed_wavelengths")
+    return {
+        "requested_wavelengths": ",".join(str(value) for value in requested),
+        "processed_wavelengths": ",".join(str(value) for value in processed),
+        "failed_wavelengths": ",".join(str(value) for value in failed),
+        "requested_wavelength_count": len(requested),
+        "processed_wavelength_count": len(processed),
+        "failed_wavelength_count": len(failed),
+        "product_completeness": str(ds_l2.attrs.get("product_completeness", "")),
+        "product_status": str(ds_l2.attrs.get("product_status", "")),
+    }
+
+
+def process_single_level1_file(
+    nc_file: str | Path,
+    config: Mapping[str, Any],
+    logger: logging.Logger,
+    start_utc: str | None = None,
+    stop_utc: str | None = None,
+    output_tag: str | None = None,
+) -> ExecutionSummary:
+    """Generate one productive Level 2 product."""
+    nc_path = Path(nc_file)
+    measurement_id = logging_measurement_id(nc_path)
+    file_logger = bind_log_context(logger, measurement_id=measurement_id)
+    started_at = time.perf_counter()
+    output_path: Path | None = None
+    stage = "level2.ingestion"
+    source_provenance: dict[str, Any] = {}
+    source_level1_sha256 = ""
+    kfs_cfg: dict[str, Any] = {}
+    try:
+        source_level1_sha256 = file_sha256(nc_path)
+        with xr.open_dataset(nc_path, cache=False) as ds_source:
+            source_provenance = dict(ds_source.attrs)
+            stage = "level2.validation.input"
+            validate_level1_contract(ds_source)
+            stage = "level2.time_window"
+            ds_l1, inferred_output_tag = subset_level1_time_window(
+                ds_source, start_utc, stop_utc
+            )
+            if output_tag is None:
+                output_tag = inferred_output_tag
+
+            stage = "level2.configuration"
+            wavelengths = canonical_wavelengths(get_wavelengths_to_process(config))
+            integration_mode = get_kfs_mode(config)
+            kfs_cfg = get_kfs_config(config)
+            get_gluing_config(config)
+            get_molecular_fit_config(config)
+            retrieval_cfg = get_retrieval_config(config)
+            for wavelength in wavelengths:
+                get_lidar_ratio(config, wavelength, ds_l1["time"].values[0])
+            bind_log_context(file_logger, stage="start").info(
+                "schema=%s integration=%s wavelengths=%s reference_ranges=%s",
+                LEVEL2_PRODUCT_SCHEMA_VERSION,
+                integration_mode,
+                ",".join(str(value) for value in wavelengths),
+                ",".join(
+                    f"{lower / 1000.0:g}-{upper / 1000.0:g}km"
+                    for lower, upper in retrieval_cfg.reference_search_ranges_m
+                ),
+            )
+
+            altitude_m = np.asarray(ds_l1["altitude"].values, dtype=np.float64)
+            if np.nanmax(altitude_m) <= 100.0:
+                altitude_m = altitude_m * 1000.0
+
+            stage = "level2.retrieval"
+            ds_l2 = build_level2_dataset(
+                ds_l1,
+                altitude_m,
+                nc_path,
+                config,
+                file_logger,
+            )
+            stage = "level2.validation.output"
+            validate_level2_contract(ds_l2)
+
+        stage = "level2.write"
+        output_path = level2_output_path(nc_path, variant_tag=output_tag)
+        encoding = {
+            var: {"zlib": True, "complevel": 4}
+            for var in ds_l2.data_vars
+            if ds_l2[var].ndim > 0 and ds_l2[var].dtype.kind not in {"O", "S", "U"}
+        }
+        _write_level2_atomically(ds_l2, output_path, encoding)
+        provenance_attrs = write_netcdf_provenance(
+            output_path,
+            config,
+            source_attrs=source_provenance,
+            extra_attrs={
+                "source_level1_sha256": source_level1_sha256,
+                "level2_product_schema_version": LEVEL2_PRODUCT_SCHEMA_VERSION,
+                "monte_carlo_random_seed": int(kfs_cfg["random_seed"]),
+                "monte_carlo_iterations": int(kfs_cfg["monte_carlo_iterations"]),
+                "kfs_reference_boundary_model": "beta_total_ref=beta_mol_ref*(1+f)",
+                "kfs_nominal_aerosol_ref_fraction": 0.0,
+                "kfs_beta_ref_relative_std": float(kfs_cfg["beta_ref_relative_std"]),
+                "kfs_min_lidar_ratio_sr": float(kfs_cfg["min_lidar_ratio_sr"]),
+                "kfs_allow_negative_aerosol": int(
+                    bool(kfs_cfg["allow_negative_aerosol"])
+                ),
+                "integration_mode": str(kfs_cfg["kfs_mode"]),
+                "lidar_ratio_source": _lidar_ratio_source(config),
+                **gluing_selection_score_metadata(),
+            },
+        )
+        bind_log_context(file_logger, stage="provenance").debug(
+            "MILGRAU=%s | schema=%s | source_sha256=%s | MC seed=%s | LR=%s",
+            provenance_attrs.get("software_version", "-"),
+            provenance_attrs.get("level2_product_schema_version", "-"),
+            str(provenance_attrs.get("source_level1_sha256", "-"))[:12],
+            provenance_attrs.get("monte_carlo_random_seed", "-"),
+            provenance_attrs.get("lidar_ratio_source", "-"),
+        )
+
+        duration = time.perf_counter() - started_at
+        failed_wavelengths = _wavelength_values(ds_l2, "failed_wavelengths")
+        processed_wavelengths = _wavelength_values(ds_l2, "processed_wavelengths")
+        metadata = {
+            "pipeline": "L2",
+            "measurement_id": measurement_id,
+            **_product_execution_metadata(ds_l2),
+        }
+        if failed_wavelengths:
+            bind_log_context(file_logger, stage="done").warning(
+                "partial | failed=%s | %s | %.1f s",
+                ",".join(str(value) for value in failed_wavelengths),
+                output_path.name,
+                duration,
+            )
+            product_results = [
+                ExecutionResult.success(
+                    "level2.write",
+                    "Partial Level 2 written atomically",
+                    input_path=nc_path,
+                    output_path=output_path,
+                    duration_seconds=duration,
+                    metadata=metadata,
+                )
+            ]
+        else:
+            bind_log_context(file_logger, stage="done").info(
+                "complete | wavelengths=%d | %s | %.1f s",
+                len(processed_wavelengths),
+                output_path.name,
+                duration,
+            )
+            product_results = [
+                ExecutionResult.success(
+                    "level2.complete",
+                    "Complete Level 2 generated",
+                    input_path=nc_path,
+                    output_path=output_path,
+                    duration_seconds=duration,
+                    metadata=metadata,
+                )
+            ]
+
+        if level2_qa_enabled(config):
+            qa_result = generate_level2_qa(
+                nc_path,
+                output_path,
+                config,
+                bind_log_context(file_logger, stage="qa"),
+            )
+        else:
+            qa_result = ExecutionResult.skipped(
+                "level2.qa",
+                "Level 2 QA disabled by configuration",
+                input_path=output_path,
+                output_path=output_path.parent / "qa",
+                metadata={"pipeline": "L2", "measurement_id": measurement_id},
+            )
+        if qa_result.status.is_failure:
+            bind_log_context(file_logger, stage="qa").warning(
+                "%s | %s",
+                qa_result.message,
+                qa_result.cause or "unknown QA failure",
+            )
+        else:
+            bind_log_context(file_logger, stage="qa").info(
+                "%s | %.1f s",
+                qa_result.message,
+                0.0 if qa_result.duration_seconds is None else qa_result.duration_seconds,
+            )
+        return ExecutionSummary.from_results([*product_results, qa_result])
+    except Exception as exc:
+        fatal_stages = {
+            "level2.ingestion",
+            "level2.validation.input",
+            "level2.time_window",
+            "level2.configuration",
+            "level2.dataset",
+            "level2.validation.output",
+            "level2.write",
+        }
+        bind_log_context(file_logger, stage=stage.removeprefix("level2.")).error(
+            "processing failed: %s", exc
+        )
+        file_logger.debug("Level 2 failure traceback", exc_info=True)
+        return ExecutionSummary.from_results(
+            [
+                ExecutionResult.failure(
+                    stage,
+                    "Level 2 processing failed",
+                    fatal=stage in fatal_stages,
+                    input_path=nc_path,
+                    output_path=output_path,
+                    cause=exc,
+                    include_traceback=True,
+                    duration_seconds=time.perf_counter() - started_at,
+                    metadata={"pipeline": "L2", "measurement_id": measurement_id},
+                )
+            ]
+        )
+
+
+def process_level_2(config: Mapping[str, Any], logger: logging.Logger) -> ExecutionSummary:
+    """Discover Level 1 files and process them into Level 2 products."""
+    files = discover_level1_files(config)
+    if not files:
+        bind_log_context(logger, stage="discovery").warning("no Level 1 files found")
+        return ExecutionSummary.from_results(
+            [
+                ExecutionResult.skipped(
+                    "level2.discovery",
+                    "No Level 1 files found",
+                    metadata={"pipeline": "L2"},
+                )
+            ]
+        )
+
+    incremental = incremental_enabled(config)
+    files_to_process = []
+    skipped_results: list[ExecutionResult] = []
+    for file_path in files:
+        measurement_id = logging_measurement_id(file_path)
+        file_logger = bind_log_context(logger, measurement_id=measurement_id)
+        output_path = level2_output_path(file_path)
+        if incremental and level2_output_is_current(file_path, output_path, config):
+            bind_log_context(file_logger, stage="skip").info(
+                "up to date | %s", output_path.name
+            )
+            skipped_results.append(
+                ExecutionResult.skipped(
+                    "level2.incremental",
+                    "Level 2 is up to date",
+                    input_path=file_path,
+                    output_path=output_path,
+                    metadata={"pipeline": "L2", "measurement_id": measurement_id},
+                )
+            )
+            if level2_qa_enabled(config):
+                skipped_results.append(
+                    generate_level2_qa(
+                        file_path,
+                        output_path,
+                        config,
+                        bind_log_context(file_logger, stage="qa"),
+                    )
+                )
+            continue
+        files_to_process.append(file_path)
+
+    if not files_to_process:
+        bind_log_context(logger, stage="summary").info(
+            "all Level 2 products are current"
+        )
+        return ExecutionSummary.from_results(skipped_results)
+
+    bind_log_context(logger, stage="queue").info(
+        "%d files to process | %d skipped", len(files_to_process), len(skipped_results)
+    )
+    results = list(skipped_results)
+    for file_path in files_to_process:
+        measurement_id = logging_measurement_id(file_path)
+        file_summary = process_single_level1_file(
+            file_path, config, bind_log_context(logger, measurement_id=measurement_id)
+        )
+        results.extend(file_summary.results)
+    return ExecutionSummary.from_results(results)

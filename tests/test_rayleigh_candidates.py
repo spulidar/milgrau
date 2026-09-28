@@ -1,0 +1,258 @@
+"""Scientific contract tests for the auditable Rayleigh candidate catalogue."""
+
+from __future__ import annotations
+
+from dataclasses import replace
+
+import numpy as np
+import pytest
+
+from milgrau.level2.rayleigh_candidates import (
+    RayleighCandidateRejection,
+    accepted_rayleigh_candidates,
+    catalogue_rayleigh_candidates,
+    fit_rayleigh_background,
+    minimum_cost_rayleigh_candidate,
+    select_minimum_cost_accepted_candidate,
+)
+
+
+def _clean_profiles() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    altitude = np.arange(0.0, 3000.0, 100.0)
+    molecular = np.exp(-altitude / 7000.0)
+    measured = 2.5 * molecular
+    return altitude, measured, molecular
+
+
+def _catalogue(
+    measured: np.ndarray,
+    measured_error: np.ndarray | None = None,
+) -> tuple:
+    altitude, _, molecular = _clean_profiles()
+    return catalogue_rayleigh_candidates(
+        measured,
+        molecular,
+        altitude,
+        min_altitude_m=500.0,
+        max_altitude_m=2500.0,
+        window_bins=7,
+        max_relative_slope=0.08,
+        max_relative_variance=0.01,
+        min_valid_fraction=0.80,
+        measured_signal_error=measured_error,
+    )
+
+
+def test_clean_molecular_scaling_keeps_all_complete_windows_auditable_and_accepted() -> None:
+    altitude, measured, _ = _clean_profiles()
+
+    catalogue = _catalogue(measured)
+
+    assert len(catalogue) > 1
+    assert all(candidate.accepted for candidate in catalogue)
+    assert all(candidate.rejection_mask == int(RayleighCandidateRejection.NONE) for candidate in catalogue)
+    assert all(candidate.start_altitude_m >= 500.0 for candidate in catalogue)
+    assert all(candidate.stop_altitude_m <= 2500.0 for candidate in catalogue)
+    assert all(candidate.valid_fraction == 1.0 for candidate in catalogue)
+    assert all(np.isclose(candidate.calibration_factor, 2.5) for candidate in catalogue)
+    assert all(np.isclose(candidate.free_intercept, 0.0, atol=1.0e-12) for candidate in catalogue)
+    assert all(np.isnan(candidate.uncertainty_snr_median) for candidate in catalogue)
+    assert catalogue[0].center_altitude_m < catalogue[-1].center_altitude_m
+    assert altitude[catalogue[0].center_index] == catalogue[0].center_altitude_m
+
+
+def test_uncertainty_snr_is_recorded_but_not_used_as_an_unvalidated_gate() -> None:
+    _, measured, _ = _clean_profiles()
+    measured_error = measured / 2.0
+
+    catalogue = _catalogue(measured, measured_error)
+
+    assert all(candidate.accepted for candidate in catalogue)
+    assert all(np.isclose(candidate.uncertainty_snr_median, 2.0) for candidate in catalogue)
+    assert all(candidate.uncertainty_snr_valid_bins == candidate.total_bins for candidate in catalogue)
+
+
+def test_joint_weighted_fit_recovers_constant_raw_background() -> None:
+    altitude = np.arange(5000.0, 25050.0, 50.0)
+    molecular_rcs = np.exp(-altitude / 7500.0)
+    factor_truth = 3.4
+    background_truth = 2.5e-10
+    measured_rcs = factor_truth * molecular_rcs + background_truth * altitude**2
+    error = np.full_like(measured_rcs, 2.0e-3)
+
+    catalogue = catalogue_rayleigh_candidates(
+        measured_rcs,
+        molecular_rcs,
+        altitude,
+        min_altitude_m=12000.0,
+        max_altitude_m=24000.0,
+        window_bins=41,
+        max_relative_slope=0.02,
+        max_relative_variance=0.01,
+        min_valid_fraction=0.90,
+        measured_signal_error=error,
+    )
+    accepted = accepted_rayleigh_candidates(catalogue)
+
+    assert accepted
+    assert all(np.isclose(item.calibration_factor, factor_truth, rtol=1.0e-8) for item in accepted)
+    assert all(np.isclose(item.background_offset, background_truth, rtol=1.0e-8) for item in accepted)
+    assert all(np.isfinite(item.background_offset_standard_error) for item in accepted)
+
+
+def test_joint_fit_can_use_negative_noisy_bins_without_clipping_them() -> None:
+    altitude = np.arange(10000.0, 12050.0, 50.0)
+    molecular_rcs = np.exp(-altitude / 7000.0)
+    measured = 2.0 * molecular_rcs - 3.0e-9 * altitude**2
+    error = np.full_like(measured, 0.01)
+    assert np.any(measured < 0.0)
+
+    catalogue = catalogue_rayleigh_candidates(
+        measured,
+        molecular_rcs,
+        altitude,
+        min_altitude_m=10000.0,
+        max_altitude_m=12000.0,
+        window_bins=21,
+        max_relative_slope=0.02,
+        max_relative_variance=0.01,
+        min_valid_fraction=0.90,
+        measured_signal_error=error,
+    )
+
+    assert any(np.isclose(item.background_offset, -3.0e-9, rtol=1.0e-8) for item in catalogue)
+
+
+def test_broad_background_fit_resists_localized_aerosol_contamination() -> None:
+    altitude = np.arange(5000.0, 25050.0, 50.0)
+    molecular_rcs = np.exp(-altitude / 7500.0)
+    background_truth = 2.5e-10
+    measured = 3.4 * molecular_rcs + background_truth * altitude**2
+    contaminated = (altitude >= 6500.0) & (altitude <= 9000.0)
+    measured[contaminated] += molecular_rcs[contaminated]
+
+    fit = fit_rayleigh_background(
+        measured,
+        molecular_rcs,
+        altitude,
+        min_altitude_m=5000.0,
+        max_altitude_m=25000.0,
+        measured_signal_error=np.full_like(measured, 2.0e-3),
+    )
+
+    assert fit.success
+    assert fit.background_offset == pytest.approx(background_truth, rel=1.0e-5)
+    assert abs(fit.calibration_background_correlation) < 0.8
+
+
+def test_high_altitude_ratio_gradient_is_rejected_without_hiding_lower_clean_candidates() -> None:
+    altitude, measured, molecular = _clean_profiles()
+    contaminated = measured.copy()
+    high = altitude >= 1800.0
+    contaminated[high] = molecular[high] * (2.5 + 0.003 * (altitude[high] - 1800.0))
+
+    catalogue = _catalogue(contaminated)
+    accepted = accepted_rayleigh_candidates(catalogue)
+    rejected = tuple(candidate for candidate in catalogue if not candidate.accepted)
+
+    assert accepted
+    assert rejected
+    assert max(candidate.center_altitude_m for candidate in accepted) < max(
+        candidate.center_altitude_m for candidate in catalogue
+    )
+    assert any(
+        candidate.rejection_mask
+        & int(
+            RayleighCandidateRejection.EXCESS_RELATIVE_SLOPE
+            | RayleighCandidateRejection.EXCESS_RELATIVE_VARIANCE
+        )
+        for candidate in rejected
+    )
+    assert any(candidate.center_altitude_m >= 1800.0 for candidate in rejected)
+
+
+def test_missing_samples_are_recorded_as_candidate_qa_not_silently_interpolated() -> None:
+    altitude, measured, _ = _clean_profiles()
+    missing = measured.copy()
+    missing[(altitude >= 1200.0) & (altitude <= 1600.0)] = np.nan
+
+    catalogue = _catalogue(missing)
+    affected = [
+        candidate
+        for candidate in catalogue
+        if candidate.start_altitude_m <= 1400.0 <= candidate.stop_altitude_m
+    ]
+
+    assert affected
+    assert any(candidate.valid_fraction < 0.80 for candidate in affected)
+    assert any(
+        candidate.rejection_mask & int(RayleighCandidateRejection.INSUFFICIENT_VALID_FRACTION)
+        for candidate in affected
+    )
+    assert all(candidate.total_bins == 7 for candidate in catalogue)
+
+
+def test_catalogue_keeps_rejected_candidates_instead_of_returning_only_one_best_window() -> None:
+    altitude, measured, molecular = _clean_profiles()
+    modified = measured.copy()
+    modified[altitude >= 2000.0] = molecular[altitude >= 2000.0] * 8.0
+
+    catalogue = _catalogue(modified)
+    accepted = accepted_rayleigh_candidates(catalogue)
+
+    assert len(catalogue) > len(accepted)
+    assert tuple(candidate for candidate in catalogue if candidate.accepted) == accepted
+    assert [candidate.center_index for candidate in catalogue] == sorted(
+        candidate.center_index for candidate in catalogue
+    )
+
+
+def test_qa_first_ranking_never_selects_lower_cost_rejected_candidate() -> None:
+    _, measured, _ = _clean_profiles()
+    catalogue = _catalogue(measured)
+    accepted_candidate = replace(catalogue[3], diagnostic_cost=0.20)
+    rejected_candidate = replace(
+        catalogue[2],
+        diagnostic_cost=0.01,
+        rejection_mask=int(RayleighCandidateRejection.EXCESS_RELATIVE_VARIANCE),
+    )
+
+    assert minimum_cost_rayleigh_candidate((rejected_candidate, accepted_candidate)) is rejected_candidate
+    assert select_minimum_cost_accepted_candidate((rejected_candidate, accepted_candidate)) is accepted_candidate
+
+
+def test_qa_first_ranking_minimizes_historical_cost_among_passers() -> None:
+    _, measured, _ = _clean_profiles()
+    catalogue = _catalogue(measured)
+    higher_cost = replace(catalogue[1], diagnostic_cost=0.20)
+    lower_cost = replace(catalogue[5], diagnostic_cost=0.05)
+
+    selected = select_minimum_cost_accepted_candidate((higher_cost, lower_cost))
+
+    assert selected is lower_cost
+
+
+def test_qa_first_ranking_tie_is_deterministic_without_altitude_preference() -> None:
+    _, measured, _ = _clean_profiles()
+    catalogue = _catalogue(measured)
+    lower_center = replace(catalogue[2], diagnostic_cost=0.10)
+    higher_center = replace(catalogue[6], diagnostic_cost=0.10)
+
+    selected = select_minimum_cost_accepted_candidate((higher_center, lower_center))
+
+    assert selected.center_index == min(lower_center.center_index, higher_center.center_index)
+
+
+def test_qa_first_ranking_fails_explicitly_when_no_candidate_passes() -> None:
+    _, measured, _ = _clean_profiles()
+    catalogue = _catalogue(measured)
+    rejected = tuple(
+        replace(
+            candidate,
+            rejection_mask=int(RayleighCandidateRejection.EXCESS_RELATIVE_SLOPE),
+        )
+        for candidate in catalogue[:2]
+    )
+
+    with pytest.raises(ValueError, match="passes configured minimum QA"):
+        select_minimum_cost_accepted_candidate(rejected)
