@@ -15,10 +15,10 @@ from milgrau.incremental import output_is_current
 from milgrau.io.contracts import netcdf_satisfies_contract, validate_level0_contract
 from milgrau.io.logging_utils import bind_log_context
 from milgrau.io.paths import level0_output_path, level0_scc_output_path, raw_data_root
-from milgrau.io.selection import parse_input_selection, select_available_measurement_ids
+from milgrau.io.selection import parse_input_selection, select_available_session_ids
 from milgrau.level0.common import incremental_enabled
 from milgrau.level0.config import resolve_level0_config, validate_level0_config
-from milgrau.level0.inventory import build_measurement_inventory
+from milgrau.level0.inventory import build_session_inventory
 from milgrau.level0.processing import process_measurement_group
 from milgrau.level0.quality import filter_laser_shots
 from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary
@@ -29,7 +29,7 @@ def _raw_input_paths(group_df) -> list[Path]:
     return [Path(path) for path in group_df["filepath"].tolist()]
 
 
-def _resolve_expected_scc_context(meas_id: str, group_df, config: Mapping, output_path: Path) -> dict | None:
+def _resolve_expected_scc_context(session_id: str, group_df, config: Mapping, output_path: Path) -> dict | None:
     """Resolve SCC expectations from the full-channel primary Level 0."""
     if not isinstance(config.get("_station_catalog"), Mapping):
         return None
@@ -83,7 +83,7 @@ def _scc_output_satisfies_context(path: Path, context: Mapping) -> bool:
         return False
 
 
-def _level0_is_current(meas_id: str, group_df, config: dict, output_path) -> bool:
+def _level0_is_current(session_id: str, group_df, config: dict, output_path) -> bool:
     output = Path(output_path)
     inputs = _raw_input_paths(group_df)
     primary_current = output_is_current(
@@ -94,10 +94,10 @@ def _level0_is_current(meas_id: str, group_df, config: dict, output_path) -> boo
     )
     if not primary_current:
         return False
-    context = _resolve_expected_scc_context(meas_id, group_df, config, output)
+    context = _resolve_expected_scc_context(session_id, group_df, config, output)
     if not context or not (context.get("scc_available", False) and context.get("scc_export_ready", False)):
         return True
-    scc_path = level0_scc_output_path(meas_id, config)
+    scc_path = level0_scc_output_path(session_id, config)
     return output_is_current(
         scc_path,
         inputs,
@@ -112,8 +112,8 @@ def _requested_measurement_ids(values, config: dict, df_raw) -> set[str] | None:
     if selection.is_empty:
         return None
 
-    available_ids = [str(value) for value in df_raw["meas_id"].dropna().unique()]
-    selected = select_available_measurement_ids(selection, available_ids)
+    available_ids = [str(value) for value in df_raw["session_id"].dropna().unique()]
+    selected = select_available_session_ids(selection, available_ids, config)
 
     if selection.paths:
         resolved_inventory_paths = df_raw["filepath"].map(lambda value: Path(str(value)).expanduser().resolve())
@@ -124,7 +124,7 @@ def _requested_measurement_ids(values, config: dict, df_raw) -> set[str] | None:
                 )
             else:
                 mask = resolved_inventory_paths == selected_path
-            matches = set(df_raw.loc[mask, "meas_id"].astype(str))
+            matches = set(df_raw.loc[mask, "session_id"].astype(str))
             if not matches:
                 raise FileNotFoundError(
                     f"Explicit raw input {selected_path} was not found in the LIBIDS inventory."
@@ -140,16 +140,16 @@ def process_level_0(
     inputs: Sequence[str] | None = None,
     force: bool = False,
 ) -> ExecutionSummary:
-    """Run LIBIDS, optionally restricting processing to selected measurement IDs."""
+    """Run LIBIDS, optionally restricting processing to selected session IDs."""
     validate_level0_config(config)
     level0_config = resolve_level0_config(config)
     pipeline_logger = bind_log_context(logger, pipeline="L0")
     raw_dir = raw_data_root(config)
-    df_raw = build_measurement_inventory(str(raw_dir), config, pipeline_logger)
+    df_raw = build_session_inventory(str(raw_dir), config, pipeline_logger)
     if not df_raw.empty:
         requested = _requested_measurement_ids(inputs, config, df_raw)
         if requested is not None:
-            df_raw = df_raw[df_raw["meas_id"].astype(str).isin(requested)].copy()
+            df_raw = df_raw[df_raw["session_id"].astype(str).isin(requested)].copy()
     if df_raw.empty:
         bind_log_context(pipeline_logger, stage="discovery").info("no raw measurements found")
         return ExecutionSummary.from_results(
@@ -170,22 +170,22 @@ def process_level_0(
 
     incremental = incremental_enabled(config)
     results: list[ExecutionResult] = []
-    for meas_id, group_df in df_good.groupby("meas_id"):
-        group_logger = bind_log_context(pipeline_logger, measurement_id=meas_id)
-        netcdf_path = level0_output_path(meas_id, config)
-        if not force and incremental and _level0_is_current(meas_id, group_df, config, netcdf_path):
+    for session_id, group_df in df_good.groupby("session_id"):
+        group_logger = bind_log_context(pipeline_logger, measurement_id=session_id)
+        netcdf_path = level0_output_path(session_id, config)
+        if not force and incremental and _level0_is_current(session_id, group_df, config, netcdf_path):
             bind_log_context(group_logger, stage="skip").info("up to date | %s", netcdf_path.name)
-            results.append(ExecutionResult.skipped("level0.incremental", "Level 0 is up to date", output_path=netcdf_path, metadata={"pipeline": "L0", "measurement_id": meas_id}))
+            results.append(ExecutionResult.skipped("level0.incremental", "Level 0 is up to date", output_path=netcdf_path, metadata={"pipeline": "L0", "session_id": session_id}))
             continue
 
         measurement_count = int((group_df["meas_type"] == "measurements").sum())
         bind_log_context(group_logger, stage="start").info("%d raw files", measurement_count)
         try:
-            result = process_measurement_group(meas_id, group_df, config, group_logger)
+            result = process_measurement_group(session_id, group_df, config, group_logger)
             if not isinstance(result, ExecutionResult):
                 raise TypeError(f"process_measurement_group returned {type(result).__name__}; expected ExecutionResult.")
         except Exception as exc:
-            result = ExecutionResult.failure("level0.group", "unexpected group conversion error", output_path=netcdf_path, cause=exc, include_traceback=True, metadata={"pipeline": "L0", "measurement_id": meas_id})
+            result = ExecutionResult.failure("level0.group", "unexpected group conversion error", output_path=netcdf_path, cause=exc, include_traceback=True, metadata={"pipeline": "L0", "session_id": session_id})
         if result.status is ExecutionStatus.OK:
             duration = 0.0 if result.duration_seconds is None else result.duration_seconds
             bind_log_context(group_logger, stage="done").info("%s | %.1f s", netcdf_path.name, duration)
