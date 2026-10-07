@@ -21,9 +21,9 @@ from milgrau.io.paths import (
     LEVEL1_SCC_SUFFIX,
     LEVEL1_SUFFIX,
     global_mean_rcs_output_path,
-    logging_measurement_id,
+    logging_session_id,
     processed_data_root,
-    product_measurement_id,
+    product_session_id,
     quicklook_output_path,
 )
 from milgrau.operations import ExecutionResult, ExecutionSummary
@@ -197,27 +197,27 @@ def process_single_nc(
     else:
         nc_file_path, config, root_dir, logger, start_time, end_time = args
     nc_file = Path(nc_file_path)
-    measurement_id = logging_measurement_id(nc_file)
-    file_logger = bind_log_context(logger, pipeline="VIZ", measurement_id=measurement_id)
+    session_id = logging_session_id(nc_file)
+    file_logger = bind_log_context(logger, pipeline="VIZ", measurement_id=session_id)
     root_path = Path(root_dir)
     started_at = time.perf_counter()
     output_folder: Path | None = None
     stage = "visualization.initialize"
     try:
-        canonical_id: str | None = None
+        session_id_canonical: str | None = None
         try:
-            canonical_id = product_measurement_id(nc_file)
+            session_id_canonical = product_session_id(nc_file)
             file_name_prefix = (
-                f"{canonical_id}_scc"
+                f"{session_id_canonical}_scc"
                 if nc_file.name.endswith(LEVEL1_SCC_SUFFIX)
-                else canonical_id
+                else session_id_canonical
             )
         except ValueError:
             file_name_prefix = nc_file.stem.removesuffix("_L1")
-        measurement_id = logging_measurement_id(nc_file)
-        file_logger = bind_log_context(logger, pipeline="VIZ", measurement_id=measurement_id)
+        session_id = logging_session_id(nc_file)
+        file_logger = bind_log_context(logger, pipeline="VIZ", measurement_id=session_id)
         resolved = resolve_visualization_config(config)
-        output_folder = nc_file.parent / "quicklooks"
+        output_folder = nc_file.parent / "figures"
         ensure_directories(output_folder)
         incremental = _incremental_enabled(config)
         dependencies = _visual_dependencies(root_path)
@@ -284,7 +284,7 @@ def process_single_nc(
                         file_name_prefix=plot_file_prefix,
                         config=config,
                         root_dir=str(root_path),
-                        measurement_id=canonical_id,
+                        measurement_id=session_id_canonical,
                         timezone_name=station_timezone_name,
                         pbl_da=pbl_da,
                         cpt_km=cpt_km,
@@ -384,6 +384,6 @@ def process_all_level1_files(
             (nc_file, config, root_path, pipeline_logger, start_time, end_time)
         )
         if result.status.is_failure:
-            bind_log_context(pipeline_logger, measurement_id=result.metadata.get("measurement_id"), stage="failed").warning("%s", result.message)
+            bind_log_context(pipeline_logger, measurement_id=result.metadata.get("session_id"), stage="failed").warning("%s", result.message)
         results.append(result)
     return ExecutionSummary.from_results(results)
