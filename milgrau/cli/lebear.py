@@ -89,7 +89,7 @@ def _process_selected_files(args: argparse.Namespace, config: dict, logger: logg
         output_tag = _format_time_window_tag(args.time_window[0], args.time_window[1])
     for file_path in files:
         session_id = logging_session_id(file_path)
-        file_logger = bind_log_context(logger, measurement_id=session_id)
+        file_logger = bind_log_context(logger, session_id=session_id)
         output_path = level2_output_path(file_path, variant_tag=output_tag)
         if not args.force and incremental and level2_output_is_current(
             file_path,
@@ -125,7 +125,7 @@ def _process_selected_files(args: argparse.Namespace, config: dict, logger: logg
         file_summary = process_single_level1_file(
             file_path,
             config,
-            bind_log_context(logger, measurement_id=session_id),
+            bind_log_context(logger, session_id=session_id),
             start_utc=args.time_window[0] if args.time_window else None,
             stop_utc=args.time_window[1] if args.time_window else None,
             output_tag=output_tag,
