@@ -23,12 +23,12 @@ from milgrau.io.contracts import (
     validate_level2_contract,
 )
 from milgrau.io.paths import (
-    build_measurement_id,
-    measurement_day_dir,
-    product_measurement_id,
-    station_id,
+    LEVEL0_SUFFIX,
+    LEVEL1_SUFFIX,
+    LEVEL2_SUFFIX,
+    product_session_id,
 )
-from milgrau.io.selection import parse_input_selection
+from milgrau.io.selection import InputSelection, parse_input_selection, resolve_product_selection
 
 
 _LEVEL_VALIDATORS = {
@@ -38,6 +38,10 @@ _LEVEL_VALIDATORS = {
 }
 
 _IMPORTANT_GLOBAL_ATTRS = (
+    "Session_ID",
+    "measurement_start_time",
+    "measurement_end_time",
+    "session_duration_seconds",
     "Processing_level",
     "Pipeline",
     "System",
@@ -249,47 +253,14 @@ def _is_canonical_product(path: Path) -> bool:
     if not path.is_file() or path.suffix.lower() != ".nc":
         return False
     try:
-        product_measurement_id(path)
+        product_session_id(path)
     except ValueError:
         return False
     return True
 
 
-def _products_for_date(date_text: str, config: dict) -> list[Path]:
-    canonical_station = station_id(config)
-    anchor = build_measurement_id(date_text, canonical_station, "00")
-    day_dir = measurement_day_dir(anchor, config)
-    if not day_dir.is_dir():
-        raise FileNotFoundError(f"No processed-data directory found for date {date_text}: {day_dir}")
-
-    products = [
-        path
-        for path in sorted(day_dir.glob(f"{date_text}_{canonical_station}_*.nc"))
-        if _is_canonical_product(path)
-    ]
-    if not products:
-        raise FileNotFoundError(f"No MILGRAU L0/L1/L2 products found for date {date_text}.")
-    return products
-
-
-def _products_for_measurement(measurement_id: str, config: dict) -> list[Path]:
-    day_dir = measurement_day_dir(measurement_id, config)
-    products = []
-    if day_dir.is_dir():
-        for path in sorted(day_dir.glob(f"{measurement_id}*.nc")):
-            if not _is_canonical_product(path):
-                continue
-            if product_measurement_id(path) == measurement_id:
-                products.append(path)
-    if not products:
-        raise FileNotFoundError(
-            f"No MILGRAU L0/L1/L2 products found for measurement {measurement_id}."
-        )
-    return products
-
-
 def _expand_inputs(values: Sequence[Any], config: dict) -> list[Path]:
-    """Resolve dates/measurement IDs/paths to inspectable NetCDF products."""
+    """Resolve dates/session IDs/paths to inspectable NetCDF products."""
     for raw_group in values:
         tokens = raw_group if isinstance(raw_group, (list, tuple)) else [raw_group]
         for raw in tokens:
@@ -300,13 +271,16 @@ def _expand_inputs(values: Sequence[Any], config: dict) -> list[Path]:
                     raise FileNotFoundError(f"NetCDF product not found: {candidate}")
 
     selection = parse_input_selection(values, config)
+    product_selection = InputSelection(
+        dates=selection.dates,
+        session_ids=selection.session_ids,
+        paths=(),
+    )
     resolved: list[Path] = []
-
-    for date_text in sorted(selection.dates):
-        resolved.extend(_products_for_date(date_text, config))
-
-    for measurement_id in sorted(selection.measurement_ids):
-        resolved.extend(_products_for_measurement(measurement_id, config))
+    for suffix in (LEVEL0_SUFFIX, LEVEL1_SUFFIX, LEVEL2_SUFFIX):
+        resolved.extend(
+            resolve_product_selection(product_selection, config, suffix=suffix)
+        )
 
     for path in selection.paths:
         if path.is_dir():
@@ -364,8 +338,8 @@ def _build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Examples:\n"
             "  milgrau-inspect 20240620\n"
-            "  milgrau-inspect 20240620_spu_18\n"
-            "  milgrau-inspect -i 20240620 18\n"
+            "  milgrau-inspect spu_20240620-2200Z_20240621-0700Z\n"
+            "  milgrau-inspect -i 20240620\n"
             "  milgrau-inspect path/to/product_L2.nc --validate\n"
         ),
     )
@@ -373,8 +347,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "selectors",
         nargs="*",
         help=(
-            "Date (YYYYMMDD), measurement ID (YYYYMMDD_station_HH), or an existing "
-            "NetCDF file/directory. A date selects every available L0/L1/L2 product."
+            "Station-local date (YYYYMMDD), session ID, or an existing NetCDF "
+            "file/directory. A date selects every session intersecting that local day."
         ),
     )
     add_input_argument(parser, source="Product selection")
@@ -413,7 +387,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.selectors:
         selector_groups.append(args.selectors)
     if not selector_groups:
-        parser.error("provide a date, measurement ID, file, or directory to inspect")
+        parser.error("provide a date, session ID, file, or directory to inspect")
 
     try:
         config = load_config()
