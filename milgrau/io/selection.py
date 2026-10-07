@@ -11,6 +11,8 @@ from zoneinfo import ZoneInfo
 
 from milgrau.io.paths import (
     is_session_id,
+    processed_data_root,
+    product_session_id,
     session_id_parts,
     validate_session_id_for_config,
 )
@@ -151,3 +153,53 @@ def select_available_session_ids(
             )
         selected.update(matches)
     return selected
+
+
+def resolve_product_selection(
+    selection: InputSelection,
+    config: Mapping[str, Any],
+    *,
+    suffix: str,
+) -> list[Path]:
+    """Resolve a session/date/path selection to existing canonical product files."""
+    root = processed_data_root(config)
+    discovered: dict[str, list[Path]] = {}
+    for path in sorted(root.rglob(f"*{suffix}")):
+        if not path.is_file():
+            continue
+        try:
+            session_id = product_session_id(path)
+        except ValueError:
+            continue
+        discovered.setdefault(session_id, []).append(path)
+
+    if selection.is_empty:
+        return [path for paths in discovered.values() for path in paths]
+
+    selected_ids = select_available_session_ids(
+        selection,
+        list(discovered),
+        config,
+    ) if (selection.session_ids or selection.dates) else set()
+
+    resolved: list[Path] = []
+    for session_id in sorted(selected_ids):
+        resolved.extend(discovered.get(session_id, []))
+
+    for path in selection.paths:
+        if path.is_dir():
+            resolved.extend(
+                item
+                for item in sorted(path.rglob(f"*{suffix}"))
+                if item.is_file()
+            )
+        else:
+            resolved.append(path)
+
+    unique = sorted(dict.fromkeys(path.resolve() for path in resolved))
+    missing = [path for path in unique if not path.is_file()]
+    if missing:
+        raise FileNotFoundError(
+            "Selected product(s) not found: " + ", ".join(str(path) for path in missing)
+        )
+    return unique
