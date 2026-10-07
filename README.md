@@ -51,7 +51,7 @@ MILGRAU requires **Python 3.12 or newer**.
 ```bash
 git clone https://github.com/spulidar/milgrau.git
 cd milgrau
-git checkout new-architecture
+git checkout session-refactor
 python -m venv .venv
 ```
 
@@ -93,35 +93,58 @@ milgrau-liracos
 milgrau-lebear
 ```
 
-The primary CLIs share the same flexible `-i/--input` selectors. A selector may be one canonical measurement ID, one local civil date, a date followed by one or more local six-hour period starts, or an explicit file/directory path:
+MILGRAU identifies scientific acquisitions as **continuous sessions**, not civil-time
+publication windows. The canonical session ID is:
 
-```bash
-milgrau-libids -i 20250509_spu_06 --force
-milgrau-lipancora -i 20250509
-milgrau-liracos -i 20250509 06 12
-milgrau-lebear -i 20250509_spu_12
+`station_YYYYMMDD-HHMMZ_YYYYMMDD-HHMMZ`
+
+For example:
+
+`spu_20250511-0012Z_20250511-0737Z`
+
+The timestamps are UTC and use minute precision in the identifier. Exact acquisition
+times remain in the NetCDF metadata. A session may cross midnight or any former
+six-hour site boundary without being split. A true acquisition gap or a change in
+station profile/calibration starts a new session.
+
+Products are grouped by the UTC month in which the session starts:
+
+```text
+02-processed_data/
+  spu/
+    2025/
+      05/
+        spu_20250511-0012Z_20250511-0737Z/
+          spu_20250511-0012Z_20250511-0737Z_L0.nc
+          spu_20250511-0012Z_20250511-0737Z_L1.nc
+          spu_20250511-0012Z_20250511-0737Z_L2.nc
+          figures/
 ```
 
-LIRACOS may zoom quicklooks and mean profiles to the interval that actually
-contains measurements. Bounds are UTC and accept `HH:MM[:SS]` or complete
-ISO-8601 timestamps; zoomed products receive a range suffix and do not
-overwrite the full-period plots:
+The primary CLIs accept a canonical session ID, a station-local civil date, or an
+explicit file/directory path. A date selects sessions that intersect that local day:
 
 ```bash
-milgrau-liracos -i 20250509_spu_06 --time-window-utc 10:15 12:45
+milgrau-libids -i spu_20250511-0012Z_20250511-0737Z --force
+milgrau-lipancora -i 20250510
+milgrau-liracos -i spu_20250511-0012Z_20250511-0737Z
+milgrau-lebear -i spu_20250511-0012Z_20250511-0737Z
 ```
 
-Canonical measurement IDs use `YYYYMMDD_station_HH`, where `HH` is the start of one of the fixed station-local periods `00`, `06`, `12`, or `18`. Products are grouped by station and local day, for example `processed/spu/2025/05/20250509/20250509_spu_06_L1.nc`.
-
-LEBEAR can also process a restricted UTC interval without changing the original Level 1 product:
+The current visualization command renders the actual Level 1 session extent by
+default. An explicit UTC subset may still be requested without redefining session
+identity:
 
 ```bash
-milgrau-lebear -i 20250509_spu_00 --time-window-utc 04:00 05:00
+milgrau-liracos -i spu_20250511-0012Z_20250511-0737Z --time-window-utc 01:00 03:00
+milgrau-lebear -i spu_20250511-0012Z_20250511-0737Z --time-window-utc 01:00 03:00
 ```
 
-The resulting Level 2 filename carries the explicit UTC window tag, for example `20250509_spu_00_0400-0500Z_L2.nc`.
+Public-site windows such as 00–06, 06–12, 12–18 and 18–24 are publication views
+and are intentionally not MILGRAU session identities.
 
-Shell status is deliberately operational. Scientific QA belongs in the NetCDF diagnostics rather than being compressed into an exit code.
+Shell status is deliberately operational. Scientific QA belongs in the NetCDF
+diagnostics rather than being compressed into an exit code.
 
 ## Configuration 
 
