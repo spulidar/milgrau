@@ -35,6 +35,7 @@ def _minimal_config() -> dict:
                 "laser_shot_tolerance_fraction": 0.002,
                 "licel_header_time_jitter_s": 1.0,
             },
+            "session": {"max_gap_seconds": 60.0},
             "dark_current": {"max_association_hours": 12.0},
             "surface_weather": {"missing_policy": "nan"},
         },
@@ -49,10 +50,11 @@ def test_repository_level0_recipe_is_explicit() -> None:
     assert resolved.directories.processed_data == "02-processed_data"
     assert resolved.directories.log_dir == "logs"
     assert resolved.discovery.spurious_extensions == (".dpp", ".zip", ".txt", ".json", ".7z", ".tar")
-    assert resolved.discovery.raw_scan_ignore_dirs == ("openmeteo_cache", "wyoming_cache")
+    assert resolved.discovery.raw_scan_ignore_dirs == ()
     assert resolved.discovery.quarantine_dir == "quarantine"
     assert resolved.acquisition_qa.laser_shot_tolerance_fraction == 0.002
     assert resolved.acquisition_qa.licel_header_time_jitter_s == 1.0
+    assert resolved.session.max_gap_seconds == 60.0
     assert resolved.dark_current.max_association_hours == 12.0
     assert resolved.surface_weather.missing_policy == "nan"
     assert "physics" not in config
