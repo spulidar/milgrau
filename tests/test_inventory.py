@@ -22,7 +22,20 @@ def _config(*, max_gap_seconds: float = 60.0, max_association_hours: float = 12.
             "station": {
                 "id": "spu",
                 "timezone": "America/Sao_Paulo",
-            }
+                "site": {},
+            },
+            "calibrations": {
+                "cal-a": {"provenance": {"source": "test"}, "channels": {}},
+                "cal-b": {"provenance": {"source": "test"}, "channels": {}},
+            },
+            "profiles": [
+                {
+                    "id": "profile-a",
+                    "calibration_id": "cal-a",
+                    "valid_from": "2020-01-01",
+                    "valid_to": None,
+                }
+            ],
         },
         "level0": {
             "acquisition_qa": {
@@ -236,3 +249,53 @@ def test_dark_current_outside_maximum_remains_unassociated(
     assert pd.isna(dark_row["session_id"])
     assert dark_row["association_method"] == "unassociated"
     assert pd.isna(dark_row["dark_current_association_delta_hours"])
+
+
+def test_station_profile_change_splits_otherwise_continuous_acquisition(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    paths = [str(tmp_path / "m1"), str(tmp_path / "m2")]
+    headers = {
+        paths[0]: (
+            datetime(2024, 1, 2, 2, 55, 0),
+            pd.Timestamp("2024-01-02T03:00:00"),
+            300.0,
+            1200,
+            4.0,
+        ),
+        paths[1]: (
+            datetime(2024, 1, 2, 3, 0, 0),
+            pd.Timestamp("2024-01-02T03:05:00"),
+            300.0,
+            1200,
+            4.0,
+        ),
+    }
+    _patch_inventory(monkeypatch, paths, ["measurements", "measurements"], headers)
+    config = _config()
+    config["_station_catalog"]["profiles"] = [
+        {
+            "id": "profile-a",
+            "calibration_id": "cal-a",
+            "valid_from": "2020-01-01",
+            "valid_to": "2024-01-01",
+        },
+        {
+            "id": "profile-b",
+            "calibration_id": "cal-b",
+            "valid_from": "2024-01-02",
+            "valid_to": None,
+        },
+    ]
+
+    df = build_session_inventory(str(tmp_path), config, logging.getLogger("test-profile-boundary"))
+
+    measurement_rows = df[df["meas_type"] == "measurements"].reset_index(drop=True)
+    assert measurement_rows["session_id"].nunique() == 2
+    assert measurement_rows["station_profile_id"].tolist() == ["profile-a", "profile-b"]
+    assert measurement_rows["instrument_calibration_id"].tolist() == ["cal-a", "cal-b"]
+    assert measurement_rows["session_boundary_reason"].tolist() == [
+        "acquisition_start",
+        "station_context_change",
+    ]
