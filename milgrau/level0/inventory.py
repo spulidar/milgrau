@@ -9,6 +9,7 @@ import pandas as pd
 
 from milgrau.io.filesystem import scan_raw_files
 from milgrau.io.licel import read_licel_header
+from milgrau.config.station import resolve_station_context
 from milgrau.io.paths import build_session_id, station_id
 from milgrau.level0.config import resolve_level0_config, station_timezone
 
@@ -33,6 +34,44 @@ def _normalize_header_times(df_raw: pd.DataFrame) -> pd.DataFrame:
     return rows
 
 
+def _station_context_identity(config: dict, timestamp: pd.Timestamp) -> tuple[str, str]:
+    """Return profile/calibration identity for one aware UTC timestamp."""
+    context = resolve_station_context(
+        config,
+        measurement_time=timestamp.to_pydatetime(),
+        available_channels=[],
+    )
+    return str(context["profile_id"]), str(context["calibration_id"])
+
+
+def _annotate_station_context(measurements: pd.DataFrame, config: dict) -> pd.DataFrame:
+    """Attach one homogeneous station profile/calibration identity to each raw file."""
+    if measurements.empty:
+        return measurements.copy()
+
+    rows = measurements.copy()
+    profile_ids: list[str] = []
+    calibration_ids: list[str] = []
+    for row in rows.itertuples():
+        start = pd.Timestamp(row.start_time_utc)
+        stop = pd.Timestamp(row.stop_time)
+        start_identity = _station_context_identity(config, start)
+        end_probe = max(start, stop - pd.Timedelta(microseconds=1))
+        end_identity = _station_context_identity(config, end_probe)
+        if start_identity != end_identity:
+            raise ValueError(
+                "One raw Licel file crosses a station profile/calibration boundary and "
+                f"cannot belong to a homogeneous session: {row.filepath} "
+                f"({start_identity} -> {end_identity})."
+            )
+        profile_ids.append(start_identity[0])
+        calibration_ids.append(start_identity[1])
+
+    rows["station_profile_id"] = profile_ids
+    rows["instrument_calibration_id"] = calibration_ids
+    return rows
+
+
 def _sessionize_measurements(
     measurements: pd.DataFrame,
     *,
@@ -49,20 +88,39 @@ def _sessionize_measurements(
 
     max_gap = pd.Timedelta(seconds=float(max_gap_seconds))
     sequence: list[int] = []
+    boundary_reasons: list[str] = []
     current_sequence = -1
     current_end: pd.Timestamp | None = None
+    current_context: tuple[str, str] | None = None
 
     for row in rows.itertuples():
         start = pd.Timestamp(row.start_time_utc)
         stop = pd.Timestamp(row.stop_time)
-        if current_end is None or start > current_end + max_gap:
+        context = (
+            str(row.station_profile_id),
+            str(row.instrument_calibration_id),
+        )
+        reasons: list[str] = []
+        if current_end is None:
+            reasons.append("acquisition_start")
+        else:
+            if start > current_end + max_gap:
+                reasons.append("time_gap")
+            if context != current_context:
+                reasons.append("station_context_change")
+
+        if reasons:
             current_sequence += 1
             current_end = stop
+            current_context = context
+            boundary_reasons.append("+".join(reasons))
         else:
             current_end = max(current_end, stop)
+            boundary_reasons.append("continuous")
         sequence.append(current_sequence)
 
     rows["_session_sequence"] = sequence
+    rows["session_boundary_reason"] = boundary_reasons
     rows["session_id"] = ""
     rows["session_start_utc"] = pd.NaT
     rows["session_end_utc"] = pd.NaT
@@ -220,6 +278,7 @@ def build_session_inventory(
     measurement_rows = df_raw[df_raw["meas_type"] == "measurements"].copy()
     dark_rows = df_raw[df_raw["meas_type"] == "dark_current"].copy()
 
+    measurement_rows = _annotate_station_context(measurement_rows, config)
     measurement_rows = _sessionize_measurements(
         measurement_rows,
         station=station_id(config),
