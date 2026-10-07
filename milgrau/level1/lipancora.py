@@ -271,7 +271,7 @@ def _files_requiring_level1(
                 integrity_check=lambda path: netcdf_satisfies_contract(path, validate_level1_contract),
             )
         if is_current:
-            bind_log_context(logger, measurement_id=session_id, stage="skip").info("up to date | %s", output_path.name)
+            bind_log_context(logger, session_id=session_id, stage="skip").info("up to date | %s", output_path.name)
             skipped_results.append(
                 ExecutionResult.skipped(
                     "level1.incremental",
@@ -364,7 +364,7 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
     started_at = time.perf_counter()
     nc_file = Path(nc_path)
     session_id = logging_session_id(nc_file)
-    file_logger = bind_log_context(logger, measurement_id=session_id)
+    file_logger = bind_log_context(logger, session_id=session_id)
     save_path: Path | None = None
     stage = "level1.initialize"
     try:
@@ -443,7 +443,7 @@ def process_level_1(config: Mapping[str, Any], logger: logging.Logger) -> Execut
     results = list(skipped_results)
     for file_path in files_to_process:
         session_id = logging_session_id(file_path)
-        file_logger = bind_log_context(logger, measurement_id=session_id)
+        file_logger = bind_log_context(logger, session_id=session_id)
         result = process_single_file((str(file_path), config, file_logger))
         if result.status is ExecutionStatus.OK:
             duration = 0.0 if result.duration_seconds is None else result.duration_seconds
