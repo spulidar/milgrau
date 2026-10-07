@@ -284,7 +284,7 @@ def process_single_nc(
                         file_name_prefix=plot_file_prefix,
                         config=config,
                         root_dir=str(root_path),
-                        measurement_id=session_id_canonical,
+                        session_id=session_id_canonical,
                         timezone_name=station_timezone_name,
                         pbl_da=pbl_da,
                         cpt_km=cpt_km,
@@ -333,7 +333,7 @@ def process_single_nc(
             input_path=nc_file,
             output_path=output_folder,
             duration_seconds=duration,
-            metadata={"pipeline": "VIZ", "measurement_id": measurement_id, "generated": generated_count, "skipped": skipped_count},
+            metadata={"pipeline": "VIZ", "session_id": session_id, "generated": generated_count, "skipped": skipped_count},
         )
     except KeyError as exc:
         return ExecutionResult.skipped(
@@ -341,7 +341,7 @@ def process_single_nc(
             f"{nc_file.name} incompatible with current Level 1 contract: {exc}",
             input_path=nc_file,
             output_path=output_folder,
-            metadata={"pipeline": "VIZ", "measurement_id": measurement_id, "cause_type": type(exc).__name__},
+            metadata={"pipeline": "VIZ", "session_id": session_id, "cause_type": type(exc).__name__},
         )
     except Exception as exc:
         bind_log_context(file_logger, stage=stage.removeprefix("visualization.")).error("plotting failed: %s", exc)
@@ -354,7 +354,7 @@ def process_single_nc(
             cause=exc,
             include_traceback=True,
             duration_seconds=time.perf_counter() - started_at,
-            metadata={"pipeline": "VIZ", "measurement_id": measurement_id},
+            metadata={"pipeline": "VIZ", "session_id": session_id},
         )
 
 
