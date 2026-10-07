@@ -249,7 +249,7 @@ def date_title(ds: xr.Dataset) -> str:
         stop_time = ds.attrs.get("RawData_Stop_Time_UT", "")
         if start and start_time:
             return f"{start} {start_time}-{stop_time} UT"
-        return str(ds.attrs.get("Measurement_ID", "Unknown date"))
+        return str(ds.attrs.get("Session_ID", "Unknown date"))
     try:
         times = pd.to_datetime(ds["time"].values)
         return f"{times.min().strftime('%d %b %Y - %H:%M')} to {times.max().strftime('%H:%M')} UTC"
