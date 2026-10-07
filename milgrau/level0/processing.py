@@ -102,9 +102,7 @@ def _internal_level0_config(effective_config: Mapping[str, Any]) -> dict[str, An
 
 
 def _write_scc_export(
-    meas_id: str,
-    measurement_id: str,
-    period: str,
+    session_id: str,
     lidar_data: Mapping[str, Any],
     group_df: pd.DataFrame,
     weather_data: Mapping[str, Any],
@@ -121,12 +119,11 @@ def _write_scc_export(
         scc_logger.warning("mapping configured but no SCC channels present")
         return None
     scc_lidar = select_lidar_channels(lidar_data, scc_channels)
-    scc_path = level0_scc_output_path(meas_id, effective_config)
+    scc_path = level0_scc_output_path(session_id, effective_config)
     ensure_directories(scc_path.parent)
     build_level0_netcdf(
         netcdf_path=str(scc_path),
-        measurement_id=measurement_id,
-        period=period,
+        session_id=session_id,
         lidar_data=scc_lidar,
         group_df=group_df,
         weather_data=dict(weather_data),
@@ -144,16 +141,15 @@ def _write_scc_export(
     return scc_path
 
 
-def process_measurement_group(
-    meas_id: str,
+def process_session_group(
+    session_id: str,
     group_df: pd.DataFrame,
     config: Mapping[str, Any],
     logger: logging.Logger,
 ) -> ExecutionResult:
-    """Process one measurement group into full-channel and optional SCC Level 0 products."""
+    """Process one continuous session into full-channel and optional SCC Level 0 products."""
     started_at = time.perf_counter()
-    measurement_id = meas_id
-    netcdf_path = level0_output_path(meas_id, config)
+    netcdf_path = level0_output_path(session_id, config)
     out_dir = netcdf_path.parent
     stage = "level0.measurements"
     files_meas: list[str] = []
@@ -165,7 +161,7 @@ def process_measurement_group(
                 stage,
                 "No measurement files found",
                 output_path=netcdf_path,
-                metadata={"pipeline": "L0", "measurement_id": measurement_id},
+                metadata={"pipeline": "L0", "session_id": session_id},
             )
         stage = "level0.parse"
         parse_logger = bind_log_context(logger, stage="parse")
@@ -176,16 +172,12 @@ def process_measurement_group(
                 "No valid lidar tensors parsed",
                 input_path=files_meas[0],
                 output_path=netcdf_path,
-                metadata={"pipeline": "L0", "measurement_id": measurement_id},
+                metadata={"pipeline": "L0", "session_id": session_id},
             )
         parse_logger.debug(
             "files=%d | channels=%d", len(files_meas), len(lidar_data_tensors.get("channels", []))
         )
         stage = "level0.station"
-        periods = [str(value) for value in df_meas["period"].dropna().unique()]
-        if len(periods) != 1:
-            raise ValueError(f"Measurement group {meas_id!r} must contain exactly one local period; got {periods}.")
-        period = periods[0]
         effective_config, lidar_data_tensors, station_context = _resolve_group_station_config(
             group_df, lidar_data_tensors, config, logger
         )
@@ -196,8 +188,7 @@ def process_measurement_group(
         primary_config = _internal_level0_config(effective_config)
         build_level0_netcdf(
             netcdf_path=str(netcdf_path),
-            measurement_id=measurement_id,
-            period=period,
+            session_id=session_id,
             lidar_data=lidar_data_tensors,
             group_df=group_df,
             weather_data=weather_data,
@@ -215,9 +206,7 @@ def process_measurement_group(
         )
         stage = "level0.scc_export"
         scc_path = _write_scc_export(
-            meas_id=meas_id,
-            measurement_id=measurement_id,
-            period=period,
+            session_id=session_id,
             lidar_data=lidar_data_tensors,
             group_df=group_df,
             weather_data=weather_data,
@@ -227,8 +216,7 @@ def process_measurement_group(
         )
         result_metadata = {
             "pipeline": "L0",
-            "measurement_id": measurement_id,
-            "period": period,
+            "session_id": session_id,
             "file_count": len(files_meas),
             "level0_channel_count": len(lidar_data_tensors.get("channels", [])),
         }
@@ -260,5 +248,5 @@ def process_measurement_group(
             cause=exc,
             include_traceback=True,
             duration_seconds=time.perf_counter() - started_at,
-            metadata={"pipeline": "L0", "measurement_id": measurement_id},
+            metadata={"pipeline": "L0", "session_id": session_id},
         )
