@@ -1,4 +1,4 @@
-"""Canonical path and identity builders for MILGRAU products."""
+"""Canonical path and session-identity builders for MILGRAU products."""
 
 from __future__ import annotations
 
@@ -17,7 +17,6 @@ LEVEL1_SUFFIX = "_L1.nc"
 LEVEL1_SCC_SUFFIX = "_L1_scc.nc"
 LEVEL2_SUFFIX = "_L2.nc"
 
-LOCAL_PERIOD_STARTS = ("00", "06", "12", "18")
 _STATION_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 SESSION_ID_RE = re.compile(
     r"^(?P<station>[a-z0-9][a-z0-9-]*)_"
@@ -25,18 +24,8 @@ SESSION_ID_RE = re.compile(
     r"(?P<end>\d{8}-\d{4}Z)$",
     flags=re.IGNORECASE,
 )
-_SESSION_PRODUCT_RE = re.compile(
-    r"^(?P<session_id>[a-z0-9][a-z0-9-]*_\d{8}-\d{4}Z_\d{8}-\d{4}Z)"
-    r"(?P<suffix>_L0(?:_scc)?|_L1(?:_scc)?|(?:_[A-Za-z0-9_.-]+)?_L2(?:_scc)?)\.nc$",
-    flags=re.IGNORECASE,
-)
-
-MEASUREMENT_ID_RE = re.compile(
-    r"^(?P<date>\d{8})_(?P<station>[a-z0-9][a-z0-9-]*)_(?P<period>00|06|12|18)$",
-    flags=re.IGNORECASE,
-)
 _PRODUCT_RE = re.compile(
-    r"^(?P<measurement_id>\d{8}_[a-z0-9][a-z0-9-]*_(?:00|06|12|18))"
+    r"^(?P<session_id>[a-z0-9][a-z0-9-]*_\d{8}-\d{4}Z_\d{8}-\d{4}Z)"
     r"(?P<suffix>_L0(?:_scc)?|_L1(?:_scc)?|(?:_[A-Za-z0-9_.-]+)?_L2(?:_scc)?)\.nc$",
     flags=re.IGNORECASE,
 )
@@ -133,7 +122,7 @@ def _as_utc_datetime(value: Any, *, label: str) -> datetime:
         result = value
     else:
         text = str(value).strip()
-        if text.endswith("Z"):
+        if text.endswith(("Z", "z")):
             text = text[:-1] + "+00:00"
         try:
             result = datetime.fromisoformat(text)
@@ -176,8 +165,12 @@ def session_id_parts(session_id: str) -> tuple[str, datetime, datetime]:
             "station_YYYYMMDD-HHMMZ_YYYYMMDD-HHMMZ."
         )
     try:
-        start = datetime.strptime(match.group("start").upper(), "%Y%m%d-%H%MZ").replace(tzinfo=timezone.utc)
-        end = datetime.strptime(match.group("end").upper(), "%Y%m%d-%H%MZ").replace(tzinfo=timezone.utc)
+        start = datetime.strptime(match.group("start").upper(), "%Y%m%d-%H%MZ").replace(
+            tzinfo=timezone.utc
+        )
+        end = datetime.strptime(match.group("end").upper(), "%Y%m%d-%H%MZ").replace(
+            tzinfo=timezone.utc
+        )
     except ValueError as exc:
         raise ValueError(f"Invalid UTC timestamp in session_id {session_id!r}.") from exc
     if end <= start:
@@ -194,7 +187,7 @@ def is_session_id(value: str) -> bool:
 
 
 def validate_session_id_for_config(session_id: str, config: Mapping[str, Any]) -> str:
-    """Validate a canonical session ID and require its station to match station.yaml."""
+    """Validate a session ID and require its station to match station.yaml."""
     station, start, end = session_id_parts(session_id)
     expected_station = station_id(config)
     if station != expected_station:
@@ -222,17 +215,24 @@ def session_dir(
 
 
 def product_session_id(product_path: str | Path) -> str:
-    """Extract the canonical session ID from a session-based MILGRAU product filename."""
+    """Extract the canonical session ID from a MILGRAU product filename."""
     name = Path(product_path).name
-    match = _SESSION_PRODUCT_RE.fullmatch(name)
+    match = _PRODUCT_RE.fullmatch(name)
     if match is None:
-        raise ValueError(f"Unrecognized session-based MILGRAU product filename: {name!r}")
-    value = match.group("session_id")
-    station, start, end = session_id_parts(value)
+        raise ValueError(f"Unrecognized MILGRAU product filename: {name!r}")
+    station, start, end = session_id_parts(match.group("session_id"))
     return build_session_id(station, start, end)
 
 
-def session_level0_output_path(
+def logging_session_id(product_path: str | Path) -> str:
+    """Return canonical session ID for logging, or '-' for external inputs."""
+    try:
+        return product_session_id(product_path)
+    except ValueError:
+        return "-"
+
+
+def level0_output_path(
     session_id: str,
     config: Mapping[str, Any],
     root_dir: str | Path | None = None,
@@ -241,7 +241,7 @@ def session_level0_output_path(
     return session_dir(value, config, root_dir=root_dir) / f"{value}{LEVEL0_SUFFIX}"
 
 
-def session_level0_scc_output_path(
+def level0_scc_output_path(
     session_id: str,
     config: Mapping[str, Any],
     root_dir: str | Path | None = None,
@@ -250,176 +250,29 @@ def session_level0_scc_output_path(
     return session_dir(value, config, root_dir=root_dir) / f"{value}{LEVEL0_SCC_SUFFIX}"
 
 
-def session_level1_output_path(
-    level0_file: str | Path,
-    config: Mapping[str, Any],
-    root_dir: str | Path | None = None,
-) -> Path:
-    source = Path(level0_file)
-    session_id = product_session_id(source)
-    if source.name.endswith(LEVEL0_SCC_SUFFIX):
-        filename = f"{session_id}{LEVEL1_SCC_SUFFIX}"
-    elif source.name.endswith(LEVEL0_SUFFIX):
-        filename = f"{session_id}{LEVEL1_SUFFIX}"
-    else:
-        raise ValueError(f"Expected a session Level 0 product, got {source.name!r}.")
-    return session_dir(session_id, config, root_dir=root_dir) / filename
-
-
-def session_level2_output_path(level1_file: str | Path, variant_tag: str | None = None) -> Path:
-    path = Path(level1_file)
-    session_id = product_session_id(path)
-    variant = ""
-    if variant_tag:
-        safe_tag = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(variant_tag).strip()).strip("_")
-        if safe_tag:
-            variant = f"_{safe_tag}"
-    is_scc = path.name.endswith(LEVEL1_SCC_SUFFIX)
-    if not is_scc and not path.name.endswith(LEVEL1_SUFFIX):
-        raise ValueError(f"Expected a session Level 1 file: {path}")
-    scc_suffix = "_scc" if is_scc else ""
-    return path.parent / f"{session_id}{variant}_L2{scc_suffix}.nc"
-
-def normalize_period_start(value: str | int) -> str:
-    """Return one canonical local six-hour period start."""
-    raw = str(value).strip()
-    if not raw.isdigit():
-        raise ValueError(f"Invalid local period start: {value!r}")
-    normalized = f"{int(raw):02d}"
-    if normalized not in LOCAL_PERIOD_STARTS:
-        raise ValueError(
-            f"Invalid local period start {value!r}; expected one of {', '.join(LOCAL_PERIOD_STARTS)}."
-        )
-    return normalized
-
-
-def build_measurement_id(date_value: str, station: str, period_start: str | int) -> str:
-    """Build YYYYMMDD_station_HH, where HH is the local six-hour period start."""
-    date_text = str(date_value).strip()
-    try:
-        datetime.strptime(date_text, "%Y%m%d")
-    except ValueError as exc:
-        raise ValueError(f"Invalid measurement date {date_value!r}; expected YYYYMMDD.") from exc
-    station_text = str(station).strip().lower()
-    if not _STATION_ID_RE.fullmatch(station_text):
-        raise ValueError(f"Invalid station id: {station!r}")
-    period = normalize_period_start(period_start)
-    return f"{date_text}_{station_text}_{period}"
-
-
-def measurement_id_parts(measurement_id: str) -> tuple[str, str, str]:
-    """Return (YYYYMMDD, station, HH) for one canonical measurement ID."""
-    value = str(measurement_id).strip().lower()
-    match = MEASUREMENT_ID_RE.fullmatch(value)
-    if match is None:
-        raise ValueError(
-            f"Invalid measurement_id {measurement_id!r}; expected YYYYMMDD_station_HH."
-        )
-    date_text = match.group("date")
-    try:
-        datetime.strptime(date_text, "%Y%m%d")
-    except ValueError as exc:
-        raise ValueError(f"Invalid measurement date in {measurement_id!r}.") from exc
-    return date_text, match.group("station"), match.group("period")
-
-
-def is_measurement_id(value: str) -> bool:
-    try:
-        measurement_id_parts(value)
-    except ValueError:
-        return False
-    return True
-
-
-def validate_measurement_id_for_config(measurement_id: str, config: Mapping[str, Any]) -> str:
-    """Validate a canonical ID and require its station to match station.yaml."""
-    date_text, station, period = measurement_id_parts(measurement_id)
-    expected_station = station_id(config)
-    if station != expected_station:
-        raise ValueError(
-            f"Measurement ID station {station!r} does not match loaded station {expected_station!r}."
-        )
-    return build_measurement_id(date_text, station, period)
-
-
-def measurement_day_dir(
-    measurement_id: str,
-    config: Mapping[str, Any],
-    root_dir: str | Path | None = None,
-) -> Path:
-    """Return processed/station/YYYY/MM/YYYYMMDD for one canonical measurement."""
-    value = validate_measurement_id_for_config(measurement_id, config)
-    date_text, station, _period = measurement_id_parts(value)
-    return (
-        processed_data_root(config, root_dir=root_dir)
-        / station
-        / date_text[:4]
-        / date_text[4:6]
-        / date_text
-    )
-
-
-def product_measurement_id(product_path: str | Path) -> str:
-    """Extract the canonical measurement ID from a MILGRAU product filename."""
-    name = Path(product_path).name
-    match = _PRODUCT_RE.fullmatch(name)
-    if match is None:
-        raise ValueError(f"Unrecognized MILGRAU product filename: {name!r}")
-    value = match.group("measurement_id").lower()
-    measurement_id_parts(value)
-    return value
-
-
-def logging_measurement_id(product_path: str | Path) -> str:
-    """Return canonical measurement ID for logging, or '-' for external inputs."""
-    try:
-        return product_measurement_id(product_path)
-    except ValueError:
-        return "-"
-
-
-def level0_output_path(
-    measurement_id: str,
-    config: Mapping[str, Any],
-    root_dir: str | Path | None = None,
-) -> Path:
-    value = validate_measurement_id_for_config(measurement_id, config)
-    return measurement_day_dir(value, config, root_dir=root_dir) / f"{value}{LEVEL0_SUFFIX}"
-
-
-def level0_scc_output_path(
-    measurement_id: str,
-    config: Mapping[str, Any],
-    root_dir: str | Path | None = None,
-) -> Path:
-    value = validate_measurement_id_for_config(measurement_id, config)
-    return measurement_day_dir(value, config, root_dir=root_dir) / f"{value}{LEVEL0_SCC_SUFFIX}"
-
-
 def level1_output_path(
     level0_file: str | Path,
     config: Mapping[str, Any],
     root_dir: str | Path | None = None,
 ) -> Path:
-    """Return the Level 1 path for canonical MILGRAU or explicit external Level 0 input."""
+    """Return Level 1 output for a canonical session or explicit external L0 input."""
     source = Path(level0_file)
-    name = source.name
     try:
-        measurement_id = product_measurement_id(source)
+        session_id = product_session_id(source)
     except ValueError:
         return source.with_name(f"{source.stem}{LEVEL1_SUFFIX}")
 
-    if name.endswith(LEVEL0_SCC_SUFFIX):
-        filename = f"{measurement_id}{LEVEL1_SCC_SUFFIX}"
-    elif name.endswith(LEVEL0_SUFFIX):
-        filename = f"{measurement_id}{LEVEL1_SUFFIX}"
+    if source.name.endswith(LEVEL0_SCC_SUFFIX):
+        filename = f"{session_id}{LEVEL1_SCC_SUFFIX}"
+    elif source.name.endswith(LEVEL0_SUFFIX):
+        filename = f"{session_id}{LEVEL1_SUFFIX}"
     else:
-        raise ValueError(f"Expected a Level 0 product, got {name!r}.")
-    return measurement_day_dir(measurement_id, config, root_dir=root_dir) / filename
+        raise ValueError(f"Expected a Level 0 product, got {source.name!r}.")
+    return session_dir(session_id, config, root_dir=root_dir) / filename
 
 
 def level2_output_path(level1_file: str | Path, variant_tag: str | None = None) -> Path:
-    """Return the Level 2 path for canonical MILGRAU or explicit external Level 1 input."""
+    """Return Level 2 output for a canonical session or explicit external L1 input."""
     path = Path(level1_file)
     variant = ""
     if variant_tag:
@@ -428,18 +281,16 @@ def level2_output_path(level1_file: str | Path, variant_tag: str | None = None) 
             variant = f"_{safe_tag}"
 
     try:
-        measurement_id = product_measurement_id(path)
+        session_id = product_session_id(path)
     except ValueError:
-        stem = path.stem
-        if stem.endswith("_L1"):
-            stem = stem.removesuffix("_L1")
+        stem = path.stem.removesuffix("_L1")
         return path.with_name(f"{stem}{variant}{LEVEL2_SUFFIX}")
 
     is_scc = path.name.endswith(LEVEL1_SCC_SUFFIX)
     if not is_scc and not path.name.endswith(LEVEL1_SUFFIX):
         raise ValueError(f"Expected a Level 1 file: {path}")
     scc_suffix = "_scc" if is_scc else ""
-    return path.parent / f"{measurement_id}{variant}_L2{scc_suffix}.nc"
+    return path.parent / f"{session_id}{variant}_L2{scc_suffix}.nc"
 
 
 def quicklook_output_path(
@@ -449,12 +300,11 @@ def quicklook_output_path(
     max_altitude_km: float,
     output_format: str,
 ) -> Path:
-    """Return an RCS quicklook path inside the day's quicklooks directory."""
+    """Return an RCS figure path."""
     safe_channel = str(formatted_channel_name).replace(" ", "_")
     suffix = str(output_format).lstrip(".").lower()
-    return (
-        Path(output_folder)
-        / f"rcs_{file_name_prefix}_{safe_channel}_{float(max_altitude_km):g}km.{suffix}"
+    return Path(output_folder) / (
+        f"{file_name_prefix}_L1_RCS_{safe_channel}_{float(max_altitude_km):g}km.{suffix}"
     )
 
 
@@ -464,4 +314,4 @@ def global_mean_rcs_output_path(
     output_format: str,
 ) -> Path:
     suffix = str(output_format).lstrip(".").lower()
-    return Path(output_folder) / f"rcs_{file_name_prefix}_mean.{suffix}"
+    return Path(output_folder) / f"{file_name_prefix}_L1_MeanRCS.{suffix}"
