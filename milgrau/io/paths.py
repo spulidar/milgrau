@@ -21,13 +21,13 @@ LOCAL_PERIOD_STARTS = ("00", "06", "12", "18")
 _STATION_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 SESSION_ID_RE = re.compile(
     r"^(?P<station>[a-z0-9][a-z0-9-]*)_"
-    r"(?P<start>\\d{8}-\\d{4}Z)_"
-    r"(?P<end>\\d{8}-\\d{4}Z)$",
+    r"(?P<start>\d{8}-\d{4}Z)_"
+    r"(?P<end>\d{8}-\d{4}Z)$",
     flags=re.IGNORECASE,
 )
 _SESSION_PRODUCT_RE = re.compile(
-    r"^(?P<session_id>[a-z0-9][a-z0-9-]*_\\d{8}-\\d{4}Z_\\d{8}-\\d{4}Z)"
-    r"(?P<suffix>_L0(?:_scc)?|_L1(?:_scc)?|(?:_[A-Za-z0-9_.-]+)?_L2(?:_scc)?)\\.nc$",
+    r"^(?P<session_id>[a-z0-9][a-z0-9-]*_\d{8}-\d{4}Z_\d{8}-\d{4}Z)"
+    r"(?P<suffix>_L0(?:_scc)?|_L1(?:_scc)?|(?:_[A-Za-z0-9_.-]+)?_L2(?:_scc)?)\.nc$",
     flags=re.IGNORECASE,
 )
 
