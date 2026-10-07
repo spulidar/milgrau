@@ -82,7 +82,7 @@ def filter_laser_shots(
     good_groups = []
 
     for session_id, group in df_raw.dropna(subset=["session_id"]).groupby("session_id"):
-        qa_logger = bind_log_context(logger, measurement_id=str(session_id), stage="qa")
+        qa_logger = bind_log_context(logger, session_id=str(session_id), stage="qa")
         try:
             df_meas = group[group["meas_type"] == "measurements"].copy()
             df_dc = group[group["meas_type"] == "dark_current"].copy()
