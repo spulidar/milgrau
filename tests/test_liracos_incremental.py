@@ -1,4 +1,4 @@
-"""Tests for LIRACOS incremental plotting behavior."""
+"""Tests for session-based Level 1 visualization behavior."""
 
 from __future__ import annotations
 
@@ -6,37 +6,31 @@ import logging
 import os
 from pathlib import Path
 
-import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import xarray as xr
 
-from milgrau.operations import ExecutionStatus
 from milgrau.cli.liracos import _build_parser
+from milgrau.operations import ExecutionStatus
 from milgrau.viz import liracos, quicklooks
-from milgrau.viz.quicklooks import (
-    _apply_fixed_period_axis,
-    _fixed_period_utc_window,
-    _insert_time_gap_markers,
-)
+from milgrau.viz.quicklooks import _insert_time_gap_markers
+
+SESSION_ID = "spu_20240101-0000Z_20240101-0010Z"
 
 
 class _ListLogger(logging.Logger):
-    """Capture stdlib-compatible logger messages without global configuration."""
-
     def __init__(self) -> None:
         super().__init__("test.liracos", level=logging.DEBUG)
         self.messages: list[str] = []
         self.propagate = False
 
-    def _log(self, level, msg, args, exc_info=None, extra=None, stack_info=False, stacklevel=1):  # noqa: D401
+    def _log(self, level, msg, args, exc_info=None, extra=None, stack_info=False, stacklevel=1):
         rendered = str(msg) % args if args else str(msg)
         self.messages.append(f"{logging.getLevelName(level)}: {rendered}")
 
 
 def _write_level1(path: Path, channels: list[str]) -> Path:
-    """Write a tiny Level 1 dataset suitable for LIRACOS tests."""
     time = pd.date_range("2024-01-01T00:00:00", periods=3, freq="5min")
     altitude = np.arange(0.0, 1500.0, 7.5)
     channel = np.array(channels, dtype=object)
@@ -68,6 +62,7 @@ def _write_level1(path: Path, channels: list[str]) -> Path:
         },
         coords={"time": time, "channel": channel, "altitude": altitude},
         attrs={
+            "Session_ID": SESSION_ID,
             "tropopause_cpt_km": np.nan,
             "tropopause_lrt_km": np.nan,
             "thermodynamic_profile_source_type": "ussa76",
@@ -80,10 +75,10 @@ def _write_level1(path: Path, channels: list[str]) -> Path:
 
 
 def _config(channels: list[str], incremental: bool = True, config_file: Path | None = None) -> dict:
-    """Return a complete strict LIRACOS config."""
     config = {
         "processing": {"incremental": incremental},
         "directories": {"processed_data": "02-processed_data"},
+        "_station_catalog": {"station": {"timezone": "America/Sao_Paulo"}},
         "visualization": {
             "output_format": "png",
             "dpi": 60,
@@ -105,12 +100,13 @@ def _config(channels: list[str], incremental: bool = True, config_file: Path | N
 
 
 def test_time_gap_markers_insert_nan_profiles() -> None:
-    times = pd.to_datetime(["2024-01-01T00:00:00", "2024-01-01T00:05:00", "2024-01-01T00:40:00"])
-    altitude = np.array([0.0, 0.5, 1.0])
+    times = pd.to_datetime(
+        ["2024-01-01T00:00:00", "2024-01-01T00:05:00", "2024-01-01T00:40:00"]
+    )
     data = xr.DataArray(
         np.ones((3, 3)),
         dims=("time", "altitude"),
-        coords={"time": times, "altitude": altitude},
+        coords={"time": times, "altitude": np.array([0.0, 0.5, 1.0])},
     )
 
     result = _insert_time_gap_markers(data, _config(["532.AN"]))
@@ -120,18 +116,25 @@ def test_time_gap_markers_insert_nan_profiles() -> None:
     assert np.isnan(result.isel(time=3).values).all()
 
 
-def test_liracos_cli_accepts_paired_utc_time_range() -> None:
+def test_liracos_cli_accepts_session_and_paired_utc_time_range() -> None:
     args = _build_parser().parse_args(
-        ["--time-window-utc", "00:04", "00:11", "-i", "20240101"]
+        [
+            "--time-window-utc",
+            "00:04",
+            "00:11",
+            "-i",
+            SESSION_ID,
+        ]
     )
-
     assert args.time_window == ["00:04", "00:11"]
+    assert args.inputs == [[SESSION_ID]]
 
 
-def test_liracos_time_range_subsets_data_and_uses_unique_output_prefix(
-    tmp_path: Path, monkeypatch
+def test_explicit_time_range_subsets_session_without_reintroducing_publication_periods(
+    tmp_path: Path,
+    monkeypatch,
 ) -> None:
-    level1 = _write_level1(tmp_path / "20240101_spu_00_L1.nc", ["532.AN"])
+    level1 = _write_level1(tmp_path / f"{SESSION_ID}_L1.nc", ["532.AN"])
     logger = _ListLogger()
     captured: dict[str, object] = {}
 
@@ -139,14 +142,14 @@ def test_liracos_time_range_subsets_data_and_uses_unique_output_prefix(
         captured["times"] = np.asarray(kwargs["data_slice"]["time"].values)
         captured["prefix"] = kwargs["file_name_prefix"]
         captured["time_range_utc"] = kwargs["time_range_utc"]
-        out_path = Path(kwargs["output_folder"]) / "zoom_quicklook.png"
+        out_path = Path(kwargs["output_folder"]) / "zoom.png"
         out_path.write_text("quicklook", encoding="utf-8")
         return out_path
 
     def fake_global(ds, output_folder, file_name_prefix, config, root_dir):
         captured["global_times"] = np.asarray(ds["time"].values)
         captured["global_prefix"] = file_name_prefix
-        out_path = Path(output_folder) / f"rcs_{file_name_prefix}_mean.png"
+        out_path = Path(output_folder) / "mean.png"
         out_path.write_text("global", encoding="utf-8")
         return out_path
 
@@ -154,79 +157,34 @@ def test_liracos_time_range_subsets_data_and_uses_unique_output_prefix(
     monkeypatch.setattr(liracos, "plot_global_mean_rcs", fake_global)
 
     result = liracos.process_single_nc(
-        (level1, _config(["532.AN"], incremental=False), tmp_path, logger, "00:04", "00:11")
+        (
+            level1,
+            _config(["532.AN"], incremental=False),
+            tmp_path,
+            logger,
+            "00:04",
+            "00:11",
+        )
     )
 
     assert result.status is ExecutionStatus.OK
     assert len(captured["times"]) == 2
     assert len(captured["global_times"]) == 2
-    assert captured["prefix"] == "20240101_spu_00_000400-001100UTC"
+    assert captured["prefix"] == f"{SESSION_ID}_000400-001100UTC"
     assert captured["global_prefix"] == captured["prefix"]
     start_utc, end_utc = captured["time_range_utc"]
     assert start_utc == pd.Timestamp("2024-01-01T00:04:00")
     assert end_utc == pd.Timestamp("2024-01-01T00:11:00")
 
 
-def test_fixed_period_utc_window_uses_local_station_period() -> None:
-    ds = xr.Dataset(
-        attrs={
-            "Measurement_ID": "20251107_spu_06",
-            "timezone": "America/Sao_Paulo",
-        }
+def test_plot_quicklook_defaults_to_observed_session_extent(tmp_path: Path, monkeypatch) -> None:
+    times = pd.to_datetime(
+        ["2024-01-01T00:02:00", "2024-01-01T00:05:00", "2024-01-01T00:09:00"]
     )
-
-    window = _fixed_period_utc_window(ds)
-
-    assert window is not None
-    start_utc, end_utc, label = window
-    assert start_utc == pd.Timestamp("2025-11-07T09:00:00")
-    assert end_utc == pd.Timestamp("2025-11-07T15:00:00")
-    assert label == "06:00–12:00 America/Sao_Paulo"
-
-
-def test_fixed_period_utc_window_preserves_historical_dst_offsets() -> None:
-    ds = xr.Dataset(
-        attrs={
-            "Measurement_ID": "20181104_spu_00",
-            "timezone": "America/Sao_Paulo",
-        }
-    )
-
-    window = _fixed_period_utc_window(ds)
-
-    assert window is not None
-    start_utc, end_utc, _label = window
-    assert start_utc == pd.Timestamp("2018-11-04T03:00:00")
-    assert end_utc == pd.Timestamp("2018-11-04T08:00:00")
-
-
-def test_fixed_period_axis_is_applied_to_rendered_quicklook() -> None:
-    ds = xr.Dataset()
-    fig, ax = plt.subplots()
-    try:
-        label = _apply_fixed_period_axis(
-            ax,
-            ds,
-            _config(["532.AN"]),
-            measurement_id="20200126_spu_00",
-            timezone_name="America/Sao_Paulo",
-        )
-
-        left, right = ax.get_xlim()
-        assert np.isclose(left, mdates.date2num(pd.Timestamp("2020-01-26T03:00:00").to_pydatetime()))
-        assert np.isclose(right, mdates.date2num(pd.Timestamp("2020-01-26T09:00:00").to_pydatetime()))
-        assert label == "00:00–06:00 America/Sao_Paulo"
-    finally:
-        plt.close(fig)
-
-
-def test_plot_quicklook_renders_full_canonical_period(tmp_path: Path, monkeypatch) -> None:
-    times = pd.to_datetime(["2020-01-26T05:23:00", "2020-01-26T06:30:00", "2020-01-26T08:59:00"])
-    altitude = np.array([0.5, 1.0, 1.5])
     data = xr.DataArray(
         np.ones((3, 3)),
         dims=("time", "altitude"),
-        coords={"time": times, "altitude": altitude},
+        coords={"time": times, "altitude": np.array([0.5, 1.0, 1.5])},
     )
     captured: dict[str, object] = {}
 
@@ -234,117 +192,99 @@ def test_plot_quicklook_renders_full_canonical_period(tmp_path: Path, monkeypatc
         del dpi
         ax = fig.axes[0]
         captured["xlim"] = ax.get_xlim()
-        captured["title"] = ax.get_title()
         captured["footer_texts"] = [item.get_text() for item in fig.texts]
-        captured["facecolor"] = ax.get_facecolor()
         plt.close(fig)
         return Path(out_path)
 
     monkeypatch.setattr(quicklooks, "_save_figure", fake_save)
 
-    quicklooks.plot_quicklook(
+    output = quicklooks.plot_quicklook(
         data_slice=data,
         error_slice=data * 0.05,
         max_altitude=1.5,
         channel_name="532.PC",
         ds=xr.Dataset(coords={"time": times}),
         output_folder=tmp_path,
-        file_name_prefix="20200126_spu_00",
+        file_name_prefix=SESSION_ID,
         config=_config(["532.PC"]),
         root_dir=tmp_path,
-        measurement_id="20200126_spu_00",
+        session_id=SESSION_ID,
         timezone_name="America/Sao_Paulo",
     )
 
-    left, right = captured["xlim"]
-    assert np.isclose(left, mdates.date2num(pd.Timestamp("2020-01-26T03:00:00").to_pydatetime()))
-    assert np.isclose(right, mdates.date2num(pd.Timestamp("2020-01-26T09:00:00").to_pydatetime()))
-    assert "Local period:" not in str(captured["title"])
-    assert "Local period: 00:00–06:00 America/Sao_Paulo" in captured["footer_texts"]
+    assert output.name == f"{SESSION_ID}_L1_RCS_532nm_PC_1.5km.png"
+    assert not any("Local period" in text for text in captured["footer_texts"])
 
 
-def test_liracos_passes_canonical_filename_period_and_station_timezone(tmp_path: Path, monkeypatch) -> None:
-    level1 = _write_level1(tmp_path / "20200126_spu_00_L1.nc", ["532.AN"])
+def test_visualization_passes_canonical_session_id(tmp_path: Path, monkeypatch) -> None:
+    level1 = _write_level1(tmp_path / f"{SESSION_ID}_L1.nc", ["532.AN"])
     logger = _ListLogger()
-    captured: dict[str, str | None] = {}
+    captured: dict[str, object] = {}
 
     def fake_quicklook(**kwargs):
-        captured["measurement_id"] = kwargs["measurement_id"]
+        captured["session_id"] = kwargs["session_id"]
         captured["timezone_name"] = kwargs["timezone_name"]
-        out_path = Path(kwargs["output_folder"]) / "fake_quicklook.png"
+        out_path = Path(kwargs["output_folder"]) / f"{SESSION_ID}_L1_RCS_532nm_AN_1km.png"
         out_path.write_text("quicklook", encoding="utf-8")
         return out_path
 
     def fake_global(ds, output_folder, file_name_prefix, config, root_dir):
-        out_path = Path(output_folder) / f"rcs_{file_name_prefix}_mean.png"
+        out_path = Path(output_folder) / f"{SESSION_ID}_L1_MeanRCS.png"
         out_path.write_text("global", encoding="utf-8")
         return out_path
 
     monkeypatch.setattr(liracos, "plot_quicklook", fake_quicklook)
     monkeypatch.setattr(liracos, "plot_global_mean_rcs", fake_global)
 
-    config = _config(["532.AN"], incremental=False)
-    config["_station_catalog"] = {"station": {"timezone": "America/Sao_Paulo"}}
-
-    result = liracos.process_single_nc((level1, config, tmp_path, logger))
+    result = liracos.process_single_nc(
+        (level1, _config(["532.AN"], incremental=False), tmp_path, logger)
+    )
 
     assert result.status is ExecutionStatus.OK
+    assert result.output_path == tmp_path / "figures"
     assert captured == {
-        "measurement_id": "20200126_spu_00",
+        "session_id": SESSION_ID,
         "timezone_name": "America/Sao_Paulo",
     }
 
 
-def test_fixed_period_window_can_use_explicit_context_without_level1_attrs() -> None:
-    ds = xr.Dataset()
-
-    window = _fixed_period_utc_window(
-        ds,
-        measurement_id="20200126_spu_00",
-        timezone_name="America/Sao_Paulo",
-    )
-
-    assert window is not None
-    start_utc, end_utc, label = window
-    assert start_utc == pd.Timestamp("2020-01-26T03:00:00")
-    assert end_utc == pd.Timestamp("2020-01-26T09:00:00")
-    assert label == "00:00–06:00 America/Sao_Paulo"
-
-
-def test_global_mean_timestamp_skips_current_plot(tmp_path: Path, monkeypatch) -> None:
-    level1 = _write_level1(tmp_path / "20240101_spu_00_L1.nc", ["532.AN"])
+def test_incremental_session_figures_are_skipped_when_current(tmp_path: Path, monkeypatch) -> None:
+    level1 = _write_level1(tmp_path / f"{SESSION_ID}_L1.nc", ["532.AN"])
     logger = _ListLogger()
     calls = {"quicklook": 0, "global": 0}
 
     def fake_quicklook(**kwargs):
         calls["quicklook"] += 1
-        out_path = Path(kwargs["output_folder"]) / "fake_quicklook.png"
+        out_path = Path(kwargs["output_folder"]) / f"{SESSION_ID}_L1_RCS_532nm_AN_1km.png"
         out_path.write_text("quicklook", encoding="utf-8")
         return out_path
 
     def fake_global(ds, output_folder, file_name_prefix, config, root_dir):
         calls["global"] += 1
-        out_path = Path(output_folder) / f"rcs_{file_name_prefix}_mean.png"
+        out_path = Path(output_folder) / f"{SESSION_ID}_L1_MeanRCS.png"
         out_path.write_text("global", encoding="utf-8")
         return out_path
 
     monkeypatch.setattr(liracos, "plot_quicklook", fake_quicklook)
     monkeypatch.setattr(liracos, "plot_global_mean_rcs", fake_global)
 
-    first = liracos.process_single_nc((level1, _config(["532.AN"], incremental=True), tmp_path, logger))
-    second = liracos.process_single_nc((level1, _config(["532.AN"], incremental=True), tmp_path, logger))
+    first = liracos.process_single_nc(
+        (level1, _config(["532.AN"], incremental=True), tmp_path, logger)
+    )
+    second = liracos.process_single_nc(
+        (level1, _config(["532.AN"], incremental=True), tmp_path, logger)
+    )
 
     assert first.status is ExecutionStatus.OK
     assert second.status is ExecutionStatus.OK
     assert first.metadata["generated"] == 2
-    assert second.metadata["generated"] == 1
-    assert second.metadata["skipped"] == 1
-    assert calls["global"] == 1
-    assert any("up to date: rcs_20240101_spu_00_mean.png" in message for message in logger.messages)
+    assert second.metadata["generated"] == 0
+    assert second.metadata["skipped"] == 2
+    assert calls == {"quicklook": 1, "global": 1}
 
 
-def test_global_mean_regenerates_when_config_file_changes(tmp_path: Path, monkeypatch) -> None:
-    level1 = _write_level1(tmp_path / "20240101_spu_00_L1.nc", ["532.AN", "355.AN"])
+def test_figures_regenerate_when_config_file_changes(tmp_path: Path, monkeypatch) -> None:
+    level1 = _write_level1(tmp_path / f"{SESSION_ID}_L1.nc", ["532.AN"])
     config_file = tmp_path / "config.yaml"
     config_file.write_text("first", encoding="utf-8")
     logger = _ListLogger()
@@ -352,14 +292,14 @@ def test_global_mean_regenerates_when_config_file_changes(tmp_path: Path, monkey
 
     def fake_quicklook(**kwargs):
         calls["quicklook"] += 1
-        out_path = Path(kwargs["output_folder"]) / f"fake_quicklook_{calls['quicklook']}.png"
+        out_path = Path(kwargs["output_folder"]) / f"{SESSION_ID}_L1_RCS_532nm_AN_1km.png"
         out_path.write_text("quicklook", encoding="utf-8")
         return out_path
 
     def fake_global(ds, output_folder, file_name_prefix, config, root_dir):
         calls["global"] += 1
-        out_path = Path(output_folder) / f"rcs_{file_name_prefix}_mean.png"
-        out_path.write_text(f"global {calls['global']}", encoding="utf-8")
+        out_path = Path(output_folder) / f"{SESSION_ID}_L1_MeanRCS.png"
+        out_path.write_text("global", encoding="utf-8")
         return out_path
 
     monkeypatch.setattr(liracos, "plot_quicklook", fake_quicklook)
@@ -368,12 +308,13 @@ def test_global_mean_regenerates_when_config_file_changes(tmp_path: Path, monkey
     first_config = _config(["532.AN"], incremental=True, config_file=config_file)
     liracos.process_single_nc((level1, first_config, tmp_path, logger))
 
-    global_path = tmp_path / "quicklooks" / "rcs_20240101_spu_00_mean.png"
-    newer_ns = global_path.stat().st_mtime_ns + 1_000_000_000
+    mean_path = tmp_path / "figures" / f"{SESSION_ID}_L1_MeanRCS.png"
+    newer_ns = mean_path.stat().st_mtime_ns + 1_000_000_000
     config_file.write_text("changed", encoding="utf-8")
     os.utime(config_file, ns=(newer_ns, newer_ns))
 
-    second_config = _config(["532.AN", "355.AN"], incremental=True, config_file=config_file)
+    second_config = _config(["532.AN"], incremental=True, config_file=config_file)
     liracos.process_single_nc((level1, second_config, tmp_path, logger))
 
     assert calls["global"] == 2
+    assert calls["quicklook"] == 2
