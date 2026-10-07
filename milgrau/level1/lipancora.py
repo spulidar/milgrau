@@ -245,7 +245,7 @@ def _discover_level0_files(config: Mapping[str, Any]) -> list[Path]:
     in_dir = processed_data_root(config)
     discovered: list[Path] = []
     for path in sorted(in_dir.rglob(f"*{LEVEL0_SUFFIX}")):
-        if any(part in {"quicklooks", "qa"} for part in path.parts):
+        if "figures" in path.parts:
             continue
         discovered.append(path)
     return discovered
