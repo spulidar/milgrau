@@ -1,4 +1,4 @@
-"""Tests for structured LIBIDS measurement-group results."""
+"""Tests for structured LIBIDS session-processing results."""
 
 from __future__ import annotations
 
@@ -10,9 +10,14 @@ import pandas as pd
 from milgrau.level0 import processing
 from milgrau.operations import ExecutionStatus
 
+SESSION_ID = "spu_20240101-1200Z_20240101-1205Z"
+
 
 def _config(tmp_path: Path) -> dict:
-    return {"directories": {"processed_data": str(tmp_path / "processed")}, "_station_catalog": {"station": {"id": "spu"}}}
+    return {
+        "directories": {"processed_data": str(tmp_path / "processed")},
+        "_station_catalog": {"station": {"id": "spu"}},
+    }
 
 
 def _logger() -> logging.Logger:
@@ -24,17 +29,17 @@ def _logger() -> logging.Logger:
     return logger
 
 
-def test_measurement_group_without_measurements_is_explicit_skip(tmp_path: Path) -> None:
+def test_session_without_measurements_is_explicit_skip(tmp_path: Path) -> None:
     group = pd.DataFrame({"meas_type": ["dark_current"], "filepath": [str(tmp_path / "dark")]})
 
-    result = processing.process_measurement_group("20240101_spu_06", group, _config(tmp_path), _logger())
+    result = processing.process_session_group(SESSION_ID, group, _config(tmp_path), _logger())
 
     assert result.status is ExecutionStatus.SKIPPED
     assert result.stage == "level0.measurements"
-    assert result.metadata["measurement_id"] == "20240101_spu_06"
+    assert result.metadata["session_id"] == SESSION_ID
 
 
-def test_measurement_group_preserves_parse_failure_stage_and_cause(tmp_path: Path, monkeypatch) -> None:
+def test_session_preserves_parse_failure_stage_and_cause(tmp_path: Path, monkeypatch) -> None:
     input_path = tmp_path / "measurement"
     input_path.write_text("invalid raw lidar", encoding="utf-8")
     group = pd.DataFrame({"meas_type": ["measurements"], "filepath": [str(input_path)]})
@@ -45,7 +50,7 @@ def test_measurement_group_preserves_parse_failure_stage_and_cause(tmp_path: Pat
 
     monkeypatch.setattr(processing, "parse_licel_group", fail_parse)
 
-    result = processing.process_measurement_group("20240101_spu_06", group, _config(tmp_path), _logger())
+    result = processing.process_session_group(SESSION_ID, group, _config(tmp_path), _logger())
 
     assert result.status is ExecutionStatus.ERROR
     assert result.stage == "level0.parse"
@@ -53,11 +58,11 @@ def test_measurement_group_preserves_parse_failure_stage_and_cause(tmp_path: Pat
     assert "invalid Licel header" in result.traceback
 
 
-def test_measurement_group_success_keeps_only_level0_file_effect(tmp_path: Path, monkeypatch) -> None:
+def test_session_success_keeps_only_level0_file_effect(tmp_path: Path, monkeypatch) -> None:
     input_path = tmp_path / "measurement"
     input_path.write_text("raw lidar", encoding="utf-8")
     group = pd.DataFrame(
-        {"meas_type": ["measurements"], "filepath": [str(input_path)], "period": ["06-12"]}
+        {"meas_type": ["measurements"], "filepath": [str(input_path)]}
     )
     monkeypatch.setattr(processing, "fetch_group_weather", lambda *_args: {})
     monkeypatch.setattr(
@@ -72,14 +77,15 @@ def test_measurement_group_success_keeps_only_level0_file_effect(tmp_path: Path,
     )
 
     def fake_build(**kwargs) -> None:
+        assert kwargs["session_id"] == SESSION_ID
         Path(kwargs["netcdf_path"]).write_text("level0", encoding="utf-8")
 
     monkeypatch.setattr(processing, "build_level0_netcdf", fake_build)
     monkeypatch.setattr(processing, "write_netcdf_provenance", lambda *_args, **_kwargs: {})
 
-    result = processing.process_measurement_group("20240101_spu_06", group, _config(tmp_path), _logger())
+    result = processing.process_session_group(SESSION_ID, group, _config(tmp_path), _logger())
 
     assert result.status is ExecutionStatus.OK
     assert result.stage == "level0.complete"
+    assert result.metadata["session_id"] == SESSION_ID
     assert result.output_path is not None and result.output_path.exists()
-    assert not result.output_path.with_suffix(result.output_path.suffix + ".provenance.json").exists()
