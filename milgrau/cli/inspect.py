@@ -278,9 +278,12 @@ def _expand_inputs(values: Sequence[Any], config: dict) -> list[Path]:
     )
     resolved: list[Path] = []
     for suffix in (LEVEL0_SUFFIX, LEVEL1_SUFFIX, LEVEL2_SUFFIX):
-        resolved.extend(
-            resolve_product_selection(product_selection, config, suffix=suffix)
-        )
+        try:
+            resolved.extend(
+                resolve_product_selection(product_selection, config, suffix=suffix)
+            )
+        except FileNotFoundError:
+            continue
 
     for path in selection.paths:
         if path.is_dir():
