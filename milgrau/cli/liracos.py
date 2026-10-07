@@ -8,14 +8,8 @@ from pathlib import Path
 from milgrau.cli.common import add_input_argument, finish_cli, run_guarded
 from milgrau.config.loader import load_config
 from milgrau.io.logging_utils import bind_log_context, setup_logger
-from milgrau.io.paths import (
-    LEVEL1_SUFFIX,
-    build_measurement_id,
-    logging_measurement_id,
-    measurement_day_dir,
-    station_id,
-)
-from milgrau.io.selection import parse_input_selection
+from milgrau.io.paths import LEVEL1_SUFFIX, logging_session_id
+from milgrau.io.selection import parse_input_selection, resolve_product_selection
 from milgrau.operations import ExecutionStatus, ExecutionSummary
 from milgrau.version import __version__
 from milgrau.viz.liracos import process_all_level1_files, process_single_nc
@@ -41,33 +35,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _expand_inputs(inputs, config: dict) -> list[Path]:
     selection = parse_input_selection(inputs, config)
-    resolved: list[Path] = []
-    canonical_station: str | None = None
-
-    for measurement_id in sorted(selection.measurement_ids):
-        resolved.append(measurement_day_dir(measurement_id, config) / f"{measurement_id}{LEVEL1_SUFFIX}")
-
-    for date_text in sorted(selection.dates):
-        if canonical_station is None:
-            canonical_station = station_id(config)
-        anchor = build_measurement_id(date_text, canonical_station, "00")
-        day_dir = measurement_day_dir(anchor, config)
-        matches = sorted(day_dir.glob(f"{date_text}_{canonical_station}_??{LEVEL1_SUFFIX}"))
-        if not matches:
-            raise FileNotFoundError(f"No Level 1 products found for date {date_text}.")
-        resolved.extend(matches)
-
-    for path in selection.paths:
-        if path.is_dir():
-            resolved.extend(sorted(path.rglob(f"*{LEVEL1_SUFFIX}")))
-        else:
-            resolved.append(path)
-
-    unique = sorted(dict.fromkeys(resolved))
-    missing = [path for path in unique if not path.is_file()]
-    if missing:
-        raise FileNotFoundError("Level 1 input(s) not found: " + ", ".join(str(path) for path in missing))
-    return unique
+    return resolve_product_selection(selection, config, suffix=LEVEL1_SUFFIX)
 
 
 def _process_selected(args: argparse.Namespace, config: dict, logger, root_dir: Path) -> ExecutionSummary:
@@ -78,8 +46,8 @@ def _process_selected(args: argparse.Namespace, config: dict, logger, root_dir: 
     )
     results = []
     for path in _expand_inputs(args.inputs, effective_config):
-        measurement_id = logging_measurement_id(path)
-        file_logger = bind_log_context(logger, measurement_id=measurement_id)
+        session_id = logging_session_id(path)
+        file_logger = bind_log_context(logger, measurement_id=session_id)
         result = process_single_nc(
             (
                 path,
