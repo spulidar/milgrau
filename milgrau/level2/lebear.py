@@ -171,7 +171,7 @@ def process_single_level1_file(
     """Generate one productive Level 2 product."""
     nc_path = Path(nc_file)
     session_id = logging_session_id(nc_path)
-    file_logger = bind_log_context(logger, measurement_id=session_id)
+    file_logger = bind_log_context(logger, session_id=session_id)
     started_at = time.perf_counter()
     output_path: Path | None = None
     stage = "level2.ingestion"
@@ -386,7 +386,7 @@ def process_level_2(config: Mapping[str, Any], logger: logging.Logger) -> Execut
     skipped_results: list[ExecutionResult] = []
     for file_path in files:
         session_id = logging_session_id(file_path)
-        file_logger = bind_log_context(logger, measurement_id=session_id)
+        file_logger = bind_log_context(logger, session_id=session_id)
         output_path = level2_output_path(file_path)
         if incremental and level2_output_is_current(file_path, output_path, config):
             bind_log_context(file_logger, stage="skip").info(
@@ -426,7 +426,7 @@ def process_level_2(config: Mapping[str, Any], logger: logging.Logger) -> Execut
     for file_path in files_to_process:
         session_id = logging_session_id(file_path)
         file_summary = process_single_level1_file(
-            file_path, config, bind_log_context(logger, measurement_id=session_id)
+            file_path, config, bind_log_context(logger, session_id=session_id)
         )
         results.extend(file_summary.results)
     return ExecutionSummary.from_results(results)
