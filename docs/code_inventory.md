@@ -20,7 +20,7 @@ only through Git history.
 | --- | --- |
 | configuration loading/resolution | `milgrau.config` |
 | dated station/instrument resolution | `milgrau.config.station` |
-| paths and measurement IDs | `milgrau.io.paths` |
+| paths and session IDs | `milgrau.io.paths` |
 | Level 0/1/current Level 2 contract entrypoints | `milgrau.io.contracts` |
 | structured execution results | `milgrau.operations` |
 | incremental currentness | `milgrau.incremental` |
@@ -31,7 +31,7 @@ only through Git history.
 | Responsibility | Canonical owner |
 | --- | --- |
 | Licel parsing | `milgrau.io.licel` |
-| measurement grouping | `milgrau.level0.inventory` |
+| continuous session grouping | `milgrau.level0.inventory` |
 | acquisition filtering | `milgrau.level0.filtering` |
 | SCC-compatible NetCDF construction | `milgrau.level0.netcdf` |
 | end-to-end orchestration | `milgrau.level0.processing` |
