@@ -65,23 +65,15 @@ def _selector_config() -> dict:
     return {"_station_catalog": {"station": {"id": "spu"}}}
 
 
-def test_shared_input_parser_accepts_measurement_date_and_period_forms() -> None:
+def test_shared_input_parser_accepts_session_and_local_date_forms() -> None:
     config = _selector_config()
 
-    exact = parse_input_selection([["20251107_spu_06"]], config)
-    assert exact.measurement_ids == frozenset({"20251107_spu_06"})
+    session_id = "spu_20251107-0900Z_20251107-1500Z"
+    exact = parse_input_selection([[session_id]], config)
+    assert exact.session_ids == frozenset({session_id})
 
     whole_day = parse_input_selection([["20251107"]], config)
     assert whole_day.dates == frozenset({"20251107"})
-
-    periods = parse_input_selection([["20251107", "06", "12"]], config)
-    assert periods.measurement_ids == frozenset({"20251107_spu_06", "20251107_spu_12"})
-
-    quoted_style = parse_input_selection(["20251107 06 12"], config)
-    assert quoted_style.measurement_ids == periods.measurement_ids
-
-    argparse_quoted_style = parse_input_selection([["20251107 06 12"]], config)
-    assert argparse_quoted_style.measurement_ids == periods.measurement_ids
 
 
 def test_shared_input_parser_preserves_explicit_path_with_spaces(tmp_path: Path) -> None:
@@ -92,10 +84,13 @@ def test_shared_input_parser_preserves_explicit_path_with_spaces(tmp_path: Path)
     assert selection.paths == (input_path.resolve(),)
 
 
-def test_primary_cli_parsers_accept_date_with_multiple_periods() -> None:
+def test_primary_cli_parsers_accept_session_or_local_date() -> None:
+    session_id = "spu_20251107-0900Z_20251107-1500Z"
     for module in (libids, lipancora, liracos, lebear):
-        args = module._build_parser().parse_args(["-i", "20251107", "06", "12"])
-        assert args.inputs == [["20251107", "06", "12"]]
+        by_session = module._build_parser().parse_args(["-i", session_id])
+        assert by_session.inputs == [[session_id]]
+        by_date = module._build_parser().parse_args(["-i", "20251107"])
+        assert by_date.inputs == [["20251107"]]
 
 
 def test_lebear_time_window_option_is_explicitly_utc() -> None:
