@@ -198,7 +198,7 @@ def process_single_nc(
         nc_file_path, config, root_dir, logger, start_time, end_time = args
     nc_file = Path(nc_file_path)
     session_id = logging_session_id(nc_file)
-    file_logger = bind_log_context(logger, pipeline="VIZ", measurement_id=session_id)
+    file_logger = bind_log_context(logger, pipeline="VIZ", session_id=session_id)
     root_path = Path(root_dir)
     started_at = time.perf_counter()
     output_folder: Path | None = None
@@ -215,7 +215,7 @@ def process_single_nc(
         except ValueError:
             file_name_prefix = nc_file.stem.removesuffix("_L1")
         session_id = logging_session_id(nc_file)
-        file_logger = bind_log_context(logger, pipeline="VIZ", measurement_id=session_id)
+        file_logger = bind_log_context(logger, pipeline="VIZ", session_id=session_id)
         resolved = resolve_visualization_config(config)
         output_folder = nc_file.parent / "figures"
         ensure_directories(output_folder)
@@ -384,6 +384,6 @@ def process_all_level1_files(
             (nc_file, config, root_path, pipeline_logger, start_time, end_time)
         )
         if result.status.is_failure:
-            bind_log_context(pipeline_logger, measurement_id=result.metadata.get("session_id"), stage="failed").warning("%s", result.message)
+            bind_log_context(pipeline_logger, session_id=result.metadata.get("session_id"), stage="failed").warning("%s", result.message)
         results.append(result)
     return ExecutionSummary.from_results(results)
