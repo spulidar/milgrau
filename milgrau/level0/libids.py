@@ -171,7 +171,7 @@ def process_level_0(
     incremental = incremental_enabled(config)
     results: list[ExecutionResult] = []
     for session_id, group_df in df_good.groupby("session_id"):
-        group_logger = bind_log_context(pipeline_logger, measurement_id=session_id)
+        group_logger = bind_log_context(pipeline_logger, session_id=session_id)
         netcdf_path = level0_output_path(session_id, config)
         if not force and incremental and _level0_is_current(session_id, group_df, config, netcdf_path):
             bind_log_context(group_logger, stage="skip").info("up to date | %s", netcdf_path.name)
