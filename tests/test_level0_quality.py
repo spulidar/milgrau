@@ -24,7 +24,7 @@ def _row(
 ) -> dict:
     return {
         "filepath": filepath,
-        "meas_id": "20250914_spu_12",
+        "session_id": "spu_20250914-1500Z_20250914-1600Z",
         "meas_type": meas_type,
         "nshots": nshots,
         "duration": duration,
