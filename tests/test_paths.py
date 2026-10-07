@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
 from milgrau.io.paths import (
     build_measurement_id,
+    build_session_id,
     global_mean_rcs_output_path,
     level0_output_path,
     level0_scc_output_path,
@@ -17,7 +19,14 @@ from milgrau.io.paths import (
     logging_measurement_id,
     measurement_day_dir,
     product_measurement_id,
+    product_session_id,
     quicklook_output_path,
+    session_dir,
+    session_id_parts,
+    session_level0_output_path,
+    session_level0_scc_output_path,
+    session_level1_output_path,
+    session_level2_output_path,
     radiosonde_cache_dir,
     raw_data_root,
     surface_weather_cache_dir,
@@ -119,3 +128,66 @@ def test_configured_roots_are_resolved_from_directories_section(tmp_path: Path) 
     assert log_output_root(config, root_dir=tmp_path) == tmp_path / "logs"
     assert surface_weather_cache_dir(config, root_dir=tmp_path) == tmp_path / "custom" / "weather-cache"
     assert radiosonde_cache_dir(config, root_dir=tmp_path) == tmp_path / "custom" / "radiosonde-cache"
+
+
+def test_session_id_is_station_plus_complete_utc_interval() -> None:
+    session_id = build_session_id(
+        "SPU",
+        datetime(2025, 5, 11, 0, 12, 17, tzinfo=timezone.utc),
+        datetime(2025, 5, 11, 7, 37, 42, tzinfo=timezone.utc),
+    )
+    assert session_id == "spu_20250511-0012Z_20250511-0737Z"
+
+    station, start, end = session_id_parts(session_id)
+    assert station == "spu"
+    assert start == datetime(2025, 5, 11, 0, 12, tzinfo=timezone.utc)
+    assert end == datetime(2025, 5, 11, 7, 37, tzinfo=timezone.utc)
+
+
+def test_session_id_requires_utc_aware_ordered_interval() -> None:
+    with pytest.raises(ValueError, match="timezone-aware"):
+        build_session_id(
+            "spu",
+            datetime(2025, 5, 11, 0, 12),
+            datetime(2025, 5, 11, 7, 37, tzinfo=timezone.utc),
+        )
+    with pytest.raises(ValueError, match="later than session start"):
+        build_session_id(
+            "spu",
+            datetime(2025, 5, 11, 7, 37, tzinfo=timezone.utc),
+            datetime(2025, 5, 11, 0, 12, tzinfo=timezone.utc),
+        )
+
+
+def test_session_products_live_inside_self_identifying_session_folder(tmp_path: Path) -> None:
+    config = _config()
+    session_id = "spu_20250511-0012Z_20250511-0737Z"
+    expected_dir = tmp_path / "processed" / "spu" / "2025" / "05" / session_id
+
+    assert session_dir(session_id, config, root_dir=tmp_path) == expected_dir
+
+    level0 = session_level0_output_path(session_id, config, root_dir=tmp_path)
+    assert level0 == expected_dir / f"{session_id}_L0.nc"
+    assert product_session_id(level0) == session_id
+
+    scc = session_level0_scc_output_path(session_id, config, root_dir=tmp_path)
+    assert scc == expected_dir / f"{session_id}_L0_scc.nc"
+    assert product_session_id(scc) == session_id
+
+    level1 = session_level1_output_path(level0, config, root_dir=tmp_path)
+    assert level1 == expected_dir / f"{session_id}_L1.nc"
+    assert product_session_id(level1) == session_id
+
+    level2 = session_level2_output_path(level1)
+    assert level2 == expected_dir / f"{session_id}_L2.nc"
+    assert product_session_id(level2) == session_id
+
+
+def test_session_level2_variant_preserves_session_identity(tmp_path: Path) -> None:
+    config = _config()
+    session_id = "spu_20250511-0012Z_20250511-0737Z"
+    level0 = session_level0_output_path(session_id, config, root_dir=tmp_path)
+    level1 = session_level1_output_path(level0, config, root_dir=tmp_path)
+    level2 = session_level2_output_path(level1, variant_tag="night")
+    assert level2 == level0.parent / f"{session_id}_night_L2.nc"
+    assert product_session_id(level2) == session_id
