@@ -25,7 +25,7 @@ def _logger(name: str) -> logging.Logger:
 
 
 def test_level1_batch_continues_after_one_file_error(tmp_path: Path, monkeypatch) -> None:
-    files = [tmp_path / "20240101_spu_06_L0.nc", tmp_path / "20240101_spu_12_L0.nc"]
+    files = [tmp_path / "spu_20240101-0000Z_20240101-0100Z_L0.nc", tmp_path / "spu_20240101-0200Z_20240101-0300Z_L0.nc"]
     config = {"directories": {"processed_data": str(tmp_path)}}
     calls: list[Path] = []
 
@@ -51,8 +51,8 @@ def test_level1_batch_continues_after_one_file_error(tmp_path: Path, monkeypatch
 
 def test_level2_batch_continues_after_one_file_error(tmp_path: Path, monkeypatch) -> None:
     files = [
-        tmp_path / "20240101_spu_06_L1.nc",
-        tmp_path / "20240101_spu_12_L1.nc",
+        tmp_path / "spu_20240101-0000Z_20240101-0100Z_L1.nc",
+        tmp_path / "spu_20240101-0200Z_20240101-0300Z_L1.nc",
     ]
     config = {"processing": {"incremental": False}}
     calls: list[Path] = []
@@ -100,8 +100,8 @@ def _visualization_config(tmp_path: Path) -> dict:
 
 def test_liracos_batch_aggregates_skip_and_error(tmp_path: Path, monkeypatch) -> None:
     files = [
-        tmp_path / "20240101_spu_06_L1.nc",
-        tmp_path / "20240101_spu_12_L1.nc",
+        tmp_path / "spu_20240101-0000Z_20240101-0100Z_L1.nc",
+        tmp_path / "spu_20240101-0200Z_20240101-0300Z_L1.nc",
     ]
     for path in files:
         path.write_text("synthetic", encoding="utf-8")
@@ -132,16 +132,16 @@ def test_liracos_invalid_filename_returns_structured_error(tmp_path: Path) -> No
 
     assert result.status is ExecutionStatus.ERROR
     assert result.stage == "visualization.ingestion"
-    assert result.metadata["measurement_id"] == "-"
+    assert result.metadata["session_id"] == "-"
 
 
 def test_libids_aggregates_ok_skip_and_error_groups(tmp_path: Path, monkeypatch) -> None:
-    group_ids = ["20240101_spu_00", "20240101_spu_06", "20240101_spu_12"]
+    session_ids = ["spu_20231231-2200Z_20231231-2300Z", "spu_20240101-0000Z_20240101-0100Z", "spu_20240101-0200Z_20240101-0300Z"]
     inventory = pd.DataFrame(
         {
-            "meas_id": group_ids,
+            "session_id": session_ids,
             "meas_type": ["measurements"] * 3,
-            "filepath": [str(tmp_path / name) for name in group_ids],
+            "filepath": [str(tmp_path / name) for name in session_ids],
         }
     )
     config = {
@@ -156,22 +156,22 @@ def test_libids_aggregates_ok_skip_and_error_groups(tmp_path: Path, monkeypatch)
 
     monkeypatch.setattr(libids, "validate_level0_config", lambda _config: None)
     monkeypatch.setattr(libids, "resolve_level0_config", lambda _config: resolved)
-    monkeypatch.setattr(libids, "build_measurement_inventory", lambda *_args, **_kwargs: inventory)
+    monkeypatch.setattr(libids, "build_session_inventory", lambda *_args, **_kwargs: inventory)
     monkeypatch.setattr(libids, "filter_laser_shots", lambda df, *_args, **_kwargs: df)
     monkeypatch.setattr(libids, "incremental_enabled", lambda _config: True)
-    monkeypatch.setattr(libids, "_level0_is_current", lambda meas_id, *_args: meas_id == "20240101_spu_00")
+    monkeypatch.setattr(libids, "_level0_is_current", lambda session_id, *_args: session_id == "spu_20231231-2200Z_20231231-2300Z")
 
-    def fake_process(meas_id, _group, _config, _logger) -> ExecutionResult:
-        calls.append(meas_id)
-        if meas_id == "20240101_spu_12":
+    def fake_process(session_id, _group, _config, _logger) -> ExecutionResult:
+        calls.append(session_id)
+        if session_id == "spu_20240101-0200Z_20240101-0300Z":
             raise RuntimeError("synthetic group failure")
-        return ExecutionResult.success("level0.complete", meas_id)
+        return ExecutionResult.success("level0.complete", session_id)
 
-    monkeypatch.setattr(libids, "process_measurement_group", fake_process)
+    monkeypatch.setattr(libids, "process_session_group", fake_process)
 
     summary = libids.process_level_0(config, _logger("test.orchestration.l0"))
 
-    assert set(calls) == {"20240101_spu_06", "20240101_spu_12"}
+    assert set(calls) == {"spu_20240101-0000Z_20240101-0100Z", "spu_20240101-0200Z_20240101-0300Z"}
     assert summary.counts == {
         ExecutionStatus.OK: 1,
         ExecutionStatus.SKIPPED: 1,
