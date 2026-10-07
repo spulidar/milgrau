@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -19,6 +19,18 @@ LEVEL2_SUFFIX = "_L2.nc"
 
 LOCAL_PERIOD_STARTS = ("00", "06", "12", "18")
 _STATION_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+SESSION_ID_RE = re.compile(
+    r"^(?P<station>[a-z0-9][a-z0-9-]*)_"
+    r"(?P<start>\\d{8}-\\d{4}Z)_"
+    r"(?P<end>\\d{8}-\\d{4}Z)$",
+    flags=re.IGNORECASE,
+)
+_SESSION_PRODUCT_RE = re.compile(
+    r"^(?P<session_id>[a-z0-9][a-z0-9-]*_\\d{8}-\\d{4}Z_\\d{8}-\\d{4}Z)"
+    r"(?P<suffix>_L0(?:_scc)?|_L1(?:_scc)?|(?:_[A-Za-z0-9_.-]+)?_L2(?:_scc)?)\\.nc$",
+    flags=re.IGNORECASE,
+)
+
 MEASUREMENT_ID_RE = re.compile(
     r"^(?P<date>\d{8})_(?P<station>[a-z0-9][a-z0-9-]*)_(?P<period>00|06|12|18)$",
     flags=re.IGNORECASE,
@@ -114,6 +126,159 @@ def station_id(config: Mapping[str, Any]) -> str:
         raise ValueError(f"station.id must be a lowercase filename-safe identifier; got {value!r}.")
     return value
 
+
+def _as_utc_datetime(value: Any, *, label: str) -> datetime:
+    """Normalize a datetime-like value to an aware UTC datetime."""
+    if isinstance(value, datetime):
+        result = value
+    else:
+        text = str(value).strip()
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        try:
+            result = datetime.fromisoformat(text)
+        except ValueError as exc:
+            raise ValueError(f"Invalid {label} {value!r}; expected an ISO-8601 datetime.") from exc
+    if result.tzinfo is None or result.utcoffset() is None:
+        raise ValueError(f"{label} must be timezone-aware.")
+    return result.astimezone(timezone.utc)
+
+
+def _session_timestamp(value: Any, *, label: str) -> tuple[str, datetime]:
+    exact = _as_utc_datetime(value, label=label)
+    return exact.strftime("%Y%m%d-%H%MZ"), exact
+
+
+def build_session_id(station: str, start_utc: Any, end_utc: Any) -> str:
+    """Build station_YYYYMMDD-HHMMZ_YYYYMMDD-HHMMZ for one complete session."""
+    station_text = str(station).strip().lower()
+    if not _STATION_ID_RE.fullmatch(station_text):
+        raise ValueError(f"Invalid station id: {station!r}")
+    start_text, start_exact = _session_timestamp(start_utc, label="session start")
+    end_text, end_exact = _session_timestamp(end_utc, label="session end")
+    if end_exact <= start_exact:
+        raise ValueError("Session end must be later than session start.")
+    if end_text == start_text:
+        raise ValueError(
+            "Session start and end collapse to the same minute in the canonical ID; "
+            "a session ID requires distinct start/end minutes."
+        )
+    return f"{station_text}_{start_text}_{end_text}"
+
+
+def session_id_parts(session_id: str) -> tuple[str, datetime, datetime]:
+    """Return (station, start_utc, end_utc) for one canonical session ID."""
+    value = str(session_id).strip().lower()
+    match = SESSION_ID_RE.fullmatch(value)
+    if match is None:
+        raise ValueError(
+            f"Invalid session_id {session_id!r}; expected "
+            "station_YYYYMMDD-HHMMZ_YYYYMMDD-HHMMZ."
+        )
+    try:
+        start = datetime.strptime(match.group("start"), "%Y%m%d-%H%MZ").replace(tzinfo=timezone.utc)
+        end = datetime.strptime(match.group("end"), "%Y%m%d-%H%MZ").replace(tzinfo=timezone.utc)
+    except ValueError as exc:
+        raise ValueError(f"Invalid UTC timestamp in session_id {session_id!r}.") from exc
+    if end <= start:
+        raise ValueError(f"Invalid session_id {session_id!r}; end must be later than start.")
+    return match.group("station").lower(), start, end
+
+
+def is_session_id(value: str) -> bool:
+    try:
+        session_id_parts(value)
+    except ValueError:
+        return False
+    return True
+
+
+def validate_session_id_for_config(session_id: str, config: Mapping[str, Any]) -> str:
+    """Validate a canonical session ID and require its station to match station.yaml."""
+    station, start, end = session_id_parts(session_id)
+    expected_station = station_id(config)
+    if station != expected_station:
+        raise ValueError(
+            f"Session ID station {station!r} does not match loaded station {expected_station!r}."
+        )
+    return build_session_id(station, start, end)
+
+
+def session_dir(
+    session_id: str,
+    config: Mapping[str, Any],
+    root_dir: str | Path | None = None,
+) -> Path:
+    """Return processed/station/YYYY/MM/session_id using the UTC session start."""
+    value = validate_session_id_for_config(session_id, config)
+    station, start, _end = session_id_parts(value)
+    return (
+        processed_data_root(config, root_dir=root_dir)
+        / station
+        / f"{start.year:04d}"
+        / f"{start.month:02d}"
+        / value
+    )
+
+
+def product_session_id(product_path: str | Path) -> str:
+    """Extract the canonical session ID from a session-based MILGRAU product filename."""
+    name = Path(product_path).name
+    match = _SESSION_PRODUCT_RE.fullmatch(name)
+    if match is None:
+        raise ValueError(f"Unrecognized session-based MILGRAU product filename: {name!r}")
+    value = match.group("session_id").lower()
+    session_id_parts(value)
+    return value
+
+
+def session_level0_output_path(
+    session_id: str,
+    config: Mapping[str, Any],
+    root_dir: str | Path | None = None,
+) -> Path:
+    value = validate_session_id_for_config(session_id, config)
+    return session_dir(value, config, root_dir=root_dir) / f"{value}{LEVEL0_SUFFIX}"
+
+
+def session_level0_scc_output_path(
+    session_id: str,
+    config: Mapping[str, Any],
+    root_dir: str | Path | None = None,
+) -> Path:
+    value = validate_session_id_for_config(session_id, config)
+    return session_dir(value, config, root_dir=root_dir) / f"{value}{LEVEL0_SCC_SUFFIX}"
+
+
+def session_level1_output_path(
+    level0_file: str | Path,
+    config: Mapping[str, Any],
+    root_dir: str | Path | None = None,
+) -> Path:
+    source = Path(level0_file)
+    session_id = product_session_id(source)
+    if source.name.endswith(LEVEL0_SCC_SUFFIX):
+        filename = f"{session_id}{LEVEL1_SCC_SUFFIX}"
+    elif source.name.endswith(LEVEL0_SUFFIX):
+        filename = f"{session_id}{LEVEL1_SUFFIX}"
+    else:
+        raise ValueError(f"Expected a session Level 0 product, got {source.name!r}.")
+    return session_dir(session_id, config, root_dir=root_dir) / filename
+
+
+def session_level2_output_path(level1_file: str | Path, variant_tag: str | None = None) -> Path:
+    path = Path(level1_file)
+    session_id = product_session_id(path)
+    variant = ""
+    if variant_tag:
+        safe_tag = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(variant_tag).strip()).strip("_")
+        if safe_tag:
+            variant = f"_{safe_tag}"
+    is_scc = path.name.endswith(LEVEL1_SCC_SUFFIX)
+    if not is_scc and not path.name.endswith(LEVEL1_SUFFIX):
+        raise ValueError(f"Expected a session Level 1 file: {path}")
+    scc_suffix = "_scc" if is_scc else ""
+    return path.parent / f"{session_id}{variant}_L2{scc_suffix}.nc"
 
 def normalize_period_start(value: str | int) -> str:
     """Return one canonical local six-hour period start."""
