@@ -43,7 +43,7 @@ def _process_selected(args: argparse.Namespace, config: dict, logger) -> Executi
     results = list(skipped)
     for path in files:
         session_id = logging_session_id(path)
-        file_logger = bind_log_context(logger, measurement_id=session_id)
+        file_logger = bind_log_context(logger, session_id=session_id)
         result = process_single_file((path, config, file_logger))
         if result.status is ExecutionStatus.OK:
             duration = 0.0 if result.duration_seconds is None else result.duration_seconds
