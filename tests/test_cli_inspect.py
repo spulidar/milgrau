@@ -71,46 +71,42 @@ def test_main_reports_missing_file(capsys, tmp_path) -> None:
 def _selection_config(tmp_path) -> dict:
     return {
         "directories": {"processed_data": str(tmp_path / "processed")},
-        "_station_catalog": {"station": {"id": "spu"}},
+        "_station_catalog": {"station": {"id": "spu", "timezone": "America/Sao_Paulo"}},
     }
 
 
 def test_expand_date_finds_all_processing_levels(tmp_path) -> None:
     config = _selection_config(tmp_path)
-    day_dir = tmp_path / "processed" / "spu" / "2024" / "06" / "20240620"
-    day_dir.mkdir(parents=True)
+    first = "spu_20240620-0300Z_20240620-0900Z"
+    second = "spu_20240620-2100Z_20240621-0500Z"
+    expected_names: list[str] = []
 
-    expected_names = [
-        "20240620_spu_00_L0.nc",
-        "20240620_spu_00_L1.nc",
-        "20240620_spu_00_L2.nc",
-        "20240620_spu_18_L0.nc",
-        "20240620_spu_18_L1.nc",
-        "20240620_spu_18_L2.nc",
-    ]
-    for name in expected_names:
-        (day_dir / name).write_bytes(b"placeholder")
-    (day_dir / "unrelated.nc").write_bytes(b"placeholder")
+    for session_id in (first, second):
+        session_dir = tmp_path / "processed" / "spu" / "2024" / "06" / session_id
+        session_dir.mkdir(parents=True)
+        for level in ("L0", "L1", "L2"):
+            name = f"{session_id}_{level}.nc"
+            (session_dir / name).write_bytes(b"placeholder")
+            expected_names.append(name)
 
     paths = _expand_inputs([["20240620"]], config)
 
-    assert [path.name for path in paths] == expected_names
+    assert [path.name for path in paths] == sorted(expected_names)
 
 
-def test_expand_measurement_id_finds_related_levels(tmp_path) -> None:
+def test_expand_session_id_finds_only_available_related_levels(tmp_path) -> None:
     config = _selection_config(tmp_path)
-    day_dir = tmp_path / "processed" / "spu" / "2024" / "06" / "20240620"
-    day_dir.mkdir(parents=True)
+    session_id = "spu_20240620-2100Z_20240621-0500Z"
+    session_dir = tmp_path / "processed" / "spu" / "2024" / "06" / session_id
+    session_dir.mkdir(parents=True)
 
     expected_names = [
-        "20240620_spu_18_L0.nc",
-        "20240620_spu_18_L1.nc",
-        "20240620_spu_18_L2.nc",
+        f"{session_id}_L0.nc",
+        f"{session_id}_L1.nc",
     ]
     for name in expected_names:
-        (day_dir / name).write_bytes(b"placeholder")
-    (day_dir / "20240620_spu_00_L0.nc").write_bytes(b"placeholder")
+        (session_dir / name).write_bytes(b"placeholder")
 
-    paths = _expand_inputs([["20240620_spu_18"]], config)
+    paths = _expand_inputs([[session_id]], config)
 
     assert [path.name for path in paths] == expected_names
