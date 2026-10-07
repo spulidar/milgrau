@@ -62,11 +62,36 @@ def _resolve_group_station_config(
     if measurement_rows.empty:
         raise ValueError("Cannot resolve station profile without measurement rows.")
     measurement_time = pd.to_datetime(measurement_rows["start_time_utc"], utc=True).min().to_pydatetime()
+    channels = lidar_data.get("channels", [])
     context = resolve_station_context(
         config,
         measurement_time=measurement_time,
-        available_channels=lidar_data.get("channels", []),
+        available_channels=channels,
     )
+
+    # The primary MILGRAU session remains continuous across day/night. Until the
+    # solar-regime refactor owns SCC mode selection, never export one SCC file
+    # using a mode that is not homogeneous over the complete session.
+    mode_samples = list(pd.to_datetime(measurement_rows["start_time_utc"], utc=True))
+    if "stop_time" in measurement_rows and measurement_rows["stop_time"].notna().any():
+        final_stop = pd.to_datetime(measurement_rows["stop_time"], utc=True).max()
+        mode_samples.append(final_stop - pd.Timedelta(microseconds=1))
+    scc_modes = {
+        str(
+            resolve_station_context(
+                config,
+                measurement_time=pd.Timestamp(timestamp).to_pydatetime(),
+                available_channels=channels,
+            )["mode"]
+        )
+        for timestamp in mode_samples
+    }
+    context = deepcopy(dict(context))
+    context["scc_modes_present"] = sorted(scc_modes)
+    context["scc_session_mode_homogeneous"] = len(scc_modes) <= 1
+    if len(scc_modes) > 1:
+        context["scc_export_ready"] = False
+
     effective_config = deepcopy(dict(config))
     effective_config["_resolved_station"] = deepcopy(dict(context))
     station_logger = bind_log_context(logger, stage="station")
@@ -81,7 +106,12 @@ def _resolve_group_station_config(
             ",".join(context["extra_channels"]) or "none",
             ",".join(context["missing_scc_channels"]) or "none",
         )
-        if context["missing_scc_channels"]:
+        if not context.get("scc_session_mode_homogeneous", True):
+            station_logger.warning(
+                "SCC export disabled | session spans modes=%s",
+                ",".join(context.get("scc_modes_present", [])),
+            )
+        elif context["missing_scc_channels"]:
             station_logger.warning("SCC export disabled | missing=%s", ",".join(context["missing_scc_channels"]))
     else:
         station_logger.info("%s | SCC none", context["profile_id"])
