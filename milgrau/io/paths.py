@@ -168,7 +168,7 @@ def build_session_id(station: str, start_utc: Any, end_utc: Any) -> str:
 
 def session_id_parts(session_id: str) -> tuple[str, datetime, datetime]:
     """Return (station, start_utc, end_utc) for one canonical session ID."""
-    value = str(session_id).strip().lower()
+    value = str(session_id).strip()
     match = SESSION_ID_RE.fullmatch(value)
     if match is None:
         raise ValueError(
@@ -176,8 +176,8 @@ def session_id_parts(session_id: str) -> tuple[str, datetime, datetime]:
             "station_YYYYMMDD-HHMMZ_YYYYMMDD-HHMMZ."
         )
     try:
-        start = datetime.strptime(match.group("start"), "%Y%m%d-%H%MZ").replace(tzinfo=timezone.utc)
-        end = datetime.strptime(match.group("end"), "%Y%m%d-%H%MZ").replace(tzinfo=timezone.utc)
+        start = datetime.strptime(match.group("start").upper(), "%Y%m%d-%H%MZ").replace(tzinfo=timezone.utc)
+        end = datetime.strptime(match.group("end").upper(), "%Y%m%d-%H%MZ").replace(tzinfo=timezone.utc)
     except ValueError as exc:
         raise ValueError(f"Invalid UTC timestamp in session_id {session_id!r}.") from exc
     if end <= start:
@@ -227,9 +227,9 @@ def product_session_id(product_path: str | Path) -> str:
     match = _SESSION_PRODUCT_RE.fullmatch(name)
     if match is None:
         raise ValueError(f"Unrecognized session-based MILGRAU product filename: {name!r}")
-    value = match.group("session_id").lower()
-    session_id_parts(value)
-    return value
+    value = match.group("session_id")
+    station, start, end = session_id_parts(value)
+    return build_session_id(station, start, end)
 
 
 def session_level0_output_path(
