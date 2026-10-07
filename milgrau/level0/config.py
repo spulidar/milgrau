@@ -34,6 +34,11 @@ class AcquisitionQaConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class SessionConfig:
+    max_gap_seconds: float
+
+
+@dataclass(frozen=True, slots=True)
 class DarkCurrentConfig:
     max_association_hours: float
 
@@ -48,6 +53,7 @@ class Level0Config:
     directories: DirectoriesConfig
     discovery: RawDiscoveryConfig
     acquisition_qa: AcquisitionQaConfig
+    session: SessionConfig
     dark_current: DarkCurrentConfig
     surface_weather: SurfaceWeatherPolicy
 
@@ -155,7 +161,7 @@ def resolve_level0_config(config: Mapping[str, Any]) -> Level0Config:
     directories = _resolve_directories(config)
     discovery = _resolve_discovery(config)
     level0 = _mapping(config.get("level0"), "level0")
-    _exact_keys(level0, {"acquisition_qa", "dark_current", "surface_weather"}, "level0")
+    _exact_keys(level0, {"acquisition_qa", "session", "dark_current", "surface_weather"}, "level0")
     acquisition = _mapping(level0["acquisition_qa"], "level0.acquisition_qa")
     _exact_keys(acquisition, {"laser_shot_tolerance_fraction", "licel_header_time_jitter_s"}, "level0.acquisition_qa")
     shot_tolerance = _finite(
@@ -170,6 +176,13 @@ def resolve_level0_config(config: Mapping[str, Any]) -> Level0Config:
     header_jitter = _finite(
         acquisition["licel_header_time_jitter_s"],
         "level0.acquisition_qa.licel_header_time_jitter_s",
+        nonnegative=True,
+    )
+    session = _mapping(level0["session"], "level0.session")
+    _exact_keys(session, {"max_gap_seconds"}, "level0.session")
+    max_gap_seconds = _finite(
+        session["max_gap_seconds"],
+        "level0.session.max_gap_seconds",
         nonnegative=True,
     )
     dark_current = _mapping(level0["dark_current"], "level0.dark_current")
@@ -188,6 +201,7 @@ def resolve_level0_config(config: Mapping[str, Any]) -> Level0Config:
         directories=directories,
         discovery=discovery,
         acquisition_qa=AcquisitionQaConfig(shot_tolerance, header_jitter),
+        session=SessionConfig(max_gap_seconds),
         dark_current=DarkCurrentConfig(max_association_hours),
         surface_weather=SurfaceWeatherPolicy(policy.strip().lower()),
     )
