@@ -18,11 +18,11 @@ A successful command means the software stage completed according to its contrac
 
 ### Responsibility
 
-Level 0 turns raw Licel files into a standardized, traceable acquisition dataset. It owns parsing/acquisition-level consistency and the mapping from the historical instrument record to standardized channels.
+Level 0 turns one continuous raw Licel session into a standardized, traceable acquisition dataset. It owns parsing/acquisition-level consistency and the mapping from the historical instrument record to standardized channels.
 
 ### Inputs
 
-- raw Licel files selected by measurement ID/discovery rules;
+- raw Licel files grouped into continuous sessions by acquisition continuity and station context;
 - station/instrument history resolved from `station.yaml`;
 - processing policy from `config.yaml`;
 - dark-current/acquisition context where applicable;
@@ -31,6 +31,15 @@ Level 0 turns raw Licel files into a standardized, traceable acquisition dataset
 ### Outputs
 
 The Level 0 product preserves the standardized raw acquisition and the metadata required by downstream Level 1 corrections. It may also expose SCC-oriented metadata/mapping where configured, but SCC compatibility does not define MILGRAU scientific truth.
+
+### Session identity
+
+Level 0 session identity is independent of civil-day publication windows. A session
+may cross midnight and former 00/06/12/18 boundaries. A new session begins after
+a configured acquisition gap or when the temporally valid station profile/calibration
+changes. The canonical identifier is
+`station_YYYYMMDD-HHMMZ_YYYYMMDD-HHMMZ`, using the raw acquisition interval
+in UTC; QA does not rename the underlying acquisition.
 
 ### Boundary
 
