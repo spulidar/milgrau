@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import matplotlib.dates as mdates
 import matplotlib.gridspec as gridspec
@@ -14,7 +12,6 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from milgrau.io.paths import measurement_id_parts
 from milgrau.viz.config import resolve_visualization_config
 from milgrau.viz.style import add_footer_and_logos, channel_color, get_output_settings
 
@@ -141,63 +138,6 @@ def _quicklook_colormap(config: dict[str, Any]):
     return cmap
 
 
-def _fixed_period_utc_window(
-    ds: xr.Dataset,
-    measurement_id: str | None = None,
-    timezone_name: str | None = None,
-) -> tuple[pd.Timestamp, pd.Timestamp, str] | None:
-    """Return the canonical local six-hour period expressed on the UTC plot axis."""
-    explicit_context = measurement_id is not None or timezone_name is not None
-    measurement_id = str(measurement_id or ds.attrs.get("Measurement_ID", "")).strip()
-    timezone_name = str(timezone_name or ds.attrs.get("timezone", "")).strip()
-    if not measurement_id or not timezone_name:
-        if explicit_context:
-            raise ValueError(
-                "Canonical quicklook period context requires both measurement_id and station timezone."
-            )
-        return None
-    try:
-        date_text, _station, period = measurement_id_parts(measurement_id)
-        zone = ZoneInfo(timezone_name)
-        local_start_naive = datetime.strptime(f"{date_text}{period}", "%Y%m%d%H")
-        local_end_naive = local_start_naive + timedelta(hours=6)
-        local_start = local_start_naive.replace(tzinfo=zone)
-        local_end = local_end_naive.replace(tzinfo=zone)
-        start_utc = pd.Timestamp(local_start.astimezone(timezone.utc).replace(tzinfo=None))
-        end_utc = pd.Timestamp(local_end.astimezone(timezone.utc).replace(tzinfo=None))
-    except (ValueError, KeyError, TypeError, ZoneInfoNotFoundError):
-        if explicit_context:
-            raise
-        return None
-
-    label = f"{period}:00–{int(period) + 6:02d}:00 {timezone_name}"
-    return start_utc, end_utc, label
-
-
-def _apply_fixed_period_axis(
-    ax: Any,
-    ds: xr.Dataset,
-    config: dict[str, Any],
-    *,
-    measurement_id: str | None = None,
-    timezone_name: str | None = None,
-) -> str | None:
-    """Apply the canonical six-hour UTC plot window and missing-data background."""
-    fixed_window = _fixed_period_utc_window(
-        ds,
-        measurement_id=measurement_id,
-        timezone_name=timezone_name,
-    )
-    if fixed_window is None:
-        return None
-
-    start_utc, end_utc, label = fixed_window
-    ax.set_facecolor(resolve_visualization_config(config).quicklook.missing_data_color)
-    ax.set_xlim(start_utc, end_utc)
-    ax.xaxis.set_major_locator(mdates.HourLocator(interval=1))
-    return label
-
-
 def plot_quicklook(
     data_slice: xr.DataArray,
     error_slice: xr.DataArray,
@@ -208,7 +148,7 @@ def plot_quicklook(
     file_name_prefix: str,
     config: dict[str, Any],
     root_dir: str | Path,
-    measurement_id: str | None = None,
+    session_id: str | None = None,
     timezone_name: str | None = None,
     pbl_da: xr.DataArray | None = None,
     cpt_km: float = np.nan,
@@ -241,13 +181,11 @@ def plot_quicklook(
 
     lower_altitude = 0.16 if "AN" in pretty_channel else 0.5
     if time_range_utc is None:
-        period_label = _apply_fixed_period_axis(
-            ax0,
-            ds,
-            config,
-            measurement_id=measurement_id,
-            timezone_name=timezone_name,
-        )
+        del session_id, timezone_name
+        ax0.set_facecolor(resolve_visualization_config(config).quicklook.missing_data_color)
+        locator = mdates.AutoDateLocator(minticks=3, maxticks=9)
+        ax0.xaxis.set_major_locator(locator)
+        period_label = None
     else:
         start_utc, end_utc = time_range_utc
         if end_utc <= start_utc:
@@ -323,10 +261,10 @@ def plot_quicklook(
     cb.set_label("Intensity [a.u.]", fontsize=12, fontweight="bold")
     cb_ax.yaxis.set_ticks_position("left")
     cb_ax.yaxis.set_label_position("left")
-    footer_subtitle = f"Local period: {period_label}" if period_label else None
+    footer_subtitle = period_label
     add_footer_and_logos(fig, root_dir, subtitle=footer_subtitle)
 
-    out_path = Path(output_folder) / f"rcs_{file_name_prefix}_{pretty_channel.replace(' ', '_')}_{float(max_altitude):g}km.{output_format}"
+    out_path = Path(output_folder) / f"{file_name_prefix}_L1_RCS_{pretty_channel.replace(' ', '_')}_{float(max_altitude):g}km.{output_format}"
     return _save_figure(fig, out_path, dpi=dpi)
 
 
@@ -387,5 +325,5 @@ def plot_global_mean_rcs(
     ax.grid(True, which="both", alpha=0.5)
     add_footer_and_logos(fig, root_dir)
 
-    out_path = Path(output_folder) / f"rcs_{file_name_prefix}_mean.{output_format}"
+    out_path = Path(output_folder) / f"{file_name_prefix}_L1_MeanRCS.{output_format}"
     return _save_figure(fig, out_path, dpi=dpi)
