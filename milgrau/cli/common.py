@@ -22,8 +22,8 @@ def add_input_argument(parser: argparse.ArgumentParser, *, source: str) -> None:
         default=[],
         metavar="SELECTOR",
         help=(
-            f"{source}. Accepts YYYYMMDD_station_HH, YYYYMMDD, "
-            "YYYYMMDD followed by local period starts (for example: -i 20251107 06 12), "
+            f"{source}. Accepts session IDs such as "
+            "spu_20250511-0012Z_20250511-0737Z, station-local dates (YYYYMMDD), "
             "or an explicit file/directory path. Repeatable."
         ),
     )
