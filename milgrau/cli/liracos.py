@@ -47,7 +47,7 @@ def _process_selected(args: argparse.Namespace, config: dict, logger, root_dir: 
     results = []
     for path in _expand_inputs(args.inputs, effective_config):
         session_id = logging_session_id(path)
-        file_logger = bind_log_context(logger, measurement_id=session_id)
+        file_logger = bind_log_context(logger, session_id=session_id)
         result = process_single_nc(
             (
                 path,
