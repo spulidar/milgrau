@@ -9,15 +9,8 @@ from pathlib import Path
 from milgrau.cli.common import add_input_argument, finish_cli, run_guarded
 from milgrau.config.loader import load_config
 from milgrau.io.logging_utils import bind_log_context, setup_logger
-from milgrau.io.paths import (
-    LEVEL1_SUFFIX,
-    build_measurement_id,
-    level2_output_path,
-    logging_measurement_id,
-    measurement_day_dir,
-    station_id,
-)
-from milgrau.io.selection import parse_input_selection
+from milgrau.io.paths import LEVEL1_SUFFIX, level2_output_path, logging_session_id
+from milgrau.io.selection import parse_input_selection, resolve_product_selection
 from milgrau.level2.lebear import level2_output_is_current, process_single_level1_file
 from milgrau.level2.discovery import discover_level1_files
 from milgrau.level2.qa import generate_level2_qa, level2_qa_enabled
@@ -42,9 +35,9 @@ def _build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Examples:\n"
             "  milgrau-lebear\n"
-            "  milgrau-lebear --input 20250612_spu_00\n"
-            "  milgrau-lebear --input 20250612_spu_00 --time-window-utc 4:00 5:00\n"
-            "  milgrau-lebear --input 20250612_spu_00 --force\n"
+            "  milgrau-lebear --input spu_20250612-0005Z_20250612-0830Z\n"
+            "  milgrau-lebear --input spu_20250612-0005Z_20250612-0830Z --time-window-utc 4:00 5:00\n"
+            "  milgrau-lebear --input 20250612 --force\n"
         ),
     )
     add_input_argument(parser, source="Level 1 selection")
@@ -64,33 +57,7 @@ def _expand_level1_inputs(inputs, config: dict) -> list[Path]:
     selection = parse_input_selection(inputs, config)
     if selection.is_empty:
         return discover_level1_files(config)
-    resolved: list[Path] = []
-    canonical_station: str | None = None
-
-    for measurement_id in sorted(selection.measurement_ids):
-        resolved.append(measurement_day_dir(measurement_id, config) / f"{measurement_id}{LEVEL1_SUFFIX}")
-
-    for date_text in sorted(selection.dates):
-        if canonical_station is None:
-            canonical_station = station_id(config)
-        anchor = build_measurement_id(date_text, canonical_station, "00")
-        day_dir = measurement_day_dir(anchor, config)
-        matches = sorted(day_dir.glob(f"{date_text}_{canonical_station}_??{LEVEL1_SUFFIX}"))
-        if not matches:
-            raise FileNotFoundError(f"No Level 1 products found for date {date_text}.")
-        resolved.extend(matches)
-
-    for path in selection.paths:
-        if path.is_dir():
-            resolved.extend(sorted(path.rglob(f"*{LEVEL1_SUFFIX}")))
-        else:
-            resolved.append(path)
-
-    unique = sorted(dict.fromkeys(resolved))
-    missing = [path for path in unique if not path.is_file()]
-    if missing:
-        raise FileNotFoundError("Level 1 input(s) not found: " + ", ".join(str(path) for path in missing))
-    return unique
+    return resolve_product_selection(selection, config, suffix=LEVEL1_SUFFIX)
 
 
 def _format_time_window_tag(start_utc: str, stop_utc: str) -> str:
@@ -121,8 +88,8 @@ def _process_selected_files(args: argparse.Namespace, config: dict, logger: logg
     if args.time_window is not None:
         output_tag = _format_time_window_tag(args.time_window[0], args.time_window[1])
     for file_path in files:
-        measurement_id = logging_measurement_id(file_path)
-        file_logger = bind_log_context(logger, measurement_id=measurement_id)
+        session_id = logging_session_id(file_path)
+        file_logger = bind_log_context(logger, measurement_id=session_id)
         output_path = level2_output_path(file_path, variant_tag=output_tag)
         if not args.force and incremental and level2_output_is_current(
             file_path,
@@ -139,7 +106,7 @@ def _process_selected_files(args: argparse.Namespace, config: dict, logger: logg
                     "Level 2 provenance is current",
                     input_path=file_path,
                     output_path=output_path,
-                    metadata={"pipeline": "L2", "measurement_id": measurement_id},
+                    metadata={"pipeline": "L2", "session_id": session_id},
                 )
             )
             if level2_qa_enabled(config):
@@ -154,11 +121,11 @@ def _process_selected_files(args: argparse.Namespace, config: dict, logger: logg
     bind_log_context(logger, stage="queue").info("%d files to process | %d skipped", len(files_to_process), len(skipped_results))
     results = list(skipped_results)
     for file_path in files_to_process:
-        measurement_id = logging_measurement_id(file_path)
+        session_id = logging_session_id(file_path)
         file_summary = process_single_level1_file(
             file_path,
             config,
-            bind_log_context(logger, measurement_id=measurement_id),
+            bind_log_context(logger, measurement_id=session_id),
             start_utc=args.time_window[0] if args.time_window else None,
             stop_utc=args.time_window[1] if args.time_window else None,
             output_tag=output_tag,
