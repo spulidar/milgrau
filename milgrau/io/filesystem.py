@@ -101,14 +101,14 @@ def quarantine_file(
     *,
     reason: str,
     stage: str = "filesystem",
-    measurement_id: str | None = None,
+    session_id: str | None = None,
     quarantined_at_utc: datetime | None = None,
 ) -> ExecutionResult:
     """Explicitly move one file into an auditable retained-evidence quarantine.
 
     Quarantine is never triggered by raw discovery. The caller must supply a
     reason. Each retained file receives a JSON sidecar with origin, timestamp,
-    content hash, size, stage, and optional measurement identifier.
+    content hash, size, stage, and optional session identifier.
     """
     source = Path(path)
     quarantine = Path(quarantine_root)
@@ -150,7 +150,7 @@ def quarantine_file(
                 "quarantined_filename": destination.name,
                 "sha256": source_hash,
                 "size_bytes": source_size,
-                "measurement_id": measurement_id,
+                "session_id": session_id,
             }
             sidecar.write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")
             result = ExecutionResult.success(
@@ -163,7 +163,7 @@ def quarantine_file(
                     "stage": stage_text,
                     "sha256": source_hash,
                     "sidecar": str(sidecar),
-                    "measurement_id": measurement_id,
+                    "session_id": session_id,
                 },
             )
         except Exception as exc:
@@ -216,7 +216,7 @@ def quarantine_files(
     *,
     reason: str,
     stage: str = "filesystem",
-    measurement_id: str | None = None,
+    session_id: str | None = None,
     quarantined_at_utc: datetime | None = None,
 ) -> ExecutionSummary:
     """Explicitly quarantine a finite collection under one audit context."""
@@ -227,7 +227,7 @@ def quarantine_files(
             logger,
             reason=reason,
             stage=stage,
-            measurement_id=measurement_id,
+            session_id=session_id,
             quarantined_at_utc=quarantined_at_utc,
         )
         for path in paths
