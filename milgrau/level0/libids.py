@@ -19,7 +19,7 @@ from milgrau.io.selection import parse_input_selection, select_available_session
 from milgrau.level0.common import incremental_enabled
 from milgrau.level0.config import resolve_level0_config, validate_level0_config
 from milgrau.level0.inventory import build_session_inventory
-from milgrau.level0.processing import process_measurement_group
+from milgrau.level0.processing import process_session_group
 from milgrau.level0.quality import filter_laser_shots
 from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary
 from milgrau.provenance import netcdf_provenance_is_complete
@@ -106,7 +106,7 @@ def _level0_is_current(session_id: str, group_df, config: dict, output_path) -> 
     )
 
 
-def _requested_measurement_ids(values, config: dict, df_raw) -> set[str] | None:
+def _requested_session_ids(values, config: dict, df_raw) -> set[str] | None:
     """Resolve CLI selectors against the current raw inventory."""
     selection = parse_input_selection(values, config)
     if selection.is_empty:
@@ -147,7 +147,7 @@ def process_level_0(
     raw_dir = raw_data_root(config)
     df_raw = build_session_inventory(str(raw_dir), config, pipeline_logger)
     if not df_raw.empty:
-        requested = _requested_measurement_ids(inputs, config, df_raw)
+        requested = _requested_session_ids(inputs, config, df_raw)
         if requested is not None:
             df_raw = df_raw[df_raw["session_id"].astype(str).isin(requested)].copy()
     if df_raw.empty:
@@ -181,9 +181,9 @@ def process_level_0(
         measurement_count = int((group_df["meas_type"] == "measurements").sum())
         bind_log_context(group_logger, stage="start").info("%d raw files", measurement_count)
         try:
-            result = process_measurement_group(session_id, group_df, config, group_logger)
+            result = process_session_group(session_id, group_df, config, group_logger)
             if not isinstance(result, ExecutionResult):
-                raise TypeError(f"process_measurement_group returned {type(result).__name__}; expected ExecutionResult.")
+                raise TypeError(f"process_session_group returned {type(result).__name__}; expected ExecutionResult.")
         except Exception as exc:
             result = ExecutionResult.failure("level0.group", "unexpected group conversion error", output_path=netcdf_path, cause=exc, include_traceback=True, metadata={"pipeline": "L0", "session_id": session_id})
         if result.status is ExecutionStatus.OK:
