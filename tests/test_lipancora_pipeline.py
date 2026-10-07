@@ -15,17 +15,17 @@ def _config(tmp_path: Path) -> dict:
     return {"directories": {"processed_data": str(tmp_path / "processed")}}
 
 
-def test_discover_level0_files_ignores_visualization_artifacts(tmp_path: Path) -> None:
-    """Only canonical product-root Level 0 files should be discovered."""
-    root = tmp_path / "processed" / "spu" / "2024" / "09" / "20240902"
+def test_discover_level0_files_ignores_figure_artifacts(tmp_path: Path) -> None:
+    """Only session-root Level 0 products should be discovered."""
+    session_id = "spu_20240902-2100Z_20240903-0400Z"
+    root = tmp_path / "processed" / "spu" / "2024" / "09" / session_id
     root.mkdir(parents=True)
-    level0 = root / "20240902_spu_12_L0.nc"
+    level0 = root / f"{session_id}_L0.nc"
     level0.write_text("raw", encoding="utf-8")
-    (root / "20240902_spu_12_L1.nc").write_text("l1", encoding="utf-8")
-    (root / "quicklooks").mkdir()
-    (root / "quicklooks" / "20240902_spu_12_L0.nc").write_text("artifact", encoding="utf-8")
-    (root / "qa").mkdir()
-    (root / "qa" / "20240902_spu_12_L0.nc").write_text("artifact", encoding="utf-8")
+    (root / f"{session_id}_L1.nc").write_text("l1", encoding="utf-8")
+    figures = root / "figures"
+    figures.mkdir()
+    (figures / f"{session_id}_L0.nc").write_text("artifact", encoding="utf-8")
 
     discovered = _discover_level0_files(_config(tmp_path))
 
