@@ -164,7 +164,7 @@ def _config(tmp_path: Path) -> dict:
 
 
 def test_level2_saves_gluing_window_diagnostics(tmp_path: Path) -> None:
-    level1 = _write_level1(tmp_path / "20240101_spu_00_L1.nc")
+    level1 = _write_level1(tmp_path / "spu_20240101-0000Z_20240101-0010Z_L1.nc")
 
     summary = lebear.process_single_level1_file(level1, _config(tmp_path), _logger())
 
