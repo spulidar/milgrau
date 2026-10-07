@@ -16,7 +16,7 @@ from milgrau.incremental import output_is_current
 from milgrau.io.contracts import netcdf_satisfies_contract, validate_level1_contract
 from milgrau.io.filesystem import ensure_directories
 from milgrau.io.logging_utils import bind_log_context
-from milgrau.io.paths import level2_output_path, logging_measurement_id
+from milgrau.io.paths import level2_output_path, logging_session_id
 from milgrau.operations import ExecutionResult, ExecutionSummary
 from milgrau.provenance import file_sha256, write_netcdf_provenance
 from milgrau.scientific import (
@@ -170,8 +170,8 @@ def process_single_level1_file(
 ) -> ExecutionSummary:
     """Generate one productive Level 2 product."""
     nc_path = Path(nc_file)
-    measurement_id = logging_measurement_id(nc_path)
-    file_logger = bind_log_context(logger, measurement_id=measurement_id)
+    session_id = logging_session_id(nc_path)
+    file_logger = bind_log_context(logger, measurement_id=session_id)
     started_at = time.perf_counter()
     output_path: Path | None = None
     stage = "level2.ingestion"
@@ -269,7 +269,7 @@ def process_single_level1_file(
         processed_wavelengths = _wavelength_values(ds_l2, "processed_wavelengths")
         metadata = {
             "pipeline": "L2",
-            "measurement_id": measurement_id,
+            "session_id": session_id,
             **_product_execution_metadata(ds_l2),
         }
         if failed_wavelengths:
@@ -320,7 +320,7 @@ def process_single_level1_file(
                 "Level 2 QA disabled by configuration",
                 input_path=output_path,
                 output_path=output_path.parent / "qa",
-                metadata={"pipeline": "L2", "measurement_id": measurement_id},
+                metadata={"pipeline": "L2", "session_id": session_id},
             )
         if qa_result.status.is_failure:
             bind_log_context(file_logger, stage="qa").warning(
@@ -360,7 +360,7 @@ def process_single_level1_file(
                     cause=exc,
                     include_traceback=True,
                     duration_seconds=time.perf_counter() - started_at,
-                    metadata={"pipeline": "L2", "measurement_id": measurement_id},
+                    metadata={"pipeline": "L2", "session_id": session_id},
                 )
             ]
         )
@@ -385,8 +385,8 @@ def process_level_2(config: Mapping[str, Any], logger: logging.Logger) -> Execut
     files_to_process = []
     skipped_results: list[ExecutionResult] = []
     for file_path in files:
-        measurement_id = logging_measurement_id(file_path)
-        file_logger = bind_log_context(logger, measurement_id=measurement_id)
+        session_id = logging_session_id(file_path)
+        file_logger = bind_log_context(logger, measurement_id=session_id)
         output_path = level2_output_path(file_path)
         if incremental and level2_output_is_current(file_path, output_path, config):
             bind_log_context(file_logger, stage="skip").info(
@@ -398,7 +398,7 @@ def process_level_2(config: Mapping[str, Any], logger: logging.Logger) -> Execut
                     "Level 2 is up to date",
                     input_path=file_path,
                     output_path=output_path,
-                    metadata={"pipeline": "L2", "measurement_id": measurement_id},
+                    metadata={"pipeline": "L2", "session_id": session_id},
                 )
             )
             if level2_qa_enabled(config):
@@ -424,9 +424,9 @@ def process_level_2(config: Mapping[str, Any], logger: logging.Logger) -> Execut
     )
     results = list(skipped_results)
     for file_path in files_to_process:
-        measurement_id = logging_measurement_id(file_path)
+        session_id = logging_session_id(file_path)
         file_summary = process_single_level1_file(
-            file_path, config, bind_log_context(logger, measurement_id=measurement_id)
+            file_path, config, bind_log_context(logger, measurement_id=session_id)
         )
         results.extend(file_summary.results)
     return ExecutionSummary.from_results(results)
