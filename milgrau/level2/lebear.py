@@ -41,7 +41,7 @@ from milgrau.level2.level2_dataset import (
 )
 from milgrau.level2.qa import generate_level2_qa, level2_qa_enabled
 from milgrau.level2.level2_schema import validate_level2_contract
-from milgrau.level2.time_window import subset_level1_time_window
+from milgrau.level2.time_window import subset_level1_context
 
 
 def level2_output_is_current(
@@ -167,6 +167,8 @@ def process_single_level1_file(
     start_utc: str | None = None,
     stop_utc: str | None = None,
     output_tag: str | None = None,
+    regime: str | None = None,
+    segment_id: str | None = None,
 ) -> ExecutionSummary:
     """Generate one productive Level 2 product."""
     nc_path = Path(nc_file)
@@ -184,9 +186,13 @@ def process_single_level1_file(
             source_provenance = dict(ds_source.attrs)
             stage = "level2.validation.input"
             validate_level1_contract(ds_source)
-            stage = "level2.time_window"
-            ds_l1, inferred_output_tag = subset_level1_time_window(
-                ds_source, start_utc, stop_utc
+            stage = "level2.selection"
+            ds_l1, inferred_output_tag = subset_level1_context(
+                ds_source,
+                start_utc=start_utc,
+                stop_utc=stop_utc,
+                regime=regime,
+                segment_id=segment_id,
             )
             if output_tag is None:
                 output_tag = inferred_output_tag
