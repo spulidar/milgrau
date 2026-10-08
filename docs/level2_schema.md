@@ -128,10 +128,10 @@ Period summaries:
 
 - `aerosol_backscatter_mean`
 - `aerosol_extinction_mean`
-- `period_support_count`
-- `period_support_fraction`
+- `temporal_support_count`
+- `temporal_support_fraction`
 
-Period means are finite-only at each altitude. They must be interpreted with
+Temporal means are finite-only at each altitude. They must be interpreted with
 the corresponding temporal support.
 
 ## Two-sided branch diagnostics
