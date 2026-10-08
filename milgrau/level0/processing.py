@@ -498,15 +498,19 @@ def process_session_group(
         if isinstance(resolved_station, Mapping):
             result_metadata["station_profile"] = resolved_station["profile_id"]
             result_metadata["instrument_calibration"] = resolved_station["calibration_id"]
-            result_metadata["solar_regimes"] = list(
-                station_context.get("solar_regimes_present", [])
+            result_metadata["solar_regimes"] = ",".join(
+                str(value)
+                for value in station_context.get("solar_regimes_present", [])
             )
-            result_metadata["solar_segments"] = list(
-                station_context.get("solar_segments_present", [])
+            result_metadata["solar_segments"] = ",".join(
+                str(value)
+                for value in station_context.get("solar_segments_present", [])
             )
             result_metadata["scc_export_count"] = len(scc_paths)
             if scc_paths:
-                result_metadata["scc_export_paths"] = [str(path) for path in scc_paths]
+                result_metadata["scc_export_paths"] = ";".join(
+                    str(path) for path in scc_paths
+                )
         return ExecutionResult.success(
             "level0.complete",
             "Level 0 NetCDF generated",
