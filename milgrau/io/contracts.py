@@ -32,7 +32,11 @@ LEVEL1_BACKGROUND_DIAGNOSTIC_VARIABLES: Final[tuple[str, ...]] = (
     "background_valid_bins", "background_outlier_fraction",
 )
 LEVEL1_ATMOSPHERIC_VARIABLES: Final[tuple[str, ...]] = (
-    "Atmospheric_Temperature_K", "Atmospheric_Pressure_hPa",
+    "Atmospheric_Temperature_K",
+    "Atmospheric_Pressure_hPa",
+    "Atmospheric_Source_Type",
+    "Atmospheric_Source_Time_Delta_hours",
+    "Atmospheric_USSA76_Fallback_Fraction",
 )
 LEVEL1_REQUIRED_VARIABLES: Final[tuple[str, ...]] = (
     LEVEL1_SIGNAL_VARIABLES + LEVEL1_ATMOSPHERIC_VARIABLES
@@ -157,18 +161,46 @@ def validate_level0_contract(ds: xr.Dataset) -> None:
 
 
 def _validate_level1_atmosphere(ds: xr.Dataset) -> None:
-    for name in LEVEL1_ATMOSPHERIC_VARIABLES:
-        _require_exact_dims(ds[name], ("altitude",), f"Level 1 {name}")
+    _require_coords(ds, ("atmosphere_time",), "Level 1 atmosphere")
+    expected = ("atmosphere_time", "altitude")
+    n_time = ds.sizes.get("atmosphere_time", 0)
+    n_altitude = ds.sizes.get("altitude", 0)
+    if n_time <= 0:
+        raise ValueError("Level 1 atmosphere_time must contain at least one source time.")
+
+    for name in ("Atmospheric_Temperature_K", "Atmospheric_Pressure_hPa"):
+        _require_exact_dims(ds[name], expected, f"Level 1 {name}")
         values = np.asarray(ds[name].values, dtype=np.float64)
-        if values.shape != (ds.sizes.get("altitude", 0),):
-            raise ValueError(f"Level 1 {name} must contain exactly one value per altitude bin.")
+        if values.shape != (n_time, n_altitude):
+            raise ValueError(
+                f"Level 1 {name} must contain one complete profile per atmosphere_time."
+            )
         if not np.all(np.isfinite(values)) or np.any(values <= 0.0):
-            raise ValueError(f"Level 1 {name} must be finite and positive on every altitude bin.")
+            raise ValueError(f"Level 1 {name} must be finite and positive everywhere.")
+
+    for name in (
+        "Atmospheric_Source_Type",
+        "Atmospheric_Source_Time_Delta_hours",
+        "Atmospheric_USSA76_Fallback_Fraction",
+    ):
+        _require_exact_dims(ds[name], ("atmosphere_time",), f"Level 1 {name}")
+
+    source_values = {str(value) for value in np.asarray(ds["Atmospheric_Source_Type"].values).reshape(-1)}
+    if not source_values or not source_values.issubset({"era5", "ussa76"}):
+        raise ValueError(
+            "Level 1 Atmospheric_Source_Type may contain only productive sources era5 and ussa76."
+        )
+
+    fallback = np.asarray(ds["Atmospheric_USSA76_Fallback_Fraction"].values, dtype=np.float64)
+    if not np.all(np.isfinite(fallback)) or np.any((fallback < 0.0) | (fallback > 1.0)):
+        raise ValueError(
+            "Level 1 Atmospheric_USSA76_Fallback_Fraction must be finite and between 0 and 1."
+        )
 
     source_type = str(ds.attrs.get("thermodynamic_profile_source_type", "")).strip()
-    if source_type not in {"radiosonde", "era5", "ussa76"}:
+    if source_type != "time_resolved":
         raise ValueError(
-            "Level 1 thermodynamic_profile_source_type must be one of radiosonde, era5, or ussa76."
+            "Level 1 thermodynamic_profile_source_type must be 'time_resolved'."
         )
     if str(ds.attrs.get("thermodynamic_profile_available", "")).lower() != "true":
         raise ValueError("Level 1 canonical atmospheric profile must be materialized and marked available.")
