@@ -126,14 +126,14 @@ visualization:
       - [0.0, 3.0]
       - [3.0, 10.0]
       - [10.0, 20.0]
-  level2_qa:
+  level2_figures:
     enabled: true
     max_altitude_km: 30.0
     smooth_bins: 15
-    generate_gluing_qa: true
-    generate_molecular_fit_qa: true
-    generate_scattering_ratio_qa: false
-    generate_kfs_qa: true
+    generate_gluing: true
+    generate_molecular_reference: true
+    generate_mc_reference: false
+    generate_optical_profiles: true
 
 # LEBEAR Level 2 scientific retrieval processing.
 inversion:
