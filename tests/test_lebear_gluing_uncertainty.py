@@ -89,19 +89,36 @@ def _write_level1(path: Path) -> Path:
                 np.ones(channel.size, dtype=np.int8),
             ),
             "Atmospheric_Temperature_K": (
-                ("altitude",),
-                temperature_k.astype(np.float64),
+                ("atmosphere_time", "altitude"),
+                np.vstack([temperature_k, temperature_k]).astype(np.float64),
             ),
             "Atmospheric_Pressure_hPa": (
-                ("altitude",),
-                pressure_hpa.astype(np.float64),
+                ("atmosphere_time", "altitude"),
+                np.vstack([pressure_hpa, pressure_hpa]).astype(np.float64),
+            ),
+            "Atmospheric_Source_Type": (
+                ("atmosphere_time",),
+                np.array(["ussa76", "ussa76"], dtype=object),
+            ),
+            "Atmospheric_Source_Time_Delta_hours": (
+                ("atmosphere_time",),
+                np.array([np.nan, np.nan]),
+            ),
+            "Atmospheric_USSA76_Fallback_Fraction": (
+                ("atmosphere_time",),
+                np.array([1.0, 1.0]),
             ),
         },
-        coords={"time": time, "channel": channel, "altitude": altitude},
+        coords={
+            "time": time,
+            "channel": channel,
+            "altitude": altitude,
+            "atmosphere_time": pd.date_range("2024-01-01T00:00:00", periods=2, freq="1h"),
+        },
         attrs={
             "Processing_level": "Level 1 synthetic gluing test product",
             "Altitude_units": "m",
-            "thermodynamic_profile_source_type": "ussa76",
+            "thermodynamic_profile_source_type": "time_resolved",
             "thermodynamic_profile_available": "true",
             "thermodynamic_profile_standard_fallback_fraction": 1.0,
         },
