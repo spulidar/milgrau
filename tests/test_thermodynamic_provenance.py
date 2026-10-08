@@ -86,3 +86,29 @@ def test_time_resolved_identity_uses_era5_dataset_family() -> None:
     assert result["thermodynamic_profile_provider"] == "copernicus_climate_change_service"
     assert result["thermodynamic_profile_product"] == "reanalysis-era5-pressure-levels"
     assert result["thermodynamic_profile_version_or_release"] == "doi:10.24381/cds.bd0915c6"
+
+
+def test_time_resolved_full_ussa76_fallback_uses_standard_atmosphere_identity() -> None:
+    attrs = {
+        "thermodynamic_profile_source_type": "time_resolved",
+        "thermodynamic_sources_present": "ussa76",
+        "thermodynamic_profile_doi": "should-not-survive",
+    }
+    config = {
+        "level1": {
+            "atmosphere": {
+                "era5": {"dataset": "reanalysis-era5-pressure-levels"}
+            }
+        }
+    }
+
+    result = thermodynamic_source_provenance(attrs, config)
+
+    assert result == {
+        "thermodynamic_profile_provider": "us_standard_atmosphere",
+        "thermodynamic_profile_product": "standard_atmosphere",
+        "thermodynamic_profile_version_or_release": "1976",
+        "thermodynamic_profile_source_id": (
+            "us_standard_atmosphere/standard_atmosphere/1976"
+        ),
+    }
