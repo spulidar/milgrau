@@ -286,6 +286,7 @@ def test_apply_all_physical_corrections_persists_distinct_diagnostics() -> None:
             "pbl": {"reference_channel": "532.AN", "min_search_altitude_m": 5.0, "max_search_altitude_m": 30.0, "smooth_bins": 3},
             "missing_channel_calibration": {"policy": "error"},
             "atmosphere": {
+                "time_resolution_minutes": 60,
                 "source_priority": ["ussa76"],
                 "external_profile_outside_coverage": "ussa76",
             },
