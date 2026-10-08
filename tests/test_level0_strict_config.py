@@ -15,7 +15,7 @@ from milgrau.level0.config import (
     station_coordinates,
     station_timezone,
 )
-from milgrau.level0.processing import fetch_group_weather
+from milgrau.level0.processing import _weather_for_interval, fetch_group_weather
 
 
 def _minimal_config() -> dict:
@@ -157,3 +157,38 @@ def test_missing_surface_weather_fail_policy_stops_processing(monkeypatch) -> No
     monkeypatch.setattr("milgrau.level0.processing.fetch_surface_weather", lambda *args, **kwargs: None)
     with pytest.raises(RuntimeError, match="missing_policy='fail'"):
         fetch_group_weather(_group(), _weather_config("fail"), logging.getLogger("test-weather-fail"))
+
+
+
+def test_scc_weather_subset_uses_segment_hour_bracket() -> None:
+    weather = {
+        "weather_time": np.array(
+            [
+                "2025-01-01T18:00:00",
+                "2025-01-01T19:00:00",
+                "2025-01-01T20:00:00",
+                "2025-01-01T21:00:00",
+            ],
+            dtype="datetime64[ns]",
+        ),
+        "temperature_c": np.array([25.0, 24.0, 22.0, 21.0]),
+        "pressure_hpa": np.array([930.0, 931.0, 932.0, 933.0]),
+        "relative_humidity_percent": np.array([50.0, 55.0, 60.0, 65.0]),
+        "cloud_cover_percent": np.array([10.0, 20.0, 30.0, 40.0]),
+        "wind_speed_kmh": np.array([4.0, 5.0, 6.0, 7.0]),
+        "source": "synthetic",
+        "cadence": "hourly",
+    }
+
+    result = _weather_for_interval(
+        weather,
+        pd.Timestamp("2025-01-01T19:10:00Z"),
+        pd.Timestamp("2025-01-01T19:50:00Z"),
+    )
+
+    assert result["weather_time"].tolist() == [
+        np.datetime64("2025-01-01T19:00:00", "ns"),
+        np.datetime64("2025-01-01T20:00:00", "ns"),
+    ]
+    np.testing.assert_allclose(result["temperature_c"], [24.0, 22.0])
+    np.testing.assert_allclose(result["pressure_hpa"], [931.0, 932.0])
