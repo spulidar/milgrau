@@ -97,14 +97,22 @@ def era5_config(settings: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_era5_request(
-    analysis_dt_utc: datetime,
+def build_era5_request_for_hours(
+    analysis_hours_utc: list[datetime],
     latitude: float,
     longitude: float,
     settings: Mapping[str, Any],
 ) -> tuple[str, dict[str, Any]]:
-    """Build the CDS API request for one small ERA5 pressure-level column."""
+    """Build one CDS request for multiple ERA5 hours from one UTC day."""
     cfg = era5_config(settings)
+    if not analysis_hours_utc:
+        raise ValueError("ERA5 batch request requires at least one analysis hour.")
+    hours = sorted({_as_utc_datetime(value).replace(minute=0, second=0, microsecond=0) for value in analysis_hours_utc})
+    dates = {value.date() for value in hours}
+    if len(dates) != 1:
+        raise ValueError("One ERA5 batch request may contain hours from only one UTC day.")
+
+    reference = hours[0]
     half_width = float(cfg["area_half_width_deg"])
     grid = float(cfg["grid_deg"])
     north = min(float(latitude) + half_width, 90.0)
@@ -114,10 +122,10 @@ def build_era5_request(
     request = {
         "product_type": ["reanalysis"],
         "variable": ["temperature", "geopotential"],
-        "year": [analysis_dt_utc.strftime("%Y")],
-        "month": [analysis_dt_utc.strftime("%m")],
-        "day": [analysis_dt_utc.strftime("%d")],
-        "time": [analysis_dt_utc.strftime("%H:00")],
+        "year": [reference.strftime("%Y")],
+        "month": [reference.strftime("%m")],
+        "day": [reference.strftime("%d")],
+        "time": [value.strftime("%H:00") for value in hours],
         "pressure_level": [str(level) for level in cfg["pressure_levels_hpa"]],
         "data_format": "netcdf",
         "download_format": "unarchived",
@@ -126,6 +134,20 @@ def build_era5_request(
     }
     return str(cfg["dataset"]), request
 
+
+def build_era5_request(
+    analysis_dt_utc: datetime,
+    latitude: float,
+    longitude: float,
+    settings: Mapping[str, Any],
+) -> tuple[str, dict[str, Any]]:
+    """Build the CDS API request for one ERA5 pressure-level analysis hour."""
+    return build_era5_request_for_hours(
+        [_as_utc_datetime(analysis_dt_utc)],
+        latitude,
+        longitude,
+        settings,
+    )
 
 def _cache_paths(
     measurement_dt_utc: datetime,
@@ -281,6 +303,146 @@ def _compact_exception_message(exc: BaseException) -> str:
     return first
 
 
+def _era5_time_coordinate(ds: xr.Dataset) -> str:
+    return _coordinate_name(ds, ("valid_time", "time"))
+
+
+def prefetch_era5_pressure_level_profiles(
+    measurement_times_utc: list[datetime | pd.Timestamp],
+    latitude: float,
+    longitude: float,
+    logger: logging.Logger,
+    *,
+    settings: Mapping[str, Any],
+    root_dir: str | Path | None = None,
+) -> set[datetime]:
+    """Populate missing hourly ERA5 caches using one CDS request per UTC day.
+
+    Existing hourly cache files are reused. Downloaded daily batches are split
+    back into the same per-hour cache layout used by the single-profile API, so
+    adjacent sessions retain fine-grained cache reuse.
+    """
+    cfg = era5_config(settings)
+    analysis_hours = sorted(
+        {
+            nearest_era5_analysis_hour(value)
+            for value in measurement_times_utc
+        }
+    )
+    if not analysis_hours:
+        return set()
+
+    available: set[datetime] = set()
+    missing: list[datetime] = []
+    for analysis_dt in analysis_hours:
+        cache_file, _metadata_file = _cache_paths(
+            analysis_dt,
+            latitude,
+            longitude,
+            cfg,
+            root_dir,
+        )
+        if cache_file.exists():
+            available.add(analysis_dt)
+        else:
+            missing.append(analysis_dt)
+
+    if not missing:
+        logger.debug("ERA5 batch prefetch | all %d hourly caches present", len(analysis_hours))
+        return available
+
+    try:
+        import cdsapi  # type: ignore[import-not-found]
+    except ImportError:
+        logger.warning("ERA5 unavailable | cdsapi is not installed")
+        return available
+
+    groups: dict[datetime.date, list[datetime]] = {}
+    for analysis_dt in missing:
+        groups.setdefault(analysis_dt.date(), []).append(analysis_dt)
+
+    client = cdsapi.Client(url=CDS_API_URL, quiet=True)
+    for day, hours in sorted(groups.items()):
+        dataset, request = build_era5_request_for_hours(
+            hours,
+            latitude,
+            longitude,
+            cfg,
+        )
+        first_cache, _ = _cache_paths(hours[0], latitude, longitude, cfg, root_dir)
+        temporary_file = first_cache.parent / (
+            f"era5_pressure_levels_{day.strftime('%Y%m%d')}_batch.part.nc"
+        )
+        try:
+            logger.info(
+                "ERA5 batch request | %s | %d hour(s): %s",
+                day.isoformat(),
+                len(hours),
+                ",".join(value.strftime("%H") for value in hours),
+            )
+            client.retrieve(dataset, request, str(temporary_file))
+            with xr.open_dataset(temporary_file) as ds:
+                time_coord = _era5_time_coordinate(ds)
+                source_times = np.asarray(ds[time_coord].values).astype("datetime64[ns]").reshape(-1)
+                for analysis_dt in hours:
+                    target = np.datetime64(
+                        analysis_dt.replace(tzinfo=None),
+                        "ns",
+                    )
+                    matches = np.where(source_times == target)[0]
+                    if matches.size != 1:
+                        logger.warning(
+                            "ERA5 batch missing requested hour | %s",
+                            analysis_dt.strftime("%Y-%m-%d %H:%MZ"),
+                        )
+                        continue
+                    selected = ds.isel({time_coord: int(matches[0])})
+                    cache_file, metadata_file = _cache_paths(
+                        analysis_dt,
+                        latitude,
+                        longitude,
+                        cfg,
+                        root_dir,
+                    )
+                    selected.to_netcdf(cache_file)
+                    metadata = _metadata_for_profile(
+                        analysis_dt,
+                        analysis_dt,
+                        latitude,
+                        longitude,
+                        dataset,
+                        cache_file,
+                    )
+                    metadata["batch_request_day_utc"] = day.isoformat()
+                    metadata["batch_request_hour_count"] = len(hours)
+                    metadata_file.write_text(
+                        json.dumps(metadata, indent=2),
+                        encoding="utf-8",
+                    )
+                    available.add(analysis_dt)
+            logger.info(
+                "ERA5 batch cached | %s | %d/%d hour(s)",
+                day.isoformat(),
+                sum(hour in available for hour in hours),
+                len(hours),
+            )
+        except Exception as exc:
+            logger.warning(
+                "ERA5 batch unavailable | %s | %s",
+                day.isoformat(),
+                _compact_exception_message(exc),
+            )
+            logger.debug("ERA5 batch retrieval failure", exc_info=True)
+        finally:
+            try:
+                if temporary_file.exists():
+                    temporary_file.unlink()
+            except OSError:
+                pass
+
+    return available
+
+
 def fetch_era5_pressure_level_profile(
     measurement_dt_utc: datetime | pd.Timestamp,
     latitude: float,
@@ -289,6 +451,7 @@ def fetch_era5_pressure_level_profile(
     *,
     settings: Mapping[str, Any],
     root_dir: str | Path | None = None,
+    allow_network: bool = True,
 ) -> Optional[pd.DataFrame]:
     """Fetch/cache one ERA5 pressure-level profile using explicit settings."""
     cfg = era5_config(settings)
@@ -316,6 +479,9 @@ def fetch_era5_pressure_level_profile(
         except Exception as exc:
             logger.warning("ERA5 cache unreadable | %s", _compact_exception_message(exc))
             logger.debug("ERA5 cache failure", exc_info=True)
+
+    if not allow_network:
+        return None
 
     try:
         import cdsapi  # type: ignore[import-not-found]
