@@ -130,3 +130,24 @@ def test_lebear_solar_selector_can_combine_with_utc_window() -> None:
     )
     assert args.regime == "night"
     assert args.time_window == ["04:00", "05:00"]
+
+
+
+def test_lipancora_exposes_figures_only_recovery_mode() -> None:
+    parser = lipancora._build_parser()
+    option_strings = {
+        option
+        for action in parser._actions
+        for option in action.option_strings
+    }
+    assert "--figures-only" in option_strings
+
+    args = parser.parse_args(
+        ["--figures-only", "-i", "spu_20251107-0900Z_20251107-1500Z"]
+    )
+    assert args.figures_only is True
+    assert args.force is False
+
+    forced = parser.parse_args(["--figures-only", "--force"])
+    assert forced.figures_only is True
+    assert forced.force is True
