@@ -99,7 +99,7 @@ def test_subpackage_public_surfaces_are_explicit_and_stable() -> None:
             "get_standard_atmosphere",
         },
         "milgrau.viz": {
-            "plot_all_level2_qa",
+            "plot_all_level2_figures",
             "plot_global_mean_rcs",
             "plot_quicklook",
         },
