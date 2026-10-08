@@ -222,8 +222,20 @@ def plot_molecular_reference_qa(
         ),
         smooth_bins,
     )
-    beta_mol = np.asarray(ds_l2["molecular_backscatter"].sel(**sel).values)
-    alpha_mol = np.asarray(ds_l2["molecular_extinction"].sel(**sel).values)
+    beta_mol = _finite_mean(
+        np.asarray(
+            ds_l2["molecular_backscatter"].sel(**sel).values,
+            dtype=np.float64,
+        ),
+        axis=0,
+    )
+    alpha_mol = _finite_mean(
+        np.asarray(
+            ds_l2["molecular_extinction"].sel(**sel).values,
+            dtype=np.float64,
+        ),
+        axis=0,
+    )
     molecular_shape = _molecular_rcs_shape(altitude_m, beta_mol, alpha_mol)
 
     references = (
