@@ -111,6 +111,13 @@ def _write_synthetic_level1(path: Path) -> Path:
                 ("atmosphere_time",),
                 np.array([1.0, 1.0]),
             ),
+            "solar_elevation_deg": (("time",), np.array([-25.0, -24.0, -23.0])),
+            "solar_regime": (("time",), np.array(["night", "night", "night"], dtype=object)),
+            "segment_id": (("time",), np.array(["seg00", "seg00", "seg00"], dtype=object)),
+            "Segment_Label": (("segments",), np.array(["seg00"], dtype=object)),
+            "Segment_Regime": (("segments",), np.array(["night"], dtype=object)),
+            "Segment_Start_Time_UTC": (("segments",), np.array([1704067200], dtype=np.int64)),
+            "Segment_End_Time_UTC": (("segments",), np.array([1704068100], dtype=np.int64)),
         },
         coords={
             "time": time,
@@ -127,6 +134,9 @@ def _write_synthetic_level1(path: Path) -> Path:
             "thermodynamic_profile_source_type": "time_resolved",
             "thermodynamic_profile_source": "US Standard Atmosphere 1976",
             "thermodynamic_profile_standard_fallback_fraction": 1.0,
+            "Solar_Day_Night_Threshold_deg": -3.0,
+            "Solar_Position_Algorithm": "test",
+            "Segment_Count": 1,
         },
     )
     ds["corrected_signal"].attrs["units"] = "channel native corrected units"
@@ -212,7 +222,7 @@ def test_lebear_generates_two_sided_level2_from_level1_atmosphere(tmp_path: Path
 
     with xr.open_dataset(output_path) as ds_l2:
         validate_level2_contract(ds_l2)
-        assert ds_l2.attrs["level2_product_schema_version"] == LEVEL2_PRODUCT_SCHEMA_VERSION == "7"
+        assert ds_l2.attrs["level2_product_schema_version"] == LEVEL2_PRODUCT_SCHEMA_VERSION == "8"
         assert "level2_retrieval_method_version" not in ds_l2.attrs
         assert ds_l2.attrs["integration_mode"] == "two_sided"
         assert ds_l2.attrs["uncertainty_method"] == "selection-aware Monte Carlo"
@@ -225,6 +235,9 @@ def test_lebear_generates_two_sided_level2_from_level1_atmosphere(tmp_path: Path
         assert "relative_rmse" in ds_l2.attrs["gluing_selection_score_formula"]
 
         assert ds_l2["molecular_backscatter"].dims == ("block_time", "wavelength", "altitude")
+        assert ds_l2["segment_id"].values.astype(str).tolist() == ["seg00"]
+        assert ds_l2["solar_regime"].values.astype(str).tolist() == ["night"]
+        assert np.all(np.isfinite(ds_l2["solar_elevation_deg"].values))
         assert np.all(np.isfinite(ds_l2["molecular_backscatter"].values))
         assert set(np.unique(ds_l2["retrieval_success_flag"].values).tolist()) == {1}
         assert ds_l2["aerosol_backscatter_mean"].dims == ("wavelength", "altitude")
