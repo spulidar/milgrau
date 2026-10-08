@@ -239,50 +239,80 @@ def _select_lidar_profiles(
     return result
 
 
-def _segment_group_df(
+def _regime_group_df(
     group_df: pd.DataFrame,
-    segment_id: str,
-) -> tuple[pd.DataFrame, np.ndarray]:
-    """Return one solar-segment measurement subset plus shared dark-current rows."""
+    regime: str,
+) -> tuple[pd.DataFrame, np.ndarray, tuple[str, ...]]:
+    """Return all measurement profiles from one solar regime plus shared dark rows."""
+    regime_value = str(regime).strip().lower()
+    if regime_value not in {"day", "night"}:
+        raise ValueError("SCC solar regime must be 'day' or 'night'.")
+
     measurement_rows = group_df[
         (group_df["meas_type"] == "measurements")
-        & (group_df["segment_id"].astype(str) == str(segment_id))
+        & (group_df["solar_regime"].astype(str).str.lower() == regime_value)
     ].copy()
     if measurement_rows.empty:
-        raise ValueError(f"Solar segment {segment_id!r} has no measurement rows.")
+        raise ValueError(f"Solar regime {regime_value!r} has no measurement rows.")
+
     measurement_rows = measurement_rows.sort_values("start_time_utc")
     indices = pd.to_numeric(
         measurement_rows["_profile_index"], errors="raise"
     ).astype(np.int64).to_numpy()
+    source_segments = tuple(
+        dict.fromkeys(
+            measurement_rows["segment_id"].dropna().astype(str).tolist()
+        )
+    )
+    if not source_segments:
+        raise ValueError(
+            f"Solar regime {regime_value!r} has no source segment identity."
+        )
+
     dark_rows = group_df[group_df["meas_type"] == "dark_current"].copy()
-    return pd.concat([measurement_rows, dark_rows], ignore_index=True), indices
+    return (
+        pd.concat([measurement_rows, dark_rows], ignore_index=True),
+        indices,
+        source_segments,
+    )
 
 
-def _weather_for_interval(
+def _weather_for_measurement_rows(
     weather_data: Mapping[str, Any],
-    start_utc: pd.Timestamp,
-    end_utc: pd.Timestamp,
+    measurement_rows: pd.DataFrame,
 ) -> dict[str, Any]:
-    """Subset hourly weather to source times bracketing one SCC solar segment."""
+    """Subset hourly weather to the union of actual SCC source segments."""
     times = pd.to_datetime(
         np.asarray(weather_data.get("weather_time", [])),
         utc=True,
     )
     if len(times) == 0:
         return dict(weather_data)
-    lower = pd.Timestamp(start_utc).tz_convert("UTC").floor("h")
-    upper = pd.Timestamp(end_utc).tz_convert("UTC").ceil("h")
-    mask = (times >= lower) & (times <= upper)
+    if measurement_rows.empty:
+        raise ValueError("SCC weather subsetting requires measurement rows.")
+
+    mask = np.zeros(len(times), dtype=bool)
+    ordered_segments = tuple(
+        dict.fromkeys(
+            measurement_rows["segment_id"].dropna().astype(str).tolist()
+        )
+    )
+    for segment_id in ordered_segments:
+        rows = measurement_rows[
+            measurement_rows["segment_id"].astype(str) == segment_id
+        ]
+        if rows.empty:
+            continue
+        lower = pd.to_datetime(rows["start_time_utc"], utc=True).min().floor("h")
+        upper = pd.to_datetime(rows["stop_time"], utc=True).max().ceil("h")
+        mask |= np.asarray((times >= lower) & (times <= upper), dtype=bool)
+
     indices = np.flatnonzero(mask)
     if indices.size == 0:
-        nearest = int(
-            np.argmin(
-                np.abs(
-                    times.asi8
-                    - pd.Timestamp(start_utc).tz_convert("UTC").value
-                )
-            )
-        )
+        target = pd.to_datetime(
+            measurement_rows["start_time_utc"], utc=True
+        ).min()
+        nearest = int(np.argmin(np.abs(times.asi8 - target.value)))
         indices = np.asarray([nearest], dtype=np.int64)
 
     result = dict(weather_data)
@@ -293,7 +323,9 @@ def _weather_for_interval(
         .to_numpy(dtype="datetime64[ns]")
     )
     for field in _SURFACE_WEATHER_FIELDS:
-        values = np.asarray(weather_data.get(field, []), dtype=np.float64).reshape(-1)
+        values = np.asarray(
+            weather_data.get(field, []), dtype=np.float64
+        ).reshape(-1)
         if values.size != len(times):
             raise ValueError(
                 f"Surface weather field {field!r} has {values.size} values for "
@@ -311,49 +343,53 @@ def _write_scc_exports(
     config: Mapping[str, Any],
     logger: logging.Logger,
 ) -> list[Path]:
-    """Write one SCC-compatible Level 0 derivative per solar segment."""
+    """Write at most one SCC-compatible Level 0 derivative per day/night regime."""
     measurement_rows = group_df[group_df["meas_type"] == "measurements"].copy()
     if measurement_rows.empty:
         return []
 
     channels = [str(channel) for channel in lidar_data.get("channels", [])]
+    present_regimes = tuple(
+        dict.fromkeys(
+            measurement_rows["solar_regime"].dropna().astype(str).str.lower().tolist()
+        )
+    )
     outputs: list[Path] = []
-    for segment_id in measurement_rows["segment_id"].dropna().astype(str).unique():
-        segment_df, profile_indices = _segment_group_df(group_df, segment_id)
-        regimes = segment_df.loc[
-            segment_df["meas_type"] == "measurements", "solar_regime"
-        ].dropna().astype(str).unique()
-        if len(regimes) != 1:
-            raise ValueError(
-                f"Solar segment {segment_id!r} must contain exactly one regime; got {regimes.tolist()}."
-            )
-        regime = str(regimes[0])
-        segment_start = pd.to_datetime(
-            segment_df.loc[
-                segment_df["meas_type"] == "measurements", "start_time_utc"
-            ],
-            utc=True,
+
+    for regime in ("day", "night"):
+        if regime not in present_regimes:
+            continue
+
+        regime_df, profile_indices, source_segments = _regime_group_df(
+            group_df,
+            regime,
+        )
+        regime_measurements = regime_df[
+            regime_df["meas_type"] == "measurements"
+        ].copy()
+        first_time = pd.to_datetime(
+            regime_measurements["start_time_utc"], utc=True
         ).min()
+
         context = deepcopy(
             dict(
                 resolve_station_context(
                     config,
-                    measurement_time=segment_start.to_pydatetime(),
+                    measurement_time=first_time.to_pydatetime(),
                     available_channels=channels,
                     mode=regime,
                 )
             )
         )
-        context["segment_id"] = str(segment_id)
         context["solar_regime"] = regime
+        context["source_segments"] = ",".join(source_segments)
+        context["source_segment_count"] = int(len(source_segments))
+        context["contains_time_gaps"] = bool(len(source_segments) > 1)
         context["solar_day_night_threshold_deg"] = float(
             resolve_level0_config(config).solar_regime.day_night_threshold_deg
         )
 
-        scc_logger = bind_log_context(
-            logger,
-            stage=f"scc.{segment_id}",
-        )
+        scc_logger = bind_log_context(logger, stage=f"scc.{regime}")
         if not context.get("scc_available", False):
             scc_logger.info("%s | no SCC mapping for station profile", regime)
             continue
@@ -365,52 +401,70 @@ def _write_scc_exports(
             )
             continue
 
-        segment_config = deepcopy(dict(config))
-        segment_config["_resolved_station"] = context
-        scc_channels = [str(channel) for channel in context.get("scc_channels", [])]
+        regime_config = deepcopy(dict(config))
+        regime_config["_resolved_station"] = context
+        scc_channels = [
+            str(channel) for channel in context.get("scc_channels", [])
+        ]
         if not scc_channels:
             scc_logger.warning("%s | no SCC channels present", regime)
             continue
 
-        segment_lidar = _select_lidar_profiles(lidar_data, profile_indices)
-        scc_lidar = select_lidar_channels(segment_lidar, scc_channels)
-        segment_stop = pd.to_datetime(
-            segment_df.loc[
-                segment_df["meas_type"] == "measurements", "stop_time"
-            ],
-            utc=True,
-        ).max()
-        segment_weather = _weather_for_interval(
+        regime_lidar = _select_lidar_profiles(lidar_data, profile_indices)
+        scc_lidar = select_lidar_channels(regime_lidar, scc_channels)
+        regime_weather = _weather_for_measurement_rows(
             weather_data,
-            segment_start,
-            segment_stop,
+            regime_measurements,
         )
         scc_path = level0_scc_output_path(
             session_id,
-            segment_config,
-            segment_id=str(segment_id),
+            regime_config,
+            solar_regime=regime,
         )
         ensure_directories(scc_path.parent)
         build_level0_netcdf(
             netcdf_path=str(scc_path),
             session_id=session_id,
             lidar_data=scc_lidar,
-            group_df=segment_df,
-            weather_data=segment_weather,
-            config=segment_config,
+            group_df=regime_df,
+            weather_data=regime_weather,
+            config=regime_config,
             logger=scc_logger,
         )
-        write_netcdf_provenance(scc_path, segment_config)
+        write_netcdf_provenance(scc_path, regime_config)
         outputs.append(scc_path)
         scc_logger.info(
-            "%s | %s | %d/%d channels | config %s",
+            "%s | %s | segments=%s | %d/%d channels | config %s",
             regime,
             scc_path.name,
+            ",".join(source_segments),
             len(scc_channels),
             len(channels),
             context["scc_configuration_id"],
         )
+
+    if outputs:
+        session_folder = level0_output_path(session_id, config).parent
+        for stale_path in session_folder.glob(
+            f"{session_id}_seg*_L0_scc.nc"
+        ):
+            if stale_path in outputs:
+                continue
+            try:
+                stale_path.unlink()
+                bind_log_context(logger, stage="scc.cleanup").info(
+                    "removed obsolete segment-named SCC derivative | %s",
+                    stale_path.name,
+                )
+            except OSError as exc:
+                bind_log_context(logger, stage="scc.cleanup").warning(
+                    "could not remove obsolete SCC derivative %s | %s",
+                    stale_path.name,
+                    exc,
+                )
+
     return outputs
+
 
 def process_session_group(
     session_id: str,
