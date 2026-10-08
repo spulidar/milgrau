@@ -39,7 +39,7 @@ from milgrau.level2.level2_dataset import (
     build_level2_dataset,
     get_retrieval_config,
 )
-from milgrau.level2.qa import generate_level2_qa, level2_qa_enabled
+from milgrau.level2.figures import generate_level2_figures, level2_figures_enabled
 from milgrau.level2.level2_schema import validate_level2_contract
 from milgrau.level2.time_window import subset_level1_context
 
@@ -315,34 +315,34 @@ def process_single_level1_file(
                 )
             ]
 
-        if level2_qa_enabled(config):
-            qa_result = generate_level2_qa(
+        if level2_figures_enabled(config):
+            figure_result = generate_level2_figures(
                 nc_path,
                 output_path,
                 config,
-                bind_log_context(file_logger, stage="qa"),
+                bind_log_context(file_logger, stage="figures"),
             )
         else:
-            qa_result = ExecutionResult.skipped(
-                "level2.qa",
-                "Level 2 QA disabled by configuration",
+            figure_result = ExecutionResult.skipped(
+                "level2.figures",
+                "Level 2 figures disabled by configuration",
                 input_path=output_path,
-                output_path=output_path.parent / "qa",
+                output_path=output_path.parent / "figures",
                 metadata={"pipeline": "L2", "session_id": session_id},
             )
-        if qa_result.status.is_failure:
-            bind_log_context(file_logger, stage="qa").warning(
+        if figure_result.status.is_failure:
+            bind_log_context(file_logger, stage="figures").warning(
                 "%s | %s",
-                qa_result.message,
-                qa_result.cause or "unknown QA failure",
+                figure_result.message,
+                figure_result.cause or "unknown figure failure",
             )
         else:
-            bind_log_context(file_logger, stage="qa").info(
+            bind_log_context(file_logger, stage="figures").info(
                 "%s | %.1f s",
-                qa_result.message,
-                0.0 if qa_result.duration_seconds is None else qa_result.duration_seconds,
+                figure_result.message,
+                0.0 if figure_result.duration_seconds is None else figure_result.duration_seconds,
             )
-        return ExecutionSummary.from_results([*product_results, qa_result])
+        return ExecutionSummary.from_results([*product_results, figure_result])
     except Exception as exc:
         fatal_stages = {
             "level2.ingestion",
@@ -409,13 +409,13 @@ def process_level_2(config: Mapping[str, Any], logger: logging.Logger) -> Execut
                     metadata={"pipeline": "L2", "session_id": session_id},
                 )
             )
-            if level2_qa_enabled(config):
+            if level2_figures_enabled(config):
                 skipped_results.append(
-                    generate_level2_qa(
+                    generate_level2_figures(
                         file_path,
                         output_path,
                         config,
-                        bind_log_context(file_logger, stage="qa"),
+                        bind_log_context(file_logger, stage="figures"),
                     )
                 )
             continue
