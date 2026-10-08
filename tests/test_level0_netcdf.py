@@ -57,6 +57,26 @@ def _group_df(tmp_path: Path, include_dark_current: bool = True) -> pd.DataFrame
     return pd.DataFrame.from_records(records)
 
 
+
+
+def _weather_data(
+    temperature_c: float = 23.0,
+    pressure_hpa: float = 935.0,
+) -> dict:
+    return {
+        "weather_time": np.array(
+            ["2024-01-01T00:00:00", "2024-01-01T01:00:00"],
+            dtype="datetime64[ns]",
+        ),
+        "temperature_c": np.array([temperature_c, temperature_c], dtype=np.float64),
+        "pressure_hpa": np.array([pressure_hpa, pressure_hpa], dtype=np.float64),
+        "relative_humidity_percent": np.array([60.0, 61.0], dtype=np.float64),
+        "cloud_cover_percent": np.array([20.0, 25.0], dtype=np.float64),
+        "wind_speed_kmh": np.array([5.0, 6.0], dtype=np.float64),
+        "source": "synthetic",
+        "cadence": "hourly",
+    }
+
 def _lidar_data() -> dict:
     return {
         "channels": ["532.AN", "532.PC"],
@@ -82,7 +102,7 @@ def test_build_level0_netcdf_writes_resolved_station_and_scc_metadata(tmp_path: 
     output_path = tmp_path / "level0_scc.nc"
     build_level0_netcdf(
         str(output_path), SESSION_ID, _lidar_data(), _group_df(tmp_path, False),
-        {"temperature_c": 23.0, "pressure_hpa": 935.0}, _config(), logging.getLogger("test")
+        _weather_data(), _config(), logging.getLogger("test")
     )
     with xr.open_dataset(output_path) as ds:
         validate_level0_contract(ds)
@@ -102,6 +122,11 @@ def test_build_level0_netcdf_writes_resolved_station_and_scc_metadata(tmp_path: 
         assert ds.attrs["Latitude_degrees_north"] == pytest.approx(-23.5615)
         assert ds.attrs["Longitude_degrees_east"] == pytest.approx(-46.7383)
         assert "DAQ_Range" in ds
+        assert ds["Surface_Temperature_C"].dims == ("weather_time",)
+        assert ds["Surface_Pressure_hPa"].dims == ("weather_time",)
+        assert ds.sizes["weather_time"] == 2
+        assert float(ds["Temperature_at_Lidar_Station"].values) == pytest.approx(23.0)
+        assert float(ds["Pressure_at_Lidar_Station"].values) == pytest.approx(935.0)
         assert float(ds["DAQ_Range"].isel(channels=0).values) == 500.0
         assert float(ds["DAQ_Range"].isel(channels=1).values) > 1e30
 
@@ -112,7 +137,7 @@ def test_pointing_angle_has_no_physics_fallback(tmp_path: Path) -> None:
     config["physics"]["laser_pointing_angle_deg"] = 17.0
     build_level0_netcdf(
         str(output_path), SESSION_ID, _lidar_data(), _group_df(tmp_path, False),
-        {"temperature_c": 23.0, "pressure_hpa": 935.0}, config, logging.getLogger("test")
+        _weather_data(), config, logging.getLogger("test")
     )
     with xr.open_dataset(output_path) as ds:
         np.testing.assert_allclose(ds["Laser_Pointing_Angle"].values, np.array([0.0]))
@@ -124,7 +149,7 @@ def test_build_level0_netcdf_requires_station_pointing_geometry(tmp_path: Path) 
     with pytest.raises(RuntimeError, match="lidar_geometry"):
         build_level0_netcdf(
             str(tmp_path / "missing_geometry.nc"), SESSION_ID, _lidar_data(), _group_df(tmp_path, False),
-            {"temperature_c": 23.0, "pressure_hpa": 935.0}, config, logging.getLogger("test")
+            _weather_data(), config, logging.getLogger("test")
         )
 
 
@@ -138,7 +163,7 @@ def test_build_level0_netcdf_rejects_missing_native_bin_width_even_with_legacy_v
     with pytest.raises(RuntimeError, match="range resolution cannot be invented"):
         build_level0_netcdf(
             str(output_path), SESSION_ID, lidar_data, _group_df(tmp_path, False),
-            {"temperature_c": 23.0, "pressure_hpa": 935.0}, config, logging.getLogger("test")
+            _weather_data(), config, logging.getLogger("test")
         )
 
 
@@ -148,7 +173,7 @@ def test_build_level0_netcdf_requires_explicit_background_window(tmp_path: Path)
     with pytest.raises(RuntimeError, match="level1.*background"):
         build_level0_netcdf(
             str(tmp_path / "missing_background.nc"), SESSION_ID, _lidar_data(), _group_df(tmp_path, False),
-            {"temperature_c": 23.0, "pressure_hpa": 935.0}, config, logging.getLogger("test")
+            _weather_data(), config, logging.getLogger("test")
         )
 
 
@@ -158,7 +183,7 @@ def test_build_level0_netcdf_truncates_time_axis_and_shots(tmp_path: Path) -> No
     lidar_data["tensors"] = {"532.AN": np.ones((1, 4)), "532.PC": np.ones((1, 4)) * 2.0}
     build_level0_netcdf(
         str(output_path), SESSION_ID, lidar_data, _group_df(tmp_path, False),
-        {"temperature_c": 23.0, "pressure_hpa": 935.0}, _config(), logging.getLogger("test")
+        _weather_data(), _config(), logging.getLogger("test")
     )
     with xr.open_dataset(output_path) as ds:
         assert ds.sizes["time"] == 1
@@ -171,7 +196,7 @@ def test_build_level0_netcdf_rejects_missing_resolved_scc_channel_id(tmp_path: P
     with pytest.raises(RuntimeError, match="no SCC channel ID"):
         build_level0_netcdf(
             str(tmp_path / "missing_channel_id.nc"), SESSION_ID, _lidar_data(), _group_df(tmp_path, False),
-            {"temperature_c": 23.0, "pressure_hpa": 935.0}, config, logging.getLogger("test")
+            _weather_data(), config, logging.getLogger("test")
         )
 
 
@@ -181,7 +206,7 @@ def test_legacy_hardware_map_cannot_override_resolved_station_mapping(tmp_path: 
     config["hardware"] = {"name_to_id": {"532.AN": 1, "532.PC": 2}}
     build_level0_netcdf(
         str(output_path), SESSION_ID, _lidar_data(), _group_df(tmp_path, False),
-        {"temperature_c": 23.0, "pressure_hpa": 935.0}, config, logging.getLogger("test")
+        _weather_data(), config, logging.getLogger("test")
     )
     with xr.open_dataset(output_path) as ds:
         np.testing.assert_array_equal(ds["channel_ID"].values, np.array([722, 716]))
@@ -191,11 +216,11 @@ def test_missing_surface_weather_is_persisted_as_nan_without_25_940_fallback(tmp
     output_path = tmp_path / "level0_missing_weather.nc"
     build_level0_netcdf(
         str(output_path), SESSION_ID, _lidar_data(), _group_df(tmp_path, False),
-        {"temperature_c": np.nan, "pressure_hpa": np.nan}, _config(), logging.getLogger("test")
+        _weather_data(np.nan, np.nan), _config(), logging.getLogger("test")
     )
     with xr.open_dataset(output_path) as ds:
-        assert np.isnan(ds.attrs["Temperature_C"])
-        assert np.isnan(ds.attrs["Pressure_hPa"])
+        assert np.isnan(ds["Surface_Temperature_C"].values).all()
+        assert np.isnan(ds["Surface_Pressure_hPa"].values).all()
         assert np.isnan(float(ds["Temperature_at_Lidar_Station"].values))
         assert np.isnan(float(ds["Pressure_at_Lidar_Station"].values))
 
@@ -214,7 +239,7 @@ def test_build_level0_netcdf_writes_dark_current_scc_times_and_provenance(tmp_pa
     output_path = tmp_path / "level0.nc"
     build_level0_netcdf(
         str(output_path), SESSION_ID, _lidar_data(), _group_df(tmp_path, True),
-        {"temperature_c": 23.0, "pressure_hpa": 935.0}, _config(), logging.getLogger("test")
+        _weather_data(), _config(), logging.getLogger("test")
     )
     with xr.open_dataset(output_path) as ds:
         validate_level0_contract(ds)
@@ -240,7 +265,7 @@ def test_build_level0_netcdf_flags_missing_dark_current_channel(tmp_path: Path, 
     output_path = tmp_path / "level0_missing_dc_channel.nc"
     build_level0_netcdf(
         str(output_path), SESSION_ID, _lidar_data(), _group_df(tmp_path, True),
-        {"temperature_c": 23.0, "pressure_hpa": 935.0}, _config(), logging.getLogger("test")
+        _weather_data(), _config(), logging.getLogger("test")
     )
     with xr.open_dataset(output_path) as ds:
         validate_level0_contract(ds)
@@ -254,7 +279,7 @@ def test_build_level0_netcdf_without_dark_current_writes_unavailable_flags(tmp_p
     output_path = tmp_path / "level0_no_dc.nc"
     build_level0_netcdf(
         str(output_path), SESSION_ID, _lidar_data(), _group_df(tmp_path, False),
-        {"temperature_c": 23.0, "pressure_hpa": 935.0}, _config(), logging.getLogger("test")
+        _weather_data(), _config(), logging.getLogger("test")
     )
     with xr.open_dataset(output_path) as ds:
         validate_level0_contract(ds)
