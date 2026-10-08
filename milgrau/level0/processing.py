@@ -19,6 +19,12 @@ from milgrau.io.paths import level0_output_path, level0_scc_output_path
 from milgrau.io.weather import fetch_surface_weather
 from milgrau.level0.config import resolve_level0_config, station_coordinates
 from milgrau.level0.netcdf import build_level0_netcdf
+from milgrau.physics.solar import (
+    SOLAR_POSITION_ALGORITHM,
+    build_solar_segments,
+    solar_elevation_deg,
+    solar_regime,
+)
 from milgrau.operations import ExecutionResult
 from milgrau.provenance import write_netcdf_provenance
 
@@ -111,75 +117,97 @@ def fetch_group_weather(group_df: pd.DataFrame, config: Mapping[str, Any], logge
     }
 
 
+def _annotate_solar_context(
+    group_df: pd.DataFrame,
+    config: Mapping[str, Any],
+) -> pd.DataFrame:
+    """Attach per-profile solar elevation, regime, and segment identity."""
+    result = group_df.copy()
+    measurement_mask = result["meas_type"] == "measurements"
+    measurement_rows = result.loc[measurement_mask].copy()
+    if measurement_rows.empty:
+        raise ValueError("Solar context requires at least one measurement row.")
+
+    measurement_rows = measurement_rows.sort_values("start_time_utc")
+    starts = pd.to_datetime(measurement_rows["start_time_utc"], utc=True)
+    stops = pd.to_datetime(measurement_rows["stop_time"], utc=True)
+    midpoint = starts + (stops - starts) / 2
+    latitude, longitude = station_coordinates(config)
+    level0 = resolve_level0_config(config)
+    elevation = solar_elevation_deg(midpoint, latitude, longitude)
+    regimes = solar_regime(
+        elevation,
+        day_night_threshold_deg=level0.solar_regime.day_night_threshold_deg,
+    )
+    segment_ids, _segments = build_solar_segments(starts, stops, regimes)
+
+    result["solar_elevation_deg"] = np.nan
+    result["solar_regime"] = None
+    result["segment_id"] = None
+    result["_profile_index"] = np.nan
+    result.loc[measurement_rows.index, "solar_elevation_deg"] = elevation
+    result.loc[measurement_rows.index, "solar_regime"] = regimes
+    result.loc[measurement_rows.index, "segment_id"] = segment_ids
+    result.loc[measurement_rows.index, "_profile_index"] = np.arange(
+        len(measurement_rows), dtype=np.int64
+    )
+    result.attrs["solar_position_algorithm"] = SOLAR_POSITION_ALGORITHM
+    result.attrs["solar_day_night_threshold_deg"] = float(
+        level0.solar_regime.day_night_threshold_deg
+    )
+    return result
+
+
 def _resolve_group_station_config(
     group_df: pd.DataFrame,
     lidar_data: Mapping[str, Any],
     config: Mapping[str, Any],
     logger: logging.Logger,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-    """Resolve station metadata while preserving every valid Licel channel."""
+    """Resolve station/profile context without imposing one SCC mode on a session."""
     if not isinstance(config.get("_station_catalog"), Mapping):
         raise KeyError("Level 0 processing requires a loaded station catalog.")
     measurement_rows = group_df[group_df["meas_type"] == "measurements"]
     if measurement_rows.empty:
         raise ValueError("Cannot resolve station profile without measurement rows.")
-    measurement_time = pd.to_datetime(measurement_rows["start_time_utc"], utc=True).min().to_pydatetime()
+    measurement_time = pd.to_datetime(
+        measurement_rows["start_time_utc"], utc=True
+    ).min().to_pydatetime()
     channels = lidar_data.get("channels", [])
-    context = resolve_station_context(
-        config,
-        measurement_time=measurement_time,
-        available_channels=channels,
-    )
-
-    # The primary MILGRAU session remains continuous across day/night. Until the
-    # solar-regime refactor owns SCC mode selection, never export one SCC file
-    # using a mode that is not homogeneous over the complete session.
-    mode_samples = list(pd.to_datetime(measurement_rows["start_time_utc"], utc=True))
-    if "stop_time" in measurement_rows and measurement_rows["stop_time"].notna().any():
-        final_stop = pd.to_datetime(measurement_rows["stop_time"], utc=True).max()
-        mode_samples.append(final_stop - pd.Timedelta(microseconds=1))
-    scc_modes = {
-        str(
+    context = deepcopy(
+        dict(
             resolve_station_context(
                 config,
-                measurement_time=pd.Timestamp(timestamp).to_pydatetime(),
+                measurement_time=measurement_time,
                 available_channels=channels,
-            )["mode"]
+                mode=None,
+            )
         )
-        for timestamp in mode_samples
-    }
-    context = deepcopy(dict(context))
-    context["scc_modes_present"] = sorted(scc_modes)
-    context["scc_session_mode_homogeneous"] = len(scc_modes) <= 1
-    if len(scc_modes) > 1:
-        context["scc_export_ready"] = False
+    )
+    regimes = sorted(
+        {
+            str(value)
+            for value in measurement_rows["solar_regime"].dropna().unique()
+        }
+    )
+    segments = [
+        str(value)
+        for value in measurement_rows["segment_id"].dropna().unique()
+    ]
+    context["solar_regimes_present"] = regimes
+    context["solar_segments_present"] = segments
 
     effective_config = deepcopy(dict(config))
     effective_config["_resolved_station"] = deepcopy(dict(context))
     station_logger = bind_log_context(logger, stage="station")
-    if context.get("scc_available", False):
-        station_logger.info("%s | SCC %s", context["profile_id"], context["scc_configuration_id"])
-        station_logger.debug(
-            "mode=%s | calibration=%s | selected=%d | SCC=%d | extra=%s | missing=%s",
-            context["mode"],
-            context["calibration_id"],
-            len(context["selected_channels"]),
-            len(context.get("scc_channels", [])),
-            ",".join(context["extra_channels"]) or "none",
-            ",".join(context["missing_scc_channels"]) or "none",
-        )
-        if not context.get("scc_session_mode_homogeneous", True):
-            station_logger.warning(
-                "SCC export disabled | session spans modes=%s",
-                ",".join(context.get("scc_modes_present", [])),
-            )
-        elif context["missing_scc_channels"]:
-            station_logger.warning("SCC export disabled | missing=%s", ",".join(context["missing_scc_channels"]))
-    else:
-        station_logger.info("%s | SCC none", context["profile_id"])
-        station_logger.debug("calibration=%s | selected=%d", context["calibration_id"], len(context["selected_channels"]))
+    station_logger.info(
+        "%s | calibration=%s | solar=%s | segments=%s",
+        context["profile_id"],
+        context["calibration_id"],
+        ",".join(regimes) or "none",
+        ",".join(segments) or "none",
+    )
     return effective_config, dict(lidar_data), context
-
 
 def _internal_level0_config(effective_config: Mapping[str, Any]) -> dict[str, Any]:
     """Disable SCC-only variables for the full-channel primary Level 0 product."""
@@ -193,45 +221,141 @@ def _internal_level0_config(effective_config: Mapping[str, Any]) -> dict[str, An
     return internal
 
 
-def _write_scc_export(
+def _select_lidar_profiles(
+    lidar_data: Mapping[str, Any],
+    profile_indices: np.ndarray,
+) -> dict[str, Any]:
+    """Subset parsed lidar tensors and per-profile metadata by time index."""
+    indices = np.asarray(profile_indices, dtype=np.int64)
+    result = deepcopy(dict(lidar_data))
+    tensors = lidar_data.get("tensors", {})
+    result["tensors"] = {
+        str(channel): np.asarray(values)[indices, :]
+        for channel, values in tensors.items()
+    }
+    if "laser_shots" in lidar_data:
+        shots = np.asarray(lidar_data["laser_shots"])
+        result["laser_shots"] = shots[indices, :]
+    return result
+
+
+def _segment_group_df(
+    group_df: pd.DataFrame,
+    segment_id: str,
+) -> tuple[pd.DataFrame, np.ndarray]:
+    """Return one solar-segment measurement subset plus shared dark-current rows."""
+    measurement_rows = group_df[
+        (group_df["meas_type"] == "measurements")
+        & (group_df["segment_id"].astype(str) == str(segment_id))
+    ].copy()
+    if measurement_rows.empty:
+        raise ValueError(f"Solar segment {segment_id!r} has no measurement rows.")
+    measurement_rows = measurement_rows.sort_values("start_time_utc")
+    indices = pd.to_numeric(
+        measurement_rows["_profile_index"], errors="raise"
+    ).astype(np.int64).to_numpy()
+    dark_rows = group_df[group_df["meas_type"] == "dark_current"].copy()
+    return pd.concat([measurement_rows, dark_rows], ignore_index=True), indices
+
+
+def _write_scc_exports(
     session_id: str,
     lidar_data: Mapping[str, Any],
     group_df: pd.DataFrame,
     weather_data: Mapping[str, Any],
-    effective_config: Mapping[str, Any],
-    context: Mapping[str, Any],
+    config: Mapping[str, Any],
     logger: logging.Logger,
-) -> Path | None:
-    """Write an SCC-compatible channel subset derived from the full Licel Level 0."""
-    if not context.get("scc_available", False) or not context.get("scc_export_ready", False):
-        return None
-    scc_logger = bind_log_context(logger, stage="scc")
-    scc_channels = [str(channel) for channel in context.get("scc_channels", [])]
-    if not scc_channels:
-        scc_logger.warning("mapping configured but no SCC channels present")
-        return None
-    scc_lidar = select_lidar_channels(lidar_data, scc_channels)
-    scc_path = level0_scc_output_path(session_id, effective_config)
-    ensure_directories(scc_path.parent)
-    build_level0_netcdf(
-        netcdf_path=str(scc_path),
-        session_id=session_id,
-        lidar_data=scc_lidar,
-        group_df=group_df,
-        weather_data=dict(weather_data),
-        config=dict(effective_config),
-        logger=scc_logger,
-    )
-    write_netcdf_provenance(scc_path, effective_config)
-    scc_logger.info(
-        "%s | %d/%d channels | config %s",
-        scc_path.name,
-        len(scc_channels),
-        len(lidar_data.get("channels", [])),
-        context["scc_configuration_id"],
-    )
-    return scc_path
+) -> list[Path]:
+    """Write one SCC-compatible Level 0 derivative per solar segment."""
+    measurement_rows = group_df[group_df["meas_type"] == "measurements"].copy()
+    if measurement_rows.empty:
+        return []
 
+    channels = [str(channel) for channel in lidar_data.get("channels", [])]
+    outputs: list[Path] = []
+    for segment_id in measurement_rows["segment_id"].dropna().astype(str).unique():
+        segment_df, profile_indices = _segment_group_df(group_df, segment_id)
+        regimes = segment_df.loc[
+            segment_df["meas_type"] == "measurements", "solar_regime"
+        ].dropna().astype(str).unique()
+        if len(regimes) != 1:
+            raise ValueError(
+                f"Solar segment {segment_id!r} must contain exactly one regime; got {regimes.tolist()}."
+            )
+        regime = str(regimes[0])
+        segment_start = pd.to_datetime(
+            segment_df.loc[
+                segment_df["meas_type"] == "measurements", "start_time_utc"
+            ],
+            utc=True,
+        ).min()
+        context = deepcopy(
+            dict(
+                resolve_station_context(
+                    config,
+                    measurement_time=segment_start.to_pydatetime(),
+                    available_channels=channels,
+                    mode=regime,
+                )
+            )
+        )
+        context["segment_id"] = str(segment_id)
+        context["solar_regime"] = regime
+        context["solar_day_night_threshold_deg"] = float(
+            resolve_level0_config(config).solar_regime.day_night_threshold_deg
+        )
+
+        scc_logger = bind_log_context(
+            logger,
+            stage="scc",
+            segment_id=str(segment_id),
+        )
+        if not context.get("scc_available", False):
+            scc_logger.info("%s | no SCC mapping for station profile", regime)
+            continue
+        if not context.get("scc_export_ready", False):
+            scc_logger.warning(
+                "%s | SCC export skipped | missing=%s",
+                regime,
+                ",".join(context.get("missing_scc_channels", [])) or "unknown",
+            )
+            continue
+
+        segment_config = deepcopy(dict(config))
+        segment_config["_resolved_station"] = context
+        scc_channels = [str(channel) for channel in context.get("scc_channels", [])]
+        if not scc_channels:
+            scc_logger.warning("%s | no SCC channels present", regime)
+            continue
+
+        segment_lidar = _select_lidar_profiles(lidar_data, profile_indices)
+        scc_lidar = select_lidar_channels(segment_lidar, scc_channels)
+        scc_path = level0_scc_output_path(
+            session_id,
+            segment_config,
+            segment_id=str(segment_id),
+        )
+        ensure_directories(scc_path.parent)
+        build_level0_netcdf(
+            netcdf_path=str(scc_path),
+            session_id=session_id,
+            lidar_data=scc_lidar,
+            group_df=segment_df,
+            weather_data=dict(weather_data),
+            config=segment_config,
+            logger=scc_logger,
+        )
+        write_netcdf_provenance(scc_path, segment_config)
+        outputs.append(scc_path)
+        scc_logger.info(
+            "%s | %s | %d/%d channels | config %s",
+            regime,
+            scc_path.name,
+            len(scc_channels),
+            len(channels),
+            context["scc_configuration_id"],
+        )
+    return outputs
 
 def process_session_group(
     session_id: str,
@@ -246,7 +370,9 @@ def process_session_group(
     stage = "level0.measurements"
     files_meas: list[str] = []
     try:
-        df_meas = group_df[group_df["meas_type"] == "measurements"]
+        df_meas = group_df[group_df["meas_type"] == "measurements"].sort_values(
+            "start_time_utc"
+        )
         files_meas = df_meas["filepath"].tolist()
         if not files_meas:
             return ExecutionResult.skipped(
@@ -269,6 +395,8 @@ def process_session_group(
         parse_logger.debug(
             "files=%d | channels=%d", len(files_meas), len(lidar_data_tensors.get("channels", []))
         )
+        stage = "level0.solar"
+        group_df = _annotate_solar_context(group_df, config)
         stage = "level0.station"
         effective_config, lidar_data_tensors, station_context = _resolve_group_station_config(
             group_df, lidar_data_tensors, config, logger
@@ -297,13 +425,12 @@ def process_session_group(
             provenance_attrs.get("instrument_calibration_id", "-"),
         )
         stage = "level0.scc_export"
-        scc_path = _write_scc_export(
+        scc_paths = _write_scc_exports(
             session_id=session_id,
             lidar_data=lidar_data_tensors,
             group_df=group_df,
             weather_data=weather_data,
-            effective_config=effective_config,
-            context=station_context,
+            config=config,
             logger=logger,
         )
         result_metadata = {
@@ -316,13 +443,15 @@ def process_session_group(
         if isinstance(resolved_station, Mapping):
             result_metadata["station_profile"] = resolved_station["profile_id"]
             result_metadata["instrument_calibration"] = resolved_station["calibration_id"]
-            result_metadata["scc_available"] = bool(resolved_station.get("scc_available", False))
-            result_metadata["scc_export_ready"] = bool(station_context.get("scc_export_ready", False))
-            if resolved_station.get("scc_configuration_id") is not None:
-                result_metadata["scc_configuration_id"] = resolved_station["scc_configuration_id"]
-            if scc_path is not None:
-                result_metadata["scc_export_path"] = str(scc_path)
-                result_metadata["scc_channel_count"] = len(station_context.get("scc_channels", []))
+            result_metadata["solar_regimes"] = list(
+                station_context.get("solar_regimes_present", [])
+            )
+            result_metadata["solar_segments"] = list(
+                station_context.get("solar_segments_present", [])
+            )
+            result_metadata["scc_export_count"] = len(scc_paths)
+            if scc_paths:
+                result_metadata["scc_export_paths"] = [str(path) for path in scc_paths]
         return ExecutionResult.success(
             "level0.complete",
             "Level 0 NetCDF generated",
