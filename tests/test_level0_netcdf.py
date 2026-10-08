@@ -20,6 +20,7 @@ def _config() -> dict:
     site = {"latitude": -23.5615, "longitude": -46.7383, "station_altitude_m": 740.0}
     return {
         "physics": {"vertical_resolution_m": 7.5},
+        "level0": {"solar_regime": {"day_night_threshold_deg": -3.0}},
         "level1": {"background": {"start_altitude_m": 29000.0, "stop_altitude_m": 29999.0}},
         "_station_catalog": {
             "station": {
@@ -49,8 +50,8 @@ def _config() -> dict:
 
 def _group_df(tmp_path: Path, include_dark_current: bool = True) -> pd.DataFrame:
     records = [
-        {"filepath": str(tmp_path / "meas_0001"), "meas_type": "measurements", "start_time_utc": pd.Timestamp("2024-01-01T00:00:00Z"), "stop_time": pd.Timestamp("2024-01-01T00:05:00Z"), "original_session_id": SESSION_ID, "association_method": "measurement", "dark_current_association_delta_hours": np.nan},
-        {"filepath": str(tmp_path / "meas_0002"), "meas_type": "measurements", "start_time_utc": pd.Timestamp("2024-01-01T00:05:00Z"), "stop_time": pd.Timestamp("2024-01-01T00:10:00Z"), "original_session_id": SESSION_ID, "association_method": "measurement", "dark_current_association_delta_hours": np.nan},
+        {"filepath": str(tmp_path / "meas_0001"), "meas_type": "measurements", "start_time_utc": pd.Timestamp("2024-01-01T00:00:00Z"), "stop_time": pd.Timestamp("2024-01-01T00:05:00Z"), "original_session_id": SESSION_ID, "association_method": "measurement", "dark_current_association_delta_hours": np.nan, "solar_elevation_deg": -35.0, "solar_regime": "night", "segment_id": "seg00", "_profile_index": 0},
+        {"filepath": str(tmp_path / "meas_0002"), "meas_type": "measurements", "start_time_utc": pd.Timestamp("2024-01-01T00:05:00Z"), "stop_time": pd.Timestamp("2024-01-01T00:10:00Z"), "original_session_id": SESSION_ID, "association_method": "measurement", "dark_current_association_delta_hours": np.nan, "solar_elevation_deg": -34.0, "solar_regime": "night", "segment_id": "seg00", "_profile_index": 1},
     ]
     if include_dark_current:
         records.append({"filepath": str(tmp_path / "dark_0001"), "meas_type": "dark_current", "start_time_utc": pd.Timestamp("2023-12-31T23:40:00Z"), "stop_time": pd.Timestamp("2023-12-31T23:45:00Z"), "original_session_id": SESSION_ID, "association_method": "nearest_session", "dark_current_association_delta_hours": 0.5})
@@ -125,6 +126,12 @@ def test_build_level0_netcdf_writes_resolved_station_and_scc_metadata(tmp_path: 
         assert ds["Surface_Temperature_C"].dims == ("weather_time",)
         assert ds["Surface_Pressure_hPa"].dims == ("weather_time",)
         assert ds.sizes["weather_time"] == 2
+        assert ds["solar_elevation_deg"].dims == ("time",)
+        assert ds["solar_regime"].values.astype(str).tolist() == ["night", "night"]
+        assert ds["segment_id"].values.astype(str).tolist() == ["seg00", "seg00"]
+        assert ds["Segment_Label"].values.astype(str).tolist() == ["seg00"]
+        assert ds["Segment_Regime"].values.astype(str).tolist() == ["night"]
+        assert ds.attrs["Solar_Day_Night_Threshold_deg"] == pytest.approx(-3.0)
         assert float(ds["Temperature_at_Lidar_Station"].values) == pytest.approx(23.0)
         assert float(ds["Pressure_at_Lidar_Station"].values) == pytest.approx(935.0)
         assert float(ds["DAQ_Range"].isel(channels=0).values) == 500.0
