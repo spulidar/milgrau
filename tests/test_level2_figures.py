@@ -134,7 +134,7 @@ def _dataset() -> xr.Dataset:
                 ("segments",),
                 np.array([1579989600], dtype=np.int64),
             ),
-            "period_support_fraction": (
+            "temporal_support_fraction": (
                 ("wavelength", "altitude"),
                 np.array([[1.0, 1.0, 1.0, 1.0, 2.0 / 3.0, 1.0 / 3.0]]),
             ),
