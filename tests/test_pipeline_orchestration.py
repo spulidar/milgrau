@@ -6,7 +6,9 @@ import logging
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 import pandas as pd
+import xarray as xr
 
 from milgrau.level0 import libids
 from milgrau.level1 import lipancora
@@ -178,3 +180,55 @@ def test_libids_aggregates_ok_skip_and_error_groups(tmp_path: Path, monkeypatch)
         ExecutionStatus.ERROR: 1,
     }
     assert summary.exit_code is ExitCode.ERROR
+
+
+
+def test_libids_resolves_segment_scc_context_from_decoded_utc_timestamp(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    output = tmp_path / "spu_20250101-0000Z_20250101-0100Z_L0.nc"
+    ds = xr.Dataset(
+        data_vars={
+            "channel_string": (("channels",), np.array(["532.AN"], dtype=object)),
+            "Segment_Label": (("segments",), np.array(["seg00"], dtype=object)),
+            "Segment_Regime": (("segments",), np.array(["night"], dtype=object)),
+            "Segment_Start_Time_UTC": (("segments",), np.array([1735689600], dtype=np.int64)),
+        }
+    )
+    ds["Segment_Start_Time_UTC"].attrs.update(
+        {
+            "units": "seconds since 1970-01-01 00:00:00 UTC",
+            "calendar": "standard",
+        }
+    )
+    ds.to_netcdf(output)
+
+    observed: dict[str, object] = {}
+
+    def fake_context(_config, measurement_time, available_channels, *, mode=None):
+        observed["measurement_time"] = measurement_time
+        observed["channels"] = list(available_channels)
+        observed["mode"] = mode
+        return {
+            "scc_available": True,
+            "scc_export_ready": True,
+            "scc_channels": ["532.AN"],
+            "channel_ids": {"532.AN": 1},
+            "lr_input": {},
+        }
+
+    monkeypatch.setattr(libids, "resolve_station_context", fake_context)
+    contexts = libids._resolve_expected_scc_contexts(
+        "spu_20250101-0000Z_20250101-0100Z",
+        pd.DataFrame(),
+        {"_station_catalog": {}},
+        output,
+    )
+
+    assert len(contexts) == 1
+    assert contexts[0][0] == "seg00"
+    assert observed["mode"] == "night"
+    assert observed["channels"] == ["532.AN"]
+    stamp = pd.Timestamp(observed["measurement_time"])
+    assert stamp == pd.Timestamp("2025-01-01T00:00:00Z")
