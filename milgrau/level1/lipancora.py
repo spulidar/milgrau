@@ -229,7 +229,12 @@ def _processing_metadata(input_file: Path) -> dict[str, str]:
 
 
 def _level1_encoding(ds: xr.Dataset) -> dict[str, dict[str, int | bool]]:
-    return {var: {"zlib": True, "complevel": 4} for var in ds.data_vars if ds[var].ndim > 0}
+    """Compress numeric Level 1 arrays; leave VLEN/object strings unencoded."""
+    return {
+        var: {"zlib": True, "complevel": 4}
+        for var in ds.data_vars
+        if ds[var].ndim > 0 and ds[var].dtype.kind not in {"O", "S", "U"}
+    }
 
 
 def _make_level1_netcdf_safe(ds: xr.Dataset) -> xr.Dataset:
