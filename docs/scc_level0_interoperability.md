@@ -49,23 +49,34 @@ A file satisfying an SCC submission schema is therefore not automatically guaran
 
 LIBIDS writes `*_scc.nc` with the same Level 0 writer used for the full-channel MILGRAU Level 0, restricted to the SCC channel subset and augmented with SCC identifiers. It is therefore a valid explicit LIPANCORA input.
 
-Use an explicit file path when the full Level 0 and SCC subset coexist, for example:
+MILGRAU's primary Level 0 remains the complete continuous scientific session.
+When the session contains more than one solar regime, LIBIDS writes one SCC
+interoperability derivative per contiguous solar segment, for example:
 
-```bash
-milgrau-lipancora -i /path/to/spu_20251107-0900Z_20251107-1500Z_L0_scc.nc --force
+```text
+spu_20251107-0900Z_20251107-1500Z_L0.nc
+spu_20251107-0900Z_20251107-1500Z_seg00_L0_scc.nc
+spu_20251107-0900Z_20251107-1500Z_seg01_L0_scc.nc
 ```
 
-Automatic no-argument discovery deliberately continues to prefer the canonical full-channel Level 0 product. It does not also process the colocated SCC subset, avoiding duplicate Level 1 products from the same acquisition.
+Each SCC derivative keeps the original `Session_ID` and adds its own
+`Segment_ID` and `Solar_Regime`. The day/night SCC configuration is selected
+from `station.yaml` using the stored solar regime, not a fixed 06/18 clock
+rule.
 
-For a canonical MILGRAU SCC input, the resulting `*_L1_scc.nc` is written inside the same session directory. For an explicitly supplied non-canonical external SCC filename, the Level 1 product is written beside that source file instead of inventing a date hierarchy from the filename.
+Automatic LIPANCORA discovery deliberately processes only the canonical
+`SESSION_L0.nc`. SCC derivatives remain interoperability products and do not
+create competing canonical Level 1 products. They may still be supplied
+explicitly when an SCC-specific regression/interoperability check is required:
 
+```bash
+milgrau-lipancora -i /path/to/spu_20251107-0900Z_20251107-1500Z_seg01_L0_scc.nc --force
+```
 
-A continuous MILGRAU session is never split merely to satisfy SCC mode. During the
-session refactor, if the current SCC day/night mapping is not homogeneous across
-the complete session, LIBIDS omits the derived SCC export rather than applying the
-mode from the first profile to the whole acquisition. The primary full-channel
-Level 0 session remains valid; solar-regime-aware SCC segmentation is handled by
-the later regime refactor.
+For an explicitly supplied canonical SCC derivative, the resulting
+`SESSION_seg01_L1_scc.nc` is written in the same session directory. For an
+external SCC filename, Level 1 is written beside the source file instead of
+inventing a MILGRAU session hierarchy.
 
 ### Real-data regression evidence
 
