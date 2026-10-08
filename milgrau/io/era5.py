@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Final, Mapping, Optional
 
@@ -357,7 +357,7 @@ def prefetch_era5_pressure_level_profiles(
         logger.warning("ERA5 unavailable | cdsapi is not installed")
         return available
 
-    groups: dict[datetime.date, list[datetime]] = {}
+    groups: dict[date, list[datetime]] = {}
     for analysis_dt in missing:
         groups.setdefault(analysis_dt.date(), []).append(analysis_dt)
 
@@ -487,7 +487,7 @@ def fetch_era5_pressure_level_profile(
         import cdsapi  # type: ignore[import-not-found]
     except ImportError:
         logger.warning("ERA5 unavailable | cdsapi is not installed")
-        logger.debug("Install MILGRAU with the 'era5' extra; CDS credentials remain external to the repository.")
+        logger.debug("cdsapi is a core MILGRAU dependency; reinstall the package and configure CDS credentials.")
         return None
 
     dataset, request = build_era5_request(analysis_dt, latitude, longitude, cfg)
