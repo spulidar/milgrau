@@ -93,12 +93,6 @@ def _process_figures_only(args: argparse.Namespace, config: dict, logger) -> Exe
             bind_log_context(file_logger, stage="figures").info("%s", result.message)
         elif result.status is ExecutionStatus.SKIPPED:
             bind_log_context(file_logger, stage="figures").info("%s", result.message)
-        else:
-            bind_log_context(file_logger, stage="figures").warning(
-                "%s | %s",
-                result.message,
-                result.cause or "unknown figure failure",
-            )
         results.append(result)
     return ExecutionSummary.from_results(results)
 
