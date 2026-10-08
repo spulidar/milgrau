@@ -16,15 +16,17 @@ flowchart TD
     L1 --> N1[Corrected signal + Range Corrected Signal + Atmosphere]
     N1 --> L2[LEBEAR\nLevel 2]
     L2 --> N2[Klett-Fernald-Sasano \n Attenuation + Backscatter + Scattering Ratio]
-    N1 --> V[LIRACOS / Explorer \n Visualization]
-    N2 --> V[LIRACOS / Explorer \n Visualization]
+    N1 --> F1[LIPANCORA figures\nRCS / MeanRCS / Atmosphere]
+    N2 --> F2[LEBEAR figures\nOptical / Molecular / Gluing]
+    N1 --> V[Explorer\nInteractive inspection]
+    N2 --> V
 ```
 
 | Stage | Command | Main product |
 | --- | --- | --- |
 | Level 0 | `milgrau-libids` | standardized raw acquisition NetCDF |
 | Level 1 | `milgrau-lipancora` | corrected signal/RCS, uncertainty and canonical atmosphere |
-| Visualization | `milgrau-liracos` | Level 1 quicklooks |
+| Level 1 figures | `milgrau-lipancora` | RCS quicklooks, MeanRCS and atmospheric comparison |
 | Level 2 | `milgrau-lebear` | selected/glued signal, molecular fields and elastic aerosol optical products |
 | Explorer | `milgrau-explorer` | interactive product inspection |
 
@@ -89,7 +91,6 @@ With `config.yaml` and `station.yaml` resolved for the project:
 ```bash
 milgrau-libids
 milgrau-lipancora
-milgrau-liracos
 milgrau-lebear
 ```
 
@@ -130,7 +131,6 @@ explicit file/directory path. A date selects sessions that intersect that local 
 ```bash
 milgrau-libids -i spu_20250511-0012Z_20250511-0737Z --force
 milgrau-lipancora -i 20250510
-milgrau-liracos -i spu_20250511-0012Z_20250511-0737Z
 milgrau-lebear -i spu_20250511-0012Z_20250511-0737Z
 milgrau-lebear -i spu_20250511-0012Z_20250511-0737Z --regime night
 milgrau-lebear -i spu_20250511-0012Z_20250511-0737Z --segment seg01
@@ -142,12 +142,14 @@ if a long session contains them; `--segment seg01` selects exactly one
 contiguous segment. Either selector may be intersected with
 `--time-window-utc`.
 
-The current visualization command renders the actual Level 1 session extent by
-default. An explicit UTC subset may still be requested without redefining session
-identity:
+LIPANCORA generates the canonical Level 1 figures automatically for the complete
+scientific session. LEBEAR likewise maintains Level 2 figures beside the Level 2
+product. Visualization is therefore a responsibility of the processing level that
+owns the underlying scientific product, not a separate pipeline.
+
+Explicit UTC subsetting remains available for derived Level 2 products:
 
 ```bash
-milgrau-liracos -i spu_20250511-0012Z_20250511-0737Z --time-window-utc 01:00 03:00
 milgrau-lebear -i spu_20250511-0012Z_20250511-0737Z --time-window-utc 01:00 03:00
 milgrau-lebear -i spu_20250511-0012Z_20250511-0737Z --regime night --time-window-utc 01:00 03:00
 ```
