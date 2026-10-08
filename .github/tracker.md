@@ -582,7 +582,7 @@ spu_20250511-0012Z_20250511-0737Z/
 - [x] No L1/L2 subdirectories are needed.
 - [x] Level 1 figure filenames already carry `L1`.
 - [x] RCS and MeanRCS follow session-aware naming.
-- [ ] Add AtmosphericProfile.
+- [x] Add AtmosphericProfile.
 - [ ] Move Level 2 outputs from `qa/` to `figures/`.
 - [ ] Rename Level 2 files to semantic scientific names.
 - [ ] Remove generic `QA_` naming where the figure is not specifically QA.
@@ -608,8 +608,8 @@ Still required after the corresponding code lands:
 
 - [ ] Document solar regime and configured threshold.
 - [ ] Document segment semantics.
-- [ ] Document time-resolved surface weather.
-- [ ] Document ERA5-hourly Level 1 atmosphere, radiosonde QA role and USSA76
+- [x] Document time-resolved surface weather.
+- [x] Document ERA5-hourly Level 1 atmosphere, radiosonde QA role and USSA76
   extension/fallback.
 - [ ] Replace generic QA terminology with figures terminology where appropriate.
 - [ ] Remove LIRACOS from productive architecture docs.
