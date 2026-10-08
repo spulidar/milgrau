@@ -117,7 +117,11 @@ visualization:
     show_pbl: true
     show_tropopause: true
     mean_profile_smooth_bins: 20
+    # Plot-only memory controls. Scientific NetCDF resolution is unchanged.
+    mean_chunk_profiles: 128
     max_time_gap_minutes: 10
+    max_time_samples: 720
+    max_altitude_bins: 1200
     missing_data_color: "lightgray"
     colormap: "jet"
   atmospheric_profile:
