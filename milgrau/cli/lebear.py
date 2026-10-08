@@ -150,6 +150,8 @@ def _process_selected_files(args: argparse.Namespace, config: dict, logger: logg
             start_utc=args.time_window[0] if args.time_window else None,
             stop_utc=args.time_window[1] if args.time_window else None,
             output_tag=output_tag,
+            regime=args.regime,
+            segment_id=args.segment_id,
         )
         results.extend(file_summary.results)
     return ExecutionSummary.from_results(results)
