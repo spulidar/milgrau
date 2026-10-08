@@ -262,7 +262,17 @@ def thermodynamic_source_provenance(
         return {}
 
     doi = str(source_attrs.get("thermodynamic_profile_doi", "")).strip()
-    if source_type in {"era5", "time_resolved"}:
+    sources_present = {
+        item.strip().lower()
+        for item in str(source_attrs.get("thermodynamic_sources_present", "")).split(",")
+        if item.strip()
+    }
+    if source_type == "time_resolved" and sources_present == {"ussa76"}:
+        provider = "us_standard_atmosphere"
+        product = "standard_atmosphere"
+        release = "1976"
+        doi = ""
+    elif source_type in {"era5", "time_resolved"}:
         provider = "copernicus_climate_change_service"
         product = _era5_dataset_from_config(config) or "era5_pressure_levels"
         release = f"doi:{doi}" if doi else "dataset_family_unversioned"
