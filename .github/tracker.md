@@ -338,7 +338,8 @@ The governing rule is:
 - [x] Record source/provenance sufficiently to reproduce the molecular
   atmosphere used by each block.
 - [ ] Run the complete repository test suite/CI against the time-resolved
-  atmosphere contract when an execution environment is available.
+  atmosphere and low-memory figure contracts when an execution environment is
+  available.
 
 ## Atmospheric comparison QA / scientific figure
 
@@ -394,6 +395,13 @@ Implemented:
   generation after successful Level 1 writing/validation.
 - [x] Level 1 figure generation is incremental.
 - [x] Figure-generation failure does not invalidate a scientifically valid L1.
+- [x] Add `milgrau-lipancora --figures-only` so missing/outdated Level 1
+  figures can be repaired without recomputing the scientific L1.
+- [x] Normal incremental LIPANCORA also checks/repairs figures when L1 is
+  already current.
+- [x] Remove full-dataset `source.load()` from Level 1 figure generation.
+- [x] Bound quicklook memory with plot-only time/altitude decimation and
+  chunked full-resolution mean/error statistics.
 - [x] Add the atmospheric profile/comparison figure above.
 
 ---
