@@ -476,13 +476,6 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
             bind_log_context(file_logger, stage="figures"),
             root_dir=figure_root,
         )
-        if figure_result.status.is_failure:
-            bind_log_context(file_logger, stage="figures").warning(
-                "%s | %s",
-                figure_result.message,
-                figure_result.cause or "unknown figure failure",
-            )
-
         return ExecutionResult.success(
             "level1.complete",
             "Level 1 generated",
