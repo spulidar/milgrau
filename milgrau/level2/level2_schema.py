@@ -159,14 +159,17 @@ def validate_level2_contract(ds: xr.Dataset) -> None:
     for name in (
         "effective_vertical_resolution_m",
         "source_bin_count",
-        "molecular_backscatter",
-        "molecular_extinction",
         "aerosol_backscatter_mean",
         "aerosol_extinction_mean",
         "period_support_count",
         "period_support_fraction",
     ):
         _require_dims(ds, name, wavelength_altitude)
+    for name in (
+        "molecular_backscatter",
+        "molecular_extinction",
+    ):
+        _require_dims(ds, name, block_wavelength_altitude)
     for name in (
         "range_corrected_signal_block",
         "range_corrected_signal_error_block",
@@ -237,6 +240,9 @@ def validate_level2_contract(ds: xr.Dataset) -> None:
     for name in (
         "lidar_ratio_assumed_sr",
         "lidar_ratio_std_sr",
+    ):
+        _require_dims(ds, name, block_wavelength)
+    for name in (
         "retrieval_top_altitude_m",
         "retrieval_success_fraction",
     ):
