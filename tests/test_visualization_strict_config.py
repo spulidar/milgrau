@@ -20,7 +20,10 @@ def _config() -> dict:
                 "show_pbl": True,
                 "show_tropopause": True,
                 "mean_profile_smooth_bins": 20,
+                "mean_chunk_profiles": 128,
                 "max_time_gap_minutes": 10,
+                "max_time_samples": 720,
+                "max_altitude_bins": 1200,
                 "missing_data_color": "lightgray",
                 "colormap": "jet",
             },
@@ -36,7 +39,10 @@ def test_visualization_recipe_resolves_without_defaults() -> None:
     assert resolved.altitude_ranges_km == (5.0, 15.0, 30.0)
     assert resolved.channels_to_plot == ("532.AN", "355.AN")
     assert resolved.quicklook.mean_profile_smooth_bins == 20
+    assert resolved.quicklook.mean_chunk_profiles == 128
     assert resolved.quicklook.max_time_gap_minutes == 10.0
+    assert resolved.quicklook.max_time_samples == 720
+    assert resolved.quicklook.max_altitude_bins == 1200
     assert get_output_settings(_config()) == ("webp", 120)
 
 
@@ -71,3 +77,17 @@ def test_mean_profile_smoothing_must_be_explicit_positive_integer() -> None:
     config["visualization"]["quicklook"]["mean_profile_smooth_bins"] = 0
     with pytest.raises(VisualizationConfigurationError, match="mean_profile_smooth_bins"):
         resolve_visualization_config(config)
+
+
+
+def test_quicklook_memory_limits_are_required_positive_integers() -> None:
+    for key in ("mean_chunk_profiles", "max_time_samples", "max_altitude_bins"):
+        config = _config()
+        del config["visualization"]["quicklook"][key]
+        with pytest.raises(VisualizationConfigurationError, match=key):
+            resolve_visualization_config(config)
+
+        config = _config()
+        config["visualization"]["quicklook"][key] = 0
+        with pytest.raises(VisualizationConfigurationError, match=key):
+            resolve_visualization_config(config)
