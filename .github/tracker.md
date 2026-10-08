@@ -616,8 +616,13 @@ No scientific NetCDF is split because of website layout.
 - [x] Add concise station-local session presentation without “Human interval”
   wording.
 - [x] Summarize solar regime and segments.
-- [x] Summarize available figures.
+- [x] Summarize available figures without repeating the full figure list for
+  every processing level; `--full` exposes the complete list.
 - [x] Summarize explicit highest available level.
+- [x] Use station configuration timezone for all levels, including L2 products
+  that do not carry their own timezone attribute.
+- [x] Format datetime-coordinate previews as readable ISO timestamps rather
+  than integer nanoseconds.
 - [x] Add regression coverage for a cross-day São Paulo local-time session.
 
 ---
