@@ -135,7 +135,9 @@ def _weather_config(policy: str) -> dict:
 def _group() -> pd.DataFrame:
     return pd.DataFrame(
         {
-            "start_time_utc": [pd.Timestamp("2024-01-01T12:00:00Z")],
+            "meas_type": ["measurements"],
+            "start_time_utc": [pd.Timestamp("2024-01-01T12:05:00Z")],
+            "stop_time": [pd.Timestamp("2024-01-01T12:55:00Z")],
         }
     )
 
@@ -144,8 +146,9 @@ def test_missing_surface_weather_nan_policy_does_not_invent_temperature_or_press
     monkeypatch.setattr("milgrau.level0.processing.fetch_surface_weather", lambda *args, **kwargs: None)
     result = fetch_group_weather(_group(), _weather_config("nan"), logging.getLogger("test-weather-nan"))
 
-    assert np.isnan(result["temperature_c"])
-    assert np.isnan(result["pressure_hpa"])
+    assert result["weather_time"].shape == (2,)
+    assert np.isnan(result["temperature_c"]).all()
+    assert np.isnan(result["pressure_hpa"]).all()
 
 
 def test_missing_surface_weather_fail_policy_stops_processing(monkeypatch) -> None:
