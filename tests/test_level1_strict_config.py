@@ -38,6 +38,7 @@ def _level1_recipe() -> dict:
             },
             "missing_channel_calibration": {"policy": "error"},
             "atmosphere": {
+                "time_resolution_minutes": 60,
                 "source_priority": ["ussa76"],
                 "external_profile_outside_coverage": "ussa76",
             },
@@ -59,7 +60,8 @@ def test_repository_level1_recipe_is_explicit_and_removed_physics_alias_stays_ab
     assert resolved.missing_channel_calibration.deadtime_us == 0.0
     assert resolved.missing_channel_calibration.bin_shift_bins == 0
     assert resolved.missing_channel_calibration.background_offset == 0.0
-    assert resolved.atmosphere.source_priority == ("radiosonde", "era5", "ussa76")
+    assert resolved.atmosphere.time_resolution_minutes == 60
+    assert resolved.atmosphere.source_priority == ("era5", "ussa76")
     assert resolved.atmosphere.external_profile_outside_coverage == "ussa76"
     assert resolved.atmosphere.radiosonde is not None
     assert resolved.atmosphere.radiosonde.synoptic_hours_utc == (0, 12)
@@ -105,11 +107,11 @@ def test_neutral_legacy_policy_rejects_nonzero_values() -> None:
         resolve_level1_config(config)
 
 
-def test_atmosphere_policy_requires_complete_radiosonde_settings_when_selected() -> None:
+def test_atmosphere_policy_rejects_radiosonde_as_productive_source() -> None:
     config = _level1_recipe()
     config["level1"]["atmosphere"]["source_priority"] = ["radiosonde", "ussa76"]
 
-    with pytest.raises(Level1ConfigurationError, match="radiosonde"):
+    with pytest.raises(Level1ConfigurationError, match="one of"):
         resolve_level1_config(config)
 
 
@@ -131,7 +133,7 @@ def test_atmosphere_policy_requires_complete_era5_settings_when_selected() -> No
         resolve_level1_config(config)
 
 
-def test_atmosphere_policy_rejects_unlisted_dormant_source_configuration() -> None:
+def test_atmosphere_policy_allows_radiosonde_as_qa_reference() -> None:
     config = _level1_recipe()
     config["level1"]["atmosphere"]["radiosonde"] = {
         "cache_dir": "cache",
@@ -140,8 +142,9 @@ def test_atmosphere_policy_rejects_unlisted_dormant_source_configuration() -> No
         "max_time_delta_hours": 6.0,
     }
 
-    with pytest.raises(Level1ConfigurationError, match="absent from source_priority"):
-        resolve_level1_config(config)
+    resolved = resolve_level1_config(config)
+    assert resolved.atmosphere.radiosonde is not None
+    assert resolved.atmosphere.radiosonde.synoptic_hours_utc == (0, 12)
 
 
 def test_repository_pc_calibration_resolves_not_characterized_without_inventing_rate() -> None:
