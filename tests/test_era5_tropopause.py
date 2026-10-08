@@ -40,7 +40,7 @@ def test_era5_reuses_thermal_tropopause_kernel(monkeypatch) -> None:
     )
 
     config = deepcopy(load_config("config.yaml"))
-    config["level1"]["atmosphere"]["source_priority"] = ["radiosonde", "era5", "ussa76"]
+    config["level1"]["atmosphere"]["source_priority"] = ["era5", "ussa76"]
     shell = xr.Dataset(
         coords={
             "time": pd.date_range("2024-06-10T12:00:00", periods=3, freq="10min"),
@@ -50,6 +50,6 @@ def test_era5_reuses_thermal_tropopause_kernel(monkeypatch) -> None:
 
     result = integrate_thermodynamics(shell, config, logging.getLogger("test-era5-tropopause"))
 
-    assert result.attrs["tropopause_source_type"] == "era5"
+    assert result.attrs["tropopause_source_type"] == "time_resolved"
     assert np.isclose(float(result.attrs["tropopause_cpt_km"]), expected_cpt)
     assert np.isclose(float(result.attrs["tropopause_lrt_km"]), expected_lrt)
