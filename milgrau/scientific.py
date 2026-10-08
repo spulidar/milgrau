@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Final
 
-LEVEL2_PRODUCT_SCHEMA_VERSION: Final[str] = "7"
+LEVEL2_PRODUCT_SCHEMA_VERSION: Final[str] = "8"
 LEVEL2_PRODUCT_SCHEMA_CHANGE: Final[str] = (
-    "block_resolved_molecular_atmosphere_from_time_resolved_level1"
+    "solar_segment_homogeneous_blocks_with_block_resolved_atmosphere"
 )
 ELASTIC_BACKSCATTER_INVERSION_METHOD: Final[str] = "Klett-Fernald-Sasano"
 ELASTIC_BACKSCATTER_INTEGRATION_MODE: Final[str] = "two_sided"
