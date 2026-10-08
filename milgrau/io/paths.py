@@ -245,16 +245,16 @@ def level0_scc_output_path(
     session_id: str,
     config: Mapping[str, Any],
     *,
-    segment_id: str,
+    solar_regime: str,
     root_dir: str | Path | None = None,
 ) -> Path:
-    """Return the SCC Level 0 derivative for one solar segment."""
+    """Return the SCC Level 0 derivative grouped by solar day/night regime."""
     value = validate_session_id_for_config(session_id, config)
-    safe_segment = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(segment_id).strip()).strip("_")
-    if not safe_segment:
-        raise ValueError("segment_id must be a non-empty filename-safe value.")
+    regime = str(solar_regime).strip().lower()
+    if regime not in {"day", "night"}:
+        raise ValueError("solar_regime must be 'day' or 'night'.")
     return session_dir(value, config, root_dir=root_dir) / (
-        f"{value}_{safe_segment}{LEVEL0_SCC_SUFFIX}"
+        f"{value}_{regime}{LEVEL0_SCC_SUFFIX}"
     )
 
 
