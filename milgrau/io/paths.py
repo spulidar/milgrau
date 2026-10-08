@@ -299,8 +299,16 @@ def level2_output_path(level1_file: str | Path, variant_tag: str | None = None) 
     is_scc = path.name.endswith(LEVEL1_SCC_SUFFIX)
     if not is_scc and not path.name.endswith(LEVEL1_SUFFIX):
         raise ValueError(f"Expected a Level 1 file: {path}")
+
+    source_variant = ""
+    if is_scc:
+        source_variant = path.name[
+            len(session_id) : -len(LEVEL1_SCC_SUFFIX)
+        ]
     scc_suffix = "_scc" if is_scc else ""
-    return path.parent / f"{session_id}{variant}_L2{scc_suffix}.nc"
+    return path.parent / (
+        f"{session_id}{source_variant}{variant}_L2{scc_suffix}.nc"
+    )
 
 
 def quicklook_output_path(
