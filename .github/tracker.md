@@ -38,12 +38,14 @@ The governing rule is:
   threshold accepted for the current SPU workflow, with broader real-data
   validation still useful.
 - **Phase 3 — solar regime/segments:** not implemented.
-- **Phase 4 — continuous Level 0:** largely implemented; solar metadata and
-  time-resolved surface weather remain.
-- **Phase 5 — continuous Level 1:** session structure works; time-resolved
-  atmosphere and automatic Level 1 figures remain.
-- **Phase 6 — continuous Level 2:** session structure works; regime selectors,
-  terminology cleanup and figure reorganization remain.
+- **Phase 4 — continuous Level 0:** hourly surface weather implemented; solar
+  metadata/segments remain.
+- **Phase 5 — continuous Level 1:** hourly ERA5/USSA76 atmosphere implemented;
+  radiosonde QA and atmospheric figure are integrated; full Level 1 figure
+  ownership remains transitional.
+- **Phase 6 — continuous Level 2:** block-time molecular atmosphere implemented
+  in schema 7; regime selectors, terminology cleanup and figure reorganization
+  remain.
 - **Phase 7 — retire LIRACOS as an independent pipeline:** prepared, not done.
 - **Phase 8 — `spulidar/measurements` publication refactor:** not started here.
 - **Phase 9 — Explorer / inspect:** partially session-aware.
@@ -227,26 +229,24 @@ Accepted target model:
 - [x] Dark-current provenance remains available.
 - [x] SCC is an optional derivative and does not define scientific identity.
 
-## Surface weather — accepted target
+## Surface weather — implemented temporal contract
 
-Current implementation still writes one representative surface-weather snapshot.
-Replace it with:
-
-- [ ] Add a native-cadence/hourly `weather_time` axis.
-- [ ] Persist time-resolved surface:
-  temperature, pressure, relative humidity, cloud cover and wind.
-- [ ] Keep Open-Meteo Archive as the current source until a better local SPU
+- [x] Add a native-cadence/hourly `weather_time` axis bracketing the complete
+  session.
+- [x] Persist time-resolved surface temperature, pressure, relative humidity,
+  cloud cover and wind.
+- [x] Keep Open-Meteo Archive as the current source until a better local SPU
   source is configured.
-- [ ] Preserve source/provenance and native/source time resolution.
-- [ ] Do not interpolate/duplicate hourly source values onto every lidar profile.
+- [x] Preserve source/provenance and native/source time resolution.
+- [x] Do not interpolate/duplicate hourly source values onto every lidar profile.
 - [x] Missing surface weather remains missing; do not invent temperature or
   pressure defaults.
 - [ ] If a reliable local weather station becomes available, prefer:
   local station -> Open-Meteo fallback, without changing the scientific schema.
-- [ ] Derive scalar temperature/pressure only where SCC interoperability
+- [x] Derive scalar temperature/pressure only where SCC interoperability
   explicitly requires scalar fields.
-- [ ] Document how the SCC scalar is derived (for example representative/median
-  value) and keep it distinct from the scientific time series.
+- [x] SCC scalar values use the finite session median and are explicitly
+  documented as interoperability fields, not the scientific weather series.
 
 ## Still pending in L0
 
@@ -269,34 +269,40 @@ Replace it with:
 - [x] Current Level 1 still materializes the canonical atmosphere so Level 2
   performs no external atmosphere IO.
 
-## Time-resolved atmosphere — accepted target
+## Time-resolved atmosphere — implemented temporal contract
 
-Replace the current single midpoint atmosphere with:
-
-- [ ] Add an hourly/native-cadence `atmosphere_time` coordinate.
-- [ ] Materialize
+- [x] Add hourly `atmosphere_time` coordinates bracketing the complete session.
+- [x] Materialize
   `Atmospheric_Temperature_K(atmosphere_time, altitude)`.
-- [ ] Materialize
+- [x] Materialize
   `Atmospheric_Pressure_hPa(atmosphere_time, altitude)`.
-- [ ] Use **ERA5 pressure-level reanalysis as the temporal backbone** for the
+- [x] Use **ERA5 pressure-level reanalysis as the temporal backbone** for the
   canonical Level 1 atmosphere across long continuous sessions.
-- [ ] Preserve hourly ERA5 analysis provenance and spatial-source metadata.
-- [ ] Do not abruptly replace individual ERA5 hours with radiosonde profiles.
-- [ ] Keep radiosondes as the preferred local in-situ observational reference
-  for comparison/QA when a suitable sounding exists.
-- [ ] Keep USSA76 as explicit vertical extension and full fallback when required.
-- [ ] Keep solar day/night segmentation independent from atmospheric cadence.
-- [ ] Define efficient caching so repeated session processing does not redownload
-  identical ERA5 hours.
-- [ ] Update Level 1 contracts/tests for time-resolved atmospheric dimensions.
+- [x] Preserve hourly ERA5 source/time/coverage provenance and station spatial
+  metadata.
+- [x] Do not abruptly replace individual ERA5 hours with radiosonde profiles.
+- [x] Keep radiosondes as the local in-situ observational reference for
+  comparison/QA when a suitable sounding exists.
+- [x] Keep USSA76 as explicit vertical extension and full hourly fallback when
+  required.
+- [x] Keep solar day/night segmentation independent from atmospheric cadence.
+- [x] Reuse the existing hour-indexed ERA5 cache so adjacent/repeated sessions
+  do not redownload identical analysis hours.
+- [x] Update Level 1 contracts/tests for time-resolved atmospheric dimensions.
 
 ## Level 2 consumption of atmosphere
 
-- [ ] Level 2 performs no ERA5/radiosonde/Open-Meteo IO.
-- [ ] Interpolate the materialized Level 1 atmosphere to each retrieval
-  `block_time`.
-- [ ] Record interpolation/source provenance sufficiently to reproduce the
-  molecular atmosphere used by each block.
+- [x] Level 2 performs no ERA5/radiosonde/Open-Meteo IO.
+- [x] Keep 20-minute block membership clock-anchored but define `block_time`
+  as the mean timestamp of profiles actually contributing to the block.
+- [x] Interpolate Level 1 temperature linearly and pressure in `log(P)` to
+  each representative `block_time`.
+- [x] Materialize block-resolved molecular backscatter/extinction and lidar
+  ratio fields in Level 2 schema 7, including blocks without a valid retrieval.
+- [x] Record source/provenance sufficiently to reproduce the molecular
+  atmosphere used by each block.
+- [ ] Run the complete repository test suite/CI against the time-resolved
+  atmosphere contract when an execution environment is available.
 
 ## Atmospheric comparison QA / scientific figure
 
@@ -304,24 +310,24 @@ Create:
 
 `SESSION_L1_AtmosphericProfile.webp`
 
-- [ ] Compare ERA5, radiosonde and the canonical profile actually used by
+- [x] Compare ERA5, radiosonde and the canonical profile actually used by
   MILGRAU on a common altitude grid when radiosonde is available.
-- [ ] Plot temperature and pressure profiles.
-- [ ] Plot corresponding differences.
-- [ ] Report temperature bias and RMSE over configurable altitude bands.
-- [ ] Report pressure bias/relative difference and valid vertical overlap.
-- [ ] Compare a retrieval-relevant derived molecular quantity such as molecular
+- [x] Plot temperature and pressure profiles.
+- [x] Plot corresponding differences.
+- [x] Report temperature bias and RMSE over configurable altitude bands.
+- [x] Report pressure bias/relative difference and valid vertical overlap.
+- [x] Compare a retrieval-relevant derived molecular quantity such as molecular
   number density and/or molecular backscatter, so QA reflects retrieval impact
   rather than meteorological differences alone.
-- [ ] Record radiosonde launch/target time, ERA5 analysis time, spatial metadata
+- [x] Record radiosonde launch/target time, ERA5 analysis time, spatial metadata
   and time offsets in figure/provenance.
-- [ ] Treat ERA5-versus-radiosonde as consistency/validation QA, not completely
+- [x] Treat ERA5-versus-radiosonde as consistency/validation QA, not completely
   independent validation, because radiosonde observations may contribute to
   reanalysis assimilation.
-- [ ] If no suitable radiosonde exists, still generate the atmospheric figure
+- [x] If no suitable radiosonde exists, still generate the atmospheric figure
   with ERA5 + canonical used profile + USSA76/fallback context and explicitly
   mark radiosonde unavailable.
-- [ ] Define and test a maximum radiosonde time separation for QA comparison,
+- [x] Define and test a maximum radiosonde time separation for QA comparison,
   independent of the production ERA5 cadence.
 
 ## Solar/segments in Level 1
@@ -346,10 +352,11 @@ Already prepared:
 
 Remaining:
 
-- [ ] LIPANCORA generates Level 1 figures automatically after successful L1
-  writing/validation.
-- [ ] A figure-generation failure must not invalidate a scientifically valid L1.
-- [ ] Add the atmospheric profile/comparison figure above.
+- [~] LIPANCORA now generates the atmospheric Level 1 figure automatically
+  after successful L1 writing/validation; RCS/MeanRCS ownership still awaits
+  the LIRACOS retirement phase.
+- [x] Atmospheric figure-generation failure does not invalidate a scientifically valid L1.
+- [x] Add the atmospheric profile/comparison figure above.
 
 ---
 
@@ -400,6 +407,10 @@ Remaining:
 - [x] Explicit `--time-window-utc` remains supported.
 - [x] Time-window variants do not change session identity.
 - [x] 20-minute blocks are independent of former 6-hour publication windows.
+- [x] Block membership remains wall-clock anchored while `block_time` is the
+  mean observed profile time used for time-dependent atmosphere/LR evaluation.
+- [x] Level 2 schema 7 stores molecular backscatter/extinction and lidar-ratio
+  assumptions by `block_time`.
 
 ## Remaining session/regime work
 
@@ -699,12 +710,11 @@ Source cleanup and Git-history cleanup remain separate tasks.
 
 # Recommended execution order from current branch state
 
-1. **Time-resolved meteorology/atmosphere**
-   - Level 0 hourly surface weather;
-   - Level 1 hourly ERA5 atmosphere;
-   - radiosonde comparison QA;
-   - USSA76 extension/fallback;
-   - L2 interpolation to block time.
+1. **Validate the implemented time-resolved meteorology/atmosphere**
+   - run the full test suite/CI when available;
+   - exercise a representative real SPU session with ERA5 available;
+   - exercise an intentional ERA5-missing/USSA76 fallback case;
+   - inspect the atmospheric comparison figure and block-resolved molecular state.
 
 2. **Solar regime + segments**
    - solar elevation;
