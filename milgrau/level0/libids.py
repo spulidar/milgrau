@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Mapping, Sequence
 
@@ -46,20 +45,18 @@ def _resolve_expected_scc_contexts(
             channels = [str(value) for value in ds["channel_string"].values]
             labels = np.asarray(ds["Segment_Label"].values).astype(str)
             regimes = np.asarray(ds["Segment_Regime"].values).astype(str)
-            starts = np.asarray(ds["Segment_Start_Time_UTC"].values, dtype=np.int64)
-        if not (labels.size == regimes.size == starts.size):
+            starts = pd.to_datetime(ds["Segment_Start_Time_UTC"].values, utc=True)
+        if not (labels.size == regimes.size == len(starts)):
             return []
     except Exception:
         return []
 
     contexts: list[tuple[str, dict]] = []
-    for label, regime, start_seconds in zip(labels, regimes, starts, strict=True):
+    for label, regime, start_time in zip(labels, regimes, starts, strict=True):
         try:
             context = resolve_station_context(
                 config,
-                measurement_time=datetime.fromtimestamp(
-                    int(start_seconds), tz=timezone.utc
-                ),
+                measurement_time=pd.Timestamp(start_time).to_pydatetime(),
                 available_channels=channels,
                 mode=str(regime),
             )
