@@ -52,9 +52,11 @@ def level2_output_is_current(
     start_utc: str | None = None,
     stop_utc: str | None = None,
     output_tag: str | None = None,
+    regime: str | None = None,
+    segment_id: str | None = None,
 ) -> bool:
     """Return whether one Level 2 output is intact and current."""
-    del start_utc, stop_utc, output_tag
+    del start_utc, stop_utc, output_tag, regime, segment_id
     output = Path(output_path)
     if not output.is_file():
         return False
