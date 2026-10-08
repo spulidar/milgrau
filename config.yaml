@@ -70,7 +70,11 @@ level1:
       background_offset: 0.0
 
   atmosphere:
-    source_priority: ["radiosonde", "era5", "ussa76"]
+    # The canonical Level 1 atmosphere is hourly. ERA5 is the temporal backbone;
+    # USSA76 is an explicit fallback/vertical extension. Radiosonde is retained
+    # below as an observational QA reference, not as a piecewise production source.
+    time_resolution_minutes: 60
+    source_priority: ["era5", "ussa76"]
 
     # External profiles rarely span the complete lidar altitude grid. The
     # extension behavior is explicit rather than an implicit standard-atmosphere fallback.
