@@ -37,8 +37,8 @@ _REQUIRED_VARIABLES: tuple[str, ...] = (
     "mc_valid_fraction",
     "aerosol_backscatter_mean",
     "aerosol_extinction_mean",
-    "period_support_count",
-    "period_support_fraction",
+    "temporal_support_count",
+    "temporal_support_fraction",
     "retrieval_top_altitude_m",
     "rayleigh_reference_altitude_m_block",
     "rayleigh_reference_search_min_altitude_m_block",
@@ -172,8 +172,8 @@ def validate_level2_contract(ds: xr.Dataset) -> None:
         "source_bin_count",
         "aerosol_backscatter_mean",
         "aerosol_extinction_mean",
-        "period_support_count",
-        "period_support_fraction",
+        "temporal_support_count",
+        "temporal_support_fraction",
     ):
         _require_dims(ds, name, wavelength_altitude)
     for name in (
@@ -355,16 +355,16 @@ def validate_level2_contract(ds: xr.Dataset) -> None:
     expected_support_count = np.count_nonzero(np.isfinite(nominal_beta), axis=0).astype(
         np.int32
     )
-    observed_support_count = np.asarray(ds["period_support_count"].values, dtype=np.int32)
+    observed_support_count = np.asarray(ds["temporal_support_count"].values, dtype=np.int32)
     if not np.array_equal(observed_support_count, expected_support_count):
         raise ValueError(
-            "period_support_count must equal finite nominal block support at each altitude."
+            "temporal_support_count must equal finite nominal block support at each altitude."
         )
     expected_support_fraction = expected_support_count.astype(np.float64) / float(
         ds.sizes["block_time"]
     )
-    if not _same_with_nan(ds["period_support_fraction"].values, expected_support_fraction):
-        raise ValueError("period_support_fraction must equal period_support_count / block count.")
+    if not _same_with_nan(ds["temporal_support_fraction"].values, expected_support_fraction):
+        raise ValueError("temporal_support_fraction must equal temporal_support_count / block count.")
 
     expected_beta_mean = _finite_mean(nominal_beta, axis=0)
     if not _same_with_nan(ds["aerosol_backscatter_mean"].values, expected_beta_mean):
