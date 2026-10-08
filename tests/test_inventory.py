@@ -110,6 +110,30 @@ def test_continuous_acquisition_crossing_midnight_stays_one_session(
     assert "period" not in df.columns
 
 
+def test_session_timestamp_columns_are_timezone_aware_utc(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    path = str(tmp_path / "m1")
+    headers = {
+        path: (
+            datetime(2024, 6, 20, 21, 3, 48),
+            pd.Timestamp("2024-06-20T21:08:48"),
+            300.0,
+            1200,
+            4.0,
+        ),
+    }
+    _patch_inventory(monkeypatch, [path], ["measurements"], headers)
+
+    df = build_session_inventory(str(tmp_path), _config(), logging.getLogger("test-tz-dtype"))
+
+    assert str(df["session_start_utc"].dt.tz) == "UTC"
+    assert str(df["session_end_utc"].dt.tz) == "UTC"
+    assert df["session_start_utc"].iloc[0] == pd.Timestamp("2024-06-20T21:03:48Z")
+    assert df["session_end_utc"].iloc[0] == pd.Timestamp("2024-06-20T21:08:48Z")
+
+
 def test_acquisition_is_not_split_by_former_six_hour_boundaries(
     tmp_path: Path,
     monkeypatch,
@@ -238,6 +262,8 @@ def test_dark_current_is_associated_to_nearest_session(
     assert dark_row["session_id"] == session_id
     assert dark_row["association_method"] == "nearest_session"
     assert float(dark_row["dark_current_association_delta_hours"]) == 0.5
+    assert str(df["session_start_utc"].dt.tz) == "UTC"
+    assert str(df["session_end_utc"].dt.tz) == "UTC"
 
 
 def test_dark_current_outside_maximum_remains_unassociated(
