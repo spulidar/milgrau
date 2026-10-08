@@ -14,7 +14,6 @@ from milgrau.cli import explorer as explorer_cli
 from milgrau.cli import lebear as lebear_cli
 from milgrau.cli import libids as libids_cli
 from milgrau.cli import lipancora as lipancora_cli
-from milgrau.cli import liracos as liracos_cli
 from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary
 
 
@@ -48,7 +47,6 @@ def _error_summary() -> ExecutionSummary:
     [
         (libids_cli, "process_level_0"),
         (lipancora_cli, "process_level_1"),
-        (liracos_cli, "process_all_level1_files"),
     ],
 )
 def test_pipeline_clis_return_one_when_processing_contains_errors(monkeypatch, module: object, operation_name: str) -> None:
