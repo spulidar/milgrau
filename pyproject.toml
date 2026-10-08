@@ -45,7 +45,6 @@ explorer = [
 [project.scripts]
 milgrau-libids = "milgrau.cli.libids:main"
 milgrau-lipancora = "milgrau.cli.lipancora:main"
-milgrau-liracos = "milgrau.cli.liracos:main"
 milgrau-lebear = "milgrau.cli.lebear:main"
 milgrau-explorer = "milgrau.cli.explorer:main"
 milgrau-inspect = "milgrau.cli.inspect:main"
