@@ -27,11 +27,17 @@ Level 0 turns one continuous raw Licel session into a standardized, traceable ac
 - processing policy from `config.yaml`;
 - dark-current/acquisition context where applicable;
 - hourly surface-weather context on its own `weather_time` axis according to
-  the configured missing-data policy.
+  the configured missing-data policy;
+- geometric solar elevation and the configured day/night classification.
 
 ### Outputs
 
-The Level 0 product preserves the standardized raw acquisition and the metadata required by downstream Level 1 corrections. It may also expose SCC-oriented metadata/mapping where configured, but SCC compatibility does not define MILGRAU scientific truth.
+The Level 0 product preserves the standardized raw acquisition and the metadata
+required by downstream Level 1 corrections. It stores
+`solar_elevation_deg(time)`, `solar_regime(time)`, `segment_id(time)` and a
+segment table. SCC compatibility does not define MILGRAU scientific truth:
+when SCC day/night mappings differ, LIBIDS writes one SCC derivative per solar
+segment while keeping the canonical full-channel Level 0 continuous.
 
 ### Session identity
 
@@ -78,7 +84,9 @@ The productive Level 1 contract includes, as applicable:
 - `Atmospheric_Temperature_K(atmosphere_time, altitude)` and
   `Atmospheric_Pressure_hPa(atmosphere_time, altitude)` fully materialized;
 - per-hour atmosphere source/fallback metadata;
-- optional mapped radiosonde QA reference.
+- optional mapped radiosonde QA reference;
+- the exact Level 0 solar elevation/regime/segment context propagated without
+  recomputing solar geometry.
 
 ### Thermodynamic boundary
 
@@ -102,6 +110,7 @@ The product records the installed software version and a source-code hash. The t
 ### Inputs
 
 - validated Level 1 corrected signals/RCS and their uncertainties;
+- inherited solar regime/segment identity for every profile;
 - complete Level 1 pressure/temperature profiles;
 - explicit Level 2 processing recipe from `config.yaml`;
 - station-derived assumptions such as the resolved lidar-ratio climatology where applicable.
@@ -110,7 +119,7 @@ The product records the installed software version and a source-code hash. The t
 
 For each configured elastic wavelength, Level 2 currently performs:
 
-1. channel discovery and temporal block reduction;
+1. channel discovery and clock-anchored, segment-homogeneous temporal block reduction;
 2. analog/photon-counting gluing or explicitly allowed single-channel fallback;
 3. retrieval-input QA;
 4. block-resolved molecular Rayleigh calculation from the time-interpolated
@@ -121,6 +130,10 @@ For each configured elastic wavelength, Level 2 currently performs:
 7. block acceptance and aggregate product construction;
 8. complete/partial/failed multispectral product accounting;
 9. FAIR provenance and optional QA visualization.
+
+LEBEAR accepts `--regime day|night` or `--segment segXX`, each optionally
+intersected with `--time-window-utc`. These selectors create derived Level 2
+views/products while preserving the source session identity.
 
 The canonical ownership map for these steps is maintained in `docs/code_inventory.md`.
 
