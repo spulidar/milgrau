@@ -22,7 +22,7 @@ def test_productive_kfs_identity_is_two_sided() -> None:
     assert get_kfs_mode(config) == "two_sided"
     assert "Two-sided Klett--Fernald" in kfs_mode_description("two_sided")
     metadata = elastic_inversion_algorithm_metadata()
-    assert LEVEL2_PRODUCT_SCHEMA_VERSION == "7"
+    assert LEVEL2_PRODUCT_SCHEMA_VERSION == "9"
     assert metadata["integration_mode"] == "two_sided"
     assert metadata["uncertainty_method"] == "selection-aware Monte Carlo"
 
