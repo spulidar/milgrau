@@ -352,8 +352,7 @@ def _write_scc_exports(
 
         scc_logger = bind_log_context(
             logger,
-            stage="scc",
-            segment_id=str(segment_id),
+            stage=f"scc.{segment_id}",
         )
         if not context.get("scc_available", False):
             scc_logger.info("%s | no SCC mapping for station profile", regime)
