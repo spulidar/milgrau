@@ -41,6 +41,9 @@ def _inputs() -> WavelengthBlockInputs:
         n_altitude=altitude.size,
         block_time=np.array([np.datetime64("2024-01-01")]),
         block_groups=[np.array([0])],
+        block_segment_id=np.array(["seg00"], dtype=object),
+        block_solar_regime=np.array(["night"], dtype=object),
+        block_solar_elevation_deg=np.array([-20.0], dtype=np.float64),
         gluing_config={
             "allow_single_channel_fallback": True,
             "single_channel_priority": "photon_counting",
