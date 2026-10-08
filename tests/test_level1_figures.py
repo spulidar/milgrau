@@ -14,7 +14,11 @@ import xarray as xr
 from milgrau.level1 import figures as level1_figures
 from milgrau.operations import ExecutionStatus
 from milgrau.viz import quicklooks
-from milgrau.viz.quicklooks import _insert_time_gap_markers
+from milgrau.viz.quicklooks import (
+    _decimate_for_display,
+    _insert_time_gap_markers,
+    _streaming_time_statistics,
+)
 
 SESSION_ID = "spu_20240101-0000Z_20240101-0010Z"
 
@@ -121,7 +125,10 @@ def _config(channels: list[str], incremental: bool = True, config_file: Path | N
                 "show_pbl": True,
                 "show_tropopause": True,
                 "mean_profile_smooth_bins": 20,
+                "mean_chunk_profiles": 2,
                 "max_time_gap_minutes": 10,
+                "max_time_samples": 2,
+                "max_altitude_bins": 2,
                 "missing_data_color": "lightgray",
                 "colormap": "viridis",
             },
@@ -307,3 +314,38 @@ def test_level1_figures_regenerate_when_config_file_changes(tmp_path: Path, monk
     level1_figures.generate_level1_figures(level1, second_config, _ListLogger(), root_dir=tmp_path)
 
     assert calls == {"quicklook": 2, "mean": 2, "atmosphere": 2}
+
+
+
+def test_quicklook_display_decimation_does_not_change_scientific_array() -> None:
+    data = xr.DataArray(
+        np.arange(6 * 8, dtype=np.float32).reshape(6, 8),
+        dims=("time", "altitude"),
+        coords={
+            "time": pd.date_range("2024-01-01", periods=6, freq="1min"),
+            "altitude": np.arange(8, dtype=np.float64),
+        },
+    )
+
+    displayed = _decimate_for_display(data, _config(["532.AN"]))
+
+    assert data.shape == (6, 8)
+    assert displayed.sizes["time"] <= 2
+    assert displayed.sizes["altitude"] <= 2
+
+
+def test_streaming_mean_matches_full_resolution_reference() -> None:
+    signal = xr.DataArray(
+        np.arange(6 * 4, dtype=np.float32).reshape(6, 4),
+        dims=("time", "altitude"),
+        coords={"time": np.arange(6), "altitude": np.arange(4)},
+    )
+    error = xr.full_like(signal, 2.0)
+
+    mean, err = _streaming_time_statistics(signal, error, chunk_profiles=2)
+
+    np.testing.assert_allclose(mean.values, signal.mean("time").values)
+    np.testing.assert_allclose(
+        err.values,
+        np.sqrt((error.values.astype(np.float64) ** 2).sum(axis=0)) / 6.0,
+    )
