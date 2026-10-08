@@ -89,3 +89,70 @@ def test_session_success_keeps_only_level0_file_effect(tmp_path: Path, monkeypat
     assert result.stage == "level0.complete"
     assert result.metadata["session_id"] == SESSION_ID
     assert result.output_path is not None and result.output_path.exists()
+
+
+
+def test_session_success_execution_metadata_remains_json_scalar(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    input_path = tmp_path / "measurement"
+    input_path.write_text("raw lidar", encoding="utf-8")
+    group = pd.DataFrame(
+        {"meas_type": ["measurements"], "filepath": [str(input_path)]}
+    )
+    lidar = {"tensors": {"532.AN": [[1.0]]}, "channels": ["532.AN"]}
+    station_context = {
+        "profile_id": "spu-test-profile",
+        "calibration_id": "spu-test-calibration",
+        "solar_regimes_present": ["day", "night"],
+        "solar_segments_present": ["seg00", "seg01"],
+        "scc_available": False,
+        "lr_input": {},
+    }
+    effective_config = {
+        **_config(tmp_path),
+        "_resolved_station": station_context,
+    }
+
+    monkeypatch.setattr(processing, "parse_licel_group", lambda *_args: lidar)
+    monkeypatch.setattr(processing, "_annotate_solar_context", lambda frame, _config: frame)
+    monkeypatch.setattr(
+        processing,
+        "_resolve_group_station_config",
+        lambda _group, _lidar, _config, _logger: (
+            effective_config,
+            lidar,
+            station_context,
+        ),
+    )
+    monkeypatch.setattr(processing, "fetch_group_weather", lambda *_args: {})
+
+    def fake_build(**kwargs) -> None:
+        Path(kwargs["netcdf_path"]).write_text("level0", encoding="utf-8")
+
+    monkeypatch.setattr(processing, "build_level0_netcdf", fake_build)
+    monkeypatch.setattr(processing, "write_netcdf_provenance", lambda *_args, **_kwargs: {})
+    scc_path = tmp_path / "processed" / "scc-a.nc"
+    monkeypatch.setattr(
+        processing,
+        "_write_scc_exports",
+        lambda **_kwargs: [scc_path],
+    )
+
+    result = processing.process_session_group(
+        SESSION_ID,
+        group,
+        _config(tmp_path),
+        _logger(),
+    )
+
+    assert result.status is ExecutionStatus.OK
+    assert result.metadata["solar_regimes"] == "day,night"
+    assert result.metadata["solar_segments"] == "seg00,seg01"
+    assert result.metadata["scc_export_count"] == 1
+    assert result.metadata["scc_export_paths"] == str(scc_path)
+    assert all(
+        value is None or isinstance(value, (str, int, float, bool))
+        for value in result.metadata.values()
+    )
