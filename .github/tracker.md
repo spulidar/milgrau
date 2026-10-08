@@ -213,6 +213,9 @@ The governing rule is:
 - [x] Remove productive fixed-clock 06–18 / 18–06 SCC mode selection.
 - [x] `resolve_station_context` accepts an explicit resolved `day`/`night`
   mode instead of deriving SCC mode from civil clock time.
+- [x] Explicit SCC raw ingestion no longer infers day/night from station-local
+  clock time; it uses `Solar_Regime` / `solar_regime` or
+  `SCC_Configuration_ID`, and rejects ambiguous mappings rather than guessing.
 - [x] Keep the canonical full-channel Level 0 continuous across solar
   transitions.
 - [x] Write one SCC Level 0 derivative per contiguous solar segment when its
