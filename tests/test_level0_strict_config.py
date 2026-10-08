@@ -186,9 +186,12 @@ def test_scc_weather_subset_uses_segment_hour_bracket() -> None:
         pd.Timestamp("2025-01-01T19:50:00Z"),
     )
 
-    assert result["weather_time"].tolist() == [
-        np.datetime64("2025-01-01T19:00:00", "ns"),
-        np.datetime64("2025-01-01T20:00:00", "ns"),
-    ]
+    np.testing.assert_array_equal(
+        result["weather_time"],
+        np.array(
+            ["2025-01-01T19:00:00", "2025-01-01T20:00:00"],
+            dtype="datetime64[ns]",
+        ),
+    )
     np.testing.assert_allclose(result["temperature_c"], [24.0, 22.0])
     np.testing.assert_allclose(result["pressure_hpa"], [931.0, 932.0])
