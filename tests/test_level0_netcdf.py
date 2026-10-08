@@ -138,6 +138,49 @@ def test_build_level0_netcdf_writes_resolved_station_and_scc_metadata(tmp_path: 
         assert float(ds["DAQ_Range"].isel(channels=1).values) > 1e30
 
 
+
+
+
+def test_grouped_scc_records_source_segments_and_gap_state(tmp_path: Path) -> None:
+    config = _config()
+    config["_resolved_station"].update(
+        {
+            "solar_regime": "day",
+            "source_segments": "seg00,seg02",
+            "source_segment_count": 2,
+            "contains_time_gaps": True,
+        }
+    )
+    group = _group_df(tmp_path, False).copy()
+    group["solar_regime"] = "day"
+    group["segment_id"] = ["seg00", "seg02"]
+
+    output_path = tmp_path / "grouped_day_scc.nc"
+    build_level0_netcdf(
+        str(output_path),
+        SESSION_ID,
+        _lidar_data(),
+        group,
+        _weather_data(),
+        config,
+        logging.getLogger("test.grouped_scc"),
+    )
+
+    with xr.open_dataset(output_path) as ds:
+        assert ds.attrs["Solar_Regime"] == "day"
+        assert ds.attrs["Source_Segments"] == "seg00,seg02"
+        assert int(ds.attrs["Source_Segment_Count"]) == 2
+        assert int(ds.attrs["Contains_Time_Gaps"]) == 1
+        assert ds["Segment_Label"].values.astype(str).tolist() == [
+            "seg00",
+            "seg02",
+        ]
+        assert ds["Segment_Regime"].values.astype(str).tolist() == [
+            "day",
+            "day",
+        ]
+
+
 def test_pointing_angle_has_no_physics_fallback(tmp_path: Path) -> None:
     output_path = tmp_path / "level0_pointing.nc"
     config = _config()
