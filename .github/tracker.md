@@ -46,9 +46,9 @@ The governing rule is:
 - **Phase 5 — continuous Level 1:** hourly ERA5/USSA76 atmosphere, radiosonde
   QA, inherited solar/segment context and full Level 1 figure ownership are
   implemented.
-- **Phase 6 — continuous Level 2:** block-time molecular atmosphere and
-  segment-homogeneous blocking are implemented in schema 8; terminology cleanup
-  and figure reorganization remain.
+- **Phase 6 — continuous Level 2:** block-time molecular atmosphere,
+  segment-homogeneous blocking and unambiguous temporal aggregate terminology
+  are implemented in schema 9.
 - **Phase 7 — retire LIRACOS as an independent pipeline:** complete; Level 1
   figure ownership belongs to LIPANCORA and reusable renderers remain in
   `viz/quicklooks.py`.
@@ -333,7 +333,7 @@ The governing rule is:
 - [x] Interpolate Level 1 temperature linearly and pressure in `log(P)` to
   each representative `block_time`.
 - [x] Materialize block-resolved molecular backscatter/extinction and lidar
-  ratio fields in Level 2 schema 8, including blocks without a valid retrieval.
+  ratio fields, including blocks without a valid retrieval.
 - [x] Record source/provenance sufficiently to reproduce the molecular
   atmosphere used by each block.
 - [ ] Run the complete repository test suite/CI against the time-resolved
@@ -446,8 +446,8 @@ Implemented:
 - [x] 20-minute blocks are independent of former 6-hour publication windows.
 - [x] Block membership remains wall-clock anchored while `block_time` is the
   mean observed profile time used for time-dependent atmosphere/LR evaluation.
-- [x] Level 2 schema 7 stores molecular backscatter/extinction and lidar-ratio
-  assumptions by `block_time`.
+- [x] Molecular backscatter/extinction and lidar-ratio assumptions are stored
+  by `block_time`.
 
 ## Session/regime integration
 
@@ -457,12 +457,13 @@ Implemented:
 - [x] Allow solar selector + `--time-window-utc` intersection.
 - [x] Propagate solar regime, elevation and segment metadata into Level 2.
 - [x] Prevent one Level 2 block from crossing a scientific segment boundary.
-- [x] Level 2 schema 8 records solar-segment-homogeneous blocks.
-- [ ] Rename ambiguous `period_*` variables/labels such as
-  `period_support_fraction`.
-- [ ] Prefer `session_*` or `temporal_*` names according to actual semantics.
-- [ ] Remove “period mean” language where it could be confused with the old
-  website periods.
+- [x] Level 2 records solar-segment-homogeneous blocks.
+- [x] Rename ambiguous `period_*` support variables to `temporal_*`.
+- [x] Use `temporal_*` rather than `session_*` because derived products may
+  represent a regime/segment/time-window subset of the source session.
+- [x] Remove “period mean” language that could be confused with website
+  publication periods.
+- [x] Current Level 2 schema is **9**.
 
 ## Level 2 figures
 
@@ -658,7 +659,7 @@ Still required after the corresponding code lands:
 - [ ] Document `measurements` as owner of publication windows.
 - [ ] Document public staging.
 - [x] Update CLI examples with `--regime` / `--segment`.
-- [ ] Clean obsolete `period_*` language.
+- [x] Clean obsolete scientific `period_*` language from the current Level 2 contract.
 - [ ] Run final repository-wide legacy-reference audit.
 - [ ] Update changelog before the next release candidate.
 
