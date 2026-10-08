@@ -22,7 +22,7 @@ from milgrau.io.paths import (
     quicklook_output_path,
 )
 from milgrau.operations import ExecutionResult
-from milgrau.viz.atmosphere import plot_atmospheric_profile
+from milgrau.viz.atmosphere import plot_atmospheric_evolution, plot_atmospheric_profile
 from milgrau.viz.config import resolve_visualization_config
 from milgrau.viz.quicklooks import (
     RCS_ERROR_VARIABLE,
@@ -98,6 +98,15 @@ def _atmospheric_output_path(
 ) -> Path:
     output_format, _dpi = get_output_settings(dict(config))
     return output_dir / f"{prefix}_L1_AtmosphericProfile.{output_format}"
+
+
+def _atmospheric_evolution_output_path(
+    output_dir: Path,
+    prefix: str,
+    config: Mapping[str, Any],
+) -> Path:
+    output_format, _dpi = get_output_settings(dict(config))
+    return output_dir / f"{prefix}_L1_AtmosphericEvolution.{output_format}"
 
 
 def generate_level1_figures(
@@ -244,6 +253,34 @@ def generate_level1_figures(
                     generated += 1
                 except Exception as exc:
                     failures.append(f"{atmosphere_output.name}: {exc}")
+                finally:
+                    plt.close("all")
+                    gc.collect()
+
+            evolution_output = _atmospheric_evolution_output_path(
+                output_dir,
+                prefix,
+                config,
+            )
+            if incremental and output_is_current(
+                evolution_output,
+                [path],
+                config=config,
+                extra_dependencies=dependencies,
+            ):
+                skipped += 1
+            else:
+                try:
+                    plot_atmospheric_evolution(
+                        source,
+                        output_folder=output_dir,
+                        file_name_prefix=prefix,
+                        config=config,
+                        root_dir=root,
+                    )
+                    generated += 1
+                except Exception as exc:
+                    failures.append(f"{evolution_output.name}: {exc}")
                 finally:
                     plt.close("all")
                     gc.collect()
