@@ -11,7 +11,8 @@ import numpy as np
 import pandas as pd
 
 from milgrau.io.licel import parse_licel_group
-from milgrau.level0.config import station_pointing_angle_deg_from_zenith
+from milgrau.level0.config import resolve_level0_config, station_pointing_angle_deg_from_zenith
+from milgrau.physics.solar import SOLAR_POSITION_ALGORITHM
 
 RAW_SIGNAL_UNITS: Final[str] = "counts for PC, mV per shot for analog"
 BINARY_DIMENSIONS: Final[tuple[str, str, str]] = ("time", "channels", "points")
@@ -138,6 +139,85 @@ def _write_surface_weather_series(ds: nc.Dataset, weather_data: Mapping[str, Any
     ds.setncattr("Surface_Weather_Source", str(weather_data.get("source", "")))
     ds.setncattr("Surface_Weather_Cadence", str(weather_data.get("cadence", "hourly")))
     ds.setncattr("Surface_Weather_Scalar_Method", "finite session median for SCC interoperability")
+
+
+def _write_solar_context(
+    ds: nc.Dataset,
+    measurement_rows: pd.DataFrame,
+    config: Mapping[str, Any],
+) -> None:
+    """Persist per-profile solar state plus a compact segment table."""
+    required = {"solar_elevation_deg", "solar_regime", "segment_id", "start_time_utc", "stop_time"}
+    missing = sorted(required - set(measurement_rows.columns))
+    if missing:
+        raise KeyError(f"Level 0 solar context lacks required column(s): {missing}")
+
+    elevation = pd.to_numeric(
+        measurement_rows["solar_elevation_deg"], errors="coerce"
+    ).to_numpy(dtype=np.float64)
+    regimes = measurement_rows["solar_regime"].astype(str).to_numpy(dtype=object)
+    segment_ids = measurement_rows["segment_id"].astype(str).to_numpy(dtype=object)
+    if elevation.size != ds.dimensions["time"].size:
+        raise ValueError("Solar context must contain one value per Level 0 time profile.")
+    if not np.all(np.isfinite(elevation)):
+        raise ValueError("Solar elevation must be finite for every Level 0 profile.")
+    if not set(regimes).issubset({"day", "night"}):
+        raise ValueError("Solar regime must contain only day/night.")
+    if any(not value.startswith("seg") for value in segment_ids):
+        raise ValueError("Segment IDs must use the segXX convention.")
+
+    solar_var = ds.createVariable("solar_elevation_deg", "f8", ("time",), zlib=True)
+    solar_var.units = "degree"
+    solar_var.long_name = "Geometric solar-center elevation at lidar profile midpoint"
+    solar_var[:] = elevation
+
+    regime_var = ds.createVariable("solar_regime", str, ("time",))
+    regime_var.long_name = "Solar day/night regime"
+    regime_var[:] = regimes
+
+    segment_var = ds.createVariable("segment_id", str, ("time",))
+    segment_var.long_name = "Contiguous scientific segment identifier"
+    segment_var[:] = segment_ids
+
+    ordered_segments = list(dict.fromkeys(segment_ids.tolist()))
+    ds.createDimension("segments", len(ordered_segments))
+    segment_label = ds.createVariable("Segment_Label", str, ("segments",))
+    segment_regime = ds.createVariable("Segment_Regime", str, ("segments",))
+    segment_start = ds.createVariable("Segment_Start_Time_UTC", "i8", ("segments",))
+    segment_end = ds.createVariable("Segment_End_Time_UTC", "i8", ("segments",))
+    segment_start.units = "seconds since 1970-01-01 00:00:00 UTC"
+    segment_end.units = "seconds since 1970-01-01 00:00:00 UTC"
+
+    starts: list[int] = []
+    ends: list[int] = []
+    labels: list[str] = []
+    regime_labels: list[str] = []
+    for label in ordered_segments:
+        rows = measurement_rows[measurement_rows["segment_id"].astype(str) == label]
+        unique_regimes = rows["solar_regime"].astype(str).unique()
+        if len(unique_regimes) != 1:
+            raise ValueError(
+                f"Segment {label!r} must contain exactly one solar regime; got {unique_regimes.tolist()}."
+            )
+        start = pd.to_datetime(rows["start_time_utc"], utc=True).min()
+        end = pd.to_datetime(rows["stop_time"], utc=True).max()
+        labels.append(str(label))
+        regime_labels.append(str(unique_regimes[0]))
+        starts.append(int(start.timestamp()))
+        ends.append(int(end.timestamp()))
+
+    segment_label[:] = np.asarray(labels, dtype=object)
+    segment_regime[:] = np.asarray(regime_labels, dtype=object)
+    segment_start[:] = np.asarray(starts, dtype=np.int64)
+    segment_end[:] = np.asarray(ends, dtype=np.int64)
+
+    level0 = resolve_level0_config(config)
+    ds.setncattr(
+        "Solar_Day_Night_Threshold_deg",
+        float(level0.solar_regime.day_night_threshold_deg),
+    )
+    ds.setncattr("Solar_Position_Algorithm", SOLAR_POSITION_ALGORITHM)
+    ds.setncattr("Segment_Count", np.int32(len(ordered_segments)))
 
 
 def _measurement_rows(group_df: pd.DataFrame) -> pd.DataFrame:
@@ -487,7 +567,15 @@ def build_level0_global_attributes(
         "Surface_Weather_Cadence": str(weather_data.get("cadence", "hourly")),
         "Source_File_Count": int(len(source_files)),
         "Source_Files": ";".join(source_files),
+        "Solar_Day_Night_Threshold_deg": float(
+            resolve_level0_config(config).solar_regime.day_night_threshold_deg
+        ),
+        "Solar_Position_Algorithm": SOLAR_POSITION_ALGORITHM,
     }
+    if resolved.get("segment_id") is not None:
+        attrs["Segment_ID"] = str(resolved["segment_id"])
+    if resolved.get("solar_regime") is not None:
+        attrs["Solar_Regime"] = str(resolved["solar_regime"])
     attrs["Station_Profile"] = str(resolved["profile_id"])
     if ready:
         attrs["SCC_Configuration_ID"] = int(resolved["scc_configuration_id"])
@@ -670,6 +758,7 @@ def build_level0_netcdf(
             _create_level0_dimensions(ds, num_times=num_times, num_channels=num_channels, num_points=num_points)
             variables = _create_level0_core_variables(ds, include_channel_ids=_scc_ready(config))
             _write_surface_weather_series(ds, weather_data)
+            _write_solar_context(ds, measurement_rows, config)
             variables["raw_data_start"][:, 0] = start_offsets
             variables["raw_data_stop"][:, 0] = stop_offsets
             variables["raw_lidar_data"][:] = _stack_raw_lidar_data(tensors, channels, num_times, num_points)
