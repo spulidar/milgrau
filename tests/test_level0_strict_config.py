@@ -36,6 +36,7 @@ def _minimal_config() -> dict:
                 "licel_header_time_jitter_s": 1.0,
             },
             "session": {"max_gap_seconds": 1800.0},
+            "solar_regime": {"day_night_threshold_deg": -3.0},
             "dark_current": {"max_association_hours": 12.0},
             "surface_weather": {"missing_policy": "nan"},
         },
@@ -55,6 +56,7 @@ def test_repository_level0_recipe_is_explicit() -> None:
     assert resolved.acquisition_qa.laser_shot_tolerance_fraction == 0.002
     assert resolved.acquisition_qa.licel_header_time_jitter_s == 1.0
     assert resolved.session.max_gap_seconds == 1800.0
+    assert resolved.solar_regime.day_night_threshold_deg == -3.0
     assert resolved.dark_current.max_association_hours == 12.0
     assert resolved.surface_weather.missing_policy == "nan"
     assert "physics" not in config
