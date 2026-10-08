@@ -399,7 +399,12 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
         stage = "level1.write"
         ensure_directories(save_path.parent)
         final_ds.to_netcdf(save_path, encoding=_level1_encoding(final_ds))
-        provenance_attrs = write_netcdf_provenance(save_path, config, source_attrs=source_provenance)
+        provenance_source = {**source_provenance, **dict(final_ds.attrs)}
+        provenance_attrs = write_netcdf_provenance(
+            save_path,
+            config,
+            source_attrs=provenance_source,
+        )
         bind_log_context(file_logger, stage="provenance").debug(
             "MILGRAU=%s | config=%s | station=%s | profile=%s | calibration=%s",
             provenance_attrs.get("software_version", "-"),
