@@ -30,7 +30,7 @@ from milgrau.level1.config import (
 )
 from milgrau.level1.corrections import apply_instrumental_corrections
 from milgrau.level1.diagnostics import finalize_correction_dataset
-from milgrau.level1.figures import generate_level1_atmospheric_figure
+from milgrau.level1.figures import generate_level1_figures
 from milgrau.level1.ingestion import load_and_prepare_level0
 from milgrau.level1.pbl import estimate_pbl_timeseries
 from milgrau.level1.thermodynamics import integrate_thermodynamics
@@ -309,7 +309,8 @@ def _files_requiring_level1(
                 integrity_check=lambda path: netcdf_satisfies_contract(path, validate_level1_contract),
             )
         if is_current:
-            bind_log_context(logger, session_id=session_id, stage="skip").info("up to date | %s", output_path.name)
+            file_logger = bind_log_context(logger, session_id=session_id)
+            bind_log_context(file_logger, stage="skip").info("up to date | %s", output_path.name)
             skipped_results.append(
                 ExecutionResult.skipped(
                     "level1.incremental",
@@ -317,6 +318,20 @@ def _files_requiring_level1(
                     input_path=file_path,
                     output_path=output_path,
                     metadata={"pipeline": "L1", "session_id": session_id},
+                )
+            )
+            config_file = config.get("_config_file")
+            figure_root = (
+                Path(str(config_file)).expanduser().resolve().parent
+                if isinstance(config_file, str) and config_file.strip()
+                else Path.cwd()
+            )
+            skipped_results.append(
+                generate_level1_figures(
+                    output_path,
+                    config,
+                    bind_log_context(file_logger, stage="figures"),
+                    root_dir=figure_root,
                 )
             )
             continue
@@ -455,7 +470,7 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
             if isinstance(config_file, str) and config_file.strip()
             else Path.cwd()
         )
-        figure_result = generate_level1_atmospheric_figure(
+        figure_result = generate_level1_figures(
             save_path,
             config,
             bind_log_context(file_logger, stage="figures"),
@@ -478,7 +493,7 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
                 "pipeline": "L1",
                 "session_id": session_id,
                 "channel_count": final_ds.sizes.get("channel", 0),
-                "atmospheric_figure_status": figure_result.status.value,
+                "figure_status": figure_result.status.value,
             },
         )
     except Exception as exc:
@@ -505,7 +520,9 @@ def process_level_1(config: Mapping[str, Any], logger: logging.Logger) -> Execut
         )
     files_to_process, skipped_results = _files_requiring_level1(files, config, logger)
     if not files_to_process:
-        bind_log_context(logger, stage="summary").info("all Level 1 products are current")
+        bind_log_context(logger, stage="summary").info(
+            "all Level 1 scientific products are current; figures checked"
+        )
         return ExecutionSummary.from_results(skipped_results)
     bind_log_context(logger, stage="queue").info(
         "%d files to process | %d skipped", len(files_to_process), len(skipped_results)
