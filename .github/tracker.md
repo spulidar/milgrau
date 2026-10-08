@@ -231,6 +231,10 @@ The governing rule is:
 - [x] Automatic LIPANCORA discovery continues to use only the canonical
   `SESSION_L0.nc`; SCC segment products remain explicit interoperability
   derivatives.
+- [x] Keep Level 0/SCC operational `ExecutionResult.metadata` JSON-scalar:
+  regimes/segments are comma-separated strings and multiple SCC paths are
+  semicolon-separated, so successful SCC writes cannot fail afterward during
+  operational result packaging.
 
 ## Scientific validation still open
 
