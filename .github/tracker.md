@@ -270,8 +270,10 @@ The governing rule is:
   local station -> Open-Meteo fallback, without changing the scientific schema.
 - [x] Derive scalar temperature/pressure only where SCC interoperability
   explicitly requires scalar fields.
-- [x] SCC scalar values use the finite session median and are explicitly
-  documented as interoperability fields, not the scientific weather series.
+- [x] SCC scalar values use the finite median of the weather interval written
+  for that SCC derivative; solar-segment SCC files therefore use segment
+  weather rather than the complete-session median. These remain interoperability
+  fields, not the scientific weather series.
 
 ## Solar/session context in Level 0
 
