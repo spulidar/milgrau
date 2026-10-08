@@ -11,6 +11,11 @@ from milgrau.scientific import LEVEL2_PRODUCT_SCHEMA_VERSION
 
 
 _REQUIRED_VARIABLES: tuple[str, ...] = (
+    "solar_elevation_deg",
+    "Segment_Label",
+    "Segment_Regime",
+    "Segment_Start_Time_UTC",
+    "Segment_End_Time_UTC",
     "effective_vertical_resolution_m",
     "source_bin_count",
     "molecular_backscatter",
@@ -131,6 +136,8 @@ def validate_level2_contract(ds: xr.Dataset) -> None:
             "block_time",
             "block_start_utc",
             "block_end_utc",
+            "segment_id",
+            "solar_regime",
             "wavelength",
             "altitude",
             "residual_fraction",
@@ -138,6 +145,10 @@ def validate_level2_contract(ds: xr.Dataset) -> None:
         ),
         coords=True,
     )
+
+    _require_dims(ds, "solar_elevation_deg", ("block_time",))
+    for name in ("Segment_Label", "Segment_Regime", "Segment_Start_Time_UTC", "Segment_End_Time_UTC"):
+        _require_dims(ds, name, ("segments",))
 
     wavelength_altitude = ("wavelength", "altitude")
     block_wavelength = ("block_time", "wavelength")
@@ -247,6 +258,31 @@ def validate_level2_contract(ds: xr.Dataset) -> None:
         "retrieval_success_fraction",
     ):
         _require_dims(ds, name, ("wavelength",))
+
+    block_segment = np.asarray(ds["segment_id"].values).astype(str)
+    block_regime = np.asarray(ds["solar_regime"].values).astype(str)
+    block_elevation = np.asarray(ds["solar_elevation_deg"].values, dtype=np.float64)
+    labels = np.asarray(ds["Segment_Label"].values).astype(str)
+    segment_regimes = np.asarray(ds["Segment_Regime"].values).astype(str)
+    if block_segment.shape != (ds.sizes.get("block_time", 0),):
+        raise ValueError("Level 2 segment_id must contain one value per block_time.")
+    if block_regime.shape != block_segment.shape or set(block_regime) - {"day", "night"}:
+        raise ValueError("Level 2 solar_regime must contain one day/night value per block_time.")
+    if block_elevation.shape != block_segment.shape or not np.all(np.isfinite(block_elevation)):
+        raise ValueError("Level 2 solar_elevation_deg must be finite for every block_time.")
+    mapping = {label: regime for label, regime in zip(labels, segment_regimes, strict=True)}
+    if any(segment not in mapping for segment in block_segment):
+        raise ValueError("Level 2 segment_id contains values absent from Segment_Label.")
+    if any(mapping[segment] != regime for segment, regime in zip(block_segment, block_regime, strict=True)):
+        raise ValueError("Level 2 segment_id and solar_regime disagree with the segment table.")
+    if not str(ds.attrs.get("Solar_Position_Algorithm", "")).strip():
+        raise ValueError("Level 2 lacks Solar_Position_Algorithm provenance.")
+    try:
+        solar_threshold = float(ds.attrs["Solar_Day_Night_Threshold_deg"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("Level 2 lacks a valid Solar_Day_Night_Threshold_deg attribute.") from exc
+    if not np.isfinite(solar_threshold):
+        raise ValueError("Level 2 Solar_Day_Night_Threshold_deg must be finite.")
 
     altitude = np.asarray(ds["altitude"].values, dtype=np.float64)
     if (
