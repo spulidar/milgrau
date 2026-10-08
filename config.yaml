@@ -32,9 +32,10 @@ level0:
     laser_shot_tolerance_fraction: 0.002
     licel_header_time_jitter_s: 1.0
   session:
-    # Initial continuity tolerance between one Licel file stop and the next
-    # measurement start. Validate against the observed SPU cadence before release.
-    max_gap_seconds: 60.0
+    # Continuity tolerance between one Licel file stop and the next measurement
+    # start. Thirty minutes matches the observed SPU operating pattern better
+    # than a sub-minute threshold while still separating meaningful acquisition stops.
+    max_gap_seconds: 1800.0
   dark_current:
     max_association_hours: 12.0
   surface_weather:
