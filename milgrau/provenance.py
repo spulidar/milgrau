@@ -262,7 +262,7 @@ def thermodynamic_source_provenance(
         return {}
 
     doi = str(source_attrs.get("thermodynamic_profile_doi", "")).strip()
-    if source_type == "era5":
+    if source_type in {"era5", "time_resolved"}:
         provider = "copernicus_climate_change_service"
         product = _era5_dataset_from_config(config) or "era5_pressure_levels"
         release = f"doi:{doi}" if doi else "dataset_family_unversioned"
