@@ -139,8 +139,7 @@ def generate_level1_figures(
         output_dir.mkdir(parents=True, exist_ok=True)
         resolved = resolve_visualization_config(config)
         output_format, _dpi = get_output_settings(dict(config))
-        with xr.open_dataset(path) as source:
-            source.load()
+        with xr.open_dataset(path, cache=False) as source:
             validate_level1_contract(source)
             ds_plot = _plot_ready_level1(source)
             available_channels = {str(value) for value in ds_plot["channel"].values}
@@ -199,6 +198,7 @@ def generate_level1_figures(
                         failures.append(f"{expected.name}: {exc}")
                     finally:
                         plt.close("all")
+                        gc.collect()
 
             mean_output = global_mean_rcs_output_path(output_dir, prefix, output_format)
             if incremental and output_is_current(
@@ -222,6 +222,7 @@ def generate_level1_figures(
                     failures.append(f"{mean_output.name}: {exc}")
                 finally:
                     plt.close("all")
+                    gc.collect()
 
             atmosphere_output = _atmospheric_output_path(output_dir, prefix, config)
             if incremental and output_is_current(
@@ -245,6 +246,7 @@ def generate_level1_figures(
                     failures.append(f"{atmosphere_output.name}: {exc}")
                 finally:
                     plt.close("all")
+                    gc.collect()
 
         gc.collect()
         duration = time.perf_counter() - started_at
