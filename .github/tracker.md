@@ -44,16 +44,18 @@ The governing rule is:
   solar elevation/regime/segments implemented; SCC derivatives are written per
   solar segment when configured.
 - **Phase 5 — continuous Level 1:** hourly ERA5/USSA76 atmosphere, radiosonde
-  QA, atmospheric figure and inherited solar/segment context are implemented;
-  full Level 1 figure ownership remains transitional.
+  QA, inherited solar/segment context and full Level 1 figure ownership are
+  implemented.
 - **Phase 6 — continuous Level 2:** block-time molecular atmosphere and
   segment-homogeneous blocking are implemented in schema 8; terminology cleanup
   and figure reorganization remain.
-- **Phase 7 — retire LIRACOS as an independent pipeline:** prepared, not done.
+- **Phase 7 — retire LIRACOS as an independent pipeline:** LIPANCORA already
+  owns Level 1 figures; only obsolete CLI/orchestration removal remains.
 - **Phase 8 — `spulidar/measurements` publication refactor:** not started here.
 - **Phase 9 — Explorer / inspect:** partially session-aware.
-- **Phase 10 — unified `figures/` convention:** Level 1 partially migrated;
-  Level 2 still uses QA naming/directories.
+- **Phase 10 — unified `figures/` convention:** canonical Level 1 and Level 2
+  figures use the shared session `figures/` directory and semantic filenames;
+  only optional retrieval-support figure scope remains open.
 - **Phase 11 — documentation / final cleanup:** partial.
 
 ---
@@ -330,7 +332,7 @@ The governing rule is:
 - [x] Interpolate Level 1 temperature linearly and pressure in `log(P)` to
   each representative `block_time`.
 - [x] Materialize block-resolved molecular backscatter/extinction and lidar
-  ratio fields in Level 2 schema 7, including blocks without a valid retrieval.
+  ratio fields in Level 2 schema 8, including blocks without a valid retrieval.
 - [x] Record source/provenance sufficiently to reproduce the molecular
   atmosphere used by each block.
 - [ ] Run the complete repository test suite/CI against the time-resolved
@@ -384,12 +386,12 @@ Already prepared:
 - [x] Real temporal gaps remain visible.
 - [x] Explicit UTC plotting windows remain supported.
 
-Remaining:
+Implemented:
 
-- [~] LIPANCORA now generates the atmospheric Level 1 figure automatically
-  after successful L1 writing/validation; RCS/MeanRCS ownership still awaits
-  the LIRACOS retirement phase.
-- [x] Atmospheric figure-generation failure does not invalidate a scientifically valid L1.
+- [x] LIPANCORA owns automatic RCS quicklooks, MeanRCS and AtmosphericProfile
+  generation after successful Level 1 writing/validation.
+- [x] Level 1 figure generation is incremental.
+- [x] Figure-generation failure does not invalidate a scientifically valid L1.
 - [x] Add the atmospheric profile/comparison figure above.
 
 ---
@@ -463,21 +465,22 @@ Remaining:
 
 ## Level 2 figures
 
-Current implementation still uses QA-oriented names and `qa/`.
-
-Accepted target:
-
-- [ ] Rename/reorganize `level2/qa.py` into figure orchestration.
-- [ ] Reorganize `viz/level2_qa.py` into generic Level 2 renderers.
-- [ ] Write all Level 2 visual products into the session `figures/` directory.
-- [ ] Do not call every visual product “QA”.
-- [ ] Preserve internal semantic categories where useful:
-  diagnostic, QA, scientific profile, visualization.
-- [ ] Use filenames such as:
+- [x] LEBEAR owns Level 2 figure orchestration in `level2/figures.py`.
+- [x] Canonical Level 2 renderers live in `viz/level2.py`.
+- [x] Obsolete generic `viz/level2_qa.py` and its QA-specific tests are removed.
+- [x] Write Level 2 visual products into the session `figures/` directory.
+- [x] Do not call every visual product “QA”.
+- [x] Preserve semantic distinctions between scientific profile and diagnostic
+  content through figure names/titles rather than one generic QA namespace.
+- [x] Current semantic filenames include:
   `SESSION_L2_MolecularReference_355nm.webp`,
   `SESSION_L2_Gluing_355nm.webp`,
   `SESSION_L2_OpticalProfiles_355nm.webp`,
-  `SESSION_L2_RetrievalSupport_355nm.webp`.
+  and optional `SESSION_L2_MCReference_355nm.webp`.
+- [~] Decide later whether a dedicated
+  `SESSION_L2_RetrievalSupport_355nm.webp` adds value beyond the compact
+  endpoint/support diagnostics already carried by OpticalProfiles and the L2
+  NetCDF. Do not add a redundant figure solely to match an old list.
 - [x] Retrieval-support shading remains omitted from the current compact optical
   profile view; dashed branch endpoints remain the primary compact coverage
   indicator.
@@ -494,17 +497,14 @@ Accepted target:
 - [x] Level 1 visual outputs already target `figures/`.
 - [x] Session-based figure naming already exists.
 
-## Remaining
+## Current state and remaining cleanup
 
-- [ ] Move Level 1 figure orchestration into LIPANCORA.
-- [ ] Extract/retain reusable plotting functions independent from the old
-  LIRACOS pipeline identity.
-- [ ] Make the scientific level that creates the product responsible for its
-  figures.
+- [x] Move Level 1 figure orchestration into LIPANCORA.
+- [x] Reusable RCS/MeanRCS renderers are independent in `viz/quicklooks.py`.
+- [x] LIPANCORA owns Level 1 figures and LEBEAR owns Level 2 figures.
 - [ ] Remove `milgrau-liracos` as a productive CLI.
-- [ ] Remove `milgrau/viz/liracos.py` as an independent orchestrator while
-  preserving reusable rendering code.
-- [ ] Remove LIRACOS from primary-CLI tests.
+- [ ] Remove `milgrau/viz/liracos.py` as an independent orchestrator.
+- [ ] Remove LIRACOS from primary-CLI tests and package entry points.
 - [ ] Update README, processing-level docs and code inventory accordingly.
 
 Target pipeline:
@@ -617,15 +617,17 @@ spu_20250511-0012Z_20250511-0737Z/
 
 - [x] One `figures/` directory per session.
 - [x] No L1/L2 subdirectories are needed.
-- [x] Level 1 figure filenames already carry `L1`.
+- [x] Level 1 figure filenames carry `L1`.
 - [x] RCS and MeanRCS follow session-aware naming.
 - [x] Add AtmosphericProfile.
-- [ ] Move Level 2 outputs from `qa/` to `figures/`.
-- [ ] Rename Level 2 files to semantic scientific names.
-- [ ] Remove generic `QA_` naming where the figure is not specifically QA.
-- [ ] Make all renderers obey one filename convention:
+- [x] Level 2 outputs use the same `figures/` directory.
+- [x] Level 2 files use semantic scientific/diagnostic names.
+- [x] Remove generic `QA_` naming where the figure is not specifically QA.
+- [x] Canonical renderers obey:
 
   `SESSIONID_LEVEL_FIGURE[_CHANNEL|WAVELENGTH][_RANGE].ext`
+- [~] Dedicated RetrievalSupport figure remains optional pending demonstrated
+  value; retrieval-support data themselves remain in the Level 2 product.
 
 ---
 
@@ -648,7 +650,8 @@ Still required after the corresponding code lands:
 - [x] Document time-resolved surface weather.
 - [x] Document ERA5-hourly Level 1 atmosphere, radiosonde QA role and USSA76
   extension/fallback.
-- [ ] Replace generic QA terminology with figures terminology where appropriate.
+- [~] Replace remaining generic QA terminology with figures terminology where
+  appropriate; canonical Level 2 renderer/orchestration names are already clean.
 - [ ] Remove LIRACOS from productive architecture docs.
 - [ ] Document `measurements` as owner of publication windows.
 - [ ] Document public staging.
