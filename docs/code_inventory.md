@@ -10,7 +10,6 @@ only through Git history.
 | --- | --- | --- |
 | `milgrau-libids` | `milgrau.cli.libids` | `milgrau.level0.processing` |
 | `milgrau-lipancora` | `milgrau.cli.lipancora` | `milgrau.level1.lipancora` |
-| `milgrau-liracos` | `milgrau.cli.liracos` | `milgrau.viz.liracos` |
 | `milgrau-lebear` | `milgrau.cli.lebear` | `milgrau.level2.lebear` |
 | `milgrau-explorer` | `milgrau.cli.explorer` | `milgrau.explorer.streamlit_app` |
 
@@ -46,6 +45,9 @@ only through Git history.
 | radiosonde/ERA5/USSA76 atmosphere | `milgrau.level1.thermodynamics` |
 | PBL/tropopause diagnostics | `milgrau.level1.pbl`, `milgrau.level1.diagnostics` |
 | NetCDF assembly/orchestration | `milgrau.level1.lipancora` |
+| Level 1 figure orchestration | `milgrau.level1.figures` |
+| Level 1 RCS / MeanRCS renderers | `milgrau.viz.quicklooks` |
+| atmospheric comparison renderer | `milgrau.viz.atmosphere` |
 
 ## Level 2
 
@@ -67,9 +69,9 @@ only through Git history.
 | multispectral Level 2 dataset assembly | `milgrau.level2.level2_dataset` |
 | current NetCDF contract | `milgrau.level2.level2_schema` |
 | file/batch orchestration | `milgrau.level2.lebear` |
-| QA orchestration | `milgrau.level2.qa` |
-| scientific QA figures | `milgrau.viz.level2_qa` |
-| small QA display helpers | `milgrau.viz.profile_helpers` |
+| Level 2 figure orchestration | `milgrau.level2.figures` |
+| scientific/diagnostic figures | `milgrau.viz.level2` |
+| small display helpers | `milgrau.viz.profile_helpers` |
 
 ## Scientific validation
 
