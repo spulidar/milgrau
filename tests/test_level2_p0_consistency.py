@@ -13,7 +13,7 @@ from milgrau.scientific import (
     LEVEL2_PRODUCT_SCHEMA_VERSION,
     elastic_inversion_algorithm_metadata,
 )
-from milgrau.viz.level2_qa import plot_all_level2_qa
+from milgrau.viz.level2 import plot_all_level2_figures
 
 
 def test_productive_kfs_identity_is_two_sided() -> None:
@@ -87,20 +87,23 @@ def test_level2_incremental_rejects_stale_schema_or_gluing_metadata(
     assert lebear.level2_output_is_current(input_path, product_path, {}) is False
 
 
-def test_level2_qa_does_not_write_redundant_status_txt(tmp_path) -> None:
+def test_level2_figures_do_not_write_redundant_status_txt(tmp_path) -> None:
     ds_l2 = xr.Dataset(coords={"wavelength": np.array([532], dtype=np.int32)})
     config = {
         "visualization": {
-            "level2_qa": {
-                "generate_gluing_qa": False,
-                "generate_molecular_fit_qa": False,
-                "generate_scattering_ratio_qa": False,
-                "generate_kfs_qa": False,
+            "level2_figures": {
+                "enabled": True,
+                "max_altitude_km": 30.0,
+                "smooth_bins": 15,
+                "generate_gluing": False,
+                "generate_molecular_reference": False,
+                "generate_mc_reference": False,
+                "generate_optical_profiles": False,
             }
         }
     }
 
-    generated = plot_all_level2_qa(
+    generated = plot_all_level2_figures(
         ds_l2=ds_l2,
         output_folder=tmp_path,
         file_name_prefix="synthetic",
