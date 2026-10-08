@@ -39,6 +39,11 @@ class SessionConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class SolarRegimeConfig:
+    day_night_threshold_deg: float
+
+
+@dataclass(frozen=True, slots=True)
 class DarkCurrentConfig:
     max_association_hours: float
 
@@ -54,6 +59,7 @@ class Level0Config:
     discovery: RawDiscoveryConfig
     acquisition_qa: AcquisitionQaConfig
     session: SessionConfig
+    solar_regime: SolarRegimeConfig
     dark_current: DarkCurrentConfig
     surface_weather: SurfaceWeatherPolicy
 
@@ -161,7 +167,11 @@ def resolve_level0_config(config: Mapping[str, Any]) -> Level0Config:
     directories = _resolve_directories(config)
     discovery = _resolve_discovery(config)
     level0 = _mapping(config.get("level0"), "level0")
-    _exact_keys(level0, {"acquisition_qa", "session", "dark_current", "surface_weather"}, "level0")
+    _exact_keys(
+        level0,
+        {"acquisition_qa", "session", "solar_regime", "dark_current", "surface_weather"},
+        "level0",
+    )
     acquisition = _mapping(level0["acquisition_qa"], "level0.acquisition_qa")
     _exact_keys(acquisition, {"laser_shot_tolerance_fraction", "licel_header_time_jitter_s"}, "level0.acquisition_qa")
     shot_tolerance = _finite(
@@ -185,6 +195,17 @@ def resolve_level0_config(config: Mapping[str, Any]) -> Level0Config:
         "level0.session.max_gap_seconds",
         nonnegative=True,
     )
+    solar = _mapping(level0["solar_regime"], "level0.solar_regime")
+    _exact_keys(solar, {"day_night_threshold_deg"}, "level0.solar_regime")
+    solar_threshold = _finite(
+        solar["day_night_threshold_deg"],
+        "level0.solar_regime.day_night_threshold_deg",
+    )
+    if not -90.0 <= solar_threshold <= 90.0:
+        raise Level0ConfigurationError(
+            "Configuration level0.solar_regime.day_night_threshold_deg must be within [-90, 90]."
+        )
+
     dark_current = _mapping(level0["dark_current"], "level0.dark_current")
     _exact_keys(dark_current, {"max_association_hours"}, "level0.dark_current")
     max_association_hours = _finite(
@@ -202,6 +223,7 @@ def resolve_level0_config(config: Mapping[str, Any]) -> Level0Config:
         discovery=discovery,
         acquisition_qa=AcquisitionQaConfig(shot_tolerance, header_jitter),
         session=SessionConfig(max_gap_seconds),
+        solar_regime=SolarRegimeConfig(solar_threshold),
         dark_current=DarkCurrentConfig(max_association_hours),
         surface_weather=SurfaceWeatherPolicy(policy.strip().lower()),
     )
