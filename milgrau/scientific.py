@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Final
 
-LEVEL2_PRODUCT_SCHEMA_VERSION: Final[str] = "6"
+LEVEL2_PRODUCT_SCHEMA_VERSION: Final[str] = "7"
 LEVEL2_PRODUCT_SCHEMA_CHANGE: Final[str] = (
-    "prioritized_reference_range_provenance_with_explicit_min_max_and_fallback"
+    "block_resolved_molecular_atmosphere_from_time_resolved_level1"
 )
 ELASTIC_BACKSCATTER_INVERSION_METHOD: Final[str] = "Klett-Fernald-Sasano"
 ELASTIC_BACKSCATTER_INTEGRATION_MODE: Final[str] = "two_sided"
@@ -15,7 +15,7 @@ FERNALD_SCIENTIFIC_CHANGE: Final[str] = "corrected_backward_molecular_factor_sig
 
 MOLECULAR_ATMOSPHERE_FALLBACK: Final[str] = "US Standard Atmosphere 1976"
 MOLECULAR_ATMOSPHERE_SCIENTIFIC_CHANGE: Final[str] = (
-    "level1_materialized_atmosphere_with_log_pressure_interpolation"
+    "hourly_level1_atmosphere_with_block_time_temperature_and_log_pressure_interpolation"
 )
 
 
