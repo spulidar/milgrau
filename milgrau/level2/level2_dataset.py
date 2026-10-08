@@ -39,7 +39,7 @@ from milgrau.level2.high_column import (
 )
 from milgrau.level2.kfs import fernald_inversion
 from milgrau.level2.two_sided_retrieval import retrieve_two_sided_profile
-from milgrau.level2.retrieval import prepare_wavelength_state
+from milgrau.level2.retrieval import build_molecular_model, prepare_wavelength_state
 from milgrau.scientific import (
     LEVEL2_PRODUCT_SCHEMA_CHANGE,
     LEVEL2_PRODUCT_SCHEMA_VERSION,
