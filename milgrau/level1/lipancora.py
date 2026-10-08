@@ -212,6 +212,38 @@ def _correct_single_channel(
     return channel_dataset, diagnostic_record, dark_current_used
 
 
+def _propagate_level0_time_context(
+    final_ds: xr.Dataset,
+    ds_raw: xr.Dataset,
+) -> xr.Dataset:
+    """Copy authoritative solar/segment context from Level 0 without recomputation."""
+    required = (
+        "solar_elevation_deg",
+        "solar_regime",
+        "segment_id",
+        "Segment_Label",
+        "Segment_Regime",
+        "Segment_Start_Time_UTC",
+        "Segment_End_Time_UTC",
+    )
+    missing = [name for name in required if name not in ds_raw]
+    if missing:
+        raise KeyError(
+            f"Level 0 lacks required solar/segment context for Level 1: {missing}"
+        )
+    result = final_ds.copy()
+    for name in required:
+        result[name] = ds_raw[name]
+    for attr in (
+        "Solar_Day_Night_Threshold_deg",
+        "Solar_Position_Algorithm",
+        "Segment_Count",
+    ):
+        if attr in ds_raw.attrs:
+            result.attrs[attr] = ds_raw.attrs[attr]
+    return result
+
+
 def _processing_metadata(input_file: Path) -> dict[str, str]:
     return {
         "Processing_level": (
@@ -388,6 +420,8 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
         bind_log_context(file_logger, stage="start").info("%d channels", ds_raw.sizes.get("channel", 0))
         stage = "level1.corrections"
         final_ds = apply_all_physical_corrections(ds_raw, z_arr, config, file_logger)
+        stage = "level1.session_context"
+        final_ds = _propagate_level0_time_context(final_ds, ds_raw)
         stage = "level1.pbl"
         final_ds = estimate_pbl_timeseries(final_ds, z_arr, config, bind_log_context(file_logger, stage="pbl"))
         stage = "level1.thermodynamics"
