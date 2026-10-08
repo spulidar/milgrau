@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from milgrau.level0 import processing
@@ -156,3 +157,97 @@ def test_session_success_execution_metadata_remains_json_scalar(
         value is None or isinstance(value, (str, int, float, bool))
         for value in result.metadata.values()
     )
+
+
+
+def test_regime_group_combines_disjoint_day_segments_and_preserves_profile_order() -> None:
+    rows = pd.DataFrame(
+        {
+            "meas_type": [
+                "measurements",
+                "measurements",
+                "measurements",
+                "measurements",
+                "dark_current",
+            ],
+            "solar_regime": ["day", "day", "night", "day", None],
+            "segment_id": ["seg00", "seg00", "seg01", "seg02", None],
+            "_profile_index": [0, 1, 2, 3, np.nan],
+            "start_time_utc": pd.to_datetime(
+                [
+                    "2025-01-01T12:00:00Z",
+                    "2025-01-01T12:30:00Z",
+                    "2025-01-01T20:00:00Z",
+                    "2025-01-02T10:00:00Z",
+                    "2025-01-01T11:00:00Z",
+                ],
+                utc=True,
+            ),
+            "stop_time": pd.to_datetime(
+                [
+                    "2025-01-01T12:00:30Z",
+                    "2025-01-01T12:30:30Z",
+                    "2025-01-01T20:00:30Z",
+                    "2025-01-02T10:00:30Z",
+                    "2025-01-01T11:00:30Z",
+                ],
+                utc=True,
+            ),
+        }
+    )
+
+    grouped, indices, segments = processing._regime_group_df(rows, "day")
+
+    measurements = grouped[grouped["meas_type"] == "measurements"]
+    assert indices.tolist() == [0, 1, 3]
+    assert segments == ("seg00", "seg02")
+    assert measurements["segment_id"].tolist() == ["seg00", "seg00", "seg02"]
+    assert int((grouped["meas_type"] == "dark_current").sum()) == 1
+
+
+def test_regime_weather_uses_union_of_source_segments_not_intervening_night() -> None:
+    weather_time = pd.date_range(
+        "2025-01-01T12:00:00Z",
+        "2025-01-02T10:00:00Z",
+        freq="1h",
+    )
+    weather = {
+        "weather_time": weather_time.tz_localize(None).to_numpy(
+            dtype="datetime64[ns]"
+        ),
+        "temperature_c": np.arange(len(weather_time), dtype=float),
+        "pressure_hpa": np.arange(len(weather_time), dtype=float) + 900.0,
+        "relative_humidity_percent": np.arange(len(weather_time), dtype=float),
+        "cloud_cover_percent": np.arange(len(weather_time), dtype=float),
+        "wind_speed_kmh": np.arange(len(weather_time), dtype=float),
+    }
+    measurements = pd.DataFrame(
+        {
+            "segment_id": ["seg00", "seg00", "seg02"],
+            "start_time_utc": pd.to_datetime(
+                [
+                    "2025-01-01T12:10:00Z",
+                    "2025-01-01T13:10:00Z",
+                    "2025-01-02T09:10:00Z",
+                ],
+                utc=True,
+            ),
+            "stop_time": pd.to_datetime(
+                [
+                    "2025-01-01T12:40:00Z",
+                    "2025-01-01T13:40:00Z",
+                    "2025-01-02T09:40:00Z",
+                ],
+                utc=True,
+            ),
+        }
+    )
+
+    selected = processing._weather_for_measurement_rows(weather, measurements)
+    selected_times = pd.to_datetime(selected["weather_time"], utc=True)
+
+    assert pd.Timestamp("2025-01-01T12:00:00Z") in selected_times
+    assert pd.Timestamp("2025-01-01T14:00:00Z") in selected_times
+    assert pd.Timestamp("2025-01-02T09:00:00Z") in selected_times
+    assert pd.Timestamp("2025-01-02T10:00:00Z") in selected_times
+    assert pd.Timestamp("2025-01-01T20:00:00Z") not in selected_times
