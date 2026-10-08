@@ -11,7 +11,7 @@ import pandas as pd
 from milgrau.level0.inventory import build_session_inventory
 
 
-def _config(*, max_gap_seconds: float = 60.0, max_association_hours: float = 12.0) -> dict:
+def _config(*, max_gap_seconds: float = 1800.0, max_association_hours: float = 12.0) -> dict:
     return {
         "directories": {
             "raw_data": "raw",
@@ -146,7 +146,7 @@ def test_acquisition_is_not_split_by_former_six_hour_boundaries(
     assert df["session_id"].iloc[0] == "spu_20240101-0555Z_20240101-0610Z"
 
 
-def test_gap_larger_than_configured_tolerance_starts_new_session(
+def test_gap_within_30_minutes_keeps_one_session(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -160,8 +160,8 @@ def test_gap_larger_than_configured_tolerance_starts_new_session(
             4.0,
         ),
         paths[1]: (
-            datetime(2024, 1, 1, 0, 7, 0),
-            pd.Timestamp("2024-01-01T00:12:00"),
+            datetime(2024, 1, 1, 0, 25, 0),
+            pd.Timestamp("2024-01-01T00:30:00"),
             300.0,
             1200,
             4.0,
@@ -169,16 +169,41 @@ def test_gap_larger_than_configured_tolerance_starts_new_session(
     }
     _patch_inventory(monkeypatch, paths, ["measurements", "measurements"], headers)
 
-    df = build_session_inventory(
-        str(tmp_path),
-        _config(max_gap_seconds=60.0),
-        logging.getLogger("test"),
-    )
+    df = build_session_inventory(str(tmp_path), _config(), logging.getLogger("test"))
+
+    assert df["session_id"].nunique() == 1
+    assert df["session_id"].iloc[0] == "spu_20240101-0000Z_20240101-0030Z"
+
+
+def test_gap_larger_than_30_minutes_starts_new_session(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    paths = [str(tmp_path / "m1"), str(tmp_path / "m2")]
+    headers = {
+        paths[0]: (
+            datetime(2024, 1, 1, 0, 0, 0),
+            pd.Timestamp("2024-01-01T00:05:00"),
+            300.0,
+            1200,
+            4.0,
+        ),
+        paths[1]: (
+            datetime(2024, 1, 1, 0, 36, 0),
+            pd.Timestamp("2024-01-01T00:41:00"),
+            300.0,
+            1200,
+            4.0,
+        ),
+    }
+    _patch_inventory(monkeypatch, paths, ["measurements", "measurements"], headers)
+
+    df = build_session_inventory(str(tmp_path), _config(), logging.getLogger("test"))
 
     assert df["session_id"].nunique() == 2
     assert df["session_id"].tolist() == [
         "spu_20240101-0000Z_20240101-0005Z",
-        "spu_20240101-0007Z_20240101-0012Z",
+        "spu_20240101-0036Z_20240101-0041Z",
     ]
 
 
