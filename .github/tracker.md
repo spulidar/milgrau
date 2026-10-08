@@ -238,6 +238,9 @@ The governing rule is:
 - [x] Automatic LIPANCORA discovery continues to use only the canonical
   `SESSION_L0.nc`; SCC day/night products remain explicit interoperability
   derivatives.
+- [x] Preserve the SCC regime lineage through explicit downstream processing:
+  `SESSION_day_L0_scc.nc -> SESSION_day_L1_scc.nc -> SESSION_day_L2_scc.nc`
+  (and equivalently for night).
 - [x] Keep Level 0/SCC operational `ExecutionResult.metadata` JSON-scalar:
   regimes/segments are comma-separated strings and multiple SCC paths are
   semicolon-separated, so successful SCC writes cannot fail afterward during
