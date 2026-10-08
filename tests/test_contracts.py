@@ -52,11 +52,33 @@ def test_validate_level0_contract_rejects_bad_laser_shots() -> None:
 
 def _add_level1_atmosphere(ds: xr.Dataset, *, source_type: str = "ussa76") -> xr.Dataset:
     n_altitude = ds.sizes["altitude"]
-    ds["Atmospheric_Temperature_K"] = (("altitude",), np.linspace(288.0, 270.0, n_altitude))
-    ds["Atmospheric_Pressure_hPa"] = (("altitude",), np.linspace(1000.0, 900.0, n_altitude))
+    atmosphere_time = pd.date_range("2024-01-01T00:00:00", periods=2, freq="1h")
+    ds = ds.assign_coords(atmosphere_time=atmosphere_time)
+    temperature = np.linspace(288.0, 270.0, n_altitude)
+    pressure = np.linspace(1000.0, 900.0, n_altitude)
+    ds["Atmospheric_Temperature_K"] = (
+        ("atmosphere_time", "altitude"),
+        np.vstack([temperature, temperature]),
+    )
+    ds["Atmospheric_Pressure_hPa"] = (
+        ("atmosphere_time", "altitude"),
+        np.vstack([pressure, pressure]),
+    )
+    ds["Atmospheric_Source_Type"] = (
+        ("atmosphere_time",),
+        np.array([source_type, source_type], dtype=object),
+    )
+    ds["Atmospheric_Source_Time_Delta_hours"] = (
+        ("atmosphere_time",),
+        np.array([0.0, 0.0]),
+    )
+    ds["Atmospheric_USSA76_Fallback_Fraction"] = (
+        ("atmosphere_time",),
+        np.array([1.0 if source_type == "ussa76" else 0.0] * 2),
+    )
     ds.attrs.update({
         "thermodynamic_profile_available": "true",
-        "thermodynamic_profile_source_type": source_type,
+        "thermodynamic_profile_source_type": "time_resolved",
         "thermodynamic_profile_standard_fallback_fraction": 1.0 if source_type == "ussa76" else 0.0,
     })
     return ds
@@ -90,6 +112,6 @@ def test_validate_level1_contract_accepts_noncanonical_signal_dim_order() -> Non
 
 def test_validate_level1_contract_rejects_nonfinite_atmosphere() -> None:
     ds = _add_level1_atmosphere(_level1_signals())
-    ds["Atmospheric_Pressure_hPa"][0] = np.nan
+    ds["Atmospheric_Pressure_hPa"][0, 0] = np.nan
     with pytest.raises(ValueError, match="Atmospheric_Pressure_hPa"):
         validate_level1_contract(ds)
