@@ -1,189 +1,653 @@
-# MILGRAU tracker
+# MILGRAU tracker — session-refactor
 
-This tracker records only the current product, accepted scientific decisions
-and work that is still actionable. Superseded implementations and experiments
-remain recoverable from Git history and are not alternative processing modes.
+This tracker is the single roadmap for the current MILGRAU architecture on
+`session-refactor`. It keeps accepted scientific decisions, implemented work,
+remaining refactor tasks, validation gates and release work in one place.
 
-## Current objective
+Superseded implementations are recoverable from Git history and are not
+alternative productive modes.
 
-Deliver a reliable SPU-Lidar elastic Level 2 product with the highest column
-supported by each measurement. The immediate validation target is useful
-retrieval through 20 km and, when the signal and continuous numerical path
-permit, through 25 km. No fixed top altitude is promised and unsupported bins
-remain missing.
+## Legend
 
-## Current processing policy
+- [x] implemented / accepted in the current branch
+- [~] partially implemented or intentionally transitional
+- [ ] still actionable
 
-- Ground-based vertical geometry.
-- Elastic wavelengths: 355 and 532 nm when their Level 1 inputs are valid.
-- Temporal blocks: 20 minutes by default.
-- Two-sided Klett–Fernald–Sasano integration around one selected molecular
-  reference.
-- Primary molecular-reference search range: 10–15 km.
-- Explicit fallback search range: 5–20 km.
-- Within the first supported range, select the Rayleigh-accepted,
-  path-admissible candidate with minimum
-  `relative_slope + relative_variance`; altitude is not a ranking reward.
-- Rayleigh diagnostic window: 1 km.
-- Progressive vertical grid: native resolution below 6 km, then 15 m at
-  6–10 km, 30 m at 10–15 km, 60 m at 15–25 km and at most 100 m above 25 km.
-- Nominal residual aerosol fraction at the reference: `f = 0`.
-- Routine uncertainty ensemble: 150 configurable Monte Carlo realizations.
-- Every realization perturbs the native signal, refits the residual background,
-  rebuilds the progressive grid, reruns reference selection and then reruns the
-  inversion.
-- Lidar ratio is drawn from the configured station climatology/uncertainty and
-  is bounded by the configured positive minimum.
-- `mc_valid_fraction` and Monte Carlo selection success are diagnostics, not
-  hard scientific acceptance thresholds.
-- Missing value or uncertainty support is never filled, bridged or silently
-  treated as zero uncertainty.
+## Core architecture
 
-## Background policy
+The project now separates three concepts:
 
-- Level 1 records the acquisition/background diagnostics and corrected signal.
-- Level 2 estimates a residual constant background jointly with molecular
-  scaling over the configured high-altitude fit span using robust weighted
-  regression.
-- In range-corrected space the fitted term is `B z²`.
-- The nominal fitted background, formal standard error and calibration/background
-  correlation are stored per block.
-- Monte Carlo refits the background for every perturbed realization.
-- Fixed post-hoc subtraction is not an alternative productive mode.
+1. **Scientific session** — one continuous, instrumentally homogeneous lidar
+   acquisition. It may cross midnight and civil 6-hour boundaries.
+2. **Scientific regime/segment** — internal homogeneous intervals, primarily
+   solar `day` / `night`, plus any relevant instrumental/context changes.
+3. **Publication window** — website-only local civil windows
+   `00–06`, `06–12`, `12–18`, `18–24`.
 
-## Product and QA policy
+The governing rule is:
 
-- The NetCDF records the progressive grid, source-bin counts, molecular state,
-  selected reference and its search range, fallback use, fitted background,
-  two-sided branch endpoints, optical products and Monte Carlo statistics.
-- Aerosol extinction is conditional on the assumed aerosol lidar ratio.
-- Negative/noisy high-altitude estimates may exist; scientific support must be
-  read together with branch endpoints and Monte Carlo validity.
-- QA figures are optical/scientific inspection products, not only software
-  diagnostics. The current panels are signal/gluing, molecular reference and
-  aerosol optical profiles.
-- Retrieval support shading is not plotted; the dashed branch endpoint remains
-  the compact coverage indicator.
+> MILGRAU organizes science by continuous sessions and scientific regimes.
+> `spulidar/measurements` organizes publication by local 6-hour windows.
 
-## Completed consolidation
+`session_id != publication_window_id`.
 
-- [x] Two-sided retrieval is the sole productive elastic path.
-- [x] Old progressive reference tiers were replaced by the 10–15 km primary
-  range and 5–20 km fallback.
-- [x] Robust fitted residual background is used by the nominal retrieval and
-  refitted inside Monte Carlo.
-- [x] Routine Monte Carlo is configurable and set to 150 realizations.
-- [x] Routine residual-aerosol boundary is `f = 0`.
-- [x] LIRACOS and LEBEAR accept explicit UTC time windows.
-- [x] Current QA panels replaced the superseded plotting stack.
-- [x] Productive modules no longer use experiment/revision names.
-- [x] Backward-only retrieval assembly and comparison CLIs were removed from
-  the installed package.
-- [x] Documentation describes one current product rather than parallel method
-  generations.
+## Current status summary
 
-## Session refactor: meteorology and atmosphere
+- **Phase 1 — session identity/filesystem:** essentially complete.
+- **Phase 2 — continuous sessionization:** implemented; 30-minute continuity
+  threshold accepted for the current SPU workflow, with broader real-data
+  validation still useful.
+- **Phase 3 — solar regime/segments:** not implemented.
+- **Phase 4 — continuous Level 0:** largely implemented; solar metadata and
+  time-resolved surface weather remain.
+- **Phase 5 — continuous Level 1:** session structure works; time-resolved
+  atmosphere and automatic Level 1 figures remain.
+- **Phase 6 — continuous Level 2:** session structure works; regime selectors,
+  terminology cleanup and figure reorganization remain.
+- **Phase 7 — retire LIRACOS as an independent pipeline:** prepared, not done.
+- **Phase 8 — `spulidar/measurements` publication refactor:** not started here.
+- **Phase 9 — Explorer / inspect:** partially session-aware.
+- **Phase 10 — unified `figures/` convention:** Level 1 partially migrated;
+  Level 2 still uses QA naming/directories.
+- **Phase 11 — documentation / final cleanup:** partial.
 
-Accepted architecture for continuous sessions:
+---
 
-- [x] Session continuity tolerance is 30 minutes (`level0.session.max_gap_seconds = 1800`).
-- [ ] Level 0 surface weather becomes a time-resolved series rather than one
-  midpoint snapshot.
-- [ ] Surface-weather cadence is hourly on its native/source cadence; do not
-  duplicate/interpolate hourly source values onto every lidar profile.
-- [ ] Persist time-resolved surface temperature, pressure, relative humidity,
-  cloud cover and wind with explicit source/provenance metadata.
-- [ ] Missing surface weather remains missing; do not invent default
-  temperature/pressure values.
-- [ ] SCC scalar surface temperature/pressure, when required, are derived only
-  for SCC interoperability and do not replace the scientific time series.
-- [ ] Level 1 atmosphere becomes time resolved as
-  `Atmospheric_Temperature_K(atmosphere_time, altitude)` and
+# Phase 1 — Session identity and filesystem
+
+## Implemented
+
+- [x] Scientific identity no longer uses `00/06/12/18`.
+- [x] `session_id` is the canonical identity.
+- [x] Canonical format:
+  `spu_YYYYMMDD-HHMMZ_YYYYMMDD-HHMMZ`.
+- [x] Example:
+  `spu_20250511-0012Z_20250511-0737Z`.
+- [x] Station comes first.
+- [x] Session timestamps in the ID are UTC.
+- [x] Filename precision is minutes; exact seconds remain product metadata.
+- [x] Session parser validates ordered start/end timestamps.
+- [x] Canonical station casing and `Z` handling are normalized.
+- [x] Old `LOCAL_PERIOD_STARTS`, `measurement_id_parts()`,
+  `build_measurement_id()` and `measurement_day_dir()` were removed from
+  the session identity path.
+- [x] Old `milgrau/level0/time.py` period logic was removed.
+- [x] Logging and primary IO APIs use `session_id`.
+- [x] Session product tree is:
+
+```text
+02-processed_data/
+└── spu/
+    └── YYYY/
+        └── MM/
+            └── spu_STARTZ_ENDZ/
+                ├── spu_STARTZ_ENDZ_L0.nc
+                ├── spu_STARTZ_ENDZ_L1.nc
+                ├── spu_STARTZ_ENDZ_L2.nc
+                └── figures/
+```
+
+- [x] Product filenames remain self-identifying when copied outside the session
+  directory.
+- [x] SCC-derived products preserve distinct lineage:
+  `_L0_scc.nc`, `_L1_scc.nc`, `_L2_scc.nc`.
+- [x] Named Level 2 variants are supported without changing session identity.
+- [x] CLI selectors accept session IDs, station-local dates and explicit paths.
+- [x] Date selection no longer expands into four 6-hour scientific IDs.
+- [x] Date selection resolves sessions intersecting the selected local civil day.
+- [x] Cross-midnight sessions are discoverable from relevant local dates.
+- [x] Session paths/identity have dedicated tests.
+- [x] README, processing-level docs and code inventory describe session identity.
+
+## Remaining
+
+- [~] Decide the exceptional policy for a scientifically valid session whose
+  rounded start and end collapse into the same minute; the builder currently
+  rejects it.
+- [~] Define a deterministic collision policy if two distinct sessions ever
+  receive the same minute-resolution canonical ID.
+- [ ] Run a final repository-wide audit for obsolete scientific references to
+  `measurement_id`, `_00`, `_06`, `_12`, `_18` after all later phases
+  are complete.
+
+---
+
+# Phase 2 — Continuous sessionization
+
+## Implemented
+
+- [x] `build_session_inventory()` is the Level 0 inventory entry point.
+- [x] Raw Licel files are ordered chronologically.
+- [x] Start/stop times are normalized to UTC.
+- [x] Missing/invalid stop times can be reconstructed from valid duration
+  metadata when possible.
+- [x] Session continuity is based on previous stop versus next start.
+- [x] `level0.session.max_gap_seconds` is explicit configuration.
+- [x] Current SPU continuity tolerance is **1800 s / 30 minutes**.
+- [x] Gaps within 30 minutes keep one session.
+- [x] Gaps greater than 30 minutes start a new session.
+- [x] Crossing midnight does not split a session.
+- [x] Crossing former 6-hour boundaries does not split a session.
+- [x] Session inventory stores:
+  `session_id`, `session_start_utc`, `session_end_utc`.
+- [x] Inventory records `session_boundary_reason`.
+- [x] Supported current reasons include `acquisition_start`, `time_gap` and
+  `station_context_change`.
+- [x] Each raw measurement file is annotated with station profile and
+  calibration identity.
+- [x] Profile/calibration changes split otherwise continuous acquisitions.
+- [x] One Licel file crossing a profile/calibration boundary is rejected rather
+  than silently assigned a heterogeneous context.
+- [x] Acquisition QA does not redefine the canonical session interval.
+- [x] Tests cover midnight, former 6-hour boundaries, <=30-minute continuity,
+  >30-minute split and station-context changes.
+
+## Still evaluate
+
+- [ ] Survey a broader real SPU campaign to confirm that 30 minutes remains a
+  robust operational threshold across historical acquisition patterns.
+- [ ] Keep a simple gap histogram/report available for future threshold review.
+- [ ] Decide whether channel-set/DAQ-structure changes must force a session
+  boundary when they are not already represented by `Station_Profile`.
+- [ ] Decide whether pointing/geometry changes must force a session boundary.
+- [ ] Identify any hardware state not encoded in station profile/calibration
+  that would make one session scientifically heterogeneous.
+
+---
+
+# Dark-current association
+
+- [x] Dark current is associated with scientific sessions, not 6-hour windows.
+- [x] Temporal distance is measured against the complete session interval.
+- [x] A dark acquisition inside a session interval has zero temporal distance.
+- [x] Outside dark acquisitions are associated to the nearest session when
+  within `max_association_hours`.
+- [x] Darks beyond the configured maximum remain unassociated.
+- [x] Provenance records source files, method and association time delta.
+- [x] Tests cover successful and rejected associations.
+
+---
+
+# Phase 3 — Solar regime and scientific segments
+
+Accepted target model:
+
+- [ ] Compute `solar_elevation_deg(time)`.
+- [ ] Compute `solar_regime(time)`.
+- [ ] Productive regime classes are only `day` and `night`.
+- [ ] Do not create `twilight` as a primary regime.
+- [ ] Keep the day/night threshold configurable.
+- [ ] Initial target threshold is approximately **-3 degrees solar elevation**.
+- [ ] Never hard-code the threshold inside scientific logic.
+- [ ] Preserve continuous solar elevation so classification can be revised
+  later without re-deriving geometry.
+- [ ] Validate the threshold empirically against SPU background/SNR behavior,
+  especially 355 nm.
+- [ ] Replace fixed clock-based SCC/instrument day/night behavior with the solar
+  regime when station/SCC configuration permits it.
+- [ ] Eliminate productive `06–18` / `18–06` instrument-mode assumptions.
+- [ ] Add `segment_id(time)`.
+- [ ] Start a new segment on `day <-> night` transition.
+- [ ] Start a new segment for relevant context changes that are allowed to remain
+  inside one scientific session.
+- [ ] Persist segment start/end, regime, profile/calibration/context metadata.
+- [ ] Add CLI selectors:
+  `--regime day`, `--regime night`.
+- [ ] Keep technical selectors:
+  `--segment seg00`, `--segment seg01`, etc.
+- [ ] Preserve `--time-window-utc` as an orthogonal selector.
+- [ ] Selection must not imply persistence of an additional NetCDF.
+- [ ] Allow explicitly requested persistent derivatives such as
+  `SESSION_night_L2.nc` without making them default products.
+
+## Transitional SCC protection already present
+
+- [x] Level 0 detects when a continuous session spans more than one current
+  clock-derived SCC mode.
+- [x] The primary MILGRAU session remains continuous.
+- [x] SCC export is disabled for a heterogeneous session instead of exporting an
+  incorrect single-mode SCC file.
+- [ ] Replace this transitional safeguard with solar-regime-aware SCC export.
+
+---
+
+# Phase 4 — Continuous Level 0 / LIBIDS
+
+## Implemented
+
+- [x] LIBIDS groups and processes by `session_id`.
+- [x] Incremental processing is session-based.
+- [x] Outputs are written inside the session directory.
+- [x] Level 0 metadata includes:
+  `Session_ID`, `measurement_start_time`, `measurement_end_time`,
+  `session_duration_seconds`, timezone and raw source provenance.
+- [x] Scientific `period=00-06` style metadata is no longer required.
+- [x] Raw start/stop metadata remains available.
+- [x] Station profile/calibration provenance remains available.
+- [x] Dark-current provenance remains available.
+- [x] SCC is an optional derivative and does not define scientific identity.
+
+## Surface weather — accepted target
+
+Current implementation still writes one representative surface-weather snapshot.
+Replace it with:
+
+- [ ] Add a native-cadence/hourly `weather_time` axis.
+- [ ] Persist time-resolved surface:
+  temperature, pressure, relative humidity, cloud cover and wind.
+- [ ] Keep Open-Meteo Archive as the current source until a better local SPU
+  source is configured.
+- [ ] Preserve source/provenance and native/source time resolution.
+- [ ] Do not interpolate/duplicate hourly source values onto every lidar profile.
+- [x] Missing surface weather remains missing; do not invent temperature or
+  pressure defaults.
+- [ ] If a reliable local weather station becomes available, prefer:
+  local station -> Open-Meteo fallback, without changing the scientific schema.
+- [ ] Derive scalar temperature/pressure only where SCC interoperability
+  explicitly requires scalar fields.
+- [ ] Document how the SCC scalar is derived (for example representative/median
+  value) and keep it distinct from the scientific time series.
+
+## Still pending in L0
+
+- [ ] Add solar elevation/regime variables.
+- [ ] Add segment identity/metadata.
+- [ ] Revisit SCC export after solar implementation.
+
+---
+
+# Phase 5 — Continuous Level 1 / LIPANCORA
+
+## Implemented base
+
+- [x] LIPANCORA discovers session-based Level 0 products.
+- [x] Level 1 output remains inside the session directory.
+- [x] Logging and selectors use `session_id`.
+- [x] Local-date selection works with sessions.
+- [x] Long continuous sessions can reach Level 1 without artificial 6-hour
+  splitting.
+- [x] Current Level 1 still materializes the canonical atmosphere so Level 2
+  performs no external atmosphere IO.
+
+## Time-resolved atmosphere — accepted target
+
+Replace the current single midpoint atmosphere with:
+
+- [ ] Add an hourly/native-cadence `atmosphere_time` coordinate.
+- [ ] Materialize
+  `Atmospheric_Temperature_K(atmosphere_time, altitude)`.
+- [ ] Materialize
   `Atmospheric_Pressure_hPa(atmosphere_time, altitude)`.
-- [ ] ERA5 pressure-level reanalysis is the temporal backbone for the canonical
-  Level 1 atmosphere because it provides consistent hourly atmospheric state
-  across long continuous sessions.
-- [ ] Radiosondes remain the preferred local in-situ observational reference
-  for validation/QA when a suitable sounding is available near the session.
-- [ ] Radiosonde availability does not force abrupt piecewise replacement of
-  the hourly ERA5 backbone.
-- [ ] USSA76 remains explicit vertical extension and full fallback when the
-  configured external sources cannot provide the required atmosphere.
-- [ ] Level 2 performs no external meteorological IO; it interpolates the
-  materialized Level 1 atmosphere to each retrieval `block_time`.
-- [ ] Solar day/night segments and atmospheric time resolution remain
-  independent concepts.
+- [ ] Use **ERA5 pressure-level reanalysis as the temporal backbone** for the
+  canonical Level 1 atmosphere across long continuous sessions.
+- [ ] Preserve hourly ERA5 analysis provenance and spatial-source metadata.
+- [ ] Do not abruptly replace individual ERA5 hours with radiosonde profiles.
+- [ ] Keep radiosondes as the preferred local in-situ observational reference
+  for comparison/QA when a suitable sounding exists.
+- [ ] Keep USSA76 as explicit vertical extension and full fallback when required.
+- [ ] Keep solar day/night segmentation independent from atmospheric cadence.
+- [ ] Define efficient caching so repeated session processing does not redownload
+  identical ERA5 hours.
+- [ ] Update Level 1 contracts/tests for time-resolved atmospheric dimensions.
 
-### Atmospheric comparison QA
+## Level 2 consumption of atmosphere
 
-- [ ] Add a Level 1 atmospheric comparison figure to `figures/`, with a
-  session/level-identifying filename such as
-  `SESSION_L1_AtmosphericProfile.webp`.
-- [ ] When radiosonde is available, compare three profiles on a common altitude
-  grid: ERA5, radiosonde and the canonical profile actually used by MILGRAU.
-- [ ] Plot temperature and pressure profiles and the corresponding differences.
-- [ ] Report compact quantitative metrics over configurable altitude bands:
-  temperature bias/RMSE, pressure bias/relative difference and valid overlap.
-- [ ] Also compare the derived molecular state relevant to lidar retrieval
-  (molecular number density/backscatter or an equivalent directly traceable
-  quantity) so QA measures scientific retrieval impact, not only meteorological
-  differences.
-- [ ] Record radiosonde launch/target time, ERA5 analysis time, spatial source
-  metadata and time offsets in the figure/provenance.
-- [ ] Treat ERA5-versus-radiosonde agreement as a consistency/validation QA,
-  not as a fully independent validation, because radiosonde observations may
-  contribute to the reanalysis assimilation system.
-- [ ] If no suitable radiosonde exists, generate the atmospheric figure with
-  ERA5 + canonical used profile + USSA76/fallback context and mark radiosonde
-  as unavailable rather than silently omitting provenance.
-- [ ] Define and test the maximum radiosonde time separation used for the QA
-  comparison independently of the production ERA5 atmosphere cadence.
+- [ ] Level 2 performs no ERA5/radiosonde/Open-Meteo IO.
+- [ ] Interpolate the materialized Level 1 atmosphere to each retrieval
+  `block_time`.
+- [ ] Record interpolation/source provenance sufficiently to reproduce the
+  molecular atmosphere used by each block.
 
-## Required before the next release candidate
+## Atmospheric comparison QA / scientific figure
 
-### Engineering
+Create:
+
+`SESSION_L1_AtmosphericProfile.webp`
+
+- [ ] Compare ERA5, radiosonde and the canonical profile actually used by
+  MILGRAU on a common altitude grid when radiosonde is available.
+- [ ] Plot temperature and pressure profiles.
+- [ ] Plot corresponding differences.
+- [ ] Report temperature bias and RMSE over configurable altitude bands.
+- [ ] Report pressure bias/relative difference and valid vertical overlap.
+- [ ] Compare a retrieval-relevant derived molecular quantity such as molecular
+  number density and/or molecular backscatter, so QA reflects retrieval impact
+  rather than meteorological differences alone.
+- [ ] Record radiosonde launch/target time, ERA5 analysis time, spatial metadata
+  and time offsets in figure/provenance.
+- [ ] Treat ERA5-versus-radiosonde as consistency/validation QA, not completely
+  independent validation, because radiosonde observations may contribute to
+  reanalysis assimilation.
+- [ ] If no suitable radiosonde exists, still generate the atmospheric figure
+  with ERA5 + canonical used profile + USSA76/fallback context and explicitly
+  mark radiosonde unavailable.
+- [ ] Define and test a maximum radiosonde time separation for QA comparison,
+  independent of the production ERA5 cadence.
+
+## Solar/segments in Level 1
+
+- [ ] Propagate `solar_elevation_deg`.
+- [ ] Propagate `solar_regime`.
+- [ ] Propagate `segment_id`.
+- [ ] Support `--regime day/night` where appropriate.
+
+## Level 1 figures
+
+Already prepared:
+
+- [x] Level 1 visual output uses `figures/`.
+- [x] Figure filenames include session and processing level.
+- [x] RCS naming follows the new session convention.
+- [x] Mean RCS naming follows the new session convention.
+- [x] Default plots use the observed continuous session extent.
+- [x] Former 6-hour x-axis forcing is gone.
+- [x] Real temporal gaps remain visible.
+- [x] Explicit UTC plotting windows remain supported.
+
+Remaining:
+
+- [ ] LIPANCORA generates Level 1 figures automatically after successful L1
+  writing/validation.
+- [ ] A figure-generation failure must not invalidate a scientifically valid L1.
+- [ ] Add the atmospheric profile/comparison figure above.
+
+---
+
+# Phase 6 — Continuous Level 2 / LEBEAR
+
+## Accepted productive scientific policy
+
+- [x] Ground-based vertical geometry.
+- [x] Productive elastic wavelengths are 355 and 532 nm when valid L1 inputs
+  exist.
+- [x] Temporal block average is 20 minutes by default.
+- [x] Two-sided Klett–Fernald–Sasano is the sole productive elastic inversion.
+- [x] Primary molecular-reference search range is 10–15 km.
+- [x] Explicit fallback reference search range is 5–20 km.
+- [x] Candidate ranking uses the accepted Rayleigh/path criteria without
+  rewarding altitude itself.
+- [x] Rayleigh diagnostic window is 1 km.
+- [x] Progressive vertical grid uses native resolution below 6 km, then the
+  configured 15/30/60/100 m schedule aloft.
+- [x] Nominal residual aerosol fraction at the reference is `f = 0`.
+- [x] Routine Monte Carlo uses 150 configurable realizations.
+- [x] Every Monte Carlo realization perturbs native signal, refits residual
+  background, rebuilds the progressive grid, reruns reference selection and
+  reruns the inversion.
+- [x] Lidar ratio is drawn from station climatology/uncertainty and bounded by
+  the configured positive minimum.
+- [x] `mc_valid_fraction` and MC selection success are diagnostics, not hard
+  scientific acceptance thresholds.
+- [x] Missing support is not silently bridged or filled.
+
+## Residual-background policy
+
+- [x] L1 records acquisition/background diagnostics and corrected signal.
+- [x] L2 fits a residual constant background jointly with molecular scaling over
+  the configured high-altitude span using robust weighted regression.
+- [x] In range-corrected space the fitted term is `B z^2`.
+- [x] Nominal fitted background, formal standard error and
+  calibration/background correlation are stored per block.
+- [x] Monte Carlo refits background for every perturbed realization.
+- [x] Fixed post-hoc background subtraction is not a productive alternative.
+
+## Session integration already implemented
+
+- [x] LEBEAR uses `session_id`.
+- [x] Session-based Level 1 discovery is implemented.
+- [x] L2 remains beside L0/L1 inside the session directory.
+- [x] Exact source L1 SHA-256 provenance is preserved.
+- [x] Explicit `--time-window-utc` remains supported.
+- [x] Time-window variants do not change session identity.
+- [x] 20-minute blocks are independent of former 6-hour publication windows.
+
+## Remaining session/regime work
+
+- [ ] Add `--regime day`.
+- [ ] Add `--regime night`.
+- [ ] Add `--segment`.
+- [ ] Propagate solar regime and segment metadata.
+- [ ] Rename ambiguous `period_*` variables/labels such as
+  `period_support_fraction`.
+- [ ] Prefer `session_*` or `temporal_*` names according to actual semantics.
+- [ ] Remove “period mean” language where it could be confused with the old
+  website periods.
+
+## Level 2 figures
+
+Current implementation still uses QA-oriented names and `qa/`.
+
+Accepted target:
+
+- [ ] Rename/reorganize `level2/qa.py` into figure orchestration.
+- [ ] Reorganize `viz/level2_qa.py` into generic Level 2 renderers.
+- [ ] Write all Level 2 visual products into the session `figures/` directory.
+- [ ] Do not call every visual product “QA”.
+- [ ] Preserve internal semantic categories where useful:
+  diagnostic, QA, scientific profile, visualization.
+- [ ] Use filenames such as:
+  `SESSION_L2_MolecularReference_355nm.webp`,
+  `SESSION_L2_Gluing_355nm.webp`,
+  `SESSION_L2_OpticalProfiles_355nm.webp`,
+  `SESSION_L2_RetrievalSupport_355nm.webp`.
+- [x] Retrieval-support shading remains omitted from the current compact optical
+  profile view; dashed branch endpoints remain the primary compact coverage
+  indicator.
+
+---
+
+# Phase 7 — Retire LIRACOS as an independent pipeline
+
+## Preparation already done
+
+- [x] LIRACOS understands session IDs.
+- [x] LIRACOS no longer forces 6-hour plotting windows.
+- [x] LIRACOS plots the observed session extent.
+- [x] Level 1 visual outputs already target `figures/`.
+- [x] Session-based figure naming already exists.
+
+## Remaining
+
+- [ ] Move Level 1 figure orchestration into LIPANCORA.
+- [ ] Extract/retain reusable plotting functions independent from the old
+  LIRACOS pipeline identity.
+- [ ] Make the scientific level that creates the product responsible for its
+  figures.
+- [ ] Remove `milgrau-liracos` as a productive CLI.
+- [ ] Remove `milgrau/viz/liracos.py` as an independent orchestrator while
+  preserving reusable rendering code.
+- [ ] Remove LIRACOS from primary-CLI tests.
+- [ ] Update README, processing-level docs and code inventory accordingly.
+
+Target pipeline:
+
+```text
+LIBIDS     -> L0
+LIPANCORA  -> L1 + figures
+LEBEAR     -> L2 + figures
+```
+
+Figure failures must remain non-fatal to valid scientific NetCDF products.
+
+---
+
+# Phase 8 — spulidar/measurements and website publication
+
+This work belongs primarily in `spulidar/measurements`, not the MILGRAU
+scientific identity layer.
+
+- [ ] Make `measurements` the sole owner of local publication windows:
+  `00–06`, `06–12`, `12–18`, `18–24`.
+- [ ] Treat those IDs explicitly as `publication_window_id`, not session IDs.
+- [ ] Read MILGRAU L1/L2 directly.
+- [ ] Find every scientific session intersecting each publication window.
+- [ ] Select only the relevant time span for each website plot.
+- [ ] Allow several sessions to contribute to one publication visualization.
+- [ ] Concatenate only for visualization and preserve real gaps as missing data.
+- [ ] Never scientifically merge distinct sessions.
+- [ ] Reuse MILGRAU generic renderers instead of duplicating plotting/scientific
+  logic.
+- [ ] Keep current public/R2 naming where practical to avoid unnecessary
+  historical migration.
+- [ ] Keep publication state compatible with historical data.
+- [ ] Separate public staging from scientific products; preferred target:
+  `03-site-products/`.
+- [ ] Stop recursively treating arbitrary MILGRAU scientific WEBPs as website
+  publication assets.
+
+Canonical example:
+
+- scientific acquisition local time:
+  `10/05 21:12 -> 11/05 04:37`
+- one MILGRAU session:
+  `spu_20250511-0012Z_20250511-0737Z`
+- website publication views:
+  `20250510_spu_18` uses 21:12–24:00 local,
+  `20250511_spu_00` uses 00:00–04:37 local.
+
+No scientific NetCDF is split because of website layout.
+
+---
+
+# Phase 9 — Explorer and inspect
+
+## Explorer already implemented
+
+- [x] Discovers session directories.
+- [x] Finds L0/L1/L2 products for one session.
+- [x] Displays the UTC session interval.
+- [x] Lists available processing levels.
+- [x] Does not depend on old four-period IDs.
+
+## Explorer remaining
+
+- [ ] Use local-time human presentation as the primary display:
+  `SPU · 10/05 21:12 -> 11/05 04:37 · 7h25`.
+- [ ] Show duration explicitly.
+- [ ] Show `highest_available_level`.
+- [ ] Show solar regime(s).
+- [ ] Show segments.
+- [ ] Add day/night filtering.
+- [ ] Surface files in the session `figures/` directory.
+
+## Inspect already implemented
+
+- [x] Understands session-based L0/L1/L2 products.
+- [x] Displays Session_ID.
+- [x] Displays start/end and duration metadata.
+- [x] Resolves date/session/path selectors.
+- [x] A date can find all available processing levels for intersecting sessions.
+
+## Inspect remaining
+
+- [ ] Add concise local-time/human session presentation.
+- [ ] Summarize solar regime and segments.
+- [ ] Summarize available figures.
+- [ ] Summarize explicit highest available level.
+
+---
+
+# Phase 10 — Unified figures convention
+
+Accepted filesystem:
+
+```text
+spu_20250511-0012Z_20250511-0737Z/
+├── spu_20250511-0012Z_20250511-0737Z_L0.nc
+├── spu_20250511-0012Z_20250511-0737Z_L1.nc
+├── spu_20250511-0012Z_20250511-0737Z_L2.nc
+└── figures/
+    ├── spu_..._L1_RCS_355AN_15km.webp
+    ├── spu_..._L1_RCS_532AN_15km.webp
+    ├── spu_..._L1_MeanRCS.webp
+    ├── spu_..._L1_AtmosphericProfile.webp
+    ├── spu_..._L2_MolecularReference_355nm.webp
+    ├── spu_..._L2_Gluing_355nm.webp
+    ├── spu_..._L2_OpticalProfiles_355nm.webp
+    └── spu_..._L2_RetrievalSupport_355nm.webp
+```
+
+- [x] One `figures/` directory per session.
+- [x] No L1/L2 subdirectories are needed.
+- [x] Level 1 figure filenames already carry `L1`.
+- [x] RCS and MeanRCS follow session-aware naming.
+- [ ] Add AtmosphericProfile.
+- [ ] Move Level 2 outputs from `qa/` to `figures/`.
+- [ ] Rename Level 2 files to semantic scientific names.
+- [ ] Remove generic `QA_` naming where the figure is not specifically QA.
+- [ ] Make all renderers obey one filename convention:
+
+  `SESSIONID_LEVEL_FIGURE[_CHANNEL|WAVELENGTH][_RANGE].ext`
+
+---
+
+# Phase 11 — Documentation and final cleanup
+
+Already updated:
+
+- [x] README describes continuous sessions and canonical session IDs.
+- [x] README documents session directory layout.
+- [x] README explains that 6-hour windows are publication views, not scientific
+  measurements.
+- [x] Processing-level docs define the continuous session model.
+- [x] Code inventory assigns session grouping to Level 0 inventory.
+- [x] SCC interoperability docs/code acknowledge continuous sessions.
+
+Still required after the corresponding code lands:
+
+- [ ] Document solar regime and configured threshold.
+- [ ] Document segment semantics.
+- [ ] Document time-resolved surface weather.
+- [ ] Document ERA5-hourly Level 1 atmosphere, radiosonde QA role and USSA76
+  extension/fallback.
+- [ ] Replace generic QA terminology with figures terminology where appropriate.
+- [ ] Remove LIRACOS from productive architecture docs.
+- [ ] Document `measurements` as owner of publication windows.
+- [ ] Document public staging.
+- [ ] Update CLI examples with `--regime` / `--segment`.
+- [ ] Clean obsolete `period_*` language.
+- [ ] Run final repository-wide legacy-reference audit.
+- [ ] Update changelog before the next release candidate.
+
+---
+
+# Level 2 scientific validation gates
+
+These gates remain valid and are independent from the session refactor. Completed
+items are retained here as accepted evidence; unfinished ideas are not dropped.
+
+## Minimum scientific gate
+
+- [x] Molecular-only truth: near-zero aerosol recovery and connected two-sided
+  coverage without interpolation.
+- [x] Noise sweep: bias, interval behavior, reference-selection stability and
+  branch endpoints as SNR decreases.
+- [x] Reference placement: controlled primary/fallback search-range cases.
+- [x] Lidar-ratio mismatch: quantified backscatter/extinction response with
+  conditional interpretation.
+- [x] Residual aerosol at the reference: sensitivity cases retained without
+  converting them into a probability prior.
+- [x] Progressive-grid representation: native-versus-progressive comparison
+  against common truth.
+- [ ] Background truth: quantify fitted-background bias, interval coverage and
+  stability for complete and incomplete temporal blocks.
+
+## Retrieval-support engineering still required
 
 - [ ] Add explicit block fields for backward valid, forward valid, valid through
   20 km, valid through 25 km and full connected-column status.
-- [ ] Define stable reason codes for an upper or lower branch stopping.
-- [ ] Add a CI smoke test that builds the wheel, installs it and runs all primary
-  CLI `--help` commands.
-- [ ] Decide whether the release is source-checkout only or whether packaged
-  defaults/assets must make the wheel independently runnable.
-- [ ] Add a changelog entry describing the two-sided retrieval, background fit,
-  prioritized reference ranges and code cleanup.
-- [ ] Protect the release branch with the existing CI workflow as a required
-  status check.
-- [ ] Triage the remaining test warnings; scientific/numerical warnings must be
-  resolved or explicitly justified.
+- [ ] Define stable reason codes for upper/lower branch termination.
 
-### Minimum scientific gate
+## Real-data release examples
 
-- [x] Molecular-only truth: verify near-zero aerosol recovery and connected
-  two-sided coverage without interpolation.
-- [x] Noise sweep: verify bias, interval behavior, reference-selection stability
-  and branch endpoints as signal-to-noise decreases.
-- [x] Reference placement: verify controlled cases inside the primary and
-  fallback ranges.
-- [x] Lidar-ratio mismatch: quantify backscatter/extinction response and retain
-  conditional language.
-- [x] Residual aerosol at the reference: run sensitivity cases without turning
-  them into a probability prior.
-- [ ] Background truth: quantify fitted-background bias, interval coverage and
-  stability for complete and incomplete temporal blocks.
-- [x] Progressive-grid representation: compare retrieval on native and
-  progressive grids against common truth.
-
-### Real-data release examples
-
-- [ ] Freeze one clean March 2024 case processed with the exact current recipe.
+- [ ] Freeze one clean March 2024 case using the exact current recipe.
 - [ ] Freeze one plume/cirrus or difficult-background case.
 - [ ] Freeze one weak-signal or incomplete-block case.
-- [ ] For each case retain configuration, Level 2 product, QA figures and a
-  compact table of reference, fallback, background, branch endpoints and
+- [ ] For each frozen case retain configuration, Level 2 product, figures and a
+  compact table of reference, fallback, fitted background, branch endpoints and
   Monte Carlo support.
 
-## Follow-up validation after the release candidate
+## Follow-up validation
 
 - [ ] Sensitivity of the 1 km Rayleigh window against 0.5 and 1.5 km.
 - [ ] Broader heterogeneous SPU campaign survey.
@@ -195,16 +659,82 @@ Accepted architecture for continuous sessions:
 - [ ] Compare with SCC/ELDA under matched inputs and assumptions.
 - [ ] Compare column-integrated products with independent AOD where appropriate.
 
+---
+
+# Release engineering
+
+- [ ] Add CI smoke test: build wheel, install it and run all productive CLI
+  `--help` commands.
+- [ ] Decide whether releases are source-checkout only or packaged defaults and
+  assets must make the wheel independently runnable.
+- [ ] Protect the release branch with the existing CI workflow as a required
+  status check.
+- [ ] Triage remaining test warnings; scientific/numerical warnings must be
+  resolved or explicitly justified.
+- [ ] Add a changelog entry covering session architecture, two-sided retrieval,
+  background fit, reference policy and plotting/pipeline cleanup.
+
 ## Release language
 
-Until the minimum scientific gate and real-data examples are frozen, describe
-the product as an experimental two-sided elastic retrieval. After those gates,
-the release may claim retrieval to the highest continuously supported altitude
-for each block. It must not claim universal validity to 20 or 25 km.
+Until minimum scientific validation and frozen real-data examples are complete,
+describe the Level 2 product as an experimental two-sided elastic retrieval.
+After those gates, claims may state retrieval to the highest continuously
+supported altitude for each block. Do not claim universal validity to 20 or
+25 km.
 
-## Repository-history cleanup
+---
 
-Source cleanup and Git-history cleanup are separate tasks. Old quicklooks,
-NetCDF files and logs remain in repository history and are the main reason for
-the large clone size. Rewriting history can be considered after the release,
-with a backup tag and a coordinated forced update/reclone for collaborators.
+# Repository-history cleanup
+
+Source cleanup and Git-history cleanup remain separate tasks.
+
+- [ ] Revisit history rewriting only after the architecture/release state is
+  stable.
+- [ ] Before any history rewrite, create a backup tag and coordinate the forced
+  update/reclone with collaborators.
+- [ ] Historical quicklooks, NetCDFs and logs remain the main known contributors
+  to clone size until that deliberate cleanup.
+
+---
+
+# Recommended execution order from current branch state
+
+1. **Time-resolved meteorology/atmosphere**
+   - Level 0 hourly surface weather;
+   - Level 1 hourly ERA5 atmosphere;
+   - radiosonde comparison QA;
+   - USSA76 extension/fallback;
+   - L2 interpolation to block time.
+
+2. **Solar regime + segments**
+   - solar elevation;
+   - day/night;
+   - SCC mode;
+   - regime/segment selectors.
+
+3. **Figures architecture**
+   - LIPANCORA owns L1 figures;
+   - LEBEAR owns L2 figures;
+   - single session `figures/`;
+   - atmospheric comparison figure.
+
+4. **Retire LIRACOS**
+   - preserve reusable renderers;
+   - remove independent productive CLI/orchestration.
+
+5. **Refactor `spulidar/measurements`**
+   - read L1/L2;
+   - own 6-hour publication windows;
+   - preserve gaps;
+   - reuse renderers.
+
+6. **Explorer / inspect completion**
+   - human local-time display;
+   - highest level;
+   - regimes/segments;
+   - figures.
+
+7. **Scientific/release gates**
+   - complete remaining L2 validation;
+   - freeze real-data examples;
+   - release engineering and documentation cleanup.
