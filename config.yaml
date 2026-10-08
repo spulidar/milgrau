@@ -104,6 +104,8 @@ surface_weather:
 visualization:
   output_format: "webp"
   dpi: 120
+  level1_figures:
+    enabled: true
   altitude_ranges_km: [5, 15, 30]
   channels_to_plot:
     - "1064.AN"
