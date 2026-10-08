@@ -11,6 +11,7 @@ import argparse
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import xarray as xr
@@ -27,6 +28,7 @@ from milgrau.io.paths import (
     LEVEL1_SUFFIX,
     LEVEL2_SUFFIX,
     product_session_id,
+    session_id_parts,
 )
 from milgrau.io.selection import InputSelection, parse_input_selection, resolve_product_selection
 
@@ -126,6 +128,113 @@ def _coordinate_preview(da: xr.DataArray) -> str:
     first = np.asarray(da.isel({da.dims[0]: slice(0, 3)}).values).tolist()
     last = np.asarray(da.isel({da.dims[0]: slice(-3, None)}).values).tolist()
     return _short(f"{first} … {last}")
+
+
+def _session_summary(path: Path, ds: xr.Dataset) -> dict[str, Any] | None:
+    """Return a compact session-level summary using product metadata and siblings."""
+    session_id = str(ds.attrs.get("Session_ID", "")).strip()
+    if not session_id:
+        try:
+            session_id = product_session_id(path)
+        except ValueError:
+            return None
+    try:
+        station, start_utc, end_utc = session_id_parts(session_id)
+    except ValueError:
+        return None
+
+    timezone_name = str(ds.attrs.get("timezone", "UTC")).strip() or "UTC"
+    try:
+        timezone = ZoneInfo(timezone_name)
+    except Exception:
+        timezone = ZoneInfo("UTC")
+        timezone_name = "UTC"
+    start_local = start_utc.astimezone(timezone)
+    end_local = end_utc.astimezone(timezone)
+    duration_seconds = float((end_utc - start_utc).total_seconds())
+    total_minutes = int(round(duration_seconds / 60.0))
+    hours, minutes = divmod(total_minutes, 60)
+    duration = f"{hours}h{minutes:02d}" if hours else f"{minutes}min"
+
+    regimes: list[str] = []
+    segments: list[str] = []
+    if "Segment_Label" in ds and "Segment_Regime" in ds:
+        labels = np.asarray(ds["Segment_Label"].values).astype(str).reshape(-1)
+        regime_values = np.asarray(ds["Segment_Regime"].values).astype(str).reshape(-1)
+        segments = [
+            f"{label} {regime}"
+            for label, regime in zip(labels, regime_values, strict=False)
+        ]
+        regimes = list(dict.fromkeys(regime_values.tolist()))
+    elif "solar_regime" in ds:
+        values = np.asarray(ds["solar_regime"].values).astype(str).reshape(-1)
+        regimes = list(dict.fromkeys(value for value in values if value))
+
+    available_levels: list[str] = []
+    for suffix, label in (
+        (LEVEL0_SUFFIX, "L0"),
+        (LEVEL1_SUFFIX, "L1"),
+        (LEVEL2_SUFFIX, "L2"),
+    ):
+        if (path.parent / f"{session_id}{suffix}").is_file():
+            available_levels.append(label)
+    highest = available_levels[-1] if available_levels else level_from_path(path)
+
+    figures_dir = path.parent / "figures"
+    figures = (
+        sorted(item.name for item in figures_dir.iterdir() if item.is_file())
+        if figures_dir.is_dir()
+        else []
+    )
+    return {
+        "session_id": session_id,
+        "human_label": (
+            f"{station.upper()} · {start_local.strftime('%d/%m/%Y %H:%M')} → "
+            f"{end_local.strftime('%d/%m/%Y %H:%M')} · {duration}"
+        ),
+        "utc_interval": (
+            f"{start_utc.strftime('%Y-%m-%d %H:%M')} → "
+            f"{end_utc.strftime('%Y-%m-%d %H:%M')} UTC"
+        ),
+        "timezone": timezone_name,
+        "duration": duration,
+        "regimes": ", ".join(regimes) if regimes else "--",
+        "segments": ", ".join(segments) if segments else "--",
+        "available_levels": ", ".join(available_levels) if available_levels else "--",
+        "highest_level": highest,
+        "figures": figures,
+    }
+
+
+def level_from_path(path: Path) -> str:
+    name = path.name.lower()
+    if "_l2" in name:
+        return "L2"
+    if "_l1" in name:
+        return "L1"
+    if "_l0" in name:
+        return "L0"
+    return "--"
+
+
+def _print_session_summary(path: Path, ds: xr.Dataset) -> None:
+    summary = _session_summary(path, ds)
+    if summary is None:
+        return
+    print("\nSESSION SUMMARY")
+    print("-" * 100)
+    print(f"  Session        : {summary['session_id']}")
+    print(f"  Human interval : {summary['human_label']}")
+    print(f"  UTC interval   : {summary['utc_interval']}")
+    print(f"  Timezone       : {summary['timezone']}")
+    print(f"  Levels         : {summary['available_levels']} | highest={summary['highest_level']}")
+    print(f"  Solar regimes  : {summary['regimes']}")
+    print(f"  Segments       : {summary['segments']}")
+    print(f"  Figures        : {len(summary['figures'])}")
+    for figure in summary["figures"][:12]:
+        print(f"    - {figure}")
+    if len(summary["figures"]) > 12:
+        print(f"    … {len(summary['figures']) - 12} more")
 
 
 def _print_header(path: Path, ds: xr.Dataset, level: str) -> None:
@@ -322,6 +431,7 @@ def inspect_product(
     with xr.open_dataset(product_path) as ds:
         level = _detect_level(product_path, ds)
         _print_header(product_path, ds, level)
+        _print_session_summary(product_path, ds)
         _print_dimensions(ds)
         _print_coordinates(ds, show_values=show_values)
         _print_variables(ds, full=full, max_vars=max_vars)
