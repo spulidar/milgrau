@@ -33,7 +33,7 @@ def is_level2_dataset(ds_l2: xr.Dataset) -> bool:
         "aerosol_backscatter_nominal_block",
         "rayleigh_reference_altitude_m_block",
         "selected_reference_altitude_m_mc",
-        "period_support_fraction",
+        "temporal_support_fraction",
     }
     return required.issubset(set(ds_l2.data_vars))
 
