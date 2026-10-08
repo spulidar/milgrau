@@ -13,6 +13,8 @@ boundary. It does not assert that either quantity was independently observed.
 | --- | --- |
 | `block_time` | representative UTC time of each averaging block |
 | `block_start_utc`, `block_end_utc` | measured UTC extent of each block |
+| `segment_id` | contiguous scientific segment supplying each block |
+| `solar_regime` | `day` or `night` regime supplying each block |
 | `wavelength` | processed elastic wavelength in nm |
 | `altitude` | progressive-grid altitude above the lidar in m |
 | `residual_fraction` | declared aerosol/molecular backscatter ratio at the reference |
@@ -20,6 +22,14 @@ boundary. It does not assert that either quantity was independently observed.
 
 The `residual_fraction` dimension represents explicit conditional scenarios;
 it is not a sampled probability distribution. Routine processing uses `f=0`.
+
+Temporal membership remains anchored to the configured wall-clock block size,
+but a block is never allowed to cross a scientific `segment_id` boundary.
+`block_time` is the mean timestamp of the profiles actually contributing to
+that segment-homogeneous block. `solar_elevation_deg(block_time)` stores the
+mean geometric solar-center elevation of those source profiles. The Level 2
+product also carries the session segment table and the exact solar threshold /
+algorithm provenance inherited from Level 1.
 
 ## Vertical representation
 
@@ -48,6 +58,24 @@ backscatter/extinction are then calculated at that block time and aggregated
 onto the progressive grid. Molecular state is stored even for blocks whose
 lidar signal is not retrieval-valid. Level 2 performs no external meteorology
 IO.
+
+## Solar regime and segment provenance
+
+Level 2 does not recompute solar geometry. It inherits the Level 1/L0
+classification and stores:
+
+- `segment_id(block_time)`;
+- `solar_regime(block_time)`;
+- `solar_elevation_deg(block_time)`;
+- `Segment_Label(segments)`;
+- `Segment_Regime(segments)`;
+- segment start/end times;
+- `Solar_Day_Night_Threshold_deg`;
+- `Solar_Position_Algorithm`.
+
+LEBEAR may subset the same scientific session with `--regime day|night`,
+`--segment segXX`, and/or `--time-window-utc`. These are derived selections,
+not new session identities.
 
 ## Signal and gluing
 
