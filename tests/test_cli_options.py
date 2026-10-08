@@ -10,14 +10,14 @@ import tomllib
 import yaml
 import pytest
 
-from milgrau.cli import lebear, libids, lipancora, liracos
+from milgrau.cli import lebear, libids, lipancora
 from milgrau.io.selection import parse_input_selection
 from milgrau.operations import ExecutionResult
 from milgrau.version import __version__
 
 
 def test_primary_clis_share_input_force_and_version_options() -> None:
-    for module in (libids, lipancora, liracos, lebear):
+    for module in (libids, lipancora, lebear):
         parser = module._build_parser()
         option_strings = {option for action in parser._actions for option in action.option_strings}
         assert "--input" in option_strings
@@ -87,7 +87,7 @@ def test_shared_input_parser_preserves_explicit_path_with_spaces(tmp_path: Path)
 
 def test_primary_cli_parsers_accept_session_or_local_date() -> None:
     session_id = "spu_20251107-0900Z_20251107-1500Z"
-    for module in (libids, lipancora, liracos, lebear):
+    for module in (libids, lipancora, lebear):
         by_session = module._build_parser().parse_args(["-i", session_id])
         assert by_session.inputs == [[session_id]]
         by_date = module._build_parser().parse_args(["-i", "20251107"])
