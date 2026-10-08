@@ -35,7 +35,7 @@ def _resolve_expected_scc_contexts(
     config: Mapping,
     output_path: Path,
 ) -> list[tuple[str, dict]]:
-    """Resolve expected SCC derivatives from the canonical Level 0 segment table."""
+    """Resolve expected day/night SCC derivatives from the canonical segment table."""
     del session_id, group_df
     if not isinstance(config.get("_station_catalog"), Mapping):
         return []
@@ -52,46 +52,87 @@ def _resolve_expected_scc_contexts(
         return []
 
     contexts: list[tuple[str, dict]] = []
-    for label, regime, start_time in zip(labels, regimes, starts, strict=True):
+    for regime in ("day", "night"):
+        mask = np.asarray(
+            [str(value).lower() == regime for value in regimes],
+            dtype=bool,
+        )
+        if not np.any(mask):
+            continue
+        source_segments = tuple(labels[mask].tolist())
+        first_start = pd.Timestamp(starts[np.flatnonzero(mask)[0]])
         try:
             context = resolve_station_context(
                 config,
-                measurement_time=pd.Timestamp(start_time).to_pydatetime(),
+                measurement_time=first_start.to_pydatetime(),
                 available_channels=channels,
-                mode=str(regime),
+                mode=regime,
             )
         except Exception:
             return []
-        if context.get("scc_available", False) and context.get("scc_export_ready", False):
+        if context.get("scc_available", False) and context.get(
+            "scc_export_ready", False
+        ):
             resolved = dict(context)
-            resolved["segment_id"] = str(label)
-            resolved["solar_regime"] = str(regime)
-            contexts.append((str(label), resolved))
+            resolved["solar_regime"] = regime
+            resolved["source_segments"] = ",".join(source_segments)
+            resolved["source_segment_count"] = int(len(source_segments))
+            resolved["contains_time_gaps"] = bool(len(source_segments) > 1)
+            contexts.append((regime, resolved))
     return contexts
 
+
 def _primary_output_satisfies_contract(path: Path) -> bool:
-    return netcdf_satisfies_contract(path, validate_level0_contract) and netcdf_provenance_is_complete(path)
+    return netcdf_satisfies_contract(
+        path, validate_level0_contract
+    ) and netcdf_provenance_is_complete(path)
 
 
 def _scc_output_satisfies_context(path: Path, context: Mapping) -> bool:
-    """Validate one solar-segment SCC Level 0 derivative."""
+    """Validate one solar-regime SCC Level 0 derivative."""
     if not _primary_output_satisfies_contract(path):
         return False
     try:
         with xr.open_dataset(path, mask_and_scale=False) as ds:
             if "channel_ID" not in ds:
                 return False
-            if str(ds.attrs.get("Segment_ID", "")) != str(context.get("segment_id", "")):
+            if str(ds.attrs.get("Solar_Regime", "")).lower() != str(
+                context.get("solar_regime", "")
+            ).lower():
                 return False
-            if str(ds.attrs.get("Solar_Regime", "")) != str(context.get("solar_regime", "")):
+            if str(ds.attrs.get("Source_Segments", "")) != str(
+                context.get("source_segments", "")
+            ):
                 return False
-            expected_channels = [str(value) for value in context.get("scc_channels", [])]
-            actual_channels = [str(value) for value in ds["channel_string"].values]
+            if int(ds.attrs.get("Source_Segment_Count", -1)) != int(
+                context.get("source_segment_count", -2)
+            ):
+                return False
+            expected_gaps = 1 if bool(
+                context.get("contains_time_gaps", False)
+            ) else 0
+            if int(ds.attrs.get("Contains_Time_Gaps", -1)) != expected_gaps:
+                return False
+            expected_channels = [
+                str(value) for value in context.get("scc_channels", [])
+            ]
+            actual_channels = [
+                str(value) for value in ds["channel_string"].values
+            ]
             if actual_channels != expected_channels:
                 return False
-            expected_ids = np.asarray([int(context["channel_ids"][channel]) for channel in expected_channels], dtype=np.int64)
+            expected_ids = np.asarray(
+                [
+                    int(context["channel_ids"][channel])
+                    for channel in expected_channels
+                ],
+                dtype=np.int64,
+            )
             actual_ids = np.asarray(ds["channel_ID"].values, dtype=np.int64)
-            if actual_ids.shape != expected_ids.shape or not np.array_equal(actual_ids, expected_ids):
+            if (
+                actual_ids.shape != expected_ids.shape
+                or not np.array_equal(actual_ids, expected_ids)
+            ):
                 return False
             lr_input = context.get("lr_input", {})
             if isinstance(lr_input, Mapping) and lr_input:
@@ -99,14 +140,22 @@ def _scc_output_satisfies_context(path: Path, context: Mapping) -> bool:
                     return False
                 values = np.ma.asarray(ds["LR_Input"].values)
                 for index, channel in enumerate(actual_channels):
-                    if channel in lr_input and (np.ma.is_masked(values[index]) or int(values[index]) != int(lr_input[channel])):
+                    if channel in lr_input and (
+                        np.ma.is_masked(values[index])
+                        or int(values[index]) != int(lr_input[channel])
+                    ):
                         return False
         return True
     except Exception:
         return False
 
 
-def _level0_is_current(session_id: str, group_df, config: dict, output_path) -> bool:
+def _level0_is_current(
+    session_id: str,
+    group_df,
+    config: dict,
+    output_path,
+) -> bool:
     output = Path(output_path)
     inputs = _raw_input_paths(group_df)
     primary_current = output_is_current(
@@ -117,18 +166,23 @@ def _level0_is_current(session_id: str, group_df, config: dict, output_path) -> 
     )
     if not primary_current:
         return False
-    contexts = _resolve_expected_scc_contexts(session_id, group_df, config, output)
-    for segment_id, context in contexts:
+
+    contexts = _resolve_expected_scc_contexts(
+        session_id, group_df, config, output
+    )
+    for regime, context in contexts:
         scc_path = level0_scc_output_path(
             session_id,
             config,
-            segment_id=segment_id,
+            solar_regime=regime,
         )
         if not output_is_current(
             scc_path,
             inputs,
             config=config,
-            integrity_check=lambda path, ctx=context: _scc_output_satisfies_context(path, ctx),
+            integrity_check=lambda path, ctx=context: _scc_output_satisfies_context(
+                path, ctx
+            ),
         ):
             return False
     return True
