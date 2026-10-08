@@ -122,8 +122,16 @@ def _sessionize_measurements(
     rows["_session_sequence"] = sequence
     rows["session_boundary_reason"] = boundary_reasons
     rows["session_id"] = ""
-    rows["session_start_utc"] = pd.NaT
-    rows["session_end_utc"] = pd.NaT
+    rows["session_start_utc"] = pd.Series(
+        pd.NaT,
+        index=rows.index,
+        dtype="datetime64[ns, UTC]",
+    )
+    rows["session_end_utc"] = pd.Series(
+        pd.NaT,
+        index=rows.index,
+        dtype="datetime64[ns, UTC]",
+    )
 
     for _sequence, group in rows.groupby("_session_sequence", sort=True):
         session_start = pd.to_datetime(group["start_time_utc"], utc=True).min()
@@ -181,8 +189,16 @@ def _associate_dark_currents(
 
     rows = dark_rows.copy()
     rows["session_id"] = None
-    rows["session_start_utc"] = pd.NaT
-    rows["session_end_utc"] = pd.NaT
+    rows["session_start_utc"] = pd.Series(
+        pd.NaT,
+        index=rows.index,
+        dtype="datetime64[ns, UTC]",
+    )
+    rows["session_end_utc"] = pd.Series(
+        pd.NaT,
+        index=rows.index,
+        dtype="datetime64[ns, UTC]",
+    )
     rows["association_method"] = "unassociated"
     rows["dark_current_association_delta_hours"] = np.nan
 
