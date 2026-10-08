@@ -16,11 +16,12 @@ from milgrau.config.station import (
 )
 
 
-def _context(config: dict, when: str, channels: list[str]) -> dict:
+def _context(config: dict, when: str, channels: list[str], *, mode: str = "day") -> dict:
     return resolve_station_context(
         config,
         datetime.fromisoformat(when).replace(tzinfo=timezone.utc),
         channels,
+        mode=mode,
     )
 
 
@@ -36,6 +37,7 @@ def test_repository_station_catalog_covers_all_scc_eras() -> None:
         config,
         "2019-06-01T02:00:00",
         ["532.PC", "532.AN", "355.PC", "355.AN", "387.PC", "387.AN", "1064.AN", "1064.PC", "408.AN", "408.PC", "530.PC", "530.AN"],
+        mode="night",
     )
     merion_day = _context(
         config,
@@ -100,7 +102,7 @@ def test_merion_night_configuration_contains_raman_channels_and_only_1064_lr_inp
         "532.AN", "532.PC", "1064.AN", "355.PC", "355.AN",
         "530.PC", "530.AN", "387.AN", "387.PC",
     ]
-    context = _context(config, "2025-01-01T23:00:00", channels)
+    context = _context(config, "2025-01-01T23:00:00", channels, mode="night")
 
     assert context["scc_configuration_id"] == 1046
     assert context["channel_ids"]["530.PC"] == 4074
