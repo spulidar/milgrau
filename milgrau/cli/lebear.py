@@ -36,11 +36,25 @@ def _build_parser() -> argparse.ArgumentParser:
             "Examples:\n"
             "  milgrau-lebear\n"
             "  milgrau-lebear --input spu_20250612-0005Z_20250612-0830Z\n"
-            "  milgrau-lebear --input spu_20250612-0005Z_20250612-0830Z --time-window-utc 4:00 5:00\n"
+            "  milgrau-lebear --input spu_20250612-0005Z_20250612-0830Z --regime night\n"
+            "  milgrau-lebear --input spu_20250612-0005Z_20250612-0830Z --segment seg01\n"
+            "  milgrau-lebear --input spu_20250612-0005Z_20250612-0830Z --regime night --time-window-utc 4:00 5:00\n"
             "  milgrau-lebear --input 20250612 --force\n"
         ),
     )
     add_input_argument(parser, source="Level 1 selection")
+    solar_selector = parser.add_mutually_exclusive_group()
+    solar_selector.add_argument(
+        "--regime",
+        choices=("day", "night"),
+        help="Select all Level 1 profiles in the requested solar regime before Level 2 processing.",
+    )
+    solar_selector.add_argument(
+        "--segment",
+        dest="segment_id",
+        metavar="SEGMENT_ID",
+        help="Select exactly one contiguous scientific segment such as seg01.",
+    )
     parser.add_argument(
         "--time-window-utc",
         dest="time_window",
@@ -84,9 +98,14 @@ def _process_selected_files(args: argparse.Namespace, config: dict, logger: logg
     incremental = _incremental_enabled(config)
     files_to_process: list[Path] = []
     skipped_results: list[ExecutionResult] = []
-    output_tag = None
+    output_tags: list[str] = []
+    if args.regime is not None:
+        output_tags.append(str(args.regime))
+    if args.segment_id is not None:
+        output_tags.append(str(args.segment_id))
     if args.time_window is not None:
-        output_tag = _format_time_window_tag(args.time_window[0], args.time_window[1])
+        output_tags.append(_format_time_window_tag(args.time_window[0], args.time_window[1]))
+    output_tag = "_".join(output_tags) if output_tags else None
     for file_path in files:
         session_id = logging_session_id(file_path)
         file_logger = bind_log_context(logger, session_id=session_id)
@@ -98,6 +117,8 @@ def _process_selected_files(args: argparse.Namespace, config: dict, logger: logg
             start_utc=args.time_window[0] if args.time_window else None,
             stop_utc=args.time_window[1] if args.time_window else None,
             output_tag=output_tag,
+            regime=args.regime,
+            segment_id=args.segment_id,
         ):
             bind_log_context(file_logger, stage="skip").info("up to date | %s", output_path.name)
             skipped_results.append(
