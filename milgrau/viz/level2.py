@@ -641,7 +641,7 @@ def plot_mc_reference(
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=8)
     fig.suptitle(
-        f"MILGRAU MILGRAU Level 2 — MC Reference - {format_wavelength_label(wavelength)}\n{date_title}",
+        f"MILGRAU Level 2 — MC Reference — {format_wavelength_label(wavelength)}\n{date_title}",
         fontsize=14,
         fontweight="bold",
     )
