@@ -90,10 +90,10 @@ class WavelengthProduct:
     aerosol_extinction_mc_q025: np.ndarray
     aerosol_extinction_mc_q975: np.ndarray
     mc_valid_fraction: np.ndarray
-    period_mean_aerosol_backscatter_nominal: np.ndarray
-    period_mean_aerosol_extinction_nominal: np.ndarray
-    period_support_count: np.ndarray
-    period_support_fraction: np.ndarray
+    temporal_mean_aerosol_backscatter_nominal: np.ndarray
+    temporal_mean_aerosol_extinction_nominal: np.ndarray
+    temporal_support_count: np.ndarray
+    temporal_support_fraction: np.ndarray
     retrieval_top_altitude_m: float
     reference_altitude_m_block: np.ndarray
     reference_search_min_altitude_m_block: np.ndarray
@@ -270,7 +270,7 @@ def _datetime64ns(value: Any) -> np.datetime64:
     return np.datetime64(value, "ns")
 
 
-def _period_support(profiles: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def _temporal_support(profiles: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     values = np.asarray(profiles, dtype=np.float64)
     count = np.count_nonzero(np.isfinite(values), axis=0).astype(np.int32)
     denominator = values.shape[0]
@@ -567,7 +567,7 @@ def retrieve_wavelength(
             result.monte_carlo.forward_endpoint_altitude_m_samples
         )
 
-    support_count, support_fraction = _period_support(beta_nominal)
+    support_count, support_fraction = _temporal_support(beta_nominal)
     supported = np.flatnonzero(support_count > 0)
     retrieval_top = float(grid.altitude_m[supported[-1]]) if supported.size else np.nan
 
@@ -602,10 +602,10 @@ def retrieve_wavelength(
         aerosol_extinction_mc_q025=alpha_mc_q025,
         aerosol_extinction_mc_q975=alpha_mc_q975,
         mc_valid_fraction=mc_valid_fraction,
-        period_mean_aerosol_backscatter_nominal=_finite_mean(beta_nominal, axis=0),
-        period_mean_aerosol_extinction_nominal=_finite_mean(alpha_nominal, axis=0),
-        period_support_count=support_count,
-        period_support_fraction=support_fraction,
+        temporal_mean_aerosol_backscatter_nominal=_finite_mean(beta_nominal, axis=0),
+        temporal_mean_aerosol_extinction_nominal=_finite_mean(alpha_nominal, axis=0),
+        temporal_support_count=support_count,
+        temporal_support_fraction=support_fraction,
         retrieval_top_altitude_m=retrieval_top,
         reference_altitude_m_block=reference_altitude,
         reference_search_min_altitude_m_block=reference_search_min,
@@ -806,19 +806,19 @@ def build_level2_dataset(
             ),
             "aerosol_backscatter_mean": (
                 ("wavelength", "altitude"),
-                _stack(results, "period_mean_aerosol_backscatter_nominal"),
+                _stack(results, "temporal_mean_aerosol_backscatter_nominal"),
             ),
             "aerosol_extinction_mean": (
                 ("wavelength", "altitude"),
-                _stack(results, "period_mean_aerosol_extinction_nominal"),
+                _stack(results, "temporal_mean_aerosol_extinction_nominal"),
             ),
-            "period_support_count": (
+            "temporal_support_count": (
                 ("wavelength", "altitude"),
-                _stack(results, "period_support_count").astype(np.int32),
+                _stack(results, "temporal_support_count").astype(np.int32),
             ),
-            "period_support_fraction": (
+            "temporal_support_fraction": (
                 ("wavelength", "altitude"),
-                _stack(results, "period_support_fraction"),
+                _stack(results, "temporal_support_fraction"),
             ),
             "retrieval_top_altitude_m": (
                 ("wavelength",),
@@ -1045,8 +1045,8 @@ def build_level2_dataset(
                 f"{value:g}" for value in retrieval_cfg.residual_aerosol_fractions
             ),
             "support_fraction_denominator": "all configured temporal blocks",
-            "period_mean_semantics": (
-                "finite-only altitude-by-altitude mean; inspect period_support_count/fraction jointly"
+            "temporal_mean_semantics": (
+                "finite-only altitude-by-altitude mean; inspect temporal_support_count/fraction jointly"
             ),
             "mc_valid_fraction_semantics": (
                 "finite selection-aware Monte-Carlo realization fraction; diagnostic only, no cutoff"
@@ -1115,7 +1115,7 @@ def build_level2_dataset(
     ds["aerosol_extinction_mean"].attrs.update({"units": "m-1"})
     ds["aerosol_backscatter_nominal_block"].attrs.update({"units": "m-1 sr-1"})
     ds["aerosol_extinction_nominal_block"].attrs.update({"units": "m-1"})
-    ds["period_support_fraction"].attrs["long_name"] = (
+    ds["temporal_support_fraction"].attrs["long_name"] = (
         "fraction of configured temporal blocks contributing a finite nominal retrieval"
     )
     ds["selection_success_fraction_block"].attrs["long_name"] = (
