@@ -140,8 +140,15 @@ Products are grouped by the UTC month in which the session starts:
           figures/
 ```
 
-The primary CLIs accept a canonical session ID, a station-local civil date, or an
-explicit file/directory path. A date selects sessions that intersect that local day:
+The primary CLIs accept a session ID, a station-local civil date, or an
+explicit file/directory path. A date selects sessions that intersect that local day.
+For inspection, the simplest form is positional:
+
+```bash
+milgrau-inspect 20240620
+```
+
+Processing selectors remain available through `-i`:
 
 ```bash
 milgrau-libids -i spu_20250511-0012Z_20250511-0737Z --force
@@ -157,10 +164,13 @@ if a long session contains them; `--segment seg01` selects exactly one
 contiguous segment. Either selector may be intersected with
 `--time-window-utc`.
 
-LIPANCORA generates the canonical Level 1 figures automatically for the complete
-scientific session. LEBEAR likewise maintains Level 2 figures beside the Level 2
-product. Visualization is therefore a responsibility of the processing level that
-owns the underlying scientific product, not a separate pipeline.
+LIPANCORA generates Level 1 figures automatically for the complete scientific
+session, including RCS/MeanRCS plus two atmospheric views:
+`AtmosphericProfile` (ERA5/USSA76 source used versus radiosonde reference) and
+`AtmosphericEvolution` (hourly temperature and molecular-state evolution).
+LEBEAR likewise maintains Level 2 figures beside the Level 2 product.
+Visualization is therefore a responsibility of the processing level that owns
+the underlying scientific product, not a separate pipeline.
 
 Explicit UTC subsetting remains available for derived Level 2 products:
 
