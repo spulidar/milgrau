@@ -49,8 +49,9 @@ The governing rule is:
 - **Phase 6 — continuous Level 2:** block-time molecular atmosphere and
   segment-homogeneous blocking are implemented in schema 8; terminology cleanup
   and figure reorganization remain.
-- **Phase 7 — retire LIRACOS as an independent pipeline:** LIPANCORA already
-  owns Level 1 figures; only obsolete CLI/orchestration removal remains.
+- **Phase 7 — retire LIRACOS as an independent pipeline:** complete; Level 1
+  figure ownership belongs to LIPANCORA and reusable renderers remain in
+  `viz/quicklooks.py`.
 - **Phase 8 — `spulidar/measurements` publication refactor:** not started here.
 - **Phase 9 — Explorer / inspect:** partially session-aware.
 - **Phase 10 — unified `figures/` convention:** canonical Level 1 and Level 2
@@ -497,15 +498,16 @@ Implemented:
 - [x] Level 1 visual outputs already target `figures/`.
 - [x] Session-based figure naming already exists.
 
-## Current state and remaining cleanup
+## Completed
 
 - [x] Move Level 1 figure orchestration into LIPANCORA.
 - [x] Reusable RCS/MeanRCS renderers are independent in `viz/quicklooks.py`.
 - [x] LIPANCORA owns Level 1 figures and LEBEAR owns Level 2 figures.
-- [ ] Remove `milgrau-liracos` as a productive CLI.
-- [ ] Remove `milgrau/viz/liracos.py` as an independent orchestrator.
-- [ ] Remove LIRACOS from primary-CLI tests and package entry points.
-- [ ] Update README, processing-level docs and code inventory accordingly.
+- [x] Remove `milgrau-liracos` as a productive CLI and package entry point.
+- [x] Remove `milgrau/viz/liracos.py` as an independent orchestrator.
+- [x] Migrate useful LIRACOS behavior tests to `level1.figures`.
+- [x] Remove LIRACOS from primary-CLI/orchestration tests.
+- [x] Update README, processing-level docs and code inventory accordingly.
 
 Target pipeline:
 
@@ -650,9 +652,9 @@ Still required after the corresponding code lands:
 - [x] Document time-resolved surface weather.
 - [x] Document ERA5-hourly Level 1 atmosphere, radiosonde QA role and USSA76
   extension/fallback.
-- [~] Replace remaining generic QA terminology with figures terminology where
-  appropriate; canonical Level 2 renderer/orchestration names are already clean.
-- [ ] Remove LIRACOS from productive architecture docs.
+- [x] Replace generic QA terminology with figures terminology where
+  appropriate while retaining scientifically specific QA terms.
+- [x] Remove LIRACOS from productive architecture docs.
 - [ ] Document `measurements` as owner of publication windows.
 - [ ] Document public staging.
 - [x] Update CLI examples with `--regime` / `--segment`.
@@ -760,29 +762,19 @@ Source cleanup and Git-history cleanup remain separate tasks.
    - compare geometric elevation/background/SNR transition;
    - retain -3 degrees or revise the configured threshold from evidence.
 
-3. **Figures architecture**
-   - LIPANCORA owns L1 figures;
-   - LEBEAR owns L2 figures;
-   - single session `figures/`;
-   - atmospheric comparison figure.
-
-4. **Retire LIRACOS**
-   - preserve reusable renderers;
-   - remove independent productive CLI/orchestration.
-
-5. **Refactor `spulidar/measurements`**
+3. **Refactor `spulidar/measurements`**
    - read L1/L2;
    - own 6-hour publication windows;
    - preserve gaps;
    - reuse renderers.
 
-6. **Explorer / inspect completion**
+4. **Explorer / inspect completion**
    - human local-time display;
    - highest level;
    - regimes/segments;
    - figures.
 
-7. **Scientific/release gates**
+5. **Scientific/release gates**
    - complete remaining L2 validation;
    - freeze real-data examples;
    - release engineering and documentation cleanup.
