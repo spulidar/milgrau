@@ -145,7 +145,7 @@ def test_scc_raw_channel_ids_are_canonicalized_from_station_mapping(tmp_path: Pa
         np.testing.assert_array_equal(ds.channel.values.astype(str), np.array(["532.AN", "532.PC"]))
         assert ds.attrs["milgrau_level0_input_schema"] == "scc_raw_channel_ID_canonicalized"
         assert ds.attrs["milgrau_channel_identity_source"] == "station.yaml_scc_channel_ID_mapping"
-        assert ds.attrs["milgrau_scc_mapping_modes"] == "night"
+        assert ds.attrs["milgrau_scc_mapping_modes"] == "day,night"
     finally:
         ds.close()
 
@@ -185,9 +185,14 @@ def test_scc_channel_id_mapping_rejects_unknown_id(tmp_path: Path) -> None:
         load_and_prepare_level0(path, logger, config=config)
 
 
-def test_scc_channel_id_mapping_uses_station_local_time_for_day_night_identity(tmp_path: Path) -> None:
+def test_scc_channel_id_mapping_uses_explicit_solar_regime_identity(tmp_path: Path) -> None:
     source = _write_level0(tmp_path / "canonical.nc", np.array([7.5, 7.5]))
-    path = _write_scc_id_level0(source, tmp_path / "external_scc.nc", np.array([20, 21]))
+    path = _write_scc_id_level0(
+        source,
+        tmp_path / "external_scc.nc",
+        np.array([20, 21]),
+        attrs={"Solar_Regime": "night"},
+    )
     logger = _ListLogger()
     config = _station_config(
         {"532.AN": 20, "532.PC": 21},
@@ -200,6 +205,19 @@ def test_scc_channel_id_mapping_uses_station_local_time_for_day_night_identity(t
         assert ds.attrs["milgrau_scc_mapping_modes"] == "night"
     finally:
         ds.close()
+
+
+def test_scc_channel_id_mapping_rejects_ambiguous_day_night_without_metadata(tmp_path: Path) -> None:
+    source = _write_level0(tmp_path / "canonical.nc", np.array([7.5, 7.5]))
+    path = _write_scc_id_level0(source, tmp_path / "external_scc.nc", np.array([20, 21]))
+    logger = _ListLogger()
+    config = _station_config(
+        {"532.AN": 20, "532.PC": 21},
+        {"355.AN": 20, "355.PC": 21},
+    )
+
+    with pytest.raises(ValueError, match="ambiguous"):
+        load_and_prepare_level0(path, logger, config=config)
 
 
 def test_scc_configuration_id_disambiguates_channel_identity(tmp_path: Path) -> None:
