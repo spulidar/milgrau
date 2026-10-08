@@ -5,7 +5,7 @@ never fetches meteorological data or silently chooses a new source.
 
 ## Productive atmosphere policy
 
-For continuous sessions the canonical Level 1 atmosphere is time resolved:
+For continuous sessions the Level 1 atmosphere used by MILGRAU is time resolved:
 
 - **ERA5 pressure levels** are the hourly temporal backbone when available.
 - **US Standard Atmosphere 1976 (USSA76)** is the explicit vertical extension
@@ -70,8 +70,10 @@ ERA5 requests use the configured CDS pressure-level dataset and request only the
 molecular-atmosphere fields required by MILGRAU: temperature and geopotential.
 
 The downloaded NetCDF and JSON sidecar are IO cache artifacts. The Level 1
-NetCDF is the scientific product. The cache is indexed by analysis hour and
-station coordinates so adjacent sessions reuse the same downloaded ERA5 hour.
+NetCDF is the scientific product. Missing hours are requested from CDS in
+UTC-day batches, then split back into hour-indexed cache files. Adjacent
+sessions therefore reuse the same downloaded ERA5 hours without repeating
+network requests.
 
 `cdsapi` is a core MILGRAU dependency because ERA5 is the productive
 time-resolved atmosphere backbone. CDS credentials remain outside the repository
@@ -93,10 +95,20 @@ ERA5. ERA5-versus-radiosonde comparison is a consistency/validation check, not
 fully independent validation, because radiosonde observations may contribute
 to reanalysis assimilation.
 
-The planned Level 1 figure
-`SESSION_L1_AtmosphericProfile.webp` will compare ERA5, radiosonde and the
-canonical profile actually used, including temperature/pressure differences and
-retrieval-relevant molecular impact.
+Level 1 maintains two complementary atmospheric figures:
+
+- `SESSION_L1_AtmosphericProfile.webp` compares the source actually used in
+  Level 1 with the radiosonde reference, showing temperature difference,
+  pressure difference and molecular-number-density impact. The plot states the
+  source used explicitly (ERA5, ERA5 + USSA76 extension, or USSA76 fallback)
+  without duplicating coincident source curves.
+- `SESSION_L1_AtmosphericEvolution.webp` shows the hourly temperature anomaly
+  through the complete session and the corresponding molecular-number-density
+  change relative to the first hourly profile.
+
+The radiosonde comparison remains consistency/QA evidence rather than a fully
+independent validation because radiosonde observations may contribute to ERA5
+assimilation.
 
 ## Level 2 temporal interpolation
 
