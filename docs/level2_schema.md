@@ -36,13 +36,18 @@ still requires finite positive signal along the oriented integration path.
 
 ## Molecular state and assumptions
 
-- `molecular_backscatter(wavelength, altitude)`
-- `molecular_extinction(wavelength, altitude)`
-- `lidar_ratio_assumed_sr(wavelength)`
-- `lidar_ratio_std_sr(wavelength)`
+- `molecular_backscatter(block_time, wavelength, altitude)`
+- `molecular_extinction(block_time, wavelength, altitude)`
+- `lidar_ratio_assumed_sr(block_time, wavelength)`
+- `lidar_ratio_std_sr(block_time, wavelength)`
 
-Pressure and temperature originate in Level 1 and are evaluated on the lidar
-grid before progressive aggregation.
+Level 1 stores the canonical thermodynamic state as an hourly
+`atmosphere_time x altitude` field. For every Level 2 block, temperature is
+interpolated linearly in time and pressure in `log(P)`; molecular
+backscatter/extinction are then calculated at that block time and aggregated
+onto the progressive grid. Molecular state is stored even for blocks whose
+lidar signal is not retrieval-valid. Level 2 performs no external meteorology
+IO.
 
 ## Signal and gluing
 
