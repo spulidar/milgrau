@@ -158,7 +158,10 @@ def _write_surface_weather_series(ds: nc.Dataset, weather_data: Mapping[str, Any
 
     ds.setncattr("Surface_Weather_Source", str(weather_data.get("source", "")))
     ds.setncattr("Surface_Weather_Cadence", str(weather_data.get("cadence", "hourly")))
-    ds.setncattr("Surface_Weather_Scalar_Method", "finite session median for SCC interoperability")
+    ds.setncattr(
+        "Surface_Weather_Scalar_Method",
+        "finite available weather median over the written Level 0 time interval for SCC interoperability",
+    )
 
 
 def _write_solar_context(
