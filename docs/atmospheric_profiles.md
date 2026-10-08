@@ -1,69 +1,126 @@
-# Molecular atmosphere sources
+# Time-resolved molecular atmosphere
 
-MILGRAU resolves the thermodynamic profile used by the molecular/Rayleigh calculation in this order:
+MILGRAU materializes the thermodynamic atmosphere in **Level 1** so Level 2
+never fetches meteorological data or silently chooses a new source.
 
-1. **Radiosonde** — preferred when a valid Wyoming Upper Air sounding is available.
-2. **ERA5 pressure levels** — optional IO fallback when `era5.enabled: true`.
-3. **US Standard Atmosphere 1976** — deterministic, network-free final fallback implemented with the standard stratified layers through 84.852 km geopotential altitude.
+## Productive atmosphere policy
 
-The source hierarchy is scientific provenance, not only an IO detail: changing pressure or temperature changes molecular number density, molecular backscatter/extinction, Rayleigh calibration, and therefore the elastic inversion.
+For continuous sessions the canonical Level 1 atmosphere is time resolved:
 
-## Processing contract
+- **ERA5 pressure levels** are the hourly temporal backbone when available.
+- **US Standard Atmosphere 1976 (USSA76)** is the explicit vertical extension
+  outside external-profile coverage and the full fallback for an hour when ERA5
+  is unavailable.
+- **Radiosonde** is retained as a local observational comparison/QA reference.
+  It does not replace isolated ERA5 hours in the productive time series.
 
-Thermodynamic source selection belongs to **Level 1**. Every successfully written Level 1 product contains a complete atmosphere already mapped to the Level 1 lidar `altitude` coordinate:
-
-- `Atmospheric_Temperature_K(altitude)`
-- `Atmospheric_Pressure_hPa(altitude)`
-
-Level 2 reads these two variables directly. It performs no radiosonde/ERA5 IO, no source selection, no vertical interpolation and no hidden standard-atmosphere fallback. A Level 1 file that does not contain the canonical atmosphere is intentionally rejected and must be reprocessed.
-
-For radiosonde and ERA5 profiles, source heights are interpreted as geometric altitude above mean sea level (ASL), the station altitude is used to align them with the lidar AGL grid, and interpolation is performed in Level 1. Temperature is interpolated linearly with altitude; pressure is interpolated in `log(P)` because its vertical behavior is approximately exponential. Bins outside the vertical coverage of the external profile are filled with USSA76. The fraction of bins filled this way is recorded as `thermodynamic_profile_standard_fallback_fraction`.
-
-When neither external source is usable, USSA76 is evaluated directly on the full lidar grid and the fallback fraction is `1.0`.
-
-## ERA5 configuration
+The productive source order is explicit in `config.yaml`. The current
+repository recipe uses:
 
 ```yaml
-era5:
-  enabled: false
-  cache_dir: ".cache/milgrau/era5"
-  dataset: "reanalysis-era5-pressure-levels"
-  grid_deg: 0.25
-  area_half_width_deg: 0.25
+level1:
+  atmosphere:
+    time_resolution_minutes: 60
+    source_priority: ["era5", "ussa76"]
+    external_profile_outside_coverage: "ussa76"
 ```
 
-ERA5 support is optional:
+Solar day/night segmentation is independent from atmosphere cadence.
 
-```bash
-pip install -e ".[era5]"
-```
+## Level 1 contract
 
-The CDS API credentials are intentionally **not** stored in `config.yaml`. Configure `cdsapi` using the user's `~/.cdsapirc` file according to the Copernicus Climate Data Store instructions.
+A successful Level 1 contains:
 
-MILGRAU requests only the pressure-level variables required by the molecular atmosphere: **temperature** and **geopotential**. The downloaded NetCDF is an IO cache only; a JSON sidecar records source, dataset, ERA5 DOI, analysis time, measurement-time offset, requested coordinates and download time. The scientific processing product remains the Level 1 NetCDF.
+- `atmosphere_time`
+- `Atmospheric_Temperature_K(atmosphere_time, altitude)`
+- `Atmospheric_Pressure_hPa(atmosphere_time, altitude)`
+- `Atmospheric_Source_Type(atmosphere_time)`
+- `Atmospheric_Source_Time_Delta_hours(atmosphere_time)`
+- `Atmospheric_USSA76_Fallback_Fraction(atmosphere_time)`
 
-## Level 1 provenance
+It also records source-profile altitude coverage and time-resolved tropopause
+diagnostics where available.
 
-Global attributes include:
+The atmosphere time axis brackets the complete lidar session at the configured
+cadence. This guarantees that every Level 2 retrieval block can obtain a
+thermodynamic state without extrapolating in time.
 
-- `thermodynamic_profile_available`
-- `thermodynamic_profile_source_type`
-- `thermodynamic_profile_source`
-- `thermodynamic_profile_datetime_utc`
-- `thermodynamic_profile_time_delta_hours`
-- `thermodynamic_profile_station_id`
-- `thermodynamic_profile_doi`
-- `thermodynamic_profile_standard_fallback_fraction`
-- `thermodynamic_profile_grid`
-- `thermodynamic_profile_altitude_reference`
+## Vertical interpolation and fallback
 
-For external sources, the original source-profile ASL coverage is also recorded with:
+ERA5 source heights are interpreted as geometric altitude above mean sea level.
+The resolved station altitude aligns the external ASL profile with the lidar
+AGL grid.
 
-- `thermodynamic_source_profile_min_altitude_asl_m`
-- `thermodynamic_source_profile_max_altitude_asl_m`
+Within source coverage:
 
-There are no `Radiosonde_*` compatibility aliases in the Level 1 product. Source identity belongs in provenance, not in the variable name.
+- temperature is interpolated linearly with altitude;
+- pressure is interpolated in `log(P)`.
 
-## Reprocessing note
+Outside external-profile coverage, USSA76 is used when
+`external_profile_outside_coverage: "ussa76"`. The fraction of each hourly
+profile supplied by USSA76 is stored explicitly.
 
-The former fallback clipped a tropospheric lapse-rate profile at 216.65 K while continuing the same pressure law aloft. The current fallback uses the stratified USSA76 layers. In addition, the canonical Level 1 atmosphere contract is now mandatory. Existing Level 1 products created before this contract must be regenerated before current Level 2 processing.
+If ERA5 is unavailable for a required hour and `ussa76` is present in
+`source_priority`, the complete hourly profile is materialized from USSA76.
+No synthetic surface temperature/pressure constants are invented.
+
+## ERA5 IO and cache
+
+ERA5 requests use the configured CDS pressure-level dataset and request only the
+molecular-atmosphere fields required by MILGRAU: temperature and geopotential.
+
+The downloaded NetCDF and JSON sidecar are IO cache artifacts. The Level 1
+NetCDF is the scientific product. The cache is indexed by analysis hour and
+station coordinates so adjacent sessions reuse the same downloaded ERA5 hour.
+
+CDS credentials remain outside the repository and are read by `cdsapi`.
+
+## Radiosonde comparison reference
+
+When the station catalog defines a radiosonde station and a suitable sounding
+exists near the session, LIPANCORA maps one comparison sounding to the Level 1
+altitude grid and stores:
+
+- `Radiosonde_QA_Temperature_K(altitude)`
+- `Radiosonde_QA_Pressure_hPa(altitude)`
+
+with sounding time/offset and coverage provenance.
+
+This sounding is **QA evidence**, not a piecewise productive replacement for
+ERA5. ERA5-versus-radiosonde comparison is a consistency/validation check, not
+fully independent validation, because radiosonde observations may contribute
+to reanalysis assimilation.
+
+The planned Level 1 figure
+`SESSION_L1_AtmosphericProfile.webp` will compare ERA5, radiosonde and the
+canonical profile actually used, including temperature/pressure differences and
+retrieval-relevant molecular impact.
+
+## Level 2 temporal interpolation
+
+For each Level 2 `block_time`:
+
+1. temperature is linearly interpolated between neighboring
+   `atmosphere_time` profiles;
+2. pressure is interpolated in `log(P)`;
+3. molecular backscatter/extinction are calculated for that exact block time;
+4. the molecular state is aggregated onto the progressive Level 2 grid.
+
+Therefore the Level 2 product stores block-resolved molecular state:
+
+- `molecular_backscatter(block_time, wavelength, altitude)`
+- `molecular_extinction(block_time, wavelength, altitude)`
+
+Level 2 performs no ERA5, radiosonde or Open-Meteo network IO.
+
+## Provenance
+
+Level 1 records the atmosphere cadence, sources present, ERA5 DOI when used,
+per-hour source type/time offset, USSA76 fallback fraction and resolved station
+coordinates.
+
+If the complete session falls back to USSA76, provenance identifies USSA76
+rather than incorrectly presenting the product as ERA5-derived.
+
+Existing Level 1/Level 2 files from the former single-profile atmosphere
+contract must be regenerated for the current schema.
