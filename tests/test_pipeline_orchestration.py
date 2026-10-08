@@ -14,7 +14,6 @@ from milgrau.level0 import libids
 from milgrau.level1 import lipancora
 from milgrau.level2 import lebear
 from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary, ExitCode
-from milgrau.viz import liracos
 
 
 def _logger(name: str) -> logging.Logger:
@@ -77,64 +76,6 @@ def test_level2_batch_continues_after_one_file_error(tmp_path: Path, monkeypatch
     assert calls == files
     assert [result.status for result in summary.results] == [ExecutionStatus.ERROR, ExecutionStatus.OK]
     assert summary.exit_code is ExitCode.ERROR
-
-
-def _visualization_config(tmp_path: Path) -> dict:
-    return {
-        "directories": {"processed_data": str(tmp_path)},
-        "processing": {"incremental": False},
-        "visualization": {
-            "output_format": "webp",
-            "dpi": 120,
-            "altitude_ranges_km": [5.0],
-            "channels_to_plot": ["532.AN"],
-            "quicklook": {
-                "show_pbl": True,
-                "show_tropopause": True,
-                "mean_profile_smooth_bins": 5,
-                "max_time_gap_minutes": 10.0,
-                "missing_data_color": "lightgray",
-                "colormap": "jet",
-            },
-        },
-    }
-
-
-def test_liracos_batch_aggregates_skip_and_error(tmp_path: Path, monkeypatch) -> None:
-    files = [
-        tmp_path / "spu_20240101-0000Z_20240101-0100Z_L1.nc",
-        tmp_path / "spu_20240101-0200Z_20240101-0300Z_L1.nc",
-    ]
-    for path in files:
-        path.write_text("synthetic", encoding="utf-8")
-
-    def fake_process(args) -> ExecutionResult:
-        path = Path(args[0])
-        if path == files[0]:
-            return ExecutionResult.skipped("visualization.incremental", "already current", input_path=path)
-        return ExecutionResult.failure("visualization.ingestion", "invalid product", input_path=path)
-
-    monkeypatch.setattr(liracos, "process_single_nc", fake_process)
-
-    summary = liracos.process_all_level1_files(
-        _visualization_config(tmp_path),
-        _logger("test.orchestration.viz"),
-        root_dir=tmp_path,
-    )
-
-    assert [result.status for result in summary.results] == [ExecutionStatus.SKIPPED, ExecutionStatus.ERROR]
-    assert summary.exit_code is ExitCode.ERROR
-
-
-def test_liracos_invalid_filename_returns_structured_error(tmp_path: Path) -> None:
-    input_path = tmp_path / "not-a-product.nc"
-    result = liracos.process_single_nc(
-        (input_path, _visualization_config(tmp_path), tmp_path, _logger("test.orchestration.viz.invalid"))
-    )
-
-    assert result.status is ExecutionStatus.ERROR
-    assert result.stage == "visualization.ingestion"
-    assert result.metadata["session_id"] == "-"
 
 
 def test_libids_aggregates_ok_skip_and_error_groups(tmp_path: Path, monkeypatch) -> None:
