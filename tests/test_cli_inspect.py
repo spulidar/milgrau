@@ -155,12 +155,73 @@ def test_inspect_product_prints_human_session_summary(tmp_path, capsys) -> None:
     inspect_product(path, max_vars=10)
 
     output = capsys.readouterr().out
-    assert "SESSION SUMMARY" in output
+    assert "SESSION" in output
+    assert "Human interval" not in output
+    assert "Local time" in output
     assert session_id in output
     assert "10/05/2025 21:12" in output
     assert "11/05/2025 04:37" in output
     assert "7h25" in output
-    assert "highest=L1" in output
+    assert "highest L1" in output
     assert "night" in output
     assert "seg00 night" in output
-    assert f"{session_id}_L1_MeanRCS.webp" in output
+    assert "Figures        : 1 files" in output
+    assert f"{session_id}_L1_MeanRCS.webp" not in output
+
+
+
+def test_inspect_uses_explicit_station_timezone_even_when_product_has_no_timezone(
+    tmp_path,
+    capsys,
+) -> None:
+    session_id = "spu_20240620-2103Z_20240621-0848Z"
+    session_dir = tmp_path / session_id
+    session_dir.mkdir()
+    path = session_dir / f"{session_id}_L2.nc"
+    ds = xr.Dataset(
+        data_vars={
+            "Segment_Label": (("segments",), np.array(["seg00", "seg01", "seg02"], dtype=object)),
+            "Segment_Regime": (("segments",), np.array(["day", "night", "day"], dtype=object)),
+        },
+        attrs={"Session_ID": session_id},
+    )
+    ds.to_netcdf(path)
+
+    inspect_product(
+        path,
+        max_vars=10,
+        timezone_name="America/Sao_Paulo",
+    )
+
+    output = capsys.readouterr().out
+    assert "20/06/2024 18:03" in output
+    assert "21/06/2024 05:48" in output
+    assert "Time zone      : America/Sao_Paulo" in output
+    assert "Solar sequence : day → night → day" in output
+
+
+def test_inspect_datetime_coordinate_preview_is_readable(tmp_path, capsys) -> None:
+    path = tmp_path / "time_demo.nc"
+    ds = xr.Dataset(
+        coords={
+            "time": np.array(
+                [
+                    "2024-06-20T21:03:48",
+                    "2024-06-20T22:03:48",
+                    "2024-06-20T23:03:48",
+                    "2024-06-21T00:03:48",
+                    "2024-06-21T01:03:48",
+                    "2024-06-21T02:03:48",
+                    "2024-06-21T03:03:48",
+                ],
+                dtype="datetime64[s]",
+            )
+        }
+    )
+    ds.to_netcdf(path)
+
+    inspect_product(path, max_vars=10)
+
+    output = capsys.readouterr().out
+    assert "2024-06-20T21:03:48" in output
+    assert "171" not in output.split("preview:", 1)[1].split("\n", 1)[0]
