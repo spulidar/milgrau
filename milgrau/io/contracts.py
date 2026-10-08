@@ -342,9 +342,9 @@ def validate_level2_contract(ds: xr.Dataset) -> None:
 
 
 def netcdf_satisfies_contract(path: str | Path, validator: Callable[[xr.Dataset], None]) -> bool:
+    """Validate a NetCDF lazily, loading only variables inspected by the validator."""
     try:
-        with xr.open_dataset(path) as dataset:
-            dataset.load()
+        with xr.open_dataset(path, cache=False) as dataset:
             validator(dataset)
     except Exception:
         return False
