@@ -65,7 +65,7 @@ def test_session_id_requires_timezone_aware_ordered_interval() -> None:
 def test_product_session_id_is_stable_across_processing_levels() -> None:
     expected = "spu_20250511-0012Z_20250511-0737Z"
     assert product_session_id(f"{expected}_L0.nc") == expected
-    assert product_session_id(f"{expected}_seg00_L0_scc.nc") == expected
+    assert product_session_id(f"{expected}_day_L0_scc.nc") == expected
     assert product_session_id(f"{expected}_L1.nc") == expected
     assert product_session_id(f"{expected}_L1_scc.nc") == expected
     assert product_session_id(f"{expected}_L2.nc") == expected
@@ -92,9 +92,9 @@ def test_level_products_live_inside_self_identifying_session_folder(tmp_path: Pa
     assert level0 == expected_dir / f"{session_id}_L0.nc"
 
     scc = level0_scc_output_path(
-        session_id, config, segment_id="seg00", root_dir=tmp_path
+        session_id, config, solar_regime="day", root_dir=tmp_path
     )
-    assert scc == expected_dir / f"{session_id}_seg00_L0_scc.nc"
+    assert scc == expected_dir / f"{session_id}_day_L0_scc.nc"
 
     level1 = level1_output_path(level0, config, root_dir=tmp_path)
     assert level1 == expected_dir / f"{session_id}_L1.nc"
@@ -107,11 +107,11 @@ def test_scc_level0_keeps_distinct_scc_lineage(tmp_path: Path) -> None:
     config = _config()
     session_id = "spu_20250511-0012Z_20250511-0737Z"
     scc = level0_scc_output_path(
-        session_id, config, segment_id="seg01", root_dir=tmp_path
+        session_id, config, solar_regime="night", root_dir=tmp_path
     )
     level1 = level1_output_path(scc, config, root_dir=tmp_path)
-    assert level1 == scc.parent / f"{session_id}_seg01_L1_scc.nc"
-    assert level2_output_path(level1) == scc.parent / f"{session_id}_seg01_L2_scc.nc"
+    assert level1 == scc.parent / f"{session_id}_night_L1_scc.nc"
+    assert level2_output_path(level1) == scc.parent / f"{session_id}_L2_scc.nc"
 
 
 def test_external_level0_writes_level1_beside_source(tmp_path: Path) -> None:
