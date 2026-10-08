@@ -9,11 +9,18 @@ from typing import Final
 import numpy as np
 import xarray as xr
 
+LEVEL0_SURFACE_WEATHER_VARIABLES: Final[tuple[str, ...]] = (
+    "Surface_Temperature_C",
+    "Surface_Pressure_hPa",
+    "Surface_Relative_Humidity_percent",
+    "Surface_Cloud_Cover_percent",
+    "Surface_Wind_Speed_kmh",
+)
 LEVEL0_REQUIRED_VARIABLES: Final[tuple[str, ...]] = (
     "Raw_Data_Start_Time", "Raw_Data_Stop_Time", "Raw_Data_Range_Resolution",
     "Laser_Pointing_Angle", "Laser_Pointing_Angle_of_Profiles", "Laser_Shots",
     "Molecular_Calc", "id_timescale", "channel_string", "Raw_Lidar_Data",
-)
+) + LEVEL0_SURFACE_WEATHER_VARIABLES
 LEVEL1_SIGNAL_VARIABLES: Final[tuple[str, ...]] = (
     "corrected_signal", "corrected_signal_error", "range_corrected_signal", "range_corrected_signal_error",
 )
@@ -140,6 +147,12 @@ def validate_level0_contract(ds: xr.Dataset) -> None:
     _require_exact_dims(ds["Raw_Data_Stop_Time"], LEVEL0_TIME_SCALE_DIMS, "Level 0 Raw_Data_Stop_Time")
     _require_exact_dims(ds["Laser_Pointing_Angle_of_Profiles"], LEVEL0_TIME_SCALE_DIMS, "Level 0 Laser_Pointing_Angle_of_Profiles")
     _validate_level0_scc_acquisition_metadata(ds)
+    _require_coords(ds, ("weather_time",), "Level 0 file")
+    for name in LEVEL0_SURFACE_WEATHER_VARIABLES:
+        _require_exact_dims(ds[name], ("weather_time",), f"Level 0 {name}")
+        values = np.asarray(ds[name].values, dtype=np.float64)
+        if values.shape != (ds.sizes.get("weather_time", 0),):
+            raise ValueError(f"Level 0 {name} must contain one value per weather_time entry.")
     _validate_level0_background_contract(ds)
 
 
