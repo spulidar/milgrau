@@ -12,7 +12,7 @@ from milgrau.io.paths import LEVEL0_SUFFIX, LEVEL1_SUFFIX, logging_session_id
 from milgrau.io.selection import parse_input_selection, resolve_product_selection
 from milgrau.level1.figures import generate_level1_figures
 from milgrau.level1.lipancora import _files_requiring_level1, process_level_1, process_single_file
-from milgrau.operations import ExecutionStatus, ExecutionSummary
+from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary
 from milgrau.version import __version__
 
 
