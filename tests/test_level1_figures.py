@@ -268,6 +268,12 @@ def test_level1_figures_are_incrementally_skipped_when_current(tmp_path: Path, m
         out.write_text("atmosphere", encoding="utf-8")
         return out
 
+    def fake_evolution(ds, *, output_folder, file_name_prefix, config, root_dir):
+        calls["evolution"] += 1
+        out = Path(output_folder) / f"{SESSION_ID}_L1_AtmosphericEvolution.png"
+        out.write_text("evolution", encoding="utf-8")
+        return out
+
     monkeypatch.setattr(level1_figures, "plot_quicklook", fake_quicklook)
     monkeypatch.setattr(level1_figures, "plot_global_mean_rcs", fake_global)
     monkeypatch.setattr(level1_figures, "plot_atmospheric_profile", fake_atmosphere)
@@ -286,7 +292,7 @@ def test_level1_figures_regenerate_when_config_file_changes(tmp_path: Path, monk
     level1 = _write_level1(tmp_path / f"{SESSION_ID}_L1.nc", ["532.AN"])
     config_file = tmp_path / "config.yaml"
     config_file.write_text("first", encoding="utf-8")
-    calls = {"quicklook": 0, "mean": 0, "atmosphere": 0}
+    calls = {"quicklook": 0, "mean": 0, "atmosphere": 0, "evolution": 0}
 
     def fake_quicklook(**kwargs):
         calls["quicklook"] += 1
@@ -304,6 +310,12 @@ def test_level1_figures_regenerate_when_config_file_changes(tmp_path: Path, monk
         calls["atmosphere"] += 1
         out = Path(output_folder) / f"{SESSION_ID}_L1_AtmosphericProfile.png"
         out.write_text("atmosphere", encoding="utf-8")
+        return out
+
+    def fake_evolution(ds, *, output_folder, file_name_prefix, config, root_dir):
+        calls["evolution"] += 1
+        out = Path(output_folder) / f"{SESSION_ID}_L1_AtmosphericEvolution.png"
+        out.write_text("evolution", encoding="utf-8")
         return out
 
     monkeypatch.setattr(level1_figures, "plot_quicklook", fake_quicklook)
