@@ -26,7 +26,8 @@ Level 0 turns one continuous raw Licel session into a standardized, traceable ac
 - station/instrument history resolved from `station.yaml`;
 - processing policy from `config.yaml`;
 - dark-current/acquisition context where applicable;
-- optional surface-weather context according to the configured missing-data policy.
+- hourly surface-weather context on its own `weather_time` axis according to
+  the configured missing-data policy.
 
 ### Outputs
 
@@ -58,7 +59,8 @@ The canonical correction owner is `milgrau.level1.corrections`; thermodynamic so
 - valid Level 0 NetCDF;
 - station-resolved calibration/instrument parameters;
 - Level 1 processing recipe;
-- atmospheric source data according to configured priority: radiosonde, ERA5 and/or explicit US Standard Atmosphere 1976 fallback.
+- hourly ERA5 pressure-level atmosphere plus explicit USSA76 fallback;
+- optional radiosonde sounding for observational atmosphere QA.
 
 ### Outputs
 
@@ -73,12 +75,17 @@ The productive Level 1 contract includes, as applicable:
 - photon-counting saturation diagnostics/status;
 - correction-success status per channel;
 - PBL/tropopause diagnostics;
-- `Atmospheric_Temperature_K` and `Atmospheric_Pressure_hPa` fully materialized on the lidar altitude grid;
-- readable atmosphere-source metadata and fallback fraction.
+- `Atmospheric_Temperature_K(atmosphere_time, altitude)` and
+  `Atmospheric_Pressure_hPa(atmosphere_time, altitude)` fully materialized;
+- per-hour atmosphere source/fallback metadata;
+- optional mapped radiosonde QA reference.
 
 ### Thermodynamic boundary
 
-Level 2 does not rediscover meteorology. It consumes the canonical Level 1 pressure/temperature profiles and their provenance. Source cache filenames are operational details, not scientific source identities.
+Level 2 does not rediscover meteorology. It interpolates the canonical
+time-resolved Level 1 temperature/pressure state to each retrieval block time.
+Source cache filenames are operational details, not scientific source
+identities.
 
 ### Photon-counting boundary
 
@@ -106,7 +113,8 @@ For each configured elastic wavelength, Level 2 currently performs:
 1. channel discovery and temporal block reduction;
 2. analog/photon-counting gluing or explicitly allowed single-channel fallback;
 3. retrieval-input QA;
-4. molecular Rayleigh calculation from the Level 1 thermodynamic profile;
+4. block-resolved molecular Rayleigh calculation from the time-interpolated
+   Level 1 thermodynamic atmosphere;
 5. robust weighted residual-background fit over the broad Rayleigh search span,
    followed by local Rayleigh reference calibration and explicit QA;
 6. two-sided KFS Monte Carlo retrieval with separate backward/forward support diagnostics;
