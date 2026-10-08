@@ -123,7 +123,11 @@ times remain in the NetCDF metadata. A session may cross midnight or any former
 six-hour site boundary without being split. A true acquisition gap or a change in station profile/calibration starts a
 new session. Inside one session, MILGRAU stores geometric solar elevation,
 classifies each profile as `day` or `night` using the configured threshold,
-and assigns contiguous `segXX` scientific segments.
+and assigns contiguous `segXX` scientific segments. SCC interoperability
+derivatives are grouped by solar regime, so repeated `day` or `night`
+segments are combined into one `SESSION_day_L0_scc.nc` or
+`SESSION_night_L0_scc.nc` while retaining their original segment identities
+inside the file.
 
 Products are grouped by the UTC month in which the session starts:
 
@@ -136,7 +140,8 @@ Products are grouped by the UTC month in which the session starts:
           spu_20250511-0012Z_20250511-0737Z_L0.nc
           spu_20250511-0012Z_20250511-0737Z_L1.nc
           spu_20250511-0012Z_20250511-0737Z_L2.nc
-          spu_20250511-0012Z_20250511-0737Z_seg00_L0_scc.nc  # when SCC export applies
+          spu_20250511-0012Z_20250511-0737Z_day_L0_scc.nc   # when day SCC export applies
+          spu_20250511-0012Z_20250511-0737Z_night_L0_scc.nc # when night SCC export applies
           figures/
 ```
 
