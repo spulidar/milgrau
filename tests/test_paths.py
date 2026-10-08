@@ -111,7 +111,7 @@ def test_scc_level0_keeps_distinct_scc_lineage(tmp_path: Path) -> None:
     )
     level1 = level1_output_path(scc, config, root_dir=tmp_path)
     assert level1 == scc.parent / f"{session_id}_night_L1_scc.nc"
-    assert level2_output_path(level1) == scc.parent / f"{session_id}_L2_scc.nc"
+    assert level2_output_path(level1) == scc.parent / f"{session_id}_night_L2_scc.nc"
 
 
 def test_external_level0_writes_level1_beside_source(tmp_path: Path) -> None:
