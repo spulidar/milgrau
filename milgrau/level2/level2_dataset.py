@@ -71,8 +71,8 @@ class WavelengthProduct:
     source_bin_count: np.ndarray
     molecular_backscatter: np.ndarray
     molecular_extinction: np.ndarray
-    lidar_ratio_assumed_sr: float
-    lidar_ratio_std_sr: float
+    lidar_ratio_assumed_sr_block: np.ndarray
+    lidar_ratio_std_sr_block: np.ndarray
     integration_mode: str
     range_corrected_signal_block: np.ndarray
     range_corrected_signal_error_block: np.ndarray
@@ -290,24 +290,11 @@ def retrieve_wavelength(
     retrieval_cfg = get_retrieval_config(config)
     kfs_cfg = get_kfs_config(config)
     fit_cfg = get_molecular_fit_config(config)
-    inputs, glued, molecular = prepare_wavelength_state(
+    inputs, glued, _initial_molecular = prepare_wavelength_state(
         ds_l1, int(wavelength_nm), altitude_m, config, logger
     )
 
     grid = build_progressive_grid(altitude_m, retrieval_cfg.progressive_grid_schedule)
-    molecular_beta = aggregate_to_progressive_grid(
-        np.asarray(molecular.backscatter, dtype=np.float64),
-        grid,
-        require_positive=True,
-    )
-    molecular_alpha = aggregate_to_progressive_grid(
-        np.asarray(molecular.extinction, dtype=np.float64),
-        grid,
-        require_positive=True,
-    )
-    if not np.all(molecular_beta.valid) or not np.all(molecular_alpha.valid):
-        raise ValueError("Molecular state is not valid on every Level 2 progressive cell.")
-
     block_time = np.asarray(inputs.block_time).astype("datetime64[ns]")
     n_block = block_time.size
     n_altitude = grid.n_cells
@@ -323,6 +310,10 @@ def retrieve_wavelength(
             block_start[block_index] = _datetime64ns(times[group[0]])
             block_end[block_index] = _datetime64ns(times[group[-1]])
 
+    molecular_beta_block = np.full((n_block, n_altitude), np.nan, dtype=np.float64)
+    molecular_alpha_block = np.full((n_block, n_altitude), np.nan, dtype=np.float64)
+    lidar_ratio_assumed_block = np.full(n_block, np.nan, dtype=np.float64)
+    lidar_ratio_std_block = np.full(n_block, np.nan, dtype=np.float64)
     rcs_block = np.full((n_block, n_altitude), np.nan, dtype=np.float64)
     rcs_error_block = np.full_like(rcs_block, np.nan)
     beta_nominal = np.full_like(rcs_block, np.nan)
@@ -383,10 +374,35 @@ def retrieve_wavelength(
         )
         native_signal = np.asarray(glued.range_corrected_signal[block_index], dtype=np.float64)
         native_error = np.asarray(glued.range_corrected_signal_error[block_index], dtype=np.float64)
+        block_molecular = build_molecular_model(
+            ds_l1,
+            int(wavelength_nm),
+            altitude_m,
+            config,
+            target_time=block_time[block_index],
+        )
+        molecular_beta = aggregate_to_progressive_grid(
+            np.asarray(block_molecular.backscatter, dtype=np.float64),
+            grid,
+            require_positive=True,
+        )
+        molecular_alpha = aggregate_to_progressive_grid(
+            np.asarray(block_molecular.extinction, dtype=np.float64),
+            grid,
+            require_positive=True,
+        )
+        if not np.all(molecular_beta.valid) or not np.all(molecular_alpha.valid):
+            raise ValueError(
+                f"Molecular state is invalid on the progressive grid for block {block_index}."
+            )
+        molecular_beta_block[block_index] = np.asarray(molecular_beta.values, dtype=np.float64)
+        molecular_alpha_block[block_index] = np.asarray(molecular_alpha.values, dtype=np.float64)
+        lidar_ratio_assumed_block[block_index] = float(block_block_molecular.lidar_ratio_assumed_sr)
+        lidar_ratio_std_block[block_index] = float(block_block_molecular.lidar_ratio_std_sr)
         prepared = prepare_high_column_profile(
             range_corrected_signal=native_signal,
             range_corrected_signal_error=native_error,
-            molecular_backscatter=np.asarray(molecular.backscatter, dtype=np.float64),
+            molecular_backscatter=np.asarray(block_molecular.backscatter, dtype=np.float64),
             altitude_m=altitude_m,
             uncertainty_mode=retrieval_cfg.uncertainty_mode,
             schedule=retrieval_cfg.progressive_grid_schedule,
@@ -404,11 +420,11 @@ def retrieve_wavelength(
                 range_corrected_signal_error=native_error,
                 molecular_backscatter=np.asarray(molecular.backscatter, dtype=np.float64),
                 simulated_molecular_range_corrected_signal=np.asarray(
-                    molecular.simulated_range_corrected_signal, dtype=np.float64
+                    block_molecular.simulated_range_corrected_signal, dtype=np.float64
                 ),
                 altitude_m=altitude_m,
-                aerosol_lidar_ratio_sr=float(molecular.lidar_ratio_assumed_sr),
-                aerosol_lidar_ratio_std_sr=float(molecular.lidar_ratio_std_sr),
+                aerosol_lidar_ratio_sr=float(block_molecular.lidar_ratio_assumed_sr),
+                aerosol_lidar_ratio_std_sr=float(block_molecular.lidar_ratio_std_sr),
                 residual_fractions=fractions,
                 n_iterations=iterations,
                 beta_ref_relative_std=float(kfs_cfg["beta_ref_relative_std"]),
@@ -452,7 +468,7 @@ def retrieve_wavelength(
                 result.prepared.range_corrected_signal,
                 result.prepared.grid.altitude_m,
                 result.prepared.molecular_backscatter,
-                float(molecular.lidar_ratio_assumed_sr),
+                float(block_molecular.lidar_ratio_assumed_sr),
                 float(result.prepared.molecular_backscatter[selected.cell_index]),
                 int(selected.cell_index),
                 altitude_units="m",
@@ -466,7 +482,7 @@ def retrieve_wavelength(
             dtype=np.float64,
         )
         beta_nominal[block_index] = nominal
-        alpha_nominal[block_index] = nominal * float(molecular.lidar_ratio_assumed_sr)
+        alpha_nominal[block_index] = nominal * float(block_molecular.lidar_ratio_assumed_sr)
         backward_valid[block_index] = np.int8(
             bool(nominal_diagnostics["backward_valid"])
         )
@@ -560,10 +576,10 @@ def retrieve_wavelength(
             grid.effective_resolution_m, dtype=np.float64
         ),
         source_bin_count=np.asarray(grid.source_count, dtype=np.int32),
-        molecular_backscatter=np.asarray(molecular_beta.values, dtype=np.float64),
-        molecular_extinction=np.asarray(molecular_alpha.values, dtype=np.float64),
-        lidar_ratio_assumed_sr=float(molecular.lidar_ratio_assumed_sr),
-        lidar_ratio_std_sr=float(molecular.lidar_ratio_std_sr),
+        molecular_backscatter=molecular_beta_block,
+        molecular_extinction=molecular_alpha_block,
+        lidar_ratio_assumed_sr_block=lidar_ratio_assumed_block,
+        lidar_ratio_std_sr_block=lidar_ratio_std_block,
         integration_mode=integration_mode,
         range_corrected_signal_block=rcs_block,
         range_corrected_signal_error_block=rcs_error_block,
@@ -705,26 +721,20 @@ def build_level2_dataset(
                 _stack(results, "source_bin_count").astype(np.int32),
             ),
             "molecular_backscatter": (
-                ("wavelength", "altitude"),
-                _stack(results, "molecular_backscatter"),
+                ("block_time", "wavelength", "altitude"),
+                _stack_block(results, "molecular_backscatter"),
             ),
             "molecular_extinction": (
-                ("wavelength", "altitude"),
-                _stack(results, "molecular_extinction"),
+                ("block_time", "wavelength", "altitude"),
+                _stack_block(results, "molecular_extinction"),
             ),
             "lidar_ratio_assumed_sr": (
-                ("wavelength",),
-                np.asarray(
-                    [result.lidar_ratio_assumed_sr for result in results],
-                    dtype=np.float64,
-                ),
+                ("block_time", "wavelength"),
+                _stack_block(results, "lidar_ratio_assumed_sr_block"),
             ),
             "lidar_ratio_std_sr": (
-                ("wavelength",),
-                np.asarray(
-                    [result.lidar_ratio_std_sr for result in results],
-                    dtype=np.float64,
-                ),
+                ("block_time", "wavelength"),
+                _stack_block(results, "lidar_ratio_std_sr_block"),
             ),
             "range_corrected_signal_block": (
                 ("block_time", "wavelength", "altitude"),
