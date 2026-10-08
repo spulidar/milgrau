@@ -185,12 +185,26 @@ def valid_block_mean_and_error(
 
 
 def block_groups(time_values: np.ndarray, minutes: int) -> tuple[np.ndarray, list[np.ndarray]]:
-    """Return block labels and index groups for temporal averaging."""
+    """Return representative block times and clock-anchored index groups.
+
+    Membership remains anchored to wall-clock buckets via floor(minutes).
+    The public block_time coordinate is the mean timestamp of profiles
+    actually contributing to each bucket, avoiding a systematic start-of-block
+    offset when time-dependent ancillary fields are evaluated.
+    """
     times = pd.to_datetime(time_values)
     labels = times.floor(f"{int(minutes)}min")
     unique_labels = pd.Index(labels).unique().sort_values()
     groups = [np.where(labels == label)[0] for label in unique_labels]
-    return unique_labels.to_numpy(dtype="datetime64[ns]"), groups
+    time_ns = times.to_numpy(dtype="datetime64[ns]").astype(np.int64)
+    representative = np.asarray(
+        [
+            np.datetime64(int(np.rint(np.mean(time_ns[group]))), "ns")
+            for group in groups
+        ],
+        dtype="datetime64[ns]",
+    )
+    return representative, groups
 
 
 def mean_by_groups(matrix: np.ndarray, groups: list[np.ndarray]) -> np.ndarray:
