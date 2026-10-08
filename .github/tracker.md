@@ -37,15 +37,18 @@ The governing rule is:
 - **Phase 2 — continuous sessionization:** implemented; 30-minute continuity
   threshold accepted for the current SPU workflow, with broader real-data
   validation still useful.
-- **Phase 3 — solar regime/segments:** not implemented.
-- **Phase 4 — continuous Level 0:** hourly surface weather implemented; solar
-  metadata/segments remain.
-- **Phase 5 — continuous Level 1:** hourly ERA5/USSA76 atmosphere implemented;
-  radiosonde QA and atmospheric figure are integrated; full Level 1 figure
-  ownership remains transitional.
-- **Phase 6 — continuous Level 2:** block-time molecular atmosphere implemented
-  in schema 7; regime selectors, terminology cleanup and figure reorganization
-  remain.
+- **Phase 3 — solar regime/segments:** implemented end to end; empirical
+  validation of the current -3 degree threshold against SPU background/SNR
+  remains a scientific follow-up.
+- **Phase 4 — continuous Level 0:** hourly surface weather plus per-profile
+  solar elevation/regime/segments implemented; SCC derivatives are written per
+  solar segment when configured.
+- **Phase 5 — continuous Level 1:** hourly ERA5/USSA76 atmosphere, radiosonde
+  QA, atmospheric figure and inherited solar/segment context are implemented;
+  full Level 1 figure ownership remains transitional.
+- **Phase 6 — continuous Level 2:** block-time molecular atmosphere and
+  segment-homogeneous blocking are implemented in schema 8; terminology cleanup
+  and figure reorganization remain.
 - **Phase 7 — retire LIRACOS as an independent pipeline:** prepared, not done.
 - **Phase 8 — `spulidar/measurements` publication refactor:** not started here.
 - **Phase 9 — Explorer / inspect:** partially session-aware.
@@ -172,44 +175,66 @@ The governing rule is:
 
 # Phase 3 — Solar regime and scientific segments
 
-Accepted target model:
+## Implemented
 
-- [ ] Compute `solar_elevation_deg(time)`.
-- [ ] Compute `solar_regime(time)`.
-- [ ] Productive regime classes are only `day` and `night`.
-- [ ] Do not create `twilight` as a primary regime.
-- [ ] Keep the day/night threshold configurable.
-- [ ] Initial target threshold is approximately **-3 degrees solar elevation**.
-- [ ] Never hard-code the threshold inside scientific logic.
-- [ ] Preserve continuous solar elevation so classification can be revised
-  later without re-deriving geometry.
-- [ ] Validate the threshold empirically against SPU background/SNR behavior,
-  especially 355 nm.
-- [ ] Replace fixed clock-based SCC/instrument day/night behavior with the solar
-  regime when station/SCC configuration permits it.
-- [ ] Eliminate productive `06–18` / `18–06` instrument-mode assumptions.
-- [ ] Add `segment_id(time)`.
-- [ ] Start a new segment on `day <-> night` transition.
-- [ ] Start a new segment for relevant context changes that are allowed to remain
-  inside one scientific session.
-- [ ] Persist segment start/end, regime, profile/calibration/context metadata.
-- [ ] Add CLI selectors:
-  `--regime day`, `--regime night`.
-- [ ] Keep technical selectors:
-  `--segment seg00`, `--segment seg01`, etc.
-- [ ] Preserve `--time-window-utc` as an orthogonal selector.
-- [ ] Selection must not imply persistence of an additional NetCDF.
-- [ ] Allow explicitly requested persistent derivatives such as
-  `SESSION_night_L2.nc` without making them default products.
+- [x] Compute `solar_elevation_deg(time)` from station coordinates and profile
+  midpoint times using geometric solar-center elevation.
+- [x] Compute `solar_regime(time)`.
+- [x] Productive regime classes are only `day` and `night`.
+- [x] Do not create `twilight` as a primary regime.
+- [x] Keep the day/night threshold configurable.
+- [x] Current configured threshold is **-3 degrees solar elevation**.
+- [x] The threshold is resolved from configuration rather than hard-coded in
+  scientific logic.
+- [x] Preserve continuous solar elevation so classification can be revised later
+  without re-deriving geometry.
+- [x] Record the solar-position algorithm and threshold in product provenance.
+- [x] Add per-profile `segment_id(time)`.
+- [x] Start a new segment on every `day <-> night` transition.
+- [x] Persist a compact segment table with label, regime, UTC start and UTC end.
+- [x] Preserve day/night/day as distinct `seg00`, `seg01`, `seg02` rather
+  than reusing a regime name as segment identity.
+- [x] Propagate solar elevation/regime/segment identity from L0 to L1 without
+  recomputing solar geometry.
+- [x] Keep Level 2 clock buckets anchored to the configured wall-clock cadence
+  while splitting any bucket that crosses a segment boundary.
+- [x] Store `segment_id(block_time)`, `solar_regime(block_time)` and mean
+  `solar_elevation_deg(block_time)` in Level 2.
+- [x] Add LEBEAR selectors `--regime day|night` and `--segment segXX`.
+- [x] Keep `--time-window-utc` orthogonal and allow intersection with a solar
+  selector.
+- [x] `--regime night` may retain multiple disjoint night segments; `--segment`
+  always selects one exact contiguous segment.
+- [x] Solar selectors preserve the canonical source `session_id`; derived L2
+  filenames use a variant tag rather than inventing a new session identity.
 
-## Transitional SCC protection already present
+## SCC solar integration
 
-- [x] Level 0 detects when a continuous session spans more than one current
-  clock-derived SCC mode.
-- [x] The primary MILGRAU session remains continuous.
-- [x] SCC export is disabled for a heterogeneous session instead of exporting an
-  incorrect single-mode SCC file.
-- [ ] Replace this transitional safeguard with solar-regime-aware SCC export.
+- [x] Remove productive fixed-clock 06–18 / 18–06 SCC mode selection.
+- [x] `resolve_station_context` accepts an explicit resolved `day`/`night`
+  mode instead of deriving SCC mode from civil clock time.
+- [x] Keep the canonical full-channel Level 0 continuous across solar
+  transitions.
+- [x] Write one SCC Level 0 derivative per contiguous solar segment when its
+  historical station configuration is exportable.
+- [x] Name SCC derivatives `SESSION_segXX_L0_scc.nc`.
+- [x] SCC derivatives preserve the original `Session_ID` and add
+  `Segment_ID` / `Solar_Regime`.
+- [x] Incremental Level 0 checks understand multiple segment SCC derivatives.
+- [x] Automatic LIPANCORA discovery continues to use only the canonical
+  `SESSION_L0.nc`; SCC segment products remain explicit interoperability
+  derivatives.
+
+## Scientific validation still open
+
+- [ ] Validate the current -3 degree threshold empirically against SPU
+  background/SNR transitions, especially at 355 nm.
+- [ ] Document the validation sample/campaign and retain the evidence used to
+  keep or revise the threshold.
+- [ ] If future instrument/context states are allowed to change inside one
+  session without forcing a new session, decide whether they also create
+  segment boundaries. Current station-profile/calibration changes already force
+  a new session.
 
 ---
 
@@ -248,11 +273,13 @@ Accepted target model:
 - [x] SCC scalar values use the finite session median and are explicitly
   documented as interoperability fields, not the scientific weather series.
 
-## Still pending in L0
+## Solar/session context in Level 0
 
-- [ ] Add solar elevation/regime variables.
-- [ ] Add segment identity/metadata.
-- [ ] Revisit SCC export after solar implementation.
+- [x] Add per-profile solar elevation/regime variables.
+- [x] Add segment identity and segment-table metadata.
+- [x] Select historical SCC day/night configuration from solar regime.
+- [x] Export SCC derivatives per solar segment without splitting the canonical
+  Level 0 session.
 
 ---
 
@@ -332,10 +359,12 @@ Create:
 
 ## Solar/segments in Level 1
 
-- [ ] Propagate `solar_elevation_deg`.
-- [ ] Propagate `solar_regime`.
-- [ ] Propagate `segment_id`.
-- [ ] Support `--regime day/night` where appropriate.
+- [x] Propagate `solar_elevation_deg` from Level 0.
+- [x] Propagate `solar_regime` from Level 0.
+- [x] Propagate `segment_id` and the segment table from Level 0.
+- [x] Keep Level 1 canonical as the full session; regime/segment selection is
+  applied downstream by LEBEAR rather than creating competing canonical L1
+  files.
 
 ## Level 1 figures
 
@@ -412,12 +441,15 @@ Remaining:
 - [x] Level 2 schema 7 stores molecular backscatter/extinction and lidar-ratio
   assumptions by `block_time`.
 
-## Remaining session/regime work
+## Session/regime integration
 
-- [ ] Add `--regime day`.
-- [ ] Add `--regime night`.
-- [ ] Add `--segment`.
-- [ ] Propagate solar regime and segment metadata.
+- [x] Add `--regime day`.
+- [x] Add `--regime night`.
+- [x] Add `--segment segXX`.
+- [x] Allow solar selector + `--time-window-utc` intersection.
+- [x] Propagate solar regime, elevation and segment metadata into Level 2.
+- [x] Prevent one Level 2 block from crossing a scientific segment boundary.
+- [x] Level 2 schema 8 records solar-segment-homogeneous blocks.
 - [ ] Rename ambiguous `period_*` variables/labels such as
   `period_support_fraction`.
 - [ ] Prefer `session_*` or `temporal_*` names according to actual semantics.
@@ -606,8 +638,8 @@ Already updated:
 
 Still required after the corresponding code lands:
 
-- [ ] Document solar regime and configured threshold.
-- [ ] Document segment semantics.
+- [x] Document solar regime and configured threshold.
+- [x] Document segment semantics.
 - [x] Document time-resolved surface weather.
 - [x] Document ERA5-hourly Level 1 atmosphere, radiosonde QA role and USSA76
   extension/fallback.
@@ -615,7 +647,7 @@ Still required after the corresponding code lands:
 - [ ] Remove LIRACOS from productive architecture docs.
 - [ ] Document `measurements` as owner of publication windows.
 - [ ] Document public staging.
-- [ ] Update CLI examples with `--regime` / `--segment`.
+- [x] Update CLI examples with `--regime` / `--segment`.
 - [ ] Clean obsolete `period_*` language.
 - [ ] Run final repository-wide legacy-reference audit.
 - [ ] Update changelog before the next release candidate.
@@ -716,11 +748,9 @@ Source cleanup and Git-history cleanup remain separate tasks.
    - exercise an intentional ERA5-missing/USSA76 fallback case;
    - inspect the atmospheric comparison figure and block-resolved molecular state.
 
-2. **Solar regime + segments**
-   - solar elevation;
-   - day/night;
-   - SCC mode;
-   - regime/segment selectors.
+2. **Validate solar threshold on representative SPU data**
+   - compare geometric elevation/background/SNR transition;
+   - retain -3 degrees or revise the configured threshold from evidence.
 
 3. **Figures architecture**
    - LIPANCORA owns L1 figures;
