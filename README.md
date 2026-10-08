@@ -69,20 +69,20 @@ For editable development/testing:
 pip install -e ".[dev]"
 ```
 
+ERA5 support is installed with the core package because it is the productive
+Level 1 atmospheric backbone. Credentials are not stored in MILGRAU YAML or
+NetCDF provenance; use the normal provider-supported `cdsapi` credential
+mechanism.
+
 Optional extras:
 
 ```bash
-# ERA5 through the Copernicus Climate Data Store
-pip install -e ".[era5]"
-
 # Interactive Streamlit explorer
 pip install -e ".[explorer]"
 
 # Complete local development environment
-pip install -e ".[dev,era5,explorer]"
+pip install -e ".[dev,explorer]"
 ```
-
-ERA5 credentials are not stored in MILGRAU YAML or NetCDF provenance; use the normal provider-supported `cdsapi` credential mechanism.
 
 ## Quick start
 
@@ -93,6 +93,21 @@ milgrau-libids
 milgrau-lipancora
 milgrau-lebear
 ```
+
+If Level 1 already exists and only figures need to be generated or repaired:
+
+```bash
+milgrau-lipancora --figures-only -i spu_20250511-0012Z_20250511-0737Z
+```
+
+Without `--force`, only missing/outdated figures are rendered. Add
+`--force` to regenerate every Level 1 figure. Re-running normal
+`milgrau-lipancora` also checks/repairs figures when the scientific L1 is
+already current.
+
+Level 1 heatmaps use plot-only display decimation and chunked mean-profile
+statistics to keep memory bounded on long sessions; the scientific NetCDF
+remains full resolution.
 
 MILGRAU identifies scientific acquisitions as **continuous sessions**, not civil-time
 publication windows. The canonical session ID is:
