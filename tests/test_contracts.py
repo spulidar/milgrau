@@ -87,10 +87,20 @@ def _add_level1_atmosphere(ds: xr.Dataset, *, source_type: str = "ussa76") -> xr
         ("atmosphere_time",),
         np.array([1.0 if source_type == "ussa76" else 0.0] * 2),
     )
+    ds["solar_elevation_deg"] = (("time",), np.array([20.0, 22.0]))
+    ds["solar_regime"] = (("time",), np.array(["day", "day"], dtype=object))
+    ds["segment_id"] = (("time",), np.array(["seg00", "seg00"], dtype=object))
+    ds["Segment_Label"] = (("segments",), np.array(["seg00"], dtype=object))
+    ds["Segment_Regime"] = (("segments",), np.array(["day"], dtype=object))
+    ds["Segment_Start_Time_UTC"] = (("segments",), np.array([1704067200], dtype=np.int64))
+    ds["Segment_End_Time_UTC"] = (("segments",), np.array([1704153600], dtype=np.int64))
     ds.attrs.update({
         "thermodynamic_profile_available": "true",
         "thermodynamic_profile_source_type": "time_resolved",
         "thermodynamic_profile_standard_fallback_fraction": 1.0 if source_type == "ussa76" else 0.0,
+        "Solar_Day_Night_Threshold_deg": -3.0,
+        "Solar_Position_Algorithm": "test",
+        "Segment_Count": 1,
     })
     return ds
 
