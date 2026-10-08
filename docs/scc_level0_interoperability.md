@@ -50,19 +50,24 @@ A file satisfying an SCC submission schema is therefore not automatically guaran
 LIBIDS writes `*_scc.nc` with the same Level 0 writer used for the full-channel MILGRAU Level 0, restricted to the SCC channel subset and augmented with SCC identifiers. It is therefore a valid explicit LIPANCORA input.
 
 MILGRAU's primary Level 0 remains the complete continuous scientific session.
-When the session contains more than one solar regime, LIBIDS writes one SCC
-interoperability derivative per contiguous solar segment, for example:
+LIBIDS writes at most one SCC interoperability derivative for each solar regime
+present in the session:
 
 ```text
 spu_20251107-0900Z_20251107-1500Z_L0.nc
-spu_20251107-0900Z_20251107-1500Z_seg00_L0_scc.nc
-spu_20251107-0900Z_20251107-1500Z_seg01_L0_scc.nc
+spu_20251107-0900Z_20251107-1500Z_day_L0_scc.nc
+spu_20251107-0900Z_20251107-1500Z_night_L0_scc.nc
 ```
 
-Each SCC derivative keeps the original `Session_ID` and adds its own
-`Segment_ID` and `Solar_Regime`. The day/night SCC configuration is selected
-from `station.yaml` using the stored solar regime, not a fixed 06/18 clock
-rule.
+Contiguous `segXX` identities remain scientific metadata. If a long session is
+`day -> night -> day`, both day segments are written into the same
+`SESSION_day_L0_scc.nc`; their original timestamps and `segment_id(time)`
+values are preserved, so the intervening gap is not filled or presented as
+continuous acquisition. The derivative records `Solar_Regime`,
+`Source_Segments`, `Source_Segment_Count`, and `Contains_Time_Gaps`.
+
+The day/night SCC configuration is selected from `station.yaml` using the
+stored solar regime, not a fixed 06/18 clock rule.
 
 Automatic LIPANCORA discovery deliberately processes only the canonical
 `SESSION_L0.nc`. SCC derivatives remain interoperability products and do not
@@ -70,11 +75,12 @@ create competing canonical Level 1 products. They may still be supplied
 explicitly when an SCC-specific regression/interoperability check is required:
 
 ```bash
-milgrau-lipancora -i /path/to/spu_20251107-0900Z_20251107-1500Z_seg01_L0_scc.nc --force
+milgrau-lipancora -i /path/to/spu_20251107-0900Z_20251107-1500Z_night_L0_scc.nc --force
 ```
 
 For an explicitly supplied canonical SCC derivative, the resulting
-`SESSION_seg01_L1_scc.nc` is written in the same session directory. For an
+`SESSION_night_L1_scc.nc` or `SESSION_day_L1_scc.nc` is written in the same
+session directory. For an
 external SCC filename, Level 1 is written beside the source file instead of
 inventing a MILGRAU session hierarchy.
 
