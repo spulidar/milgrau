@@ -221,9 +221,10 @@ def _session_summary(
     )
     return {
         "session_id": session_id,
-        "human_label": (
-            f"{station.upper()} · {start_local.strftime('%d/%m/%Y %H:%M')} → "
-            f"{end_local.strftime('%d/%m/%Y %H:%M')} · {duration}"
+        "station": station.upper(),
+        "local_interval": (
+            f"{start_local.strftime('%d/%m/%Y %H:%M')} → "
+            f"{end_local.strftime('%d/%m/%Y %H:%M')}"
         ),
         "utc_interval": (
             f"{start_utc.strftime('%Y-%m-%d %H:%M')} → "
@@ -273,7 +274,9 @@ def _print_session_summary(
     print("\nSESSION")
     print("-" * 100)
     print(f"  ID             : {summary['session_id']}")
-    print(f"  Local time     : {summary['human_label']}")
+    print(f"  Station        : {summary['station']}")
+    print(f"  Local time     : {summary['local_interval']}")
+    print(f"  Duration       : {summary['duration']}")
     print(f"  UTC            : {summary['utc_interval']}")
     print(f"  Time zone      : {summary['timezone']}")
     print(
