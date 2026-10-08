@@ -350,10 +350,13 @@ Create:
 
 `SESSION_L1_AtmosphericProfile.webp`
 
-- [x] Compare ERA5, radiosonde and the canonical profile actually used by
-  MILGRAU on a common altitude grid when radiosonde is available.
-- [x] Plot temperature and pressure profiles.
-- [x] Plot corresponding differences.
+- [x] Compare the Level 1 source actually used with radiosonde on a common
+  altitude grid when radiosonde is available.
+- [x] State the source used explicitly in the figure rather than labeling it
+  “canonical”.
+- [x] Plot the temperature profile without duplicating coincident ERA5/used
+  curves; show USSA76 only where it is actually used.
+- [x] Plot temperature, pressure and molecular-number-density differences.
 - [x] Report temperature bias and RMSE over configurable altitude bands.
 - [x] Report pressure bias/relative difference and valid vertical overlap.
 - [x] Compare a retrieval-relevant derived molecular quantity such as molecular
@@ -365,8 +368,10 @@ Create:
   independent validation, because radiosonde observations may contribute to
   reanalysis assimilation.
 - [x] If no suitable radiosonde exists, still generate the atmospheric figure
-  with ERA5 + canonical used profile + USSA76/fallback context and explicitly
-  mark radiosonde unavailable.
+  with the Level 1 source/fallback context and explicitly mark radiosonde
+  unavailable.
+- [x] Add `SESSION_L1_AtmosphericEvolution.webp` with hourly temperature
+  anomaly and molecular-number-density evolution across the session.
 - [x] Define and test a maximum radiosonde time separation for QA comparison,
   independent of the production ERA5 cadence.
 
@@ -405,7 +410,8 @@ Implemented:
 - [x] Remove full-dataset `source.load()` from Level 1 figure generation.
 - [x] Bound quicklook memory with plot-only time/altitude decimation and
   chunked full-resolution mean/error statistics.
-- [x] Add the atmospheric profile/comparison figure above.
+- [x] Add both atmospheric figures: AtmosphericProfile and
+  AtmosphericEvolution.
 
 ---
 
@@ -602,10 +608,13 @@ No scientific NetCDF is split because of website layout.
 - [x] Displays start/end and duration metadata.
 - [x] Resolves date/session/path selectors.
 - [x] A date can find all available processing levels for intersecting sessions.
+- [x] Make the primary inspect input simple and positional:
+  `milgrau-inspect 20240620`.
 
 ## Inspect session summary
 
-- [x] Add concise local-time/human session presentation.
+- [x] Add concise station-local session presentation without “Human interval”
+  wording.
 - [x] Summarize solar regime and segments.
 - [x] Summarize available figures.
 - [x] Summarize explicit highest available level.
@@ -627,6 +636,7 @@ spu_20250511-0012Z_20250511-0737Z/
     ├── spu_..._L1_RCS_532AN_15km.webp
     ├── spu_..._L1_MeanRCS.webp
     ├── spu_..._L1_AtmosphericProfile.webp
+    ├── spu_..._L1_AtmosphericEvolution.webp
     ├── spu_..._L2_MolecularReference_355nm.webp
     ├── spu_..._L2_Gluing_355nm.webp
     ├── spu_..._L2_OpticalProfiles_355nm.webp
