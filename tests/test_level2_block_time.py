@@ -22,7 +22,10 @@ def test_block_groups_keep_clock_buckets_but_use_mean_profile_time() -> None:
     block_time, groups = block_groups(times, 20)
 
     assert [group.tolist() for group in groups] == [[0, 1, 2], [3, 4]]
-    assert block_time.tolist() == [
-        np.datetime64("2024-01-01T00:09:40", "ns"),
-        np.datetime64("2024-01-01T00:30:00", "ns"),
-    ]
+    np.testing.assert_array_equal(
+        block_time,
+        np.array(
+            ["2024-01-01T00:09:40", "2024-01-01T00:30:00"],
+            dtype="datetime64[ns]",
+        ),
+    )
