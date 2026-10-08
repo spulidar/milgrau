@@ -110,3 +110,57 @@ def test_expand_session_id_finds_only_available_related_levels(tmp_path) -> None
     paths = _expand_inputs([[session_id]], config)
 
     assert [path.name for path in paths] == expected_names
+
+
+
+def test_inspect_product_prints_human_session_summary(tmp_path, capsys) -> None:
+    session_id = "spu_20250511-0012Z_20250511-0737Z"
+    session_dir = tmp_path / session_id
+    session_dir.mkdir()
+    path = session_dir / f"{session_id}_L1.nc"
+    figures = session_dir / "figures"
+    figures.mkdir()
+    (figures / f"{session_id}_L1_MeanRCS.webp").write_bytes(b"figure")
+    (session_dir / f"{session_id}_L0.nc").write_bytes(b"placeholder")
+
+    ds = xr.Dataset(
+        data_vars={
+            "corrected_signal": (
+                ("time", "channel", "altitude"),
+                np.ones((2, 1, 3), dtype=np.float32),
+            ),
+            "range_corrected_signal": (
+                ("time", "channel", "altitude"),
+                np.ones((2, 1, 3), dtype=np.float32),
+            ),
+            "Segment_Label": (("segments",), np.array(["seg00"], dtype=object)),
+            "Segment_Regime": (("segments",), np.array(["night"], dtype=object)),
+        },
+        coords={
+            "time": np.array(
+                ["2025-05-11T00:12:00", "2025-05-11T07:37:00"],
+                dtype="datetime64[m]",
+            ),
+            "channel": np.array(["532.AN"]),
+            "altitude": np.array([7.5, 15.0, 22.5]),
+        },
+        attrs={
+            "Session_ID": session_id,
+            "timezone": "America/Sao_Paulo",
+            "Processing_level": "Level 1 synthetic product",
+        },
+    )
+    ds.to_netcdf(path)
+
+    inspect_product(path, max_vars=10)
+
+    output = capsys.readouterr().out
+    assert "SESSION SUMMARY" in output
+    assert session_id in output
+    assert "10/05/2025 21:12" in output
+    assert "11/05/2025 04:37" in output
+    assert "7h25" in output
+    assert "highest=L1" in output
+    assert "night" in output
+    assert "seg00 night" in output
+    assert f"{session_id}_L1_MeanRCS.webp" in output
