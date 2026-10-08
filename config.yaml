@@ -126,6 +126,7 @@ visualization:
     colormap: "jet"
   atmospheric_profile:
     max_altitude_km: 30.0
+    evolution_max_altitude_bins: 600
     comparison_altitude_bands_km:
       - [0.0, 3.0]
       - [3.0, 10.0]
