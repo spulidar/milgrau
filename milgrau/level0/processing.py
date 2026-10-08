@@ -23,29 +23,91 @@ from milgrau.operations import ExecutionResult
 from milgrau.provenance import write_netcdf_provenance
 
 
+_SURFACE_WEATHER_FIELDS = (
+    "temperature_c",
+    "pressure_hpa",
+    "relative_humidity_percent",
+    "cloud_cover_percent",
+    "wind_speed_kmh",
+)
+
+
+def _surface_weather_hours(group_df: pd.DataFrame) -> pd.DatetimeIndex:
+    """Return hourly UTC source times bracketing the complete measurement session."""
+    measurement_rows = group_df[group_df["meas_type"] == "measurements"]
+    if measurement_rows.empty:
+        raise ValueError("Surface weather requires at least one measurement row.")
+    start = pd.to_datetime(measurement_rows["start_time_utc"], utc=True).min()
+    if "stop_time" in measurement_rows and measurement_rows["stop_time"].notna().any():
+        stop = pd.to_datetime(measurement_rows["stop_time"], utc=True).max()
+    else:
+        stop = pd.to_datetime(measurement_rows["start_time_utc"], utc=True).max()
+    first_hour = start.floor("h")
+    last_hour = stop.ceil("h")
+    if last_hour < first_hour:
+        last_hour = first_hour
+    return pd.date_range(first_hour, last_hour, freq="1h", tz="UTC")
+
+
 def fetch_group_weather(group_df: pd.DataFrame, config: Mapping[str, Any], logger: logging.Logger) -> dict[str, Any]:
-    """Fetch surface weather according to the explicit Level 0 missing-data policy."""
+    """Fetch the hourly surface-weather series covering one continuous session."""
     level0 = resolve_level0_config(config)
     lat, lon = station_coordinates(config)
-    dt_utc_mean = group_df["start_time_utc"].iloc[len(group_df) // 2].to_pydatetime()
     weather_logger = bind_log_context(logger, stage="weather")
-    weather_data = fetch_surface_weather(dt_utc_mean, lat, lon, logger=weather_logger, config=config)
-    if weather_data:
-        weather_logger.info(
-            "%.1f °C | %.1f hPa",
-            float(weather_data["temperature_c"]),
-            float(weather_data["pressure_hpa"]),
+    times = _surface_weather_hours(group_df)
+    values = {field: [] for field in _SURFACE_WEATHER_FIELDS}
+    missing_times: list[pd.Timestamp] = []
+
+    for timestamp in times:
+        weather = fetch_surface_weather(
+            timestamp.to_pydatetime(),
+            lat,
+            lon,
+            logger=weather_logger,
+            config=config,
         )
-        return weather_data
-    if level0.surface_weather.missing_policy == "fail":
-        raise RuntimeError("Surface weather is unavailable and level0.surface_weather.missing_policy='fail'.")
-    weather_logger.warning("unavailable | NaN (policy=nan)")
+        if weather is None:
+            missing_times.append(timestamp)
+            for field in _SURFACE_WEATHER_FIELDS:
+                values[field].append(np.nan)
+            continue
+        for field in _SURFACE_WEATHER_FIELDS:
+            try:
+                values[field].append(float(weather[field]))
+            except (KeyError, TypeError, ValueError):
+                values[field].append(np.nan)
+
+    if missing_times and level0.surface_weather.missing_policy == "fail":
+        rendered = ", ".join(item.strftime("%Y-%m-%dT%H:%MZ") for item in missing_times)
+        raise RuntimeError(
+            "Surface weather is unavailable for required hourly source time(s) "
+            f"{rendered} and level0.surface_weather.missing_policy='fail'."
+        )
+
+    finite_temperature = np.asarray(values["temperature_c"], dtype=np.float64)
+    finite_pressure = np.asarray(values["pressure_hpa"], dtype=np.float64)
+    valid = np.isfinite(finite_temperature) & np.isfinite(finite_pressure)
+    weather_logger.info(
+        "%d/%d hourly records | coverage %s -> %s",
+        int(np.count_nonzero(valid)),
+        len(times),
+        times[0].strftime("%Y-%m-%d %H:%MZ"),
+        times[-1].strftime("%Y-%m-%d %H:%MZ"),
+    )
+    if missing_times:
+        weather_logger.warning(
+            "%d hourly record(s) unavailable | NaN preserved (policy=nan)",
+            len(missing_times),
+        )
+
     return {
-        "temperature_c": np.nan,
-        "pressure_hpa": np.nan,
-        "relative_humidity_percent": np.nan,
-        "cloud_cover_percent": np.nan,
-        "wind_speed_kmh": np.nan,
+        "weather_time": times.tz_convert("UTC").tz_localize(None).to_numpy(dtype="datetime64[ns]"),
+        "source": "Open-Meteo Archive API",
+        "cadence": "hourly",
+        **{
+            field: np.asarray(field_values, dtype=np.float64)
+            for field, field_values in values.items()
+        },
     }
 
 
