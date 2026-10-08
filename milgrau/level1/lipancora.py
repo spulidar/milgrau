@@ -30,6 +30,7 @@ from milgrau.level1.config import (
 )
 from milgrau.level1.corrections import apply_instrumental_corrections
 from milgrau.level1.diagnostics import finalize_correction_dataset
+from milgrau.level1.figures import generate_level1_atmospheric_figure
 from milgrau.level1.ingestion import load_and_prepare_level0
 from milgrau.level1.pbl import estimate_pbl_timeseries
 from milgrau.level1.thermodynamics import integrate_thermodynamics
@@ -413,13 +414,38 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
             provenance_attrs.get("station_profile_id", "-"),
             provenance_attrs.get("instrument_calibration_id", "-"),
         )
+
+        config_file = config.get("_config_file")
+        figure_root = (
+            Path(str(config_file)).expanduser().resolve().parent
+            if isinstance(config_file, str) and config_file.strip()
+            else Path.cwd()
+        )
+        figure_result = generate_level1_atmospheric_figure(
+            save_path,
+            config,
+            bind_log_context(file_logger, stage="figures"),
+            root_dir=figure_root,
+        )
+        if figure_result.status.is_failure:
+            bind_log_context(file_logger, stage="figures").warning(
+                "%s | %s",
+                figure_result.message,
+                figure_result.cause or "unknown figure failure",
+            )
+
         return ExecutionResult.success(
             "level1.complete",
             "Level 1 generated",
             input_path=nc_file,
             output_path=save_path,
             duration_seconds=time.perf_counter() - started_at,
-            metadata={"pipeline": "L1", "session_id": session_id, "channel_count": final_ds.sizes.get("channel", 0)},
+            metadata={
+                "pipeline": "L1",
+                "session_id": session_id,
+                "channel_count": final_ds.sizes.get("channel", 0),
+                "atmospheric_figure_status": figure_result.status.value,
+            },
         )
     except Exception as exc:
         return ExecutionResult.failure(
