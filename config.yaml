@@ -115,6 +115,12 @@ visualization:
     max_time_gap_minutes: 10
     missing_data_color: "lightgray"
     colormap: "jet"
+  atmospheric_profile:
+    max_altitude_km: 30.0
+    comparison_altitude_bands_km:
+      - [0.0, 3.0]
+      - [3.0, 10.0]
+      - [10.0, 20.0]
   level2_qa:
     enabled: true
     max_altitude_km: 30.0
