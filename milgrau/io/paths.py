@@ -26,7 +26,7 @@ SESSION_ID_RE = re.compile(
 )
 _PRODUCT_RE = re.compile(
     r"^(?P<session_id>[a-z0-9][a-z0-9-]*_\d{8}-\d{4}Z_\d{8}-\d{4}Z)"
-    r"(?P<suffix>_L0(?:_scc)?|_L1(?:_scc)?|(?:_[A-Za-z0-9_.-]+)?_L2(?:_scc)?)\.nc$",
+    r"(?P<suffix>(?:_[A-Za-z0-9_.-]+)?_L0(?:_scc)?|(?:_[A-Za-z0-9_.-]+)?_L1(?:_scc)?|(?:_[A-Za-z0-9_.-]+)?_L2(?:_scc)?)\.nc$",
     flags=re.IGNORECASE,
 )
 
@@ -244,10 +244,18 @@ def level0_output_path(
 def level0_scc_output_path(
     session_id: str,
     config: Mapping[str, Any],
+    *,
+    segment_id: str,
     root_dir: str | Path | None = None,
 ) -> Path:
+    """Return the SCC Level 0 derivative for one solar segment."""
     value = validate_session_id_for_config(session_id, config)
-    return session_dir(value, config, root_dir=root_dir) / f"{value}{LEVEL0_SCC_SUFFIX}"
+    safe_segment = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(segment_id).strip()).strip("_")
+    if not safe_segment:
+        raise ValueError("segment_id must be a non-empty filename-safe value.")
+    return session_dir(value, config, root_dir=root_dir) / (
+        f"{value}_{safe_segment}{LEVEL0_SCC_SUFFIX}"
+    )
 
 
 def level1_output_path(
@@ -263,9 +271,11 @@ def level1_output_path(
         return source.with_name(f"{source.stem}{LEVEL1_SUFFIX}")
 
     if source.name.endswith(LEVEL0_SCC_SUFFIX):
-        filename = f"{session_id}{LEVEL1_SCC_SUFFIX}"
+        variant = source.name[len(session_id) : -len(LEVEL0_SCC_SUFFIX)]
+        filename = f"{session_id}{variant}{LEVEL1_SCC_SUFFIX}"
     elif source.name.endswith(LEVEL0_SUFFIX):
-        filename = f"{session_id}{LEVEL1_SUFFIX}"
+        variant = source.name[len(session_id) : -len(LEVEL0_SUFFIX)]
+        filename = f"{session_id}{variant}{LEVEL1_SUFFIX}"
     else:
         raise ValueError(f"Expected a Level 0 product, got {source.name!r}.")
     return session_dir(session_id, config, root_dir=root_dir) / filename
