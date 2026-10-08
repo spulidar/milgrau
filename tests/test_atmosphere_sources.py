@@ -17,6 +17,7 @@ from milgrau.io.era5 import (
     era5_config,
     era5_profile_from_dataset,
     fetch_era5_pressure_level_profile,
+    build_era5_request_for_hours,
     nearest_era5_analysis_hour,
 )
 from milgrau.io.radiosonde import _require_current_siphon, select_radiosonde_target_datetime
@@ -116,6 +117,30 @@ def test_era5_request_contains_only_molecular_atmosphere_fields() -> None:
     assert request["download_format"] == "unarchived"
 
 
+def test_era5_batch_request_groups_hours_from_one_utc_day() -> None:
+    hours = [
+        datetime(2024, 6, 10, 12, tzinfo=timezone.utc),
+        datetime(2024, 6, 10, 13, tzinfo=timezone.utc),
+        datetime(2024, 6, 10, 14, tzinfo=timezone.utc),
+    ]
+    _dataset, request = build_era5_request_for_hours(
+        hours,
+        -23.56,
+        -46.73,
+        _era5_settings(),
+    )
+    assert request["day"] == ["10"]
+    assert request["time"] == ["12:00", "13:00", "14:00"]
+
+    with pytest.raises(ValueError, match="one UTC day"):
+        build_era5_request_for_hours(
+            hours + [datetime(2024, 6, 11, 0, tzinfo=timezone.utc)],
+            -23.56,
+            -46.73,
+            _era5_settings(),
+        )
+
+
 def test_era5_configuration_does_not_replace_invalid_pressure_levels_with_defaults() -> None:
     settings = _era5_settings()
     settings["pressure_levels_hpa"] = ["bad"]
@@ -213,6 +238,10 @@ def test_level1_materializes_hourly_era5_backbone_and_radiosonde_qa(monkeypatch)
         radio_calls.append(station_id)
         return _profile("radiosonde", hour=12)
 
+    monkeypatch.setattr(
+        "milgrau.level1.thermodynamics.prefetch_era5_pressure_level_profiles",
+        lambda *args, **kwargs: set(),
+    )
     monkeypatch.setattr("milgrau.level1.thermodynamics.fetch_era5_pressure_level_profile", fake_era5)
     monkeypatch.setattr("milgrau.level1.thermodynamics.fetch_wyoming_radiosonde", fake_radio)
 
@@ -239,6 +268,10 @@ def test_level1_uses_ussa76_only_for_missing_era5_hours(monkeypatch) -> None:
         hour = pd.Timestamp(dt).hour
         return None if hour == 13 else _profile("era5", hour=hour)
 
+    monkeypatch.setattr(
+        "milgrau.level1.thermodynamics.prefetch_era5_pressure_level_profiles",
+        lambda *args, **kwargs: set(),
+    )
     monkeypatch.setattr("milgrau.level1.thermodynamics.fetch_era5_pressure_level_profile", fake_era5)
     monkeypatch.setattr("milgrau.level1.thermodynamics.fetch_wyoming_radiosonde", lambda *args, **kwargs: None)
 
@@ -257,6 +290,10 @@ def test_level1_uses_ussa76_only_for_missing_era5_hours(monkeypatch) -> None:
 
 def test_level1_fails_if_era5_is_missing_and_no_fallback_is_configured(monkeypatch) -> None:
     monkeypatch.setattr(
+        "milgrau.level1.thermodynamics.prefetch_era5_pressure_level_profiles",
+        lambda *args, **kwargs: set(),
+    )
+    monkeypatch.setattr(
         "milgrau.level1.thermodynamics.fetch_era5_pressure_level_profile",
         lambda *args, **kwargs: None,
     )
@@ -266,6 +303,10 @@ def test_level1_fails_if_era5_is_missing_and_no_fallback_is_configured(monkeypat
 
 
 def test_level1_external_profile_extension_can_be_configured_to_fail(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "milgrau.level1.thermodynamics.prefetch_era5_pressure_level_profiles",
+        lambda *args, **kwargs: set(),
+    )
     monkeypatch.setattr(
         "milgrau.level1.thermodynamics.fetch_era5_pressure_level_profile",
         lambda dt, *_args, **_kwargs: _profile("era5", hour=pd.Timestamp(dt).hour),
