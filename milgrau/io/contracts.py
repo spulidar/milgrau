@@ -243,6 +243,14 @@ def _validate_level1_solar_contract(ds: xr.Dataset) -> None:
         raise ValueError("Level 1 segment_id contains values absent from Segment_Label.")
     if any(mapping[segment] != regime for segment, regime in zip(segment_ids, regimes, strict=True)):
         raise ValueError("Level 1 segment_id/solar_regime disagree with the segment table.")
+    try:
+        threshold = float(ds.attrs["Solar_Day_Night_Threshold_deg"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("Level 1 lacks a valid Solar_Day_Night_Threshold_deg attribute.") from exc
+    if not np.isfinite(threshold) or not -90.0 <= threshold <= 90.0:
+        raise ValueError("Level 1 Solar_Day_Night_Threshold_deg must be within [-90, 90].")
+    if not str(ds.attrs.get("Solar_Position_Algorithm", "")).strip():
+        raise ValueError("Level 1 lacks Solar_Position_Algorithm provenance.")
 
 
 def _validate_level1_atmosphere(ds: xr.Dataset) -> None:
