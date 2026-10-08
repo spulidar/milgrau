@@ -102,3 +102,66 @@ def subset_level1_time_window(
         }
     )
     return selected, tag
+
+
+def _trim_segment_table(ds: xr.Dataset) -> xr.Dataset:
+    """Keep only segment-table rows represented by the selected time profiles."""
+    if "segment_id" not in ds or "Segment_Label" not in ds:
+        return ds
+    selected_ids = list(
+        dict.fromkeys(np.asarray(ds["segment_id"].values).astype(str).tolist())
+    )
+    labels = np.asarray(ds["Segment_Label"].values).astype(str)
+    indices = [index for index, label in enumerate(labels) if label in selected_ids]
+    if not indices:
+        raise ValueError(
+            "Selected Level 1 profiles do not resolve to the stored segment table."
+        )
+    return ds.isel(segments=np.asarray(indices, dtype=np.int64))
+
+
+def subset_level1_context(
+    ds_l1: xr.Dataset,
+    *,
+    start_utc: str | None = None,
+    stop_utc: str | None = None,
+    regime: str | None = None,
+    segment_id: str | None = None,
+) -> tuple[xr.Dataset, str | None]:
+    """Subset Level 1 by UTC window plus one optional solar-regime/segment selector."""
+    if regime is not None and segment_id is not None:
+        raise ValueError("Select either regime or segment_id, not both.")
+    selected, time_tag = subset_level1_time_window(ds_l1, start_utc, stop_utc)
+
+    selector_tag: str | None = None
+    if regime is not None:
+        normalized = str(regime).strip().lower()
+        if normalized not in {"day", "night"}:
+            raise ValueError("regime must be 'day' or 'night'.")
+        if "solar_regime" not in selected:
+            raise KeyError("Level 1 product lacks solar_regime.")
+        values = np.asarray(selected["solar_regime"].values).astype(str)
+        mask = values == normalized
+        if not np.any(mask):
+            raise ValueError(f"No Level 1 profiles match solar regime {normalized!r}.")
+        selected = selected.isel(time=np.flatnonzero(mask)).copy()
+        selected.attrs["LEBEAR_Solar_Regime"] = normalized
+        selector_tag = normalized
+
+    if segment_id is not None:
+        normalized = str(segment_id).strip()
+        if not re.fullmatch(r"seg\d{2,}", normalized):
+            raise ValueError("segment_id must use the segXX convention.")
+        if "segment_id" not in selected:
+            raise KeyError("Level 1 product lacks segment_id.")
+        values = np.asarray(selected["segment_id"].values).astype(str)
+        mask = values == normalized
+        if not np.any(mask):
+            raise ValueError(f"No Level 1 profiles match segment {normalized!r}.")
+        selected = selected.isel(time=np.flatnonzero(mask)).copy()
+        selected.attrs["LEBEAR_Segment_ID"] = normalized
+        selector_tag = normalized
+
+    selected = _trim_segment_table(selected)
+    tags = [value for value in (selector_tag, time_tag) if value]
+    return selected, "_".join(tags) if tags else None
