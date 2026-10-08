@@ -79,8 +79,10 @@ def build_thermodynamic_profile(
     ds_l1: xr.Dataset,
     altitude_agl_m: np.ndarray,
     config: Mapping[str, Any],
+    *,
+    target_time: Any,
 ) -> tuple[np.ndarray, np.ndarray, str]:
-    """Read the complete canonical atmosphere materialized by Level 1."""
+    """Interpolate the canonical Level 1 atmosphere to one Level 2 block time."""
     del config
     required = ("Atmospheric_Temperature_K", "Atmospheric_Pressure_hPa")
     missing = [name for name in required if name not in ds_l1]
@@ -89,39 +91,66 @@ def build_thermodynamic_profile(
             "Level 1 product lacks canonical thermodynamic variable(s) "
             f"{missing}; reprocess Level 1 with the current LIPANCORA pipeline."
         )
+    if "atmosphere_time" not in ds_l1.coords:
+        raise KeyError(
+            "Level 1 product lacks atmosphere_time; reprocess Level 1 with the "
+            "time-resolved LIPANCORA atmosphere."
+        )
 
     altitude = np.asarray(altitude_agl_m, dtype=np.float64)
-    temperature_k = np.asarray(
-        ds_l1["Atmospheric_Temperature_K"].values, dtype=np.float64
-    )
-    pressure_hpa = np.asarray(
-        ds_l1["Atmospheric_Pressure_hPa"].values, dtype=np.float64
-    )
-    if ds_l1["Atmospheric_Temperature_K"].dims != ("altitude",):
+    expected_dims = ("atmosphere_time", "altitude")
+    for name in required:
+        if ds_l1[name].dims != expected_dims:
+            raise ValueError(f"{name} must have dimensions {expected_dims}.")
+
+    atmosphere_time = np.asarray(ds_l1["atmosphere_time"].values).astype("datetime64[ns]")
+    if atmosphere_time.ndim != 1 or atmosphere_time.size == 0:
+        raise ValueError("Level 1 atmosphere_time must be a non-empty one-dimensional coordinate.")
+    if np.any(np.diff(atmosphere_time.astype("int64")) <= 0):
+        raise ValueError("Level 1 atmosphere_time must be strictly increasing.")
+
+    target = np.datetime64(target_time, "ns")
+    if target < atmosphere_time[0] or target > atmosphere_time[-1]:
         raise ValueError(
-            "Atmospheric_Temperature_K must have dimensions ('altitude',)."
-        )
-    if ds_l1["Atmospheric_Pressure_hPa"].dims != ("altitude",):
-        raise ValueError(
-            "Atmospheric_Pressure_hPa must have dimensions ('altitude',)."
-        )
-    if temperature_k.shape != altitude.shape or pressure_hpa.shape != altitude.shape:
-        raise ValueError(
-            "Stored Level 1 atmosphere must match the Level 2 lidar altitude grid exactly."
-        )
-    if not np.all(np.isfinite(temperature_k)) or np.any(temperature_k <= 0.0):
-        raise ValueError(
-            "Atmospheric_Temperature_K must be finite and positive on every altitude bin."
-        )
-    if not np.all(np.isfinite(pressure_hpa)) or np.any(pressure_hpa <= 0.0):
-        raise ValueError(
-            "Atmospheric_Pressure_hPa must be finite and positive on every altitude bin."
+            f"Level 2 block time {target} lies outside the materialized Level 1 atmosphere "
+            f"[{atmosphere_time[0]}, {atmosphere_time[-1]}]."
         )
 
+    source_seconds = atmosphere_time.astype("datetime64[s]").astype(np.int64).astype(np.float64)
+    target_seconds = float(target.astype("datetime64[s]").astype(np.int64))
+    temperature_source = np.asarray(ds_l1["Atmospheric_Temperature_K"].values, dtype=np.float64)
+    pressure_source = np.asarray(ds_l1["Atmospheric_Pressure_hPa"].values, dtype=np.float64)
+    if temperature_source.shape != (atmosphere_time.size, altitude.size):
+        raise ValueError("Stored Level 1 temperature grid is inconsistent with atmosphere_time/altitude.")
+    if pressure_source.shape != temperature_source.shape:
+        raise ValueError("Stored Level 1 pressure grid is inconsistent with temperature.")
+
+    temperature_k = np.asarray(
+        [
+            np.interp(target_seconds, source_seconds, temperature_source[:, index])
+            for index in range(altitude.size)
+        ],
+        dtype=np.float64,
+    )
+    log_pressure = np.log(pressure_source)
+    pressure_hpa = np.exp(
+        np.asarray(
+            [
+                np.interp(target_seconds, source_seconds, log_pressure[:, index])
+                for index in range(altitude.size)
+            ],
+            dtype=np.float64,
+        )
+    )
+    if not np.all(np.isfinite(temperature_k)) or np.any(temperature_k <= 0.0):
+        raise ValueError("Interpolated atmospheric temperature is not finite and positive.")
+    if not np.all(np.isfinite(pressure_hpa)) or np.any(pressure_hpa <= 0.0):
+        raise ValueError("Interpolated atmospheric pressure is not finite and positive.")
+
     source = str(ds_l1.attrs.get("thermodynamic_profile_source_type", "")).strip()
-    if not source:
+    if source != "time_resolved":
         raise ValueError(
-            "Level 1 product lacks thermodynamic_profile_source_type provenance."
+            "Level 1 thermodynamic_profile_source_type must be 'time_resolved'."
         )
     return pressure_hpa, temperature_k, source
 
@@ -131,10 +160,12 @@ def build_molecular_model(
     wavelength_nm: int,
     altitude_m: np.ndarray,
     config: Mapping[str, Any],
+    *,
+    target_time: Any,
 ) -> MolecularModel:
-    """Build the molecular atmosphere from canonical Level 1 thermodynamics."""
+    """Build the molecular atmosphere at one target block time."""
     pressure_hpa, temperature_k, source = build_thermodynamic_profile(
-        ds_l1, altitude_m, config
+        ds_l1, altitude_m, config, target_time=target_time
     )
     backscatter, extinction = calculate_molecular_profile(
         temperature_k, pressure_hpa, wavelength_nm
@@ -149,7 +180,7 @@ def build_molecular_model(
         positive_altitudes[0] if positive_altitudes.size else 1.0,
     )
     lidar_ratio, lidar_ratio_std = get_lidar_ratio(
-        config, wavelength_nm, ds_l1["time"].values[0]
+        config, wavelength_nm, target_time
     )
     fit_config = get_molecular_fit_config(config)
     fit_config["ref_window_bins"] = rayleigh_window_bins(
@@ -353,9 +384,17 @@ def prepare_wavelength_state(
         "gluing",
         lambda: glue_signal_blocks(inputs, altitude_m, logger),
     )
+    if np.asarray(inputs.block_time).size == 0:
+        raise ValueError("No Level 2 temporal block is available for molecular-state preparation.")
     molecular_model = _run_retrieval_stage(
         "molecular_model",
-        lambda: build_molecular_model(ds_l1, wavelength_nm, altitude_m, config),
+        lambda: build_molecular_model(
+            ds_l1,
+            wavelength_nm,
+            altitude_m,
+            config,
+            target_time=np.asarray(inputs.block_time)[0],
+        ),
     )
     return inputs, glued, molecular_model
 
