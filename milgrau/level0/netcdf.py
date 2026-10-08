@@ -86,13 +86,58 @@ def _background_window_m(config: Mapping[str, Any]) -> tuple[float, float]:
     return start, stop
 
 
-def _surface_value(weather_data: Mapping[str, Any], weather_key: str) -> float:
-    """Return measured/fetched surface metadata, preserving explicit missingness as NaN."""
-    value = weather_data.get(weather_key, np.nan)
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return float("nan")
+def _surface_values(weather_data: Mapping[str, Any], weather_key: str) -> np.ndarray:
+    """Return one surface-weather series as float64, preserving missingness."""
+    raw = weather_data.get(weather_key, [])
+    values = np.asarray(raw, dtype=np.float64).reshape(-1)
+    return values
+
+
+def _surface_representative_value(weather_data: Mapping[str, Any], weather_key: str) -> float:
+    """Return the finite session median used only for scalar interoperability fields."""
+    values = _surface_values(weather_data, weather_key)
+    finite = values[np.isfinite(values)]
+    return float(np.median(finite)) if finite.size else float("nan")
+
+
+def _write_surface_weather_series(ds: nc.Dataset, weather_data: Mapping[str, Any]) -> None:
+    """Persist native-cadence surface weather independently from lidar profile time."""
+    times = np.asarray(weather_data.get("weather_time", []), dtype="datetime64[ns]").reshape(-1)
+    if times.size == 0:
+        return
+    ds.createDimension("weather_time", int(times.size))
+    time_var = ds.createVariable("weather_time", "i8", ("weather_time",))
+    time_var.units = "seconds since 1970-01-01 00:00:00 UTC"
+    time_var.calendar = "standard"
+    time_var.long_name = "Surface-weather source time in UTC"
+    time_var[:] = times.astype("datetime64[s]").astype(np.int64)
+
+    definitions = {
+        "temperature_c": ("Surface_Temperature_C", "degree_Celsius", "Surface air temperature"),
+        "pressure_hpa": ("Surface_Pressure_hPa", "hPa", "Surface pressure"),
+        "relative_humidity_percent": (
+            "Surface_Relative_Humidity_percent",
+            "%",
+            "Surface relative humidity",
+        ),
+        "cloud_cover_percent": ("Surface_Cloud_Cover_percent", "%", "Total cloud cover"),
+        "wind_speed_kmh": ("Surface_Wind_Speed_kmh", "km h-1", "Surface wind speed"),
+    }
+    for source_key, (variable_name, units, long_name) in definitions.items():
+        values = _surface_values(weather_data, source_key)
+        if values.size != times.size:
+            raise ValueError(
+                f"Surface weather field {source_key!r} has {values.size} values for "
+                f"{times.size} weather_time entries."
+            )
+        variable = ds.createVariable(variable_name, "f8", ("weather_time",), zlib=True)
+        variable.units = units
+        variable.long_name = long_name
+        variable[:] = values
+
+    ds.setncattr("Surface_Weather_Source", str(weather_data.get("source", "")))
+    ds.setncattr("Surface_Weather_Cadence", str(weather_data.get("cadence", "hourly")))
+    ds.setncattr("Surface_Weather_Scalar_Method", "finite session median for SCC interoperability")
 
 
 def _measurement_rows(group_df: pd.DataFrame) -> pd.DataFrame:
@@ -438,11 +483,8 @@ def build_level0_global_attributes(
         "RawData_Start_Date": min_start_utc.strftime("%Y%m%d"),
         "RawData_Start_Time_UT": min_start_utc.strftime("%H%M%S"),
         "RawData_Stop_Time_UT": max_stop_utc.strftime("%H%M%S"),
-        "Temperature_C": _surface_value(weather_data, "temperature_c"),
-        "Pressure_hPa": _surface_value(weather_data, "pressure_hpa"),
-        "CloudCover_percent": _surface_value(weather_data, "cloud_cover_percent"),
-        "RelativeHumidity_percent": _surface_value(weather_data, "relative_humidity_percent"),
-        "WindSpeed_kmh": _surface_value(weather_data, "wind_speed_kmh"),
+        "Surface_Weather_Source": str(weather_data.get("source", "")),
+        "Surface_Weather_Cadence": str(weather_data.get("cadence", "hourly")),
         "Source_File_Count": int(len(source_files)),
         "Source_Files": ";".join(source_files),
     }
@@ -616,8 +658,8 @@ def build_level0_netcdf(
             label="Measurement",
         )
         laser_pointing_angle_deg = station_pointing_angle_deg_from_zenith(config)
-        pressure_hpa = _surface_value(weather_data, "pressure_hpa")
-        temperature_c = _surface_value(weather_data, "temperature_c")
+        pressure_hpa = _surface_representative_value(weather_data, "pressure_hpa")
+        temperature_c = _surface_representative_value(weather_data, "temperature_c")
         laser_shots = _laser_shot_matrix(lidar_data, num_times, num_channels)
         with nc.Dataset(netcdf_path, "w", format="NETCDF4") as ds:
             ds.setncatts(build_level0_global_attributes(session_id, lidar_data, group_df, weather_data, config))
@@ -627,6 +669,7 @@ def build_level0_netcdf(
                 ds.setncattr("RawData_Stop_Time_UT", normalized_stop_time.strftime("%H%M%S"))
             _create_level0_dimensions(ds, num_times=num_times, num_channels=num_channels, num_points=num_points)
             variables = _create_level0_core_variables(ds, include_channel_ids=_scc_ready(config))
+            _write_surface_weather_series(ds, weather_data)
             variables["raw_data_start"][:, 0] = start_offsets
             variables["raw_data_stop"][:, 0] = stop_offsets
             variables["raw_lidar_data"][:] = _stack_raw_lidar_data(tensors, channels, num_times, num_points)
