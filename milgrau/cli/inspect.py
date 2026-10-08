@@ -114,6 +114,17 @@ def _detect_level(path: Path, ds: xr.Dataset) -> str:
     return level if score >= 2 else "UNKNOWN"
 
 
+def _preview_values(values: np.ndarray) -> list[Any]:
+    array = np.asarray(values)
+    if np.issubdtype(array.dtype, np.datetime64):
+        rendered = np.datetime_as_string(
+            array.astype("datetime64[s]"),
+            unit="s",
+        )
+        return np.asarray(rendered).reshape(-1).tolist()
+    return array.reshape(-1).tolist()
+
+
 def _coordinate_preview(da: xr.DataArray) -> str:
     size = int(da.size)
     if size == 0:
@@ -122,15 +133,23 @@ def _coordinate_preview(da: xr.DataArray) -> str:
         return f"{size} values"
 
     if size <= 6:
-        values = np.asarray(da.values)
-        return _short(values.tolist())
+        return _short(_preview_values(np.asarray(da.values)))
 
-    first = np.asarray(da.isel({da.dims[0]: slice(0, 3)}).values).tolist()
-    last = np.asarray(da.isel({da.dims[0]: slice(-3, None)}).values).tolist()
+    first = _preview_values(
+        np.asarray(da.isel({da.dims[0]: slice(0, 3)}).values)
+    )
+    last = _preview_values(
+        np.asarray(da.isel({da.dims[0]: slice(-3, None)}).values)
+    )
     return _short(f"{first} … {last}")
 
 
-def _session_summary(path: Path, ds: xr.Dataset) -> dict[str, Any] | None:
+def _session_summary(
+    path: Path,
+    ds: xr.Dataset,
+    *,
+    timezone_name: str | None = None,
+) -> dict[str, Any] | None:
     """Return a compact session-level summary using product metadata and siblings."""
     session_id = str(ds.attrs.get("Session_ID", "")).strip()
     if not session_id:
@@ -143,12 +162,26 @@ def _session_summary(path: Path, ds: xr.Dataset) -> dict[str, Any] | None:
     except ValueError:
         return None
 
-    timezone_name = str(ds.attrs.get("timezone", "UTC")).strip() or "UTC"
+    resolved_timezone = str(timezone_name or ds.attrs.get("timezone", "")).strip()
+    if not resolved_timezone:
+        for suffix in (LEVEL1_SUFFIX, LEVEL0_SUFFIX):
+            sibling = path.parent / f"{session_id}{suffix}"
+            if not sibling.is_file() or sibling.resolve() == path.resolve():
+                continue
+            try:
+                with xr.open_dataset(sibling, decode_times=False, cache=False) as sibling_ds:
+                    resolved_timezone = str(sibling_ds.attrs.get("timezone", "")).strip()
+            except Exception:
+                resolved_timezone = ""
+            if resolved_timezone:
+                break
+    if not resolved_timezone:
+        resolved_timezone = "UTC"
     try:
-        timezone = ZoneInfo(timezone_name)
+        timezone = ZoneInfo(resolved_timezone)
     except Exception:
         timezone = ZoneInfo("UTC")
-        timezone_name = "UTC"
+        resolved_timezone = "UTC"
     start_local = start_utc.astimezone(timezone)
     end_local = end_utc.astimezone(timezone)
     duration_seconds = float((end_utc - start_utc).total_seconds())
@@ -196,10 +229,15 @@ def _session_summary(path: Path, ds: xr.Dataset) -> dict[str, Any] | None:
             f"{start_utc.strftime('%Y-%m-%d %H:%M')} → "
             f"{end_utc.strftime('%Y-%m-%d %H:%M')} UTC"
         ),
-        "timezone": timezone_name,
+        "timezone": resolved_timezone,
         "duration": duration,
         "regimes": ", ".join(regimes) if regimes else "--",
-        "segments": ", ".join(segments) if segments else "--",
+        "regime_sequence": (
+            " → ".join(item.split(" ", 1)[1] for item in segments)
+            if segments
+            else ", ".join(regimes) if regimes else "--"
+        ),
+        "segments": " | ".join(segments) if segments else "--",
         "available_levels": ", ".join(available_levels) if available_levels else "--",
         "highest_level": highest,
         "figures": figures,
@@ -217,24 +255,37 @@ def level_from_path(path: Path) -> str:
     return "--"
 
 
-def _print_session_summary(path: Path, ds: xr.Dataset) -> None:
-    summary = _session_summary(path, ds)
+def _print_session_summary(
+    path: Path,
+    ds: xr.Dataset,
+    *,
+    timezone_name: str | None = None,
+    list_figures: bool = False,
+) -> None:
+    summary = _session_summary(path, ds, timezone_name=timezone_name)
     if summary is None:
         return
-    print("\nSESSION SUMMARY")
+    product_marks = []
+    available = set(summary["available_levels"].split(", "))
+    for level in ("L0", "L1", "L2"):
+        product_marks.append(f"{level} {'✓' if level in available else '–'}")
+
+    print("\nSESSION")
     print("-" * 100)
-    print(f"  Session        : {summary['session_id']}")
-    print(f"  Human interval : {summary['human_label']}")
-    print(f"  UTC interval   : {summary['utc_interval']}")
-    print(f"  Timezone       : {summary['timezone']}")
-    print(f"  Levels         : {summary['available_levels']} | highest={summary['highest_level']}")
-    print(f"  Solar regimes  : {summary['regimes']}")
+    print(f"  ID             : {summary['session_id']}")
+    print(f"  Local time     : {summary['human_label']}")
+    print(f"  UTC            : {summary['utc_interval']}")
+    print(f"  Time zone      : {summary['timezone']}")
+    print(
+        f"  Products       : {'  '.join(product_marks)}"
+        f"   | highest {summary['highest_level']}"
+    )
+    print(f"  Solar sequence : {summary['regime_sequence']}")
     print(f"  Segments       : {summary['segments']}")
-    print(f"  Figures        : {len(summary['figures'])}")
-    for figure in summary["figures"][:12]:
-        print(f"    - {figure}")
-    if len(summary["figures"]) > 12:
-        print(f"    … {len(summary['figures']) - 12} more")
+    print(f"  Figures        : {len(summary['figures'])} files")
+    if list_figures:
+        for figure in summary["figures"]:
+            print(f"    - {figure}")
 
 
 def _print_header(path: Path, ds: xr.Dataset, level: str) -> None:
@@ -422,6 +473,9 @@ def inspect_product(
     show_values: bool = True,
     validate: bool = False,
     max_vars: int = 30,
+    timezone_name: str | None = None,
+    show_session_summary: bool = True,
+    list_figures: bool = False,
 ) -> None:
     """Print a compact structural summary of one MILGRAU NetCDF product."""
     product_path = Path(path).expanduser()
@@ -431,7 +485,13 @@ def inspect_product(
     with xr.open_dataset(product_path) as ds:
         level = _detect_level(product_path, ds)
         _print_header(product_path, ds, level)
-        _print_session_summary(product_path, ds)
+        if show_session_summary:
+            _print_session_summary(
+                product_path,
+                ds,
+                timezone_name=timezone_name,
+                list_figures=list_figures,
+            )
         _print_dimensions(ds)
         _print_coordinates(ds, show_values=show_values)
         _print_variables(ds, full=full, max_vars=max_vars)
@@ -445,15 +505,15 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="milgrau-inspect",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description=(
-            "Show dimensions, coordinates, variables and metadata from MILGRAU "
-            "Level 0/1/2 NetCDF products without loading the full signal arrays."
+            "Inspect MILGRAU sessions and Level 0/1/2 products without loading "
+            "the full signal arrays. The simplest selector is a local date: YYYYMMDD."
         ),
         epilog=(
             "Examples:\n"
             "  milgrau-inspect 20240620\n"
             "  milgrau-inspect spu_20240620-2200Z_20240621-0700Z\n"
-            "  milgrau-inspect -i 20240620\n"
             "  milgrau-inspect path/to/product_L2.nc --validate\n"
+            "  milgrau-inspect 20240620 --full\n"
         ),
     )
     parser.add_argument(
@@ -489,6 +549,39 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _station_timezone_from_config(config: dict) -> str | None:
+    catalog = config.get("_station_catalog")
+    if not isinstance(catalog, dict):
+        return None
+    station = catalog.get("station")
+    if not isinstance(station, dict):
+        return None
+    value = str(station.get("timezone", "")).strip()
+    return value or None
+
+
+def _group_paths_by_session(paths: Sequence[Path]) -> list[list[Path]]:
+    groups: dict[str, list[Path]] = {}
+    loose: list[list[Path]] = []
+    for path in paths:
+        try:
+            session_id = product_session_id(path)
+        except ValueError:
+            loose.append([path])
+            continue
+        groups.setdefault(session_id, []).append(path)
+    ordered = [
+        sorted(group, key=lambda item: level_from_path(item))
+        for _session_id, group in sorted(groups.items())
+    ]
+    return ordered + loose
+
+
+def _summary_source_path(group: Sequence[Path]) -> Path:
+    rank = {"L0": 0, "L1": 1, "L2": 2}
+    return max(group, key=lambda path: rank.get(level_from_path(path), -1))
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -514,24 +607,42 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     _print_selection(paths)
+    timezone_name = _station_timezone_from_config(config)
 
     failures = 0
-    for path in paths:
+    for group in _group_paths_by_session(paths):
+        summary_path = _summary_source_path(group)
         try:
-            inspect_product(
-                path,
-                full=args.full,
-                show_values=not args.no_values,
-                validate=args.validate,
-                max_vars=args.max_vars,
-            )
+            with xr.open_dataset(summary_path, cache=False) as summary_ds:
+                _print_session_summary(
+                    summary_path,
+                    summary_ds,
+                    timezone_name=timezone_name,
+                    list_figures=args.full,
+                )
         except Exception as exc:
             failures += 1
-            print()
-            print("=" * 100)
-            print(f"ERROR: {path}")
-            print("=" * 100)
-            print(f"{type(exc).__name__}: {exc}")
+            print(f"\nWARNING: session summary unavailable: {type(exc).__name__}: {exc}")
+
+        for path in group:
+            try:
+                inspect_product(
+                    path,
+                    full=args.full,
+                    show_values=not args.no_values,
+                    validate=args.validate,
+                    max_vars=args.max_vars,
+                    timezone_name=timezone_name,
+                    show_session_summary=False,
+                    list_figures=args.full,
+                )
+            except Exception as exc:
+                failures += 1
+                print()
+                print("=" * 100)
+                print(f"ERROR: {path}")
+                print("=" * 100)
+                print(f"{type(exc).__name__}: {exc}")
 
     return 1 if failures else 0
 
