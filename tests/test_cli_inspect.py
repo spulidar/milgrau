@@ -47,8 +47,8 @@ def test_inspect_product_prints_structural_summary(tmp_path, capsys) -> None:
     inspect_product(path, max_vars=10)
 
     output = capsys.readouterr().out
-    assert "MILGRAU PRODUCT INSPECTOR" in output
-    assert "Detected level : L1" in output
+    assert "PRODUCT L1" in output
+    assert "File        : demo.nc" in output
     assert "DIMENSIONS" in output
     assert "COORDINATES" in output
     assert "DATA VARIABLES" in output
