@@ -86,6 +86,7 @@ class Era5Config:
 
 @dataclass(frozen=True, slots=True)
 class AtmosphereConfig:
+    time_resolution_minutes: int
     source_priority: tuple[str, ...]
     external_profile_outside_coverage: str
     radiosonde: RadiosondeConfig | None
@@ -286,10 +287,16 @@ def _resolve_era5_config(section: Mapping[str, Any]) -> Era5Config:
 
 def _resolve_atmosphere_config(level1: Mapping[str, Any]) -> AtmosphereConfig:
     atmosphere = _mapping(level1.get("atmosphere"), "level1.atmosphere")
-    allowed = {"source_priority", "external_profile_outside_coverage", "radiosonde", "era5"}
+    allowed = {
+        "time_resolution_minutes",
+        "source_priority",
+        "external_profile_outside_coverage",
+        "radiosonde",
+        "era5",
+    }
     _allowed_keys(
         atmosphere,
-        required={"source_priority", "external_profile_outside_coverage"},
+        required={"time_resolution_minutes", "source_priority", "external_profile_outside_coverage"},
         allowed=allowed,
         label="level1.atmosphere",
     )
@@ -297,7 +304,17 @@ def _resolve_atmosphere_config(level1: Mapping[str, Any]) -> AtmosphereConfig:
     raw_priority = atmosphere["source_priority"]
     if not isinstance(raw_priority, list) or not raw_priority:
         raise Level1ConfigurationError("Configuration level1.atmosphere.source_priority must be a non-empty list.")
-    valid_sources = {"radiosonde", "era5", "ussa76"}
+    cadence_minutes = _integer(
+        atmosphere["time_resolution_minutes"],
+        "level1.atmosphere.time_resolution_minutes",
+        minimum=1,
+    )
+    if cadence_minutes != 60:
+        raise Level1ConfigurationError(
+            "Configuration level1.atmosphere.time_resolution_minutes currently supports only 60."
+        )
+
+    valid_sources = {"era5", "ussa76"}
     priority: list[str] = []
     for index, raw_source in enumerate(raw_priority):
         source = _text(raw_source, f"level1.atmosphere.source_priority[{index}]").lower()
@@ -321,13 +338,9 @@ def _resolve_atmosphere_config(level1: Mapping[str, Any]) -> AtmosphereConfig:
         )
 
     radiosonde = None
-    if "radiosonde" in priority:
+    if "radiosonde" in atmosphere:
         radiosonde = _resolve_radiosonde_config(
             _mapping(atmosphere.get("radiosonde"), "level1.atmosphere.radiosonde")
-        )
-    elif "radiosonde" in atmosphere:
-        raise Level1ConfigurationError(
-            "Configuration level1.atmosphere.radiosonde is present but radiosonde is absent from source_priority."
         )
 
     era5 = None
@@ -338,7 +351,7 @@ def _resolve_atmosphere_config(level1: Mapping[str, Any]) -> AtmosphereConfig:
             "Configuration level1.atmosphere.era5 is present but era5 is absent from source_priority."
         )
 
-    return AtmosphereConfig(tuple(priority), extension, radiosonde, era5)
+    return AtmosphereConfig(cadence_minutes, tuple(priority), extension, radiosonde, era5)
 
 
 def resolve_level1_config(config: Mapping[str, Any]) -> Level1Config:
