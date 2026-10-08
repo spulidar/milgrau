@@ -91,17 +91,40 @@ def _write_synthetic_level1(path: Path) -> Path:
                 ("time",),
                 np.array([0.8, 0.9, 1.0], dtype=np.float32),
             ),
-            "Atmospheric_Temperature_K": (("altitude",), temperature_k),
-            "Atmospheric_Pressure_hPa": (("altitude",), pressure_hpa),
+            "Atmospheric_Temperature_K": (
+                ("atmosphere_time", "altitude"),
+                np.vstack([temperature_k, temperature_k]),
+            ),
+            "Atmospheric_Pressure_hPa": (
+                ("atmosphere_time", "altitude"),
+                np.vstack([pressure_hpa, pressure_hpa]),
+            ),
+            "Atmospheric_Source_Type": (
+                ("atmosphere_time",),
+                np.array(["ussa76", "ussa76"], dtype=object),
+            ),
+            "Atmospheric_Source_Time_Delta_hours": (
+                ("atmosphere_time",),
+                np.array([np.nan, np.nan]),
+            ),
+            "Atmospheric_USSA76_Fallback_Fraction": (
+                ("atmosphere_time",),
+                np.array([1.0, 1.0]),
+            ),
         },
-        coords={"time": time, "channel": channel, "altitude": altitude},
+        coords={
+            "time": time,
+            "channel": channel,
+            "altitude": altitude,
+            "atmosphere_time": pd.date_range("2024-01-01T00:00:00", periods=2, freq="1h"),
+        },
         attrs={
             "Processing_level": "Level 1 synthetic test product",
             "Altitude_units": "m",
             "tropopause_cpt_km": -999.0,
             "tropopause_lrt_km": -999.0,
             "thermodynamic_profile_available": "true",
-            "thermodynamic_profile_source_type": "ussa76",
+            "thermodynamic_profile_source_type": "time_resolved",
             "thermodynamic_profile_source": "US Standard Atmosphere 1976",
             "thermodynamic_profile_standard_fallback_fraction": 1.0,
         },
@@ -173,11 +196,9 @@ def _level2_config(tmp_path: Path) -> dict:
 def test_synthetic_level1_contract_contains_canonical_atmosphere(tmp_path: Path) -> None:
     path = _write_synthetic_level1(tmp_path / "synthetic_level1_rcs.nc")
     with xr.open_dataset(path) as ds:
-        assert ds["Atmospheric_Temperature_K"].dims == ("altitude",)
-        assert ds["Atmospheric_Pressure_hPa"].dims == ("altitude",)
-        assert "Radiosonde_Temperature_K" not in ds
-        assert "Radiosonde_Pressure_hPa" not in ds
-        assert ds.attrs["thermodynamic_profile_source_type"] == "ussa76"
+        assert ds["Atmospheric_Temperature_K"].dims == ("atmosphere_time", "altitude")
+        assert ds["Atmospheric_Pressure_hPa"].dims == ("atmosphere_time", "altitude")
+        assert ds.attrs["thermodynamic_profile_source_type"] == "time_resolved"
 
 
 def test_lebear_generates_two_sided_level2_from_level1_atmosphere(tmp_path: Path) -> None:
@@ -191,7 +212,7 @@ def test_lebear_generates_two_sided_level2_from_level1_atmosphere(tmp_path: Path
 
     with xr.open_dataset(output_path) as ds_l2:
         validate_level2_contract(ds_l2)
-        assert ds_l2.attrs["level2_product_schema_version"] == LEVEL2_PRODUCT_SCHEMA_VERSION == "6"
+        assert ds_l2.attrs["level2_product_schema_version"] == LEVEL2_PRODUCT_SCHEMA_VERSION == "7"
         assert "level2_retrieval_method_version" not in ds_l2.attrs
         assert ds_l2.attrs["integration_mode"] == "two_sided"
         assert ds_l2.attrs["uncertainty_method"] == "selection-aware Monte Carlo"
@@ -203,7 +224,7 @@ def test_lebear_generates_two_sided_level2_from_level1_atmosphere(tmp_path: Path
         assert ds_l2.attrs["gluing_selection_score_version"] == "1"
         assert "relative_rmse" in ds_l2.attrs["gluing_selection_score_formula"]
 
-        assert ds_l2["molecular_backscatter"].dims == ("wavelength", "altitude")
+        assert ds_l2["molecular_backscatter"].dims == ("block_time", "wavelength", "altitude")
         assert np.all(np.isfinite(ds_l2["molecular_backscatter"].values))
         assert set(np.unique(ds_l2["retrieval_success_flag"].values).tolist()) == {1}
         assert ds_l2["aerosol_backscatter_mean"].dims == ("wavelength", "altitude")
