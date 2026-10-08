@@ -306,12 +306,14 @@ def level2_output_path(level1_file: str | Path, variant_tag: str | None = None) 
 def quicklook_output_path(
     output_folder: str | Path,
     file_name_prefix: str,
-    formatted_channel_name: str,
+    channel_token: str,
     max_altitude_km: float,
     output_format: str,
 ) -> Path:
     """Return an RCS figure path."""
-    safe_channel = str(formatted_channel_name).replace(" ", "_")
+    safe_channel = re.sub(r"[^A-Za-z0-9]+", "", str(channel_token).strip())
+    if not safe_channel:
+        raise ValueError("channel_token must contain at least one alphanumeric character.")
     suffix = str(output_format).lstrip(".").lower()
     return Path(output_folder) / (
         f"{file_name_prefix}_L1_RCS_{safe_channel}_{float(max_altitude_km):g}km.{suffix}"
