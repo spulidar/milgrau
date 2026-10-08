@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from milgrau.io.licel import parse_licel_group
-from milgrau.level0.config import resolve_level0_config, station_pointing_angle_deg_from_zenith
+from milgrau.level0.config import station_pointing_angle_deg_from_zenith
 from milgrau.physics.solar import SOLAR_POSITION_ALGORITHM
 
 RAW_SIGNAL_UNITS: Final[str] = "counts for PC, mV per shot for analog"
@@ -48,6 +48,26 @@ def _source_file_names(group_df: pd.DataFrame) -> list[str]:
     if "filepath" not in group_df:
         return []
     return sorted(Path(path).name for path in group_df["filepath"].tolist())
+
+
+def _solar_threshold_deg(config: Mapping[str, Any]) -> float:
+    level0 = config.get("level0")
+    if not isinstance(level0, Mapping):
+        raise ValueError("Configuration level0 is required for solar metadata.")
+    solar = level0.get("solar_regime")
+    if not isinstance(solar, Mapping):
+        raise ValueError("Configuration level0.solar_regime is required for solar metadata.")
+    try:
+        value = float(solar["day_night_threshold_deg"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(
+            "Configuration level0.solar_regime.day_night_threshold_deg must be numeric."
+        ) from exc
+    if not np.isfinite(value) or not -90.0 <= value <= 90.0:
+        raise ValueError(
+            "Configuration level0.solar_regime.day_night_threshold_deg must be within [-90, 90]."
+        )
+    return value
 
 
 def _resolved_station(config: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -211,10 +231,9 @@ def _write_solar_context(
     segment_start[:] = np.asarray(starts, dtype=np.int64)
     segment_end[:] = np.asarray(ends, dtype=np.int64)
 
-    level0 = resolve_level0_config(config)
     ds.setncattr(
         "Solar_Day_Night_Threshold_deg",
-        float(level0.solar_regime.day_night_threshold_deg),
+        _solar_threshold_deg(config),
     )
     ds.setncattr("Solar_Position_Algorithm", SOLAR_POSITION_ALGORITHM)
     ds.setncattr("Segment_Count", np.int32(len(ordered_segments)))
@@ -567,9 +586,7 @@ def build_level0_global_attributes(
         "Surface_Weather_Cadence": str(weather_data.get("cadence", "hourly")),
         "Source_File_Count": int(len(source_files)),
         "Source_Files": ";".join(source_files),
-        "Solar_Day_Night_Threshold_deg": float(
-            resolve_level0_config(config).solar_regime.day_night_threshold_deg
-        ),
+        "Solar_Day_Night_Threshold_deg": _solar_threshold_deg(config),
         "Solar_Position_Algorithm": SOLAR_POSITION_ALGORITHM,
     }
     if resolved.get("segment_id") is not None:
