@@ -104,8 +104,10 @@ For example:
 
 The timestamps are UTC and use minute precision in the identifier. Exact acquisition
 times remain in the NetCDF metadata. A session may cross midnight or any former
-six-hour site boundary without being split. A true acquisition gap or a change in
-station profile/calibration starts a new session.
+six-hour site boundary without being split. A true acquisition gap or a change in station profile/calibration starts a
+new session. Inside one session, MILGRAU stores geometric solar elevation,
+classifies each profile as `day` or `night` using the configured threshold,
+and assigns contiguous `segXX` scientific segments.
 
 Products are grouped by the UTC month in which the session starts:
 
@@ -118,6 +120,7 @@ Products are grouped by the UTC month in which the session starts:
           spu_20250511-0012Z_20250511-0737Z_L0.nc
           spu_20250511-0012Z_20250511-0737Z_L1.nc
           spu_20250511-0012Z_20250511-0737Z_L2.nc
+          spu_20250511-0012Z_20250511-0737Z_seg00_L0_scc.nc  # when SCC export applies
           figures/
 ```
 
@@ -129,7 +132,15 @@ milgrau-libids -i spu_20250511-0012Z_20250511-0737Z --force
 milgrau-lipancora -i 20250510
 milgrau-liracos -i spu_20250511-0012Z_20250511-0737Z
 milgrau-lebear -i spu_20250511-0012Z_20250511-0737Z
+milgrau-lebear -i spu_20250511-0012Z_20250511-0737Z --regime night
+milgrau-lebear -i spu_20250511-0012Z_20250511-0737Z --segment seg01
 ```
+
+The solar selectors are scientific subsets of the same session, not new session
+identities. `--regime night` may include more than one disjoint night segment
+if a long session contains them; `--segment seg01` selects exactly one
+contiguous segment. Either selector may be intersected with
+`--time-window-utc`.
 
 The current visualization command renders the actual Level 1 session extent by
 default. An explicit UTC subset may still be requested without redefining session
@@ -138,6 +149,7 @@ identity:
 ```bash
 milgrau-liracos -i spu_20250511-0012Z_20250511-0737Z --time-window-utc 01:00 03:00
 milgrau-lebear -i spu_20250511-0012Z_20250511-0737Z --time-window-utc 01:00 03:00
+milgrau-lebear -i spu_20250511-0012Z_20250511-0737Z --regime night --time-window-utc 01:00 03:00
 ```
 
 Public-site windows such as 00–06, 06–12, 12–18 and 18–24 are publication views
