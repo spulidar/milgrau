@@ -82,6 +82,63 @@ remain missing.
 - [x] Documentation describes one current product rather than parallel method
   generations.
 
+## Session refactor: meteorology and atmosphere
+
+Accepted architecture for continuous sessions:
+
+- [x] Session continuity tolerance is 30 minutes (`level0.session.max_gap_seconds = 1800`).
+- [ ] Level 0 surface weather becomes a time-resolved series rather than one
+  midpoint snapshot.
+- [ ] Surface-weather cadence is hourly on its native/source cadence; do not
+  duplicate/interpolate hourly source values onto every lidar profile.
+- [ ] Persist time-resolved surface temperature, pressure, relative humidity,
+  cloud cover and wind with explicit source/provenance metadata.
+- [ ] Missing surface weather remains missing; do not invent default
+  temperature/pressure values.
+- [ ] SCC scalar surface temperature/pressure, when required, are derived only
+  for SCC interoperability and do not replace the scientific time series.
+- [ ] Level 1 atmosphere becomes time resolved as
+  `Atmospheric_Temperature_K(atmosphere_time, altitude)` and
+  `Atmospheric_Pressure_hPa(atmosphere_time, altitude)`.
+- [ ] ERA5 pressure-level reanalysis is the temporal backbone for the canonical
+  Level 1 atmosphere because it provides consistent hourly atmospheric state
+  across long continuous sessions.
+- [ ] Radiosondes remain the preferred local in-situ observational reference
+  for validation/QA when a suitable sounding is available near the session.
+- [ ] Radiosonde availability does not force abrupt piecewise replacement of
+  the hourly ERA5 backbone.
+- [ ] USSA76 remains explicit vertical extension and full fallback when the
+  configured external sources cannot provide the required atmosphere.
+- [ ] Level 2 performs no external meteorological IO; it interpolates the
+  materialized Level 1 atmosphere to each retrieval `block_time`.
+- [ ] Solar day/night segments and atmospheric time resolution remain
+  independent concepts.
+
+### Atmospheric comparison QA
+
+- [ ] Add a Level 1 atmospheric comparison figure to `figures/`, with a
+  session/level-identifying filename such as
+  `SESSION_L1_AtmosphericProfile.webp`.
+- [ ] When radiosonde is available, compare three profiles on a common altitude
+  grid: ERA5, radiosonde and the canonical profile actually used by MILGRAU.
+- [ ] Plot temperature and pressure profiles and the corresponding differences.
+- [ ] Report compact quantitative metrics over configurable altitude bands:
+  temperature bias/RMSE, pressure bias/relative difference and valid overlap.
+- [ ] Also compare the derived molecular state relevant to lidar retrieval
+  (molecular number density/backscatter or an equivalent directly traceable
+  quantity) so QA measures scientific retrieval impact, not only meteorological
+  differences.
+- [ ] Record radiosonde launch/target time, ERA5 analysis time, spatial source
+  metadata and time offsets in the figure/provenance.
+- [ ] Treat ERA5-versus-radiosonde agreement as a consistency/validation QA,
+  not as a fully independent validation, because radiosonde observations may
+  contribute to the reanalysis assimilation system.
+- [ ] If no suitable radiosonde exists, generate the atmospheric figure with
+  ERA5 + canonical used profile + USSA76/fallback context and mark radiosonde
+  as unavailable rather than silently omitting provenance.
+- [ ] Define and test the maximum radiosonde time separation used for the QA
+  comparison independently of the production ERA5 atmosphere cadence.
+
 ## Required before the next release candidate
 
 ### Engineering
