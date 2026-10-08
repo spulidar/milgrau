@@ -73,7 +73,9 @@ The downloaded NetCDF and JSON sidecar are IO cache artifacts. The Level 1
 NetCDF is the scientific product. The cache is indexed by analysis hour and
 station coordinates so adjacent sessions reuse the same downloaded ERA5 hour.
 
-CDS credentials remain outside the repository and are read by `cdsapi`.
+`cdsapi` is a core MILGRAU dependency because ERA5 is the productive
+time-resolved atmosphere backbone. CDS credentials remain outside the repository
+and are read by `cdsapi`.
 
 ## Radiosonde comparison reference
 
