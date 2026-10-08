@@ -31,6 +31,18 @@ def extract_datetime_strings(ds: xr.Dataset) -> tuple[str, str]:
         return "Unknown date", "Unknown date"
 
 
+def channel_file_token(raw_name: str) -> str:
+    """Return a compact channel token such as 355AN for figure filenames."""
+    text = str(raw_name).strip()
+    parts = text.split(".")
+    if len(parts) == 2:
+        try:
+            return f"{int(parts[0])}{parts[1].upper()}"
+        except ValueError:
+            pass
+    return "".join(character for character in text if character.isalnum()) or "channel"
+
+
 def format_channel_name(raw_name: str) -> str:
     """Convert an internal channel name such as '532.AN' into '532nm AN'."""
     try:
@@ -264,7 +276,10 @@ def plot_quicklook(
     footer_subtitle = period_label
     add_footer_and_logos(fig, root_dir, subtitle=footer_subtitle)
 
-    out_path = Path(output_folder) / f"{file_name_prefix}_L1_RCS_{pretty_channel.replace(' ', '_')}_{float(max_altitude):g}km.{output_format}"
+    out_path = Path(output_folder) / (
+        f"{file_name_prefix}_L1_RCS_{channel_file_token(channel_name)}_"
+        f"{float(max_altitude):g}km.{output_format}"
+    )
     return _save_figure(fig, out_path, dpi=dpi)
 
 
