@@ -389,15 +389,30 @@ def plot_atmospheric_profile(
     source_text = _source_used_text(ds, index)
 
     fig.suptitle(
-        "MILGRAU Level 1 — Atmospheric Profile Comparison\n"
-        f"L1 source used: {source_text}  |  "
-        f"reference time: {comparison_time.strftime('%Y-%m-%d %H:%M UTC')}  |  "
-        f"radiosonde: {radio_text}",
+        "MILGRAU Level 1 — Atmospheric Profile Comparison",
         fontsize=13.5,
         fontweight="bold",
-        y=0.98,
+        y=0.985,
     )
-    fig.subplots_adjust(top=0.86, bottom=0.14, left=0.07, right=0.98, wspace=0.20)
+    fig.text(
+        0.5,
+        0.945,
+        f"L1 source used: {source_text}",
+        ha="center",
+        va="top",
+        fontsize=11.2,
+        fontweight="bold",
+    )
+    fig.text(
+        0.5,
+        0.918,
+        f"Reference time: {comparison_time.strftime('%Y-%m-%d %H:%M UTC')}  |  "
+        f"Radiosonde: {radio_text}",
+        ha="center",
+        va="top",
+        fontsize=10.2,
+    )
+    fig.subplots_adjust(top=0.84, bottom=0.14, left=0.07, right=0.98, wspace=0.20)
     add_footer_and_logos(fig, root_dir)
 
     folder = Path(output_folder)
