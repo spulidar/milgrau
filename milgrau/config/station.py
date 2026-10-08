@@ -274,9 +274,14 @@ def _local_measurement_time(station: Mapping[str, Any], measurement_time: dateti
     return measurement_time.astimezone(station_timezone)
 
 
-def _measurement_mode(local_time: datetime) -> str:
-    """Return the SCC day/night mode from station-local clock time."""
-    return "day" if 6 <= local_time.hour < 18 else "night"
+def _scc_mode(value: str | None) -> str | None:
+    """Validate an explicitly resolved solar SCC mode."""
+    if value is None:
+        return None
+    mode = str(value).strip().lower()
+    if mode not in {"day", "night"}:
+        raise ValueError("SCC mode must be 'day' or 'night'.")
+    return mode
 
 
 def _default_lr_input(catalog: Mapping[str, Any], scc_config: Mapping[str, Any]) -> dict[str, int]:
@@ -311,8 +316,10 @@ def resolve_station_context(
     config: Mapping[str, Any],
     measurement_time: datetime,
     available_channels: Sequence[str],
+    *,
+    mode: str | None = None,
 ) -> dict[str, Any]:
-    """Resolve one temporal station profile, calibration set, and optional SCC map."""
+    """Resolve one station profile/calibration and optional solar-selected SCC map."""
     catalog = config.get("_station_catalog")
     if not isinstance(catalog, Mapping):
         raise KeyError("No station catalog is loaded; configure station_config in config.yaml.")
@@ -329,7 +336,7 @@ def resolve_station_context(
         raise ValueError(f"Expected exactly one station profile for {when.isoformat()}, found {[p['id'] for p in matches]}.")
 
     profile = matches[0]
-    mode = _measurement_mode(local_measurement_time)
+    resolved_mode = _scc_mode(mode)
     available = [str(channel) for channel in available_channels]
     available_set = set(available)
     resolved_site = deepcopy(station["site"])
@@ -346,7 +353,7 @@ def resolve_station_context(
         "channel_calibrations": channel_calibrations,
         "valid_from": profile["valid_from"],
         "valid_to": profile.get("valid_to"),
-        "mode": mode,
+        "mode": resolved_mode,
         "timezone": str(station["timezone"]),
         "site": resolved_site,
         "laser": deepcopy(profile.get("laser", {})),
@@ -367,7 +374,21 @@ def resolve_station_context(
             "extra_channels": available,
         }
 
-    scc = profile["scc"][mode]
+    if resolved_mode is None:
+        return {
+            **common,
+            "scc_available": True,
+            "scc_export_ready": False,
+            "scc_configuration_id": None,
+            "scc_configuration_name": None,
+            "channel_ids": {},
+            "lr_input": {},
+            "scc_channels": [],
+            "missing_scc_channels": [],
+            "extra_channels": available,
+        }
+
+    scc = profile["scc"][resolved_mode]
     channel_ids = {str(name): int(value) for name, value in scc["channels"].items()}
     lr_input = _resolve_lr_input(catalog, scc)
     missing = [name for name in channel_ids if name not in available_set]
