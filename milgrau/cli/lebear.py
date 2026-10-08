@@ -13,7 +13,7 @@ from milgrau.io.paths import LEVEL1_SUFFIX, level2_output_path, logging_session_
 from milgrau.io.selection import parse_input_selection, resolve_product_selection
 from milgrau.level2.lebear import level2_output_is_current, process_single_level1_file
 from milgrau.level2.discovery import discover_level1_files
-from milgrau.level2.qa import generate_level2_qa, level2_qa_enabled
+from milgrau.level2.figures import generate_level2_figures, level2_figures_enabled
 from milgrau.operations import ExecutionResult, ExecutionSummary
 from milgrau.version import __version__
 
@@ -130,8 +130,8 @@ def _process_selected_files(args: argparse.Namespace, config: dict, logger: logg
                     metadata={"pipeline": "L2", "session_id": session_id},
                 )
             )
-            if level2_qa_enabled(config):
-                skipped_results.append(generate_level2_qa(file_path, output_path, config, file_logger))
+            if level2_figures_enabled(config):
+                skipped_results.append(generate_level2_figures(file_path, output_path, config, file_logger))
             continue
         files_to_process.append(file_path)
 
