@@ -29,8 +29,19 @@ def _minimal_level0() -> xr.Dataset:
             "Surface_Relative_Humidity_percent": (("weather_time",), np.array([60.0, 62.0])),
             "Surface_Cloud_Cover_percent": (("weather_time",), np.array([20.0, 30.0])),
             "Surface_Wind_Speed_kmh": (("weather_time",), np.array([5.0, 6.0])),
+            "solar_elevation_deg": (("time",), np.array([-20.0, -18.0])),
+            "solar_regime": (("time",), np.array(["night", "night"], dtype=object)),
+            "segment_id": (("time",), np.array(["seg00", "seg00"], dtype=object)),
+            "Segment_Label": (("segments",), np.array(["seg00"], dtype=object)),
+            "Segment_Regime": (("segments",), np.array(["night"], dtype=object)),
+            "Segment_Start_Time_UTC": (("segments",), np.array([1704067200], dtype=np.int64)),
+            "Segment_End_Time_UTC": (("segments",), np.array([1704067320], dtype=np.int64)),
         },
         coords={"weather_time": pd.date_range("2024-01-01T00:00:00", periods=2, freq="1h")},
+        attrs={
+            "Solar_Day_Night_Threshold_deg": -3.0,
+            "Solar_Position_Algorithm": "test",
+        },
     )
 
 
