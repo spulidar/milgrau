@@ -7,6 +7,7 @@ applied, so regime classification is independent of surface meteorology.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -14,6 +15,16 @@ import pandas as pd
 
 
 SOLAR_POSITION_ALGORITHM = "NOAA solar position equations; geometric solar-center elevation"
+
+
+@dataclass(frozen=True, slots=True)
+class SolarSegment:
+    """One contiguous day/night segment inside a scientific session."""
+
+    segment_id: str
+    regime: str
+    start_time_utc: pd.Timestamp
+    end_time_utc: pd.Timestamp
 
 
 def _as_utc_index(times_utc: Any) -> pd.DatetimeIndex:
@@ -150,4 +161,57 @@ def solar_regime(
     return np.where(elevation >= threshold, "day", "night").astype(object)
 
 
-__all__ = ["SOLAR_POSITION_ALGORITHM", "solar_elevation_deg", "solar_regime"]
+
+
+def build_solar_segments(
+    start_times_utc: Any,
+    stop_times_utc: Any,
+    regimes: Any,
+) -> tuple[np.ndarray, tuple[SolarSegment, ...]]:
+    """Return per-profile segment IDs plus contiguous segment metadata."""
+    starts = _as_utc_index(start_times_utc)
+    stops = _as_utc_index(stop_times_utc)
+    regime_values = np.asarray(regimes).astype(str)
+    if len(starts) == 0:
+        return np.asarray([], dtype=object), ()
+    if len(starts) != len(stops) or len(starts) != regime_values.size:
+        raise ValueError("Solar segmentation requires equal start/stop/regime lengths.")
+    if not starts.is_monotonic_increasing:
+        raise ValueError("Solar segmentation requires chronologically ordered profiles.")
+    if np.any(stops.asi8 <= starts.asi8):
+        raise ValueError("Every profile stop time must be later than its start time.")
+    invalid = sorted(set(regime_values) - {"day", "night"})
+    if invalid:
+        raise ValueError(f"Unsupported solar regime value(s): {invalid}")
+
+    labels = np.empty(regime_values.size, dtype=object)
+    segments: list[SolarSegment] = []
+    start_index = 0
+    segment_number = 0
+    for index in range(1, regime_values.size + 1):
+        at_end = index == regime_values.size
+        changed = not at_end and regime_values[index] != regime_values[index - 1]
+        if not at_end and not changed:
+            continue
+        label = f"seg{segment_number:02d}"
+        labels[start_index:index] = label
+        segments.append(
+            SolarSegment(
+                segment_id=label,
+                regime=str(regime_values[start_index]),
+                start_time_utc=pd.Timestamp(starts[start_index]),
+                end_time_utc=pd.Timestamp(stops[index - 1]),
+            )
+        )
+        start_index = index
+        segment_number += 1
+    return labels, tuple(segments)
+
+
+__all__ = [
+    "SOLAR_POSITION_ALGORITHM",
+    "SolarSegment",
+    "build_solar_segments",
+    "solar_elevation_deg",
+    "solar_regime",
+]
