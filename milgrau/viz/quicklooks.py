@@ -66,6 +66,92 @@ def safe_error_of_mean(err_da: xr.DataArray) -> xr.DataArray:
     n_profiles = max(int(err_da.sizes.get("time", 1)), 1)
     return np.sqrt((err_da**2).sum(dim="time", skipna=True)) / n_profiles
 
+def _streaming_time_statistics(
+    signal: xr.DataArray,
+    error: xr.DataArray,
+    *,
+    chunk_profiles: int,
+) -> tuple[xr.DataArray, xr.DataArray]:
+    """Compute mean signal/error using bounded time chunks.
+
+    This avoids materializing a full time-by-altitude channel twice while
+    preserving the same mean/error-of-mean semantics used by the figures.
+    """
+    if "time" not in signal.dims or "altitude" not in signal.dims:
+        return safe_time_mean(signal), safe_error_of_mean(error)
+
+    sig = signal.transpose("time", "altitude")
+    err = error.transpose("time", "altitude")
+    if sig.shape != err.shape:
+        raise ValueError("Signal and error arrays must have identical time/altitude shape.")
+
+    n_time = int(sig.sizes["time"])
+    n_altitude = int(sig.sizes["altitude"])
+    chunk = max(int(chunk_profiles), 1)
+    signal_sum = np.zeros(n_altitude, dtype=np.float64)
+    signal_count = np.zeros(n_altitude, dtype=np.int64)
+    error_square_sum = np.zeros(n_altitude, dtype=np.float64)
+
+    for start in range(0, n_time, chunk):
+        stop = min(start + chunk, n_time)
+        sig_values = np.asarray(sig.isel(time=slice(start, stop)).values)
+        err_values = np.asarray(err.isel(time=slice(start, stop)).values)
+
+        finite_signal = np.isfinite(sig_values)
+        signal_sum += np.nansum(sig_values, axis=0, dtype=np.float64)
+        signal_count += np.count_nonzero(finite_signal, axis=0)
+
+        finite_error = np.isfinite(err_values)
+        error_square_sum += np.sum(
+            np.where(finite_error, err_values, 0.0).astype(np.float64) ** 2,
+            axis=0,
+            dtype=np.float64,
+        )
+
+    mean_values = np.divide(
+        signal_sum,
+        signal_count,
+        out=np.full(n_altitude, np.nan, dtype=np.float64),
+        where=signal_count > 0,
+    )
+    error_values = np.sqrt(error_square_sum) / max(n_time, 1)
+    altitude = sig["altitude"].values
+    mean_da = xr.DataArray(
+        mean_values,
+        dims=("altitude",),
+        coords={"altitude": altitude},
+        attrs=signal.attrs,
+        name=signal.name,
+    )
+    error_da = xr.DataArray(
+        error_values,
+        dims=("altitude",),
+        coords={"altitude": altitude},
+        attrs=error.attrs,
+        name=error.name,
+    )
+    mean_da["altitude"].attrs.update(sig["altitude"].attrs)
+    error_da["altitude"].attrs.update(sig["altitude"].attrs)
+    return mean_da, error_da
+
+
+def _decimate_for_display(
+    data_slice: xr.DataArray,
+    config: dict[str, Any],
+) -> xr.DataArray:
+    """Stride-sample only the rendered heatmap to bound Matplotlib memory."""
+    if "time" not in data_slice.dims or "altitude" not in data_slice.dims:
+        return data_slice
+    quicklook = resolve_visualization_config(config).quicklook
+    n_time = int(data_slice.sizes.get("time", 0))
+    n_altitude = int(data_slice.sizes.get("altitude", 0))
+    time_step = max(1, int(np.ceil(n_time / quicklook.max_time_samples)))
+    altitude_step = max(1, int(np.ceil(n_altitude / quicklook.max_altitude_bins)))
+    return data_slice.isel(
+        time=slice(None, None, time_step),
+        altitude=slice(None, None, altitude_step),
+    )
+
 
 def rolling_altitude(da: xr.DataArray, bins: int) -> xr.DataArray:
     """Apply centered rolling smoothing along altitude using an explicit bin count."""
@@ -123,7 +209,8 @@ def _insert_time_gap_markers(data_slice: xr.DataArray, config: dict[str, Any]) -
                 midpoint = times[idx] + gap / 2
                 left_marker = midpoint
                 right_marker = midpoint
-            nan_profile = np.full(values.shape[1], np.nan, dtype=np.float64)
+            dtype = values.dtype if np.issubdtype(values.dtype, np.floating) else np.float32
+            nan_profile = np.full(values.shape[1], np.nan, dtype=dtype)
             new_times.extend([left_marker, right_marker])
             new_profiles.extend([nan_profile, nan_profile.copy()])
             inserted = True
@@ -173,7 +260,10 @@ def plot_quicklook(
     date_title, _ = extract_datetime_strings(ds)
     pretty_channel = format_channel_name(channel_name)
     color = channel_color(channel_name)
-    display_data = _insert_time_gap_markers(data_slice, config)
+    display_data = _insert_time_gap_markers(
+        _decimate_for_display(data_slice, config),
+        config,
+    )
 
     fig = plt.figure(figsize=(15, 7.5))
     gs = gridspec.GridSpec(1, 2, width_ratios=[4, 1], wspace=0.03)
@@ -223,8 +313,13 @@ def plot_quicklook(
 
     ax1 = plt.subplot(gs[1], sharey=ax0)
     smooth_bins = resolved.quicklook.mean_profile_smooth_bins
-    smooth_profile = rolling_altitude(safe_time_mean(data_slice), bins=smooth_bins)
-    smooth_error = rolling_altitude(safe_error_of_mean(error_slice), bins=smooth_bins)
+    mean_profile, mean_error = _streaming_time_statistics(
+        data_slice,
+        error_slice,
+        chunk_profiles=resolved.quicklook.mean_chunk_profiles,
+    )
+    smooth_profile = rolling_altitude(mean_profile, bins=smooth_bins)
+    smooth_error = rolling_altitude(mean_error, bins=smooth_bins)
     ax1.plot(smooth_profile, smooth_profile.altitude, color=color, linewidth=2)
     ax1.fill_betweenx(
         smooth_profile.altitude,
@@ -314,8 +409,13 @@ def plot_global_mean_rcs(
         if rc_sig.size == 0:
             continue
 
-        mean_prof = rolling_altitude(safe_time_mean(rc_sig), bins=smooth_bins)
-        mean_err = rolling_altitude(safe_error_of_mean(rc_err), bins=smooth_bins)
+        mean_raw, error_raw = _streaming_time_statistics(
+            rc_sig,
+            rc_err,
+            chunk_profiles=resolved.quicklook.mean_chunk_profiles,
+        )
+        mean_prof = rolling_altitude(mean_raw, bins=smooth_bins)
+        mean_err = rolling_altitude(error_raw, bins=smooth_bins)
         ax.plot(
             mean_prof,
             mean_prof.altitude,
