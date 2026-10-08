@@ -66,6 +66,9 @@ class WavelengthProduct:
     block_time: np.ndarray
     block_start_utc: np.ndarray
     block_end_utc: np.ndarray
+    block_segment_id: np.ndarray
+    block_solar_regime: np.ndarray
+    block_solar_elevation_deg: np.ndarray
     altitude_m: np.ndarray
     effective_vertical_resolution_m: np.ndarray
     source_bin_count: np.ndarray
@@ -573,6 +576,9 @@ def retrieve_wavelength(
         block_time=block_time,
         block_start_utc=block_start,
         block_end_utc=block_end,
+        block_segment_id=np.asarray(inputs.block_segment_id, dtype=object),
+        block_solar_regime=np.asarray(inputs.block_solar_regime, dtype=object),
+        block_solar_elevation_deg=np.asarray(inputs.block_solar_elevation_deg, dtype=np.float64),
         altitude_m=np.asarray(grid.altitude_m, dtype=np.float64),
         effective_vertical_resolution_m=np.asarray(
             grid.effective_resolution_m, dtype=np.float64
@@ -685,6 +691,10 @@ def build_level2_dataset(
             raise RuntimeError("Level 2 block-time geometry differs between wavelengths.")
         if not np.array_equal(result.altitude_m, first.altitude_m):
             raise RuntimeError("Level 2 progressive altitude differs between wavelengths.")
+        if not np.array_equal(result.block_segment_id, first.block_segment_id):
+            raise RuntimeError("Level 2 segment identity differs between wavelengths.")
+        if not np.array_equal(result.block_solar_regime, first.block_solar_regime):
+            raise RuntimeError("Level 2 solar regime differs between wavelengths.")
 
     n_iterations = int(kfs_cfg["monte_carlo_iterations"])
     residual_fractions = np.asarray(retrieval_cfg.residual_aerosol_fractions, dtype=np.float64)
@@ -714,6 +724,10 @@ def build_level2_dataset(
 
     ds = xr.Dataset(
         data_vars={
+            "solar_elevation_deg": (
+                ("block_time",),
+                np.asarray(first.block_solar_elevation_deg, dtype=np.float64),
+            ),
             "effective_vertical_resolution_m": (
                 ("wavelength", "altitude"),
                 _stack(results, "effective_vertical_resolution_m"),
@@ -997,6 +1011,8 @@ def build_level2_dataset(
             "block_time": first.block_time,
             "block_start_utc": (("block_time",), first.block_start_utc),
             "block_end_utc": (("block_time",), first.block_end_utc),
+            "segment_id": (("block_time",), first.block_segment_id),
+            "solar_regime": (("block_time",), first.block_solar_regime),
             "wavelength": np.asarray(wavelengths, dtype=np.int32),
             "altitude": first.altitude_m,
             "residual_fraction": residual_fractions,
@@ -1058,6 +1074,23 @@ def build_level2_dataset(
             **elastic_inversion_algorithm_metadata(integration_mode),
         },
     )
+
+    for name in (
+        "Segment_Label",
+        "Segment_Regime",
+        "Segment_Start_Time_UTC",
+        "Segment_End_Time_UTC",
+    ):
+        if name not in ds_l1:
+            raise KeyError(f"Level 1 product lacks segment table variable {name!r}.")
+        ds[name] = ds_l1[name]
+    for attr in (
+        "Solar_Day_Night_Threshold_deg",
+        "Solar_Position_Algorithm",
+        "Segment_Count",
+    ):
+        if attr in ds_l1.attrs:
+            ds.attrs[attr] = ds_l1.attrs[attr]
 
     ds["altitude"].attrs.update({"units": "m", "positive": "up"})
     ds["effective_vertical_resolution_m"].attrs.update(
