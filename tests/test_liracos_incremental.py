@@ -77,6 +77,13 @@ def _write_level1(path: Path, channels: list[str]) -> Path:
                 ("atmosphere_time",),
                 np.array([1.0, 1.0]),
             ),
+            "solar_elevation_deg": (("time",), np.array([-30.0, -29.0, -28.0])),
+            "solar_regime": (("time",), np.array(["night", "night", "night"], dtype=object)),
+            "segment_id": (("time",), np.array(["seg00", "seg00", "seg00"], dtype=object)),
+            "Segment_Label": (("segments",), np.array(["seg00"], dtype=object)),
+            "Segment_Regime": (("segments",), np.array(["night"], dtype=object)),
+            "Segment_Start_Time_UTC": (("segments",), np.array([1704067200], dtype=np.int64)),
+            "Segment_End_Time_UTC": (("segments",), np.array([1704068100], dtype=np.int64)),
         },
         coords={
             "time": time,
@@ -91,6 +98,9 @@ def _write_level1(path: Path, channels: list[str]) -> Path:
             "thermodynamic_profile_source_type": "time_resolved",
             "thermodynamic_profile_available": "true",
             "thermodynamic_profile_standard_fallback_fraction": 1.0,
+            "Solar_Day_Night_Threshold_deg": -3.0,
+            "Solar_Position_Algorithm": "test",
+            "Segment_Count": 1,
         },
     )
     ds.to_netcdf(path)
