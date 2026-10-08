@@ -134,6 +134,7 @@ def _config(channels: list[str], incremental: bool = True, config_file: Path | N
             },
             "atmospheric_profile": {
                 "max_altitude_km": 1.5,
+                "evolution_max_altitude_bins": 20,
                 "comparison_altitude_bands_km": [[0.0, 1.5]],
             },
         },
@@ -219,9 +220,15 @@ def test_level1_figure_orchestrator_passes_session_context(tmp_path: Path, monke
         out.write_text("atmosphere", encoding="utf-8")
         return out
 
+    def fake_evolution(ds, *, output_folder, file_name_prefix, config, root_dir):
+        out = Path(output_folder) / f"{SESSION_ID}_L1_AtmosphericEvolution.png"
+        out.write_text("evolution", encoding="utf-8")
+        return out
+
     monkeypatch.setattr(level1_figures, "plot_quicklook", fake_quicklook)
     monkeypatch.setattr(level1_figures, "plot_global_mean_rcs", fake_global)
     monkeypatch.setattr(level1_figures, "plot_atmospheric_profile", fake_atmosphere)
+    monkeypatch.setattr(level1_figures, "plot_atmospheric_evolution", fake_evolution)
 
     result = level1_figures.generate_level1_figures(
         level1,
@@ -236,12 +243,12 @@ def test_level1_figure_orchestrator_passes_session_context(tmp_path: Path, monke
         "session_id": SESSION_ID,
         "timezone_name": "America/Sao_Paulo",
     }
-    assert result.metadata["generated"] == 3
+    assert result.metadata["generated"] == 4
 
 
 def test_level1_figures_are_incrementally_skipped_when_current(tmp_path: Path, monkeypatch) -> None:
     level1 = _write_level1(tmp_path / f"{SESSION_ID}_L1.nc", ["532.AN"])
-    calls = {"quicklook": 0, "mean": 0, "atmosphere": 0}
+    calls = {"quicklook": 0, "mean": 0, "atmosphere": 0, "evolution": 0}
 
     def fake_quicklook(**kwargs):
         calls["quicklook"] += 1
@@ -264,6 +271,7 @@ def test_level1_figures_are_incrementally_skipped_when_current(tmp_path: Path, m
     monkeypatch.setattr(level1_figures, "plot_quicklook", fake_quicklook)
     monkeypatch.setattr(level1_figures, "plot_global_mean_rcs", fake_global)
     monkeypatch.setattr(level1_figures, "plot_atmospheric_profile", fake_atmosphere)
+    monkeypatch.setattr(level1_figures, "plot_atmospheric_evolution", fake_evolution)
 
     config = _config(["532.AN"], incremental=True)
     first = level1_figures.generate_level1_figures(level1, config, _ListLogger(), root_dir=tmp_path)
@@ -271,7 +279,7 @@ def test_level1_figures_are_incrementally_skipped_when_current(tmp_path: Path, m
 
     assert first.status is ExecutionStatus.OK
     assert second.status is ExecutionStatus.SKIPPED
-    assert calls == {"quicklook": 1, "mean": 1, "atmosphere": 1}
+    assert calls == {"quicklook": 1, "mean": 1, "atmosphere": 1, "evolution": 1}
 
 
 def test_level1_figures_regenerate_when_config_file_changes(tmp_path: Path, monkeypatch) -> None:
@@ -301,6 +309,7 @@ def test_level1_figures_regenerate_when_config_file_changes(tmp_path: Path, monk
     monkeypatch.setattr(level1_figures, "plot_quicklook", fake_quicklook)
     monkeypatch.setattr(level1_figures, "plot_global_mean_rcs", fake_global)
     monkeypatch.setattr(level1_figures, "plot_atmospheric_profile", fake_atmosphere)
+    monkeypatch.setattr(level1_figures, "plot_atmospheric_evolution", fake_evolution)
 
     first_config = _config(["532.AN"], incremental=True, config_file=config_file)
     level1_figures.generate_level1_figures(level1, first_config, _ListLogger(), root_dir=tmp_path)
@@ -313,7 +322,7 @@ def test_level1_figures_regenerate_when_config_file_changes(tmp_path: Path, monk
     second_config = _config(["532.AN"], incremental=True, config_file=config_file)
     level1_figures.generate_level1_figures(level1, second_config, _ListLogger(), root_dir=tmp_path)
 
-    assert calls == {"quicklook": 2, "mean": 2, "atmosphere": 2}
+    assert calls == {"quicklook": 2, "mean": 2, "atmosphere": 2, "evolution": 2}
 
 
 
