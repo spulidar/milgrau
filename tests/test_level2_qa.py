@@ -107,12 +107,12 @@ def _dataset() -> xr.Dataset:
                 (0.15 * alpha)[:, :, None, :],
             ),
             "molecular_backscatter": (
-                ("wavelength", "altitude"),
-                beta_mol[None, :],
+                ("block_time", "wavelength", "altitude"),
+                np.broadcast_to(beta_mol[None, None, :], shape),
             ),
             "molecular_extinction": (
-                ("wavelength", "altitude"),
-                alpha_mol[None, :],
+                ("block_time", "wavelength", "altitude"),
+                np.broadcast_to(alpha_mol[None, None, :], shape),
             ),
             "period_support_fraction": (
                 ("wavelength", "altitude"),
@@ -220,7 +220,7 @@ def _dataset() -> xr.Dataset:
             "residual_fraction": np.array([0.0]),
         },
         attrs={
-            "level2_product_schema_version": "6",
+            "level2_product_schema_version": "7",
         },
     )
 
