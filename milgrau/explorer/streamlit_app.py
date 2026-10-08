@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any
 
@@ -101,16 +102,66 @@ def processed_root_from_config(config_path: str) -> Path:
     return processed_data_root(config, root_dir=config_file.parent)
 
 
-def parse_session_id(session_id: str) -> tuple[date | None, str]:
+def station_timezone_from_config(config_path: str) -> str:
+    """Return station IANA timezone for human session presentation."""
+    config_file = Path(config_path).expanduser().resolve()
+    config = load_config(config_file)
+    catalog = config.get("_station_catalog", {})
+    station = catalog.get("station", {}) if isinstance(catalog, dict) else {}
+    value = str(station.get("timezone", "UTC")).strip()
+    ZoneInfo(value)
+    return value
+
+
+def session_display(
+    session_id: str,
+    timezone_name: str,
+) -> dict[str, Any]:
+    """Return UTC/local interval, duration and a compact human session label."""
     try:
-        _station, start_utc, end_utc = session_id_parts(session_id)
-        interval = (
+        station, start_utc, end_utc = session_id_parts(session_id)
+        timezone = ZoneInfo(str(timezone_name))
+        start_local = start_utc.astimezone(timezone)
+        end_local = end_utc.astimezone(timezone)
+        duration_seconds = float((end_utc - start_utc).total_seconds())
+        total_minutes = int(round(duration_seconds / 60.0))
+        hours, minutes = divmod(total_minutes, 60)
+        duration = f"{hours}h{minutes:02d}" if hours else f"{minutes}min"
+        interval_utc = (
             f"{start_utc.strftime('%Y-%m-%d %H:%M')} → "
             f"{end_utc.strftime('%Y-%m-%d %H:%M')} UTC"
         )
-        return start_utc.date(), interval
-    except (TypeError, ValueError):
-        return None, "--"
+        interval_local = (
+            f"{start_local.strftime('%d/%m/%Y %H:%M')} → "
+            f"{end_local.strftime('%d/%m/%Y %H:%M')}"
+        )
+        human_label = (
+            f"{station.upper()} · {start_local.strftime('%d/%m %H:%M')} → "
+            f"{end_local.strftime('%d/%m %H:%M')} · {duration}"
+        )
+        return {
+            "date": start_local.date(),
+            "interval_utc": interval_utc,
+            "interval_local": interval_local,
+            "duration": duration,
+            "duration_seconds": duration_seconds,
+            "human_label": human_label,
+        }
+    except (TypeError, ValueError, KeyError):
+        return {
+            "date": None,
+            "interval_utc": "--",
+            "interval_local": "--",
+            "duration": "--",
+            "duration_seconds": np.nan,
+            "human_label": str(session_id),
+        }
+
+
+def parse_session_id(session_id: str) -> tuple[date | None, str]:
+    """Compatibility helper for small internal callers; display uses station local time."""
+    info = session_display(session_id, "UTC")
+    return info["date"], info["interval_utc"]
 
 
 def product_paths(session_dir: Path, session_id: str) -> dict[str, str]:
@@ -124,8 +175,56 @@ def product_paths(session_dir: Path, session_id: str) -> dict[str, str]:
     }
 
 
+def _highest_available_level(paths: dict[str, str]) -> str:
+    for level in ("Level 2", "Level 1", "Level 0"):
+        if paths[LEVEL_TO_PATH[level]]:
+            return level
+    return "--"
+
+
+def _session_context_from_products(
+    session_dir: Path,
+    paths: dict[str, str],
+) -> dict[str, Any]:
+    """Read only compact session metadata from the highest available product."""
+    level = _highest_available_level(paths)
+    product_path = paths.get(LEVEL_TO_PATH.get(level, ""), "")
+    regimes: list[str] = []
+    segments: list[str] = []
+    if product_path:
+        try:
+            with xr.open_dataset(product_path, decode_times=True, mask_and_scale=False) as ds:
+                if "Segment_Label" in ds and "Segment_Regime" in ds:
+                    labels = np.asarray(ds["Segment_Label"].values).astype(str).reshape(-1)
+                    regime_values = np.asarray(ds["Segment_Regime"].values).astype(str).reshape(-1)
+                    segments = [
+                        f"{label} {regime}"
+                        for label, regime in zip(labels, regime_values, strict=False)
+                    ]
+                    regimes = list(dict.fromkeys(regime_values.tolist()))
+                elif "solar_regime" in ds:
+                    regime_values = np.asarray(ds["solar_regime"].values).astype(str).reshape(-1)
+                    regimes = list(dict.fromkeys(value for value in regime_values if value))
+        except Exception:
+            pass
+
+    figures_dir = session_dir / "figures"
+    figure_paths = (
+        sorted(path for path in figures_dir.iterdir() if path.is_file())
+        if figures_dir.is_dir()
+        else []
+    )
+    return {
+        "highest_available_level": level,
+        "solar_regimes": ", ".join(regimes) if regimes else "--",
+        "segments": ", ".join(segments) if segments else "--",
+        "figure_count": len(figure_paths),
+        "figures": [path.name for path in figure_paths],
+    }
+
+
 @st.cache_data(show_spinner="Escaneando produtos NetCDF...")
-def discover_products(processed_root: str) -> pd.DataFrame:
+def discover_products(processed_root: str, timezone_name: str = "UTC") -> pd.DataFrame:
     root = Path(processed_root).expanduser().resolve()
     rows: list[dict[str, Any]] = []
     if not root.exists():
@@ -146,7 +245,9 @@ def discover_products(processed_root: str) -> pd.DataFrame:
         paths = product_paths(session_dir, session_id)
         if not any(paths.values()):
             continue
-        day, interval_utc = parse_session_id(session_id)
+        display = session_display(session_id, timezone_name)
+        context = _session_context_from_products(session_dir, paths)
+        day = display["date"]
         mtimes = [Path(value).stat().st_mtime for value in paths.values() if value]
         rows.append(
             {
@@ -155,9 +256,13 @@ def discover_products(processed_root: str) -> pd.DataFrame:
                 "month": day.month if day else None,
                 "day": day.day if day else None,
                 "session_id": session_id,
-                "interval_utc": interval_utc,
+                "human_label": display["human_label"],
+                "interval_local": display["interval_local"],
+                "interval_utc": display["interval_utc"],
+                "duration": display["duration"],
                 "product_dir": str(session_dir),
                 **paths,
+                **context,
                 "available_levels": ", ".join(
                     label for label, key in LEVEL_TO_PATH.items() if paths[key]
                 ),
@@ -1207,10 +1312,22 @@ def filter_inventory(inv: pd.DataFrame) -> pd.DataFrame:
     day = st.selectbox("Dia", day_options, format_func=lambda value: value if value == "todos" else f"{value:02d}", key="inventory_day")
     if day != "todos":
         filtered = filtered[filtered["day"] == day]
-    intervals = sorted(str(interval) for interval in filtered["interval_utc"].dropna().unique())
-    selected_intervals = st.multiselect("Intervalo UTC", intervals, default=intervals, key="inventory_intervals")
-    if selected_intervals:
-        filtered = filtered[filtered["interval_utc"].astype(str).isin(selected_intervals)]
+    regimes = sorted(
+        regime for regime in filtered["solar_regimes"].dropna().astype(str).unique()
+        if regime and regime != "--"
+    )
+    selected_regimes = st.multiselect(
+        "Regime solar",
+        regimes,
+        default=regimes,
+        key="inventory_regimes",
+    )
+    if selected_regimes:
+        filtered = filtered[
+            filtered["solar_regimes"].astype(str).map(
+                lambda value: any(regime in value.split(", ") for regime in selected_regimes)
+            )
+        ]
     level_options = list(LEVEL_TO_PATH)
     selected_levels = st.multiselect("Níveis disponíveis", level_options, default=level_options, key="inventory_levels")
     if selected_levels:
@@ -1226,8 +1343,10 @@ def filter_inventory(inv: pd.DataFrame) -> pd.DataFrame:
 
 def measurement_label(inv: pd.DataFrame, index: int) -> str:
     row = inv.loc[index]
-    day = row["date"].isoformat() if pd.notna(row["date"]) else "sem data"
-    return f"{day} · {row['session_id']} · {row['available_levels']}"
+    return (
+        f"{row['human_label']} · {row['highest_available_level']} · "
+        f"{row['solar_regimes']}"
+    )
 
 
 def select_measurement(inv: pd.DataFrame) -> dict[str, Any]:
@@ -1245,7 +1364,16 @@ def select_measurement(inv: pd.DataFrame) -> dict[str, Any]:
         format_func=lambda index: measurement_label(filtered, index),
         key="selected_measurement",
     )
-    preview_cols = ["date", "session_id", "interval_utc", "available_levels", "modified"]
+    preview_cols = [
+        "human_label",
+        "session_id",
+        "interval_local",
+        "duration",
+        "highest_available_level",
+        "solar_regimes",
+        "figure_count",
+        "modified",
+    ]
     st.dataframe(filtered[preview_cols], use_container_width=True, hide_index=True, height=220)
     return filtered.loc[selected_index].to_dict()
 
@@ -1259,6 +1387,7 @@ def main() -> None:
         config_path = st.text_input("config.yaml", value="config.yaml", key="config_path")
         try:
             default_root = processed_root_from_config(config_path)
+            timezone_name = station_timezone_from_config(config_path)
         except Exception as exc:
             st.error(f"Não consegui carregar o config: {exc}")
             st.stop()
@@ -1266,7 +1395,7 @@ def main() -> None:
         if st.button("Atualizar inventário"):
             discover_products.clear()
             open_dataset.clear()
-        inv = discover_products(str(processed_root))
+        inv = discover_products(str(processed_root), timezone_name)
         st.metric("medidas encontradas", len(inv))
         if inv.empty:
             st.warning("Nenhum produto .nc encontrado na pasta de dados.")
@@ -1274,13 +1403,24 @@ def main() -> None:
         row = select_measurement(inv)
     tabs = st.tabs(["Resumo", "Level 0", "Level 1", "Level 2", "Metadados", "QA"])
     with tabs[0]:
+        st.subheader(row["human_label"])
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("session_id", row["session_id"])
-        c2.metric("intervalo UTC", row["interval_utc"])
-        c3.metric("níveis", row["available_levels"])
-        c4.metric("modificado", row["modified"])
+        c1.metric("highest level", row["highest_available_level"])
+        c2.metric("duração", row["duration"])
+        c3.metric("regimes", row["solar_regimes"])
+        c4.metric("figures", int(row["figure_count"]))
+        st.caption(f"Local: {row['interval_local']} · UTC: {row['interval_utc']}")
+        st.caption(f"Segmentos: {row['segments']}")
+        st.caption(f"session_id: `{row['session_id']}`")
         st.caption(f"Pasta de dados: `{processed_root}`")
         st.dataframe(pd.DataFrame([{"level": level, "path": row[key]} for level, key in LEVEL_TO_PATH.items()]), use_container_width=True, hide_index=True)
+        if row.get("figures"):
+            with st.expander(f"Figures ({int(row['figure_count'])})"):
+                st.dataframe(
+                    pd.DataFrame({"figure": row["figures"]}),
+                    use_container_width=True,
+                    hide_index=True,
+                )
         with st.expander("Inventário completo"):
             st.dataframe(inv, use_container_width=True, hide_index=True)
     for tab, level in zip(tabs[1:4], ["Level 0", "Level 1", "Level 2"]):
