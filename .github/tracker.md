@@ -324,6 +324,9 @@ The governing rule is:
 - [x] Keep solar day/night segmentation independent from atmospheric cadence.
 - [x] Reuse the existing hour-indexed ERA5 cache so adjacent/repeated sessions
   do not redownload identical analysis hours.
+- [x] Batch missing ERA5 analyses into one CDS request per UTC day, then split
+  the result back into the canonical hourly cache files. A 21–09 UTC session
+  therefore needs at most two CDS requests when its cache is empty.
 - [x] Update Level 1 contracts/tests for time-resolved atmospheric dimensions.
 
 ## Level 2 consumption of atmosphere
@@ -457,6 +460,8 @@ Implemented:
   mean observed profile time used for time-dependent atmosphere/LR evaluation.
 - [x] Molecular backscatter/extinction and lidar-ratio assumptions are stored
   by `block_time`.
+- [x] Restore the explicit `build_molecular_model` import used by the
+  block-resolved Level 2 retrieval after the atmosphere refactor.
 
 ## Session/regime integration
 
