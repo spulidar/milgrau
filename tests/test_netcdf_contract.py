@@ -270,7 +270,7 @@ def test_lebear_generates_two_sided_level2_from_level1_atmosphere(tmp_path: Path
             "altitude",
         )
         assert np.asarray(ds_l2["residual_fraction"].values).tolist() == [0.0, 0.02]
-        assert np.all(ds_l2["period_support_count"].values >= 0)
+        assert np.all(ds_l2["temporal_support_count"].values >= 0)
         assert ds_l2["altitude"].attrs["units"] == "m"
         assert ds_l2["aerosol_backscatter_mean"].attrs["units"] == "m-1 sr-1"
         assert ds_l2["aerosol_extinction_mean"].attrs["units"] == "m-1"
