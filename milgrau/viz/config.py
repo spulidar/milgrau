@@ -18,7 +18,10 @@ class QuicklookConfig:
     show_pbl: bool
     show_tropopause: bool
     mean_profile_smooth_bins: int
+    mean_chunk_profiles: int
     max_time_gap_minutes: float
+    max_time_samples: int
+    max_altitude_bins: int
     missing_data_color: str
     colormap: str
 
@@ -121,9 +124,21 @@ def resolve_visualization_config(config: Mapping[str, Any]) -> VisualizationConf
             _required(quicklook, "mean_profile_smooth_bins", "visualization.quicklook"),
             "visualization.quicklook.mean_profile_smooth_bins",
         ),
+        mean_chunk_profiles=_positive_int(
+            _required(quicklook, "mean_chunk_profiles", "visualization.quicklook"),
+            "visualization.quicklook.mean_chunk_profiles",
+        ),
         max_time_gap_minutes=_positive_float(
             _required(quicklook, "max_time_gap_minutes", "visualization.quicklook"),
             "visualization.quicklook.max_time_gap_minutes",
+        ),
+        max_time_samples=_positive_int(
+            _required(quicklook, "max_time_samples", "visualization.quicklook"),
+            "visualization.quicklook.max_time_samples",
+        ),
+        max_altitude_bins=_positive_int(
+            _required(quicklook, "max_altitude_bins", "visualization.quicklook"),
+            "visualization.quicklook.max_altitude_bins",
         ),
         missing_data_color=_text(
             _required(quicklook, "missing_data_color", "visualization.quicklook"),
