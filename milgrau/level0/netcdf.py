@@ -596,6 +596,14 @@ def build_level0_global_attributes(
         attrs["Segment_ID"] = str(resolved["segment_id"])
     if resolved.get("solar_regime") is not None:
         attrs["Solar_Regime"] = str(resolved["solar_regime"])
+    if resolved.get("source_segments") is not None:
+        attrs["Source_Segments"] = str(resolved["source_segments"])
+        attrs["Source_Segment_Count"] = int(
+            resolved.get("source_segment_count", 0)
+        )
+        attrs["Contains_Time_Gaps"] = np.int8(
+            1 if bool(resolved.get("contains_time_gaps", False)) else 0
+        )
     attrs["Station_Profile"] = str(resolved["profile_id"])
     if ready:
         attrs["SCC_Configuration_ID"] = int(resolved["scc_configuration_id"])
