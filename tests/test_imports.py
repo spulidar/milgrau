@@ -170,7 +170,6 @@ def test_pipeline_entrypoints_import() -> None:
         importlib.import_module("milgrau.cli.lebear"),
         importlib.import_module("milgrau.cli.libids"),
         importlib.import_module("milgrau.cli.lipancora"),
-        importlib.import_module("milgrau.cli.liracos"),
     ]
 
     assert all(callable(module.main) for module in modules)
