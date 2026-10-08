@@ -397,8 +397,8 @@ def retrieve_wavelength(
             )
         molecular_beta_block[block_index] = np.asarray(molecular_beta.values, dtype=np.float64)
         molecular_alpha_block[block_index] = np.asarray(molecular_alpha.values, dtype=np.float64)
-        lidar_ratio_assumed_block[block_index] = float(block_block_molecular.lidar_ratio_assumed_sr)
-        lidar_ratio_std_block[block_index] = float(block_block_molecular.lidar_ratio_std_sr)
+        lidar_ratio_assumed_block[block_index] = float(block_molecular.lidar_ratio_assumed_sr)
+        lidar_ratio_std_block[block_index] = float(block_molecular.lidar_ratio_std_sr)
         prepared = prepare_high_column_profile(
             range_corrected_signal=native_signal,
             range_corrected_signal_error=native_error,
@@ -418,7 +418,7 @@ def retrieve_wavelength(
             result = retrieve_two_sided_profile(
                 range_corrected_signal=native_signal,
                 range_corrected_signal_error=native_error,
-                molecular_backscatter=np.asarray(molecular.backscatter, dtype=np.float64),
+                molecular_backscatter=np.asarray(block_molecular.backscatter, dtype=np.float64),
                 simulated_molecular_range_corrected_signal=np.asarray(
                     block_molecular.simulated_range_corrected_signal, dtype=np.float64
                 ),
