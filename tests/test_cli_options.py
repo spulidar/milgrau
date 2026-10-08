@@ -8,6 +8,7 @@ from pathlib import Path
 import tomllib
 
 import yaml
+import pytest
 
 from milgrau.cli import lebear, libids, lipancora, liracos
 from milgrau.io.selection import parse_input_selection
@@ -98,3 +99,34 @@ def test_lebear_time_window_option_is_explicitly_utc() -> None:
     option_strings = {option for action in parser._actions for option in action.option_strings}
     assert "--time-window-utc" in option_strings
     assert "--time-window" not in option_strings
+
+
+
+def test_lebear_exposes_mutually_exclusive_solar_selectors() -> None:
+    parser = lebear._build_parser()
+    option_strings = {
+        option
+        for action in parser._actions
+        for option in action.option_strings
+    }
+    assert "--regime" in option_strings
+    assert "--segment" in option_strings
+
+    night = parser.parse_args(["--regime", "night"])
+    assert night.regime == "night"
+    assert night.segment_id is None
+
+    segment = parser.parse_args(["--segment", "seg01"])
+    assert segment.segment_id == "seg01"
+    assert segment.regime is None
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--regime", "night", "--segment", "seg01"])
+
+
+def test_lebear_solar_selector_can_combine_with_utc_window() -> None:
+    args = lebear._build_parser().parse_args(
+        ["--regime", "night", "--time-window-utc", "04:00", "05:00"]
+    )
+    assert args.regime == "night"
+    assert args.time_window == ["04:00", "05:00"]
