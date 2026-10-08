@@ -11,7 +11,11 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
-from milgrau.io.era5 import CDS_API_URL, fetch_era5_pressure_level_profile
+from milgrau.io.era5 import (
+    CDS_API_URL,
+    fetch_era5_pressure_level_profile,
+    prefetch_era5_pressure_level_profiles,
+)
 
 
 def _settings() -> dict:
@@ -103,3 +107,94 @@ def test_era5_failure_warning_is_one_operator_line(tmp_path: Path, monkeypatch, 
     warning = next(record.getMessage() for record in caplog.records if record.levelno == logging.WARNING)
     assert warning == "ERA5 unavailable | 404 Client Error"
     assert "\n" not in warning
+
+
+
+def test_era5_prefetch_uses_one_request_per_utc_day_and_populates_hourly_cache(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    calls: list[dict] = []
+
+    class FakeClient:
+        def __init__(self, *, url: str, quiet: bool) -> None:
+            assert url == CDS_API_URL
+            assert quiet is True
+
+        def retrieve(self, dataset: str, request: dict, target: str) -> None:
+            calls.append(request)
+            pressure = np.array([1000.0, 500.0, 100.0])
+            hours = [
+                np.datetime64(
+                    f"{request['year'][0]}-{request['month'][0]}-{request['day'][0]}T{raw[:2]}:00:00"
+                )
+                for raw in request["time"]
+            ]
+            n_time = len(hours)
+            temperature = np.tile(
+                np.array([290.0, 255.0, 215.0])[None, :, None, None],
+                (n_time, 1, 1, 1),
+            )
+            geopotential_height = np.array([100.0, 5500.0, 16000.0])
+            geopotential = np.tile(
+                (geopotential_height * 9.80665)[None, :, None, None],
+                (n_time, 1, 1, 1),
+            )
+            ds = xr.Dataset(
+                data_vars={
+                    "t": (
+                        ("valid_time", "pressure_level", "latitude", "longitude"),
+                        temperature,
+                    ),
+                    "z": (
+                        ("valid_time", "pressure_level", "latitude", "longitude"),
+                        geopotential,
+                    ),
+                },
+                coords={
+                    "valid_time": np.asarray(hours, dtype="datetime64[ns]"),
+                    "pressure_level": pressure,
+                    "latitude": np.array([-23.5]),
+                    "longitude": np.array([-46.75]),
+                },
+            )
+            ds.to_netcdf(target)
+
+    monkeypatch.setitem(sys.modules, "cdsapi", types.SimpleNamespace(Client=FakeClient))
+    requested = [
+        datetime(2024, 6, 20, 21, tzinfo=timezone.utc),
+        datetime(2024, 6, 20, 22, tzinfo=timezone.utc),
+        datetime(2024, 6, 20, 23, tzinfo=timezone.utc),
+        datetime(2024, 6, 21, 0, tzinfo=timezone.utc),
+        datetime(2024, 6, 21, 1, tzinfo=timezone.utc),
+    ]
+
+    available = prefetch_era5_pressure_level_profiles(
+        requested,
+        -23.5607,
+        -46.7398,
+        logging.getLogger("test-era5-batch"),
+        settings=_settings(),
+        root_dir=tmp_path,
+    )
+
+    assert len(calls) == 2
+    assert calls[0]["day"] == ["20"]
+    assert calls[0]["time"] == ["21:00", "22:00", "23:00"]
+    assert calls[1]["day"] == ["21"]
+    assert calls[1]["time"] == ["00:00", "01:00"]
+    assert len(available) == 5
+    cached = list((tmp_path / "cache" / "era5").rglob("era5_pressure_levels_*Z_*.nc"))
+    assert len(cached) == 5
+
+    calls.clear()
+    available_again = prefetch_era5_pressure_level_profiles(
+        requested,
+        -23.5607,
+        -46.7398,
+        logging.getLogger("test-era5-batch-cache"),
+        settings=_settings(),
+        root_dir=tmp_path,
+    )
+    assert len(available_again) == 5
+    assert calls == []
