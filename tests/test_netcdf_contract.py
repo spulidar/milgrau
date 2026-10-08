@@ -222,7 +222,7 @@ def test_lebear_generates_two_sided_level2_from_level1_atmosphere(tmp_path: Path
 
     with xr.open_dataset(output_path) as ds_l2:
         validate_level2_contract(ds_l2)
-        assert ds_l2.attrs["level2_product_schema_version"] == LEVEL2_PRODUCT_SCHEMA_VERSION == "8"
+        assert ds_l2.attrs["level2_product_schema_version"] == LEVEL2_PRODUCT_SCHEMA_VERSION == "9"
         assert "level2_retrieval_method_version" not in ds_l2.attrs
         assert ds_l2.attrs["integration_mode"] == "two_sided"
         assert ds_l2.attrs["uncertainty_method"] == "selection-aware Monte Carlo"
