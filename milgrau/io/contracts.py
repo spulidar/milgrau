@@ -40,6 +40,7 @@ LEVEL1_BACKGROUND_DIAGNOSTIC_VARIABLES: Final[tuple[str, ...]] = (
     "background_estimate", "background_standard_error", "background_robust_scale",
     "background_valid_bins", "background_outlier_fraction",
 )
+LEVEL1_SOLAR_VARIABLES: Final[tuple[str, ...]] = LEVEL0_SOLAR_VARIABLES
 LEVEL1_ATMOSPHERIC_VARIABLES: Final[tuple[str, ...]] = (
     "Atmospheric_Temperature_K",
     "Atmospheric_Pressure_hPa",
@@ -48,7 +49,7 @@ LEVEL1_ATMOSPHERIC_VARIABLES: Final[tuple[str, ...]] = (
     "Atmospheric_USSA76_Fallback_Fraction",
 )
 LEVEL1_REQUIRED_VARIABLES: Final[tuple[str, ...]] = (
-    LEVEL1_SIGNAL_VARIABLES + LEVEL1_ATMOSPHERIC_VARIABLES
+    LEVEL1_SIGNAL_VARIABLES + LEVEL1_ATMOSPHERIC_VARIABLES + LEVEL1_SOLAR_VARIABLES
 )
 LEVEL0_RAW_DATA_DIMS: Final[tuple[str, ...]] = ("time", "channels", "points")
 LEVEL0_TIME_SCALE_DIMS: Final[tuple[str, ...]] = ("time", "nb_of_time_scales")
@@ -217,6 +218,33 @@ def validate_level0_contract(ds: xr.Dataset) -> None:
     _validate_level0_background_contract(ds)
 
 
+def _validate_level1_solar_contract(ds: xr.Dataset) -> None:
+    for name in ("solar_elevation_deg", "solar_regime", "segment_id"):
+        _require_exact_dims(ds[name], ("time",), f"Level 1 {name}")
+    for name in (
+        "Segment_Label",
+        "Segment_Regime",
+        "Segment_Start_Time_UTC",
+        "Segment_End_Time_UTC",
+    ):
+        _require_exact_dims(ds[name], ("segments",), f"Level 1 {name}")
+
+    elevation = np.asarray(ds["solar_elevation_deg"].values, dtype=np.float64)
+    regimes = np.asarray(ds["solar_regime"].values).astype(str)
+    segment_ids = np.asarray(ds["segment_id"].values).astype(str)
+    labels = np.asarray(ds["Segment_Label"].values).astype(str)
+    segment_regimes = np.asarray(ds["Segment_Regime"].values).astype(str)
+    if elevation.shape != (ds.sizes.get("time", 0),) or not np.all(np.isfinite(elevation)):
+        raise ValueError("Level 1 solar_elevation_deg must be finite for every time profile.")
+    if set(regimes) - {"day", "night"}:
+        raise ValueError("Level 1 solar_regime may contain only day/night.")
+    mapping = {label: regime for label, regime in zip(labels, segment_regimes, strict=True)}
+    if any(segment not in mapping for segment in segment_ids):
+        raise ValueError("Level 1 segment_id contains values absent from Segment_Label.")
+    if any(mapping[segment] != regime for segment, regime in zip(segment_ids, regimes, strict=True)):
+        raise ValueError("Level 1 segment_id/solar_regime disagree with the segment table.")
+
+
 def _validate_level1_atmosphere(ds: xr.Dataset) -> None:
     _require_coords(ds, ("atmosphere_time",), "Level 1 atmosphere")
     expected = ("atmosphere_time", "altitude")
@@ -294,6 +322,7 @@ def validate_level1_contract(ds: xr.Dataset) -> None:
                 raise ValueError(f"Level 1 {name} shape does not match range_corrected_signal shape by named dimensions.")
         for name in LEVEL1_BACKGROUND_DIAGNOSTIC_VARIABLES:
             _require_exact_dims(ds[name], ("time", "channel"), f"Level 1 {name}")
+    _validate_level1_solar_contract(ds)
     _validate_level1_atmosphere(ds)
 
 
