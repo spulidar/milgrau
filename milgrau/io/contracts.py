@@ -16,11 +16,20 @@ LEVEL0_SURFACE_WEATHER_VARIABLES: Final[tuple[str, ...]] = (
     "Surface_Cloud_Cover_percent",
     "Surface_Wind_Speed_kmh",
 )
+LEVEL0_SOLAR_VARIABLES: Final[tuple[str, ...]] = (
+    "solar_elevation_deg",
+    "solar_regime",
+    "segment_id",
+    "Segment_Label",
+    "Segment_Regime",
+    "Segment_Start_Time_UTC",
+    "Segment_End_Time_UTC",
+)
 LEVEL0_REQUIRED_VARIABLES: Final[tuple[str, ...]] = (
     "Raw_Data_Start_Time", "Raw_Data_Stop_Time", "Raw_Data_Range_Resolution",
     "Laser_Pointing_Angle", "Laser_Pointing_Angle_of_Profiles", "Laser_Shots",
     "Molecular_Calc", "id_timescale", "channel_string", "Raw_Lidar_Data",
-) + LEVEL0_SURFACE_WEATHER_VARIABLES
+) + LEVEL0_SURFACE_WEATHER_VARIABLES + LEVEL0_SOLAR_VARIABLES
 LEVEL1_SIGNAL_VARIABLES: Final[tuple[str, ...]] = (
     "corrected_signal", "corrected_signal_error", "range_corrected_signal", "range_corrected_signal_error",
 )
@@ -112,6 +121,53 @@ def _validate_level0_scc_acquisition_metadata(ds: xr.Dataset) -> None:
             raise ValueError("Level 0 DAQ_Range must contain a positive finite mV scale for every analog channel.")
 
 
+def _validate_level0_solar_contract(ds: xr.Dataset) -> None:
+    _require_dims(ds, ("segments",), "Level 0 solar context")
+    for name in ("solar_elevation_deg", "solar_regime", "segment_id"):
+        _require_exact_dims(ds[name], ("time",), f"Level 0 {name}")
+    for name in (
+        "Segment_Label",
+        "Segment_Regime",
+        "Segment_Start_Time_UTC",
+        "Segment_End_Time_UTC",
+    ):
+        _require_exact_dims(ds[name], ("segments",), f"Level 0 {name}")
+
+    elevation = np.asarray(ds["solar_elevation_deg"].values, dtype=np.float64)
+    if elevation.shape != (ds.sizes.get("time", 0),) or not np.all(np.isfinite(elevation)):
+        raise ValueError("Level 0 solar_elevation_deg must be finite for every time profile.")
+
+    regimes = np.asarray(ds["solar_regime"].values).astype(str)
+    if set(regimes) - {"day", "night"}:
+        raise ValueError("Level 0 solar_regime may contain only day/night.")
+
+    segment_ids = np.asarray(ds["segment_id"].values).astype(str)
+    labels = np.asarray(ds["Segment_Label"].values).astype(str)
+    segment_regimes = np.asarray(ds["Segment_Regime"].values).astype(str)
+    if not labels.size or len(set(labels.tolist())) != labels.size:
+        raise ValueError("Level 0 Segment_Label must contain unique segment IDs.")
+    if not set(segment_ids).issubset(set(labels.tolist())):
+        raise ValueError("Level 0 segment_id contains values absent from Segment_Label.")
+    if set(segment_regimes) - {"day", "night"}:
+        raise ValueError("Level 0 Segment_Regime may contain only day/night.")
+    mapping = {label: regime for label, regime in zip(labels, segment_regimes, strict=True)}
+    if any(mapping[segment] != regime for segment, regime in zip(segment_ids, regimes, strict=True)):
+        raise ValueError("Level 0 segment_id/solar_regime disagree with the segment table.")
+
+    starts = np.asarray(ds["Segment_Start_Time_UTC"].values, dtype=np.int64)
+    ends = np.asarray(ds["Segment_End_Time_UTC"].values, dtype=np.int64)
+    if starts.shape != ends.shape or np.any(ends <= starts):
+        raise ValueError("Level 0 segment start/end times must be ordered and positive-duration.")
+    try:
+        threshold = float(ds.attrs["Solar_Day_Night_Threshold_deg"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("Level 0 lacks a valid Solar_Day_Night_Threshold_deg attribute.") from exc
+    if not np.isfinite(threshold) or not -90.0 <= threshold <= 90.0:
+        raise ValueError("Level 0 Solar_Day_Night_Threshold_deg must be within [-90, 90].")
+    if not str(ds.attrs.get("Solar_Position_Algorithm", "")).strip():
+        raise ValueError("Level 0 lacks Solar_Position_Algorithm provenance.")
+
+
 def _validate_level0_background_contract(ds: xr.Dataset) -> None:
     if "Background_Profile" not in ds:
         return
@@ -151,6 +207,7 @@ def validate_level0_contract(ds: xr.Dataset) -> None:
     _require_exact_dims(ds["Raw_Data_Stop_Time"], LEVEL0_TIME_SCALE_DIMS, "Level 0 Raw_Data_Stop_Time")
     _require_exact_dims(ds["Laser_Pointing_Angle_of_Profiles"], LEVEL0_TIME_SCALE_DIMS, "Level 0 Laser_Pointing_Angle_of_Profiles")
     _validate_level0_scc_acquisition_metadata(ds)
+    _validate_level0_solar_contract(ds)
     _require_coords(ds, ("weather_time",), "Level 0 file")
     for name in LEVEL0_SURFACE_WEATHER_VARIABLES:
         _require_exact_dims(ds[name], ("weather_time",), f"Level 0 {name}")
