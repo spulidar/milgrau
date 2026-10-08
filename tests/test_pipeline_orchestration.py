@@ -168,8 +168,81 @@ def test_libids_resolves_segment_scc_context_from_decoded_utc_timestamp(
     )
 
     assert len(contexts) == 1
-    assert contexts[0][0] == "seg00"
+    assert contexts[0][0] == "night"
+    assert contexts[0][1]["source_segments"] == "seg00"
+    assert contexts[0][1]["source_segment_count"] == 1
+    assert contexts[0][1]["contains_time_gaps"] is False
     assert observed["mode"] == "night"
     assert observed["channels"] == ["532.AN"]
     stamp = pd.Timestamp(observed["measurement_time"])
     assert stamp == pd.Timestamp("2025-01-01T00:00:00Z")
+
+
+
+def test_libids_groups_repeated_day_segments_into_one_expected_scc_context(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    output = tmp_path / "spu_20250101-1200Z_20250102-1200Z_L0.nc"
+    ds = xr.Dataset(
+        data_vars={
+            "channel_string": (
+                ("channels",),
+                np.array(["532.AN"], dtype=object),
+            ),
+            "Segment_Label": (
+                ("segments",),
+                np.array(["seg00", "seg01", "seg02"], dtype=object),
+            ),
+            "Segment_Regime": (
+                ("segments",),
+                np.array(["day", "night", "day"], dtype=object),
+            ),
+            "Segment_Start_Time_UTC": (
+                ("segments",),
+                np.array(
+                    [1735732800, 1735754400, 1735786800],
+                    dtype=np.int64,
+                ),
+            ),
+        }
+    )
+    ds["Segment_Start_Time_UTC"].attrs.update(
+        {
+            "units": "seconds since 1970-01-01 00:00:00 UTC",
+            "calendar": "standard",
+        }
+    )
+    ds.to_netcdf(output)
+
+    calls: list[str] = []
+
+    def fake_context(_config, measurement_time, available_channels, *, mode=None):
+        del measurement_time, available_channels
+        calls.append(str(mode))
+        return {
+            "scc_available": True,
+            "scc_export_ready": True,
+            "scc_channels": ["532.AN"],
+            "channel_ids": {"532.AN": 1},
+            "lr_input": {},
+        }
+
+    monkeypatch.setattr(libids, "resolve_station_context", fake_context)
+    contexts = libids._resolve_expected_scc_contexts(
+        "spu_20250101-1200Z_20250102-1200Z",
+        pd.DataFrame(),
+        {"_station_catalog": {}},
+        output,
+    )
+
+    assert [name for name, _context in contexts] == ["day", "night"]
+    day = contexts[0][1]
+    night = contexts[1][1]
+    assert day["source_segments"] == "seg00,seg02"
+    assert day["source_segment_count"] == 2
+    assert day["contains_time_gaps"] is True
+    assert night["source_segments"] == "seg01"
+    assert night["source_segment_count"] == 1
+    assert night["contains_time_gaps"] is False
+    assert calls == ["day", "night"]
