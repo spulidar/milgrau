@@ -53,7 +53,8 @@ The governing rule is:
   figure ownership belongs to LIPANCORA and reusable renderers remain in
   `viz/quicklooks.py`.
 - **Phase 8 — `spulidar/measurements` publication refactor:** not started here.
-- **Phase 9 — Explorer / inspect:** partially session-aware.
+- **Phase 9 — Explorer / inspect:** session-aware human summaries, local-time
+  display, highest level, regimes/segments and figures are implemented.
 - **Phase 10 — unified `figures/` convention:** canonical Level 1 and Level 2
   figures use the shared session `figures/` directory and semantic filenames;
   only optional retrieval-support figure scope remains open.
@@ -570,16 +571,16 @@ No scientific NetCDF is split because of website layout.
 - [x] Lists available processing levels.
 - [x] Does not depend on old four-period IDs.
 
-## Explorer remaining
+## Explorer session summary
 
-- [ ] Use local-time human presentation as the primary display:
+- [x] Use local-time human presentation as the primary session display:
   `SPU · 10/05 21:12 -> 11/05 04:37 · 7h25`.
-- [ ] Show duration explicitly.
-- [ ] Show `highest_available_level`.
-- [ ] Show solar regime(s).
-- [ ] Show segments.
-- [ ] Add day/night filtering.
-- [ ] Surface files in the session `figures/` directory.
+- [x] Show duration explicitly.
+- [x] Show `highest_available_level`.
+- [x] Show solar regime(s).
+- [x] Show segments.
+- [x] Add day/night filtering.
+- [x] Surface files in the session `figures/` directory.
 
 ## Inspect already implemented
 
@@ -589,12 +590,13 @@ No scientific NetCDF is split because of website layout.
 - [x] Resolves date/session/path selectors.
 - [x] A date can find all available processing levels for intersecting sessions.
 
-## Inspect remaining
+## Inspect session summary
 
-- [ ] Add concise local-time/human session presentation.
-- [ ] Summarize solar regime and segments.
-- [ ] Summarize available figures.
-- [ ] Summarize explicit highest available level.
+- [x] Add concise local-time/human session presentation.
+- [x] Summarize solar regime and segments.
+- [x] Summarize available figures.
+- [x] Summarize explicit highest available level.
+- [x] Add regression coverage for a cross-day São Paulo local-time session.
 
 ---
 
@@ -769,13 +771,7 @@ Source cleanup and Git-history cleanup remain separate tasks.
    - preserve gaps;
    - reuse renderers.
 
-4. **Explorer / inspect completion**
-   - human local-time display;
-   - highest level;
-   - regimes/segments;
-   - figures.
-
-5. **Scientific/release gates**
+4. **Scientific/release gates**
    - complete remaining L2 validation;
    - freeze real-data examples;
    - release engineering and documentation cleanup.
