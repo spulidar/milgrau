@@ -291,16 +291,16 @@ def _print_session_summary(
 def _print_header(path: Path, ds: xr.Dataset, level: str) -> None:
     print()
     print("=" * 100)
-    print("MILGRAU PRODUCT INSPECTOR")
+    print(f"PRODUCT {level}")
     print("=" * 100)
-    print(f"File           : {path}")
-    print(f"Detected level : {level}")
+    print(f"  File        : {path.name}")
+    print(f"  Path        : {path.parent}")
     processing = ds.attrs.get("Processing_level")
     if processing:
-        print(f"Processing     : {_short(processing, width=78)}")
+        print(f"  Processing  : {_short(processing, width=82)}")
     print(
-        f"Inventory      : {len(ds.dims)} dimensions | "
-        f"{len(ds.coords)} coordinates | {len(ds.data_vars)} data variables | "
+        f"  Structure   : {len(ds.dims)} dimensions | "
+        f"{len(ds.coords)} coordinates | {len(ds.data_vars)} variables | "
         f"{len(ds.attrs)} global attributes"
     )
 
@@ -472,7 +472,7 @@ def inspect_product(
     full: bool = False,
     show_values: bool = True,
     validate: bool = False,
-    max_vars: int = 30,
+    max_vars: int = 20,
     timezone_name: str | None = None,
     show_session_summary: bool = True,
     list_figures: bool = False,
@@ -543,8 +543,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--max-vars",
         type=int,
-        default=30,
-        help="Maximum data variables shown in compact mode (default: 30).",
+        default=20,
+        help="Maximum data variables shown in compact mode (default: 20).",
     )
     return parser
 
