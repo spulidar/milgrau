@@ -114,6 +114,26 @@ def _dataset() -> xr.Dataset:
                 ("block_time", "wavelength", "altitude"),
                 np.broadcast_to(alpha_mol[None, None, :], shape),
             ),
+            "solar_elevation_deg": (
+                ("block_time",),
+                np.array([-15.0, -12.0, -9.0]),
+            ),
+            "Segment_Label": (
+                ("segments",),
+                np.array(["seg00"], dtype=object),
+            ),
+            "Segment_Regime": (
+                ("segments",),
+                np.array(["night"], dtype=object),
+            ),
+            "Segment_Start_Time_UTC": (
+                ("segments",),
+                np.array([1579986000], dtype=np.int64),
+            ),
+            "Segment_End_Time_UTC": (
+                ("segments",),
+                np.array([1579989600], dtype=np.int64),
+            ),
             "period_support_fraction": (
                 ("wavelength", "altitude"),
                 np.array([[1.0, 1.0, 1.0, 1.0, 2.0 / 3.0, 1.0 / 3.0]]),
@@ -214,13 +234,18 @@ def _dataset() -> xr.Dataset:
         },
         coords={
             "block_time": block_time,
+            "segment_id": (("block_time",), np.array(["seg00", "seg00", "seg00"], dtype=object)),
+            "solar_regime": (("block_time",), np.array(["night", "night", "night"], dtype=object)),
             "wavelength": wavelength,
             "altitude": altitude,
             "mc_iteration": np.arange(4),
             "residual_fraction": np.array([0.0]),
         },
         attrs={
-            "level2_product_schema_version": "7",
+            "level2_product_schema_version": "8",
+            "Solar_Day_Night_Threshold_deg": -3.0,
+            "Solar_Position_Algorithm": "test",
+            "Segment_Count": 1,
         },
     )
 
