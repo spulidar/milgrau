@@ -9,9 +9,8 @@ A successful command means the software stage completed according to its contrac
 | Level / tool | Primary input | Main responsibility | Primary product |
 | --- | --- | --- | --- |
 | Level 0 — `milgrau-libids` | raw Licel acquisition and associated acquisition context | standardize the acquisition record and preserve raw/instrument traceability | Level 0 NetCDF |
-| Level 1 — `milgrau-lipancora` | Level 0 NetCDF | apply channel corrections, propagate signal uncertainty and materialize ancillary atmospheric state | Level 1 corrected-signal/RCS NetCDF |
-| Visualization — `milgrau-liracos` | Level 1 NetCDF | generate diagnostic quicklooks without changing scientific retrieval decisions | figures / QA views |
-| Level 2 — `milgrau-lebear` | Level 1 NetCDF | select/glue elastic signals, build molecular profiles, perform Rayleigh-reference QA and productive support-aware two-sided elastic retrieval | Level 2 optical NetCDF |
+| Level 1 — `milgrau-lipancora` | Level 0 NetCDF | apply channel corrections, propagate signal uncertainty, materialize ancillary atmospheric state, and maintain Level 1 figures | Level 1 corrected-signal/RCS NetCDF + figures |
+| Level 2 — `milgrau-lebear` | Level 1 NetCDF | select/glue elastic signals, build molecular profiles, perform Rayleigh-reference QA, run the productive support-aware two-sided elastic retrieval, and maintain Level 2 figures | Level 2 optical NetCDF + figures |
 | Explorer — `milgrau-explorer` | processed products | interactive inspection only | interactive UI |
 
 ## Level 0 — LIBIDS
@@ -129,7 +128,7 @@ For each configured elastic wavelength, Level 2 currently performs:
 6. two-sided KFS Monte Carlo retrieval with separate backward/forward support diagnostics;
 7. block acceptance and aggregate product construction;
 8. complete/partial/failed multispectral product accounting;
-9. FAIR provenance and optional QA visualization.
+9. FAIR provenance and non-fatal scientific/diagnostic figure generation.
 
 LEBEAR accepts `--regime day|night` or `--segment segXX`, each optionally
 intersected with `--time-window-utc`. These selectors create derived Level 2
@@ -151,9 +150,13 @@ The canonical ownership map for these steps is maintained in `docs/code_inventor
 
 A wavelength belongs to the scientific Level 2 wavelength coordinate only when it produced a usable scientific result. Requested, processed and failed wavelengths are stored separately with stable failure stage/code information. Partial products may be written for diagnosis but are not reused incrementally as complete products.
 
-## Visualization and explorer
+## Figures and explorer
 
-Visualization modules describe products; they do not choose productive retrieval science. A plotting or Streamlit change must not alter source selection, Rayleigh QA, KFS acceptance or uncertainty semantics.
+LIPANCORA owns Level 1 figures and LEBEAR owns Level 2 figures. Figure generation
+is non-fatal to an already valid scientific NetCDF product. Reusable plotting
+functions describe products; they do not choose productive retrieval science.
+A plotting or Streamlit change must not alter source selection, Rayleigh QA,
+KFS acceptance or uncertainty semantics. Explorer remains inspection-only.
 
 ## Provenance across levels
 
