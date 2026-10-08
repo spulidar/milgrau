@@ -40,6 +40,9 @@ class WavelengthBlockInputs:
     n_altitude: int
     block_time: np.ndarray
     block_groups: list[np.ndarray]
+    block_segment_id: np.ndarray
+    block_solar_regime: np.ndarray
+    block_solar_elevation_deg: np.ndarray
     gluing_config: dict[str, Any]
     molecular_fit_config: dict[str, Any]
     analog_block: np.ndarray | None
@@ -195,9 +198,30 @@ def prepare_wavelength_blocks(
     corrected = ds_l1["corrected_signal"]
     corrected_error = ds_l1["corrected_signal_error"]
     n_time = ds_l1.sizes.get("time", 1)
+    for name in ("segment_id", "solar_regime", "solar_elevation_deg"):
+        if name not in ds_l1:
+            raise KeyError(f"Level 1 product lacks required scientific context {name!r}.")
+    profile_segment = np.asarray(ds_l1["segment_id"].values).astype(str)
+    profile_regime = np.asarray(ds_l1["solar_regime"].values).astype(str)
+    profile_elevation = np.asarray(ds_l1["solar_elevation_deg"].values, dtype=np.float64)
     block_time, groups = block_groups(
-        ds_l1["time"].values, get_block_average_minutes(config)
+        ds_l1["time"].values,
+        get_block_average_minutes(config),
+        segment_ids=profile_segment,
     )
+    block_segment: list[str] = []
+    block_regime: list[str] = []
+    block_elevation: list[float] = []
+    for group in groups:
+        segments = np.unique(profile_segment[group])
+        regimes = np.unique(profile_regime[group])
+        if segments.size != 1 or regimes.size != 1:
+            raise ValueError(
+                "Every Level 2 temporal block must remain homogeneous in segment_id and solar_regime."
+            )
+        block_segment.append(str(segments[0]))
+        block_regime.append(str(regimes[0]))
+        block_elevation.append(float(np.mean(profile_elevation[group])))
 
     if photon_channel is not None:
         photon_signal = corrected.sel(channel=photon_channel).values.astype(np.float64)
@@ -247,6 +271,9 @@ def prepare_wavelength_blocks(
         n_altitude=altitude.size,
         block_time=block_time,
         block_groups=groups,
+        block_segment_id=np.asarray(block_segment, dtype=object),
+        block_solar_regime=np.asarray(block_regime, dtype=object),
+        block_solar_elevation_deg=np.asarray(block_elevation, dtype=np.float64),
         gluing_config=get_gluing_config(config),
         molecular_fit_config=get_molecular_fit_config(config),
         analog_block=analog_block,
