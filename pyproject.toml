@@ -24,6 +24,7 @@ dependencies = [
   "numba>=0.58.0",
   "matplotlib>=3.7.0",
   "siphon>=0.11.0",
+  "cdsapi>=0.7.7",
   "tenacity>=8.2.0",
   "PyYAML>=6.0",
 ]
@@ -33,9 +34,6 @@ dev = [
   "pytest>=7.0.0",
   "pytest-cov>=7.0.0",
   "ruff>=0.8.0",
-]
-era5 = [
-  "cdsapi>=0.7.7",
 ]
 explorer = [
   "streamlit>=1.35.0",
