@@ -184,18 +184,39 @@ def valid_block_mean_and_error(
     )
 
 
-def block_groups(time_values: np.ndarray, minutes: int) -> tuple[np.ndarray, list[np.ndarray]]:
-    """Return representative block times and clock-anchored index groups.
+def block_groups(
+    time_values: np.ndarray,
+    minutes: int,
+    *,
+    segment_ids: np.ndarray | None = None,
+) -> tuple[np.ndarray, list[np.ndarray]]:
+    """Return representative times for clock-anchored, segment-homogeneous groups.
 
-    Membership remains anchored to wall-clock buckets via floor(minutes).
-    The public block_time coordinate is the mean timestamp of profiles
-    actually contributing to each bucket, avoiding a systematic start-of-block
-    offset when time-dependent ancillary fields are evaluated.
+    Wall-clock buckets remain anchored by floor(minutes). When segment IDs
+    are supplied, a solar transition splits a bucket rather than averaging
+    profiles from two scientific segments together.
     """
     times = pd.to_datetime(time_values)
-    labels = times.floor(f"{int(minutes)}min")
-    unique_labels = pd.Index(labels).unique().sort_values()
-    groups = [np.where(labels == label)[0] for label in unique_labels]
+    bucket_labels = times.floor(f"{int(minutes)}min")
+    if segment_ids is None:
+        segment_values = np.full(len(times), "", dtype=object)
+    else:
+        segment_values = np.asarray(segment_ids).astype(str)
+        if segment_values.shape != (len(times),):
+            raise ValueError("segment_ids must contain exactly one value per time profile.")
+
+    keys = list(zip(bucket_labels, segment_values, strict=True))
+    ordered_keys: list[tuple[pd.Timestamp, str]] = []
+    for key in keys:
+        if key not in ordered_keys:
+            ordered_keys.append(key)
+    groups = [
+        np.asarray(
+            [index for index, candidate in enumerate(keys) if candidate == key],
+            dtype=np.int64,
+        )
+        for key in ordered_keys
+    ]
     time_ns = times.to_numpy(dtype="datetime64[ns]").astype(np.int64)
     representative = np.asarray(
         [
@@ -205,7 +226,6 @@ def block_groups(time_values: np.ndarray, minutes: int) -> tuple[np.ndarray, lis
         dtype="datetime64[ns]",
     )
     return representative, groups
-
 
 def mean_by_groups(matrix: np.ndarray, groups: list[np.ndarray]) -> np.ndarray:
     """Calculate NaN-safe means for a time x altitude matrix over index groups."""
