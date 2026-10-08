@@ -41,8 +41,9 @@ The governing rule is:
   validation of the current -3 degree threshold against SPU background/SNR
   remains a scientific follow-up.
 - **Phase 4 — continuous Level 0:** hourly surface weather plus per-profile
-  solar elevation/regime/segments implemented; SCC derivatives are written per
-  solar segment when configured.
+  solar elevation/regime/segments implemented; SCC interoperability derivatives
+  are grouped by solar regime (day/night) while retaining source segment
+  identities and gaps.
 - **Phase 5 — continuous Level 1:** hourly ERA5/USSA76 atmosphere, radiosonde
   QA, inherited solar/segment context and full Level 1 figure ownership are
   implemented.
@@ -222,14 +223,20 @@ The governing rule is:
   `SCC_Configuration_ID`, and rejects ambiguous mappings rather than guessing.
 - [x] Keep the canonical full-channel Level 0 continuous across solar
   transitions.
-- [x] Write one SCC Level 0 derivative per contiguous solar segment when its
-  historical station configuration is exportable.
-- [x] Name SCC derivatives `SESSION_segXX_L0_scc.nc`.
-- [x] SCC derivatives preserve the original `Session_ID` and add
-  `Segment_ID` / `Solar_Regime`.
-- [x] Incremental Level 0 checks understand multiple segment SCC derivatives.
+- [x] Write at most one SCC Level 0 derivative per solar regime present in the
+  session.
+- [x] Name SCC derivatives `SESSION_day_L0_scc.nc` and
+  `SESSION_night_L0_scc.nc`.
+- [x] If a session is day -> night -> day, combine both day segments in the
+  same SCC day derivative while preserving original timestamps and
+  `segment_id(time)`; do not bridge the intervening gap.
+- [x] SCC derivatives preserve the original `Session_ID` and record
+  `Solar_Regime`, `Source_Segments`, `Source_Segment_Count`, and
+  `Contains_Time_Gaps`.
+- [x] Incremental Level 0 checks expect one derivative per available SCC
+  day/night regime and validate its source-segment metadata.
 - [x] Automatic LIPANCORA discovery continues to use only the canonical
-  `SESSION_L0.nc`; SCC segment products remain explicit interoperability
+  `SESSION_L0.nc`; SCC day/night products remain explicit interoperability
   derivatives.
 - [x] Keep Level 0/SCC operational `ExecutionResult.metadata` JSON-scalar:
   regimes/segments are comma-separated strings and multiple SCC paths are
@@ -281,18 +288,20 @@ The governing rule is:
   local station -> Open-Meteo fallback, without changing the scientific schema.
 - [x] Derive scalar temperature/pressure only where SCC interoperability
   explicitly requires scalar fields.
-- [x] SCC scalar values use the finite median of the weather interval written
-  for that SCC derivative; solar-segment SCC files therefore use segment
-  weather rather than the complete-session median. These remain interoperability
-  fields, not the scientific weather series.
+- [x] SCC scalar values use the finite median of the weather source times
+  associated with the actual source segments in that derivative. Repeated
+  day/night segments use the union of their own weather windows rather than
+  including the intervening opposite-regime interval. These remain
+  interoperability fields, not the scientific weather series.
 
 ## Solar/session context in Level 0
 
 - [x] Add per-profile solar elevation/regime variables.
 - [x] Add segment identity and segment-table metadata.
 - [x] Select historical SCC day/night configuration from solar regime.
-- [x] Export SCC derivatives per solar segment without splitting the canonical
-  Level 0 session.
+- [x] Export SCC derivatives grouped by solar regime without splitting the
+  canonical Level 0 session; internal `segXX` identities remain contiguous
+  scientific segment metadata.
 
 ---
 
