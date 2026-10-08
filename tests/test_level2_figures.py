@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
 
-from milgrau.viz import level2_figures
+from milgrau.viz import level2 as level2_viz
 from milgrau.viz.level2 import (
     is_level2_dataset,
     plot_all_level2_figures,
@@ -316,7 +316,7 @@ def test_optical_profiles_omit_support_panel_and_keep_retrieval_top_line(
         plt.close(fig)
         return Path(output_folder) / name
 
-    monkeypatch.setattr(level2_figures, "_save", capture_figure)
+    monkeypatch.setattr(level2_viz, "_save", capture_figure)
     output = plot_optical_profiles(
         _dataset(), 532, tmp_path, "case", _config(), tmp_path
     )
