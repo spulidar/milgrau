@@ -1092,6 +1092,15 @@ def build_level2_dataset(
         if attr in ds_l1.attrs:
             ds.attrs[attr] = ds_l1.attrs[attr]
 
+    for attr in (
+        "LEBEAR_Time_Window_UTC",
+        "LEBEAR_Time_Window_Tag",
+        "LEBEAR_Solar_Regime",
+        "LEBEAR_Segment_ID",
+    ):
+        if attr in ds_l1.attrs:
+            ds.attrs[attr] = ds_l1.attrs[attr]
+
     ds["altitude"].attrs.update({"units": "m", "positive": "up"})
     ds["effective_vertical_resolution_m"].attrs.update(
         {
