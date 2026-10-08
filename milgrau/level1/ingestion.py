@@ -75,9 +75,32 @@ def _profile_for_measurement_time(config: Mapping[str, Any], measurement_time: p
     return matches[0]
 
 
-def _measurement_mode_hint(config: Mapping[str, Any], time_index: pd.DatetimeIndex) -> str:
-    local_time = _station_local_time(config, pd.Timestamp(time_index[0]))
-    return "day" if 6 <= local_time.hour < 18 else "night"
+def _solar_regime_hint(ds: xr.Dataset) -> str | None:
+    """Return explicit day/night identity from SCC product metadata when present."""
+    for key in ("Solar_Regime", "solar_regime"):
+        if key in ds.attrs:
+            value = str(ds.attrs[key]).strip().lower()
+            if value not in {"day", "night"}:
+                raise ValueError(
+                    f"SCC solar-regime attribute {key} must be 'day' or 'night'; got {value!r}."
+                )
+            return value
+    if "solar_regime" in ds:
+        values = {
+            str(value).strip().lower()
+            for value in np.asarray(ds["solar_regime"].values).reshape(-1)
+            if str(value).strip()
+        }
+        if not values:
+            return None
+        if not values.issubset({"day", "night"}):
+            raise ValueError(f"SCC solar_regime contains unsupported value(s): {sorted(values)}.")
+        if len(values) != 1:
+            raise ValueError(
+                "One SCC Level 0 derivative must represent exactly one solar regime."
+            )
+        return next(iter(values))
+    return None
 
 
 def _configuration_id_hint(ds: xr.Dataset) -> int | None:
@@ -131,7 +154,7 @@ def _channel_names_from_scc_ids(
             f"Station profile {profile.get('id', '')!r} has no SCC mapping, so external channel_ID values cannot be canonicalized."
         )
 
-    mode_hint = _measurement_mode_hint(config, time_index)
+    mode_hint = _solar_regime_hint(ds)
     configuration_id_hint = _configuration_id_hint(ds)
     candidates: list[tuple[str, int, tuple[str, ...]]] = []
     for mode in ("day", "night"):
