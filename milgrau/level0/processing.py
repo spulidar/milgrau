@@ -258,6 +258,51 @@ def _segment_group_df(
     return pd.concat([measurement_rows, dark_rows], ignore_index=True), indices
 
 
+def _weather_for_interval(
+    weather_data: Mapping[str, Any],
+    start_utc: pd.Timestamp,
+    end_utc: pd.Timestamp,
+) -> dict[str, Any]:
+    """Subset hourly weather to source times bracketing one SCC solar segment."""
+    times = pd.to_datetime(
+        np.asarray(weather_data.get("weather_time", [])),
+        utc=True,
+    )
+    if len(times) == 0:
+        return dict(weather_data)
+    lower = pd.Timestamp(start_utc).tz_convert("UTC").floor("h")
+    upper = pd.Timestamp(end_utc).tz_convert("UTC").ceil("h")
+    mask = (times >= lower) & (times <= upper)
+    indices = np.flatnonzero(mask)
+    if indices.size == 0:
+        nearest = int(
+            np.argmin(
+                np.abs(
+                    times.asi8
+                    - pd.Timestamp(start_utc).tz_convert("UTC").value
+                )
+            )
+        )
+        indices = np.asarray([nearest], dtype=np.int64)
+
+    result = dict(weather_data)
+    result["weather_time"] = (
+        times[indices]
+        .tz_convert("UTC")
+        .tz_localize(None)
+        .to_numpy(dtype="datetime64[ns]")
+    )
+    for field in _SURFACE_WEATHER_FIELDS:
+        values = np.asarray(weather_data.get(field, []), dtype=np.float64).reshape(-1)
+        if values.size != len(times):
+            raise ValueError(
+                f"Surface weather field {field!r} has {values.size} values for "
+                f"{len(times)} weather_time entries."
+            )
+        result[field] = values[indices]
+    return result
+
+
 def _write_scc_exports(
     session_id: str,
     lidar_data: Mapping[str, Any],
@@ -330,6 +375,17 @@ def _write_scc_exports(
 
         segment_lidar = _select_lidar_profiles(lidar_data, profile_indices)
         scc_lidar = select_lidar_channels(segment_lidar, scc_channels)
+        segment_stop = pd.to_datetime(
+            segment_df.loc[
+                segment_df["meas_type"] == "measurements", "stop_time"
+            ],
+            utc=True,
+        ).max()
+        segment_weather = _weather_for_interval(
+            weather_data,
+            segment_start,
+            segment_stop,
+        )
         scc_path = level0_scc_output_path(
             session_id,
             segment_config,
@@ -341,7 +397,7 @@ def _write_scc_exports(
             session_id=session_id,
             lidar_data=scc_lidar,
             group_df=segment_df,
-            weather_data=dict(weather_data),
+            weather_data=segment_weather,
             config=segment_config,
             logger=scc_logger,
         )
