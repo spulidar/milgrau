@@ -24,7 +24,13 @@ def _minimal_level0() -> xr.Dataset:
             "channel_string": (("channels",), np.array(["532.AN", "532.PC"], dtype=object)),
             "DAQ_Range": (("channels",), np.array([500.0, np.nan])),
             "Raw_Lidar_Data": (("time", "channels", "points"), np.ones((2, 2, 4))),
-        }
+            "Surface_Temperature_C": (("weather_time",), np.array([20.0, 19.5])),
+            "Surface_Pressure_hPa": (("weather_time",), np.array([930.0, 931.0])),
+            "Surface_Relative_Humidity_percent": (("weather_time",), np.array([60.0, 62.0])),
+            "Surface_Cloud_Cover_percent": (("weather_time",), np.array([20.0, 30.0])),
+            "Surface_Wind_Speed_kmh": (("weather_time",), np.array([5.0, 6.0])),
+        },
+        coords={"weather_time": pd.date_range("2024-01-01T00:00:00", periods=2, freq="1h")},
     )
 
 
