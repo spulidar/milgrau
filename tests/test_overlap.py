@@ -21,6 +21,7 @@ def _context(config: dict, when: str) -> dict:
         config,
         datetime.fromisoformat(when).replace(tzinfo=timezone.utc),
         ["355.AN", "355.PC", "532.AN", "532.PC"],
+        mode="day",
     )
 
 
