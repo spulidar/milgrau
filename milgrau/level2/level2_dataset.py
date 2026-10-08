@@ -362,18 +362,6 @@ def retrieve_wavelength(
     integration_mode = str(kfs_cfg["kfs_mode"])
 
     for block_index in range(n_block):
-        if int(glued.retrieval_input_valid_flag[block_index]) != 1:
-            continue
-        block_started = time.perf_counter()
-        logger.debug(
-            "  -> %d nm block %d/%d selection-aware MC start | iterations=%d",
-            int(wavelength_nm),
-            int(block_index + 1),
-            int(n_block),
-            int(iterations),
-        )
-        native_signal = np.asarray(glued.range_corrected_signal[block_index], dtype=np.float64)
-        native_error = np.asarray(glued.range_corrected_signal_error[block_index], dtype=np.float64)
         block_molecular = build_molecular_model(
             ds_l1,
             int(wavelength_nm),
@@ -399,6 +387,20 @@ def retrieve_wavelength(
         molecular_alpha_block[block_index] = np.asarray(molecular_alpha.values, dtype=np.float64)
         lidar_ratio_assumed_block[block_index] = float(block_molecular.lidar_ratio_assumed_sr)
         lidar_ratio_std_block[block_index] = float(block_molecular.lidar_ratio_std_sr)
+
+        if int(glued.retrieval_input_valid_flag[block_index]) != 1:
+            continue
+
+        block_started = time.perf_counter()
+        logger.debug(
+            "  -> %d nm block %d/%d selection-aware MC start | iterations=%d",
+            int(wavelength_nm),
+            int(block_index + 1),
+            int(n_block),
+            int(iterations),
+        )
+        native_signal = np.asarray(glued.range_corrected_signal[block_index], dtype=np.float64)
+        native_error = np.asarray(glued.range_corrected_signal_error[block_index], dtype=np.float64)
         prepared = prepare_high_column_profile(
             range_corrected_signal=native_signal,
             range_corrected_signal_error=native_error,
