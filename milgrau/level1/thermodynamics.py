@@ -9,7 +9,11 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from milgrau.io.era5 import ERA5_DOI, fetch_era5_pressure_level_profile
+from milgrau.io.era5 import (
+    ERA5_DOI,
+    fetch_era5_pressure_level_profile,
+    prefetch_era5_pressure_level_profiles,
+)
 from milgrau.io.logging_utils import bind_log_context
 from milgrau.io.radiosonde import fetch_wyoming_radiosonde
 from milgrau.level1.common import finite_or_fill
@@ -377,6 +381,19 @@ def integrate_thermodynamics(
     cpt_rows: list[float] = []
     lrt_rows: list[float] = []
 
+    era5_prefetched = False
+    if "era5" in policy.source_priority:
+        if policy.era5 is None:
+            raise RuntimeError("Resolved atmosphere policy lacks ERA5 settings.")
+        prefetch_era5_pressure_level_profiles(
+            [pd.Timestamp(value).to_pydatetime() for value in atmosphere_times],
+            float(station_site["latitude"]),
+            float(station_site["longitude"]),
+            bind_log_context(logger, stage="era5"),
+            settings=policy.era5.as_io_mapping(),
+        )
+        era5_prefetched = True
+
     for timestamp in atmosphere_times:
         resolved = False
         for source in policy.source_priority:
@@ -390,6 +407,7 @@ def integrate_thermodynamics(
                         float(station_site["longitude"]),
                         bind_log_context(logger, stage="era5"),
                         settings=policy.era5.as_io_mapping(),
+                        allow_network=not era5_prefetched,
                     )
                 except Exception as exc:
                     logger.warning("ERA5 unavailable at %s | %s", timestamp, _compact_error(exc))
