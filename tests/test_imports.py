@@ -35,6 +35,7 @@ def test_subpackage_public_surfaces_are_explicit_and_stable() -> None:
             "build_session_id",
             "ensure_directories",
             "fetch_era5_pressure_level_profile",
+            "prefetch_era5_pressure_level_profiles",
             "fetch_surface_weather",
             "fetch_wyoming_radiosonde",
             "level0_output_path",
