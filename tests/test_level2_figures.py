@@ -298,7 +298,7 @@ def test_level2_figures_generates_native_panels(tmp_path: Path) -> None:
     assert any("MolecularReference" in name for name in names)
     assert any("OpticalProfiles" in name for name in names)
     assert any("MCReference" in name for name in names)
-    assert any("SignalProfile" in name for name in names)
+    assert any("Gluing" in name for name in names)
 
 
 def test_optical_profiles_omit_support_panel_and_keep_retrieval_top_line(
