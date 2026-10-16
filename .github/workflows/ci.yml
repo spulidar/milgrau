@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [session-refactor, milgraumaxxing]
+    branches: [milgraumaxxing]
   pull_request:
 
 permissions:
@@ -43,3 +43,19 @@ jobs:
         run: python -m pip install -e ".[dev]"
       - name: Full test suite
         run: pytest -q
+
+  explorer:
+    name: Streamlit Explorer smoke
+    runs-on: ubuntu-latest
+    env:
+      MPLBACKEND: Agg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install Explorer and test dependencies
+        run: python -m pip install -e ".[dev,explorer]"
+      - name: Import and launch read-only Explorer in testing mode
+        run: pytest -q tests/test_explorer_smoke.py

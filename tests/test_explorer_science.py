@@ -4,7 +4,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-import pytest
 import xarray as xr
 
 from milgrau.explorer.catalog import discover_products, product_paths, selected_session_context

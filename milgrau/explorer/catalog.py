@@ -173,7 +173,7 @@ def discover_products(processed_root: str, timezone_name: str = "UTC") -> pd.Dat
         display = session_display(session_id, timezone_name)
         context = _session_context_from_products(session_dir, paths)
         day = display["date"]
-        mtimes = [Path(value).stat().st_mtime for value in paths.values() if value]
+        mtimes = [Path(paths[key]).stat().st_mtime for key in LEVEL_TO_PATH.values() if paths[key]]
         rows.append(
             {
                 "date": day,
