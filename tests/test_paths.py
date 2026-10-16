@@ -133,7 +133,7 @@ def test_level2_output_path_supports_named_variants(tmp_path: Path) -> None:
 def test_visual_product_paths_use_session_level_figure_names() -> None:
     session_id = "spu_20250511-0012Z_20250511-0737Z"
     assert quicklook_output_path("figures", session_id, "532nm AN", 15, "webp") == Path(
-        f"figures/{session_id}_L1_RCS_532nm_AN_15km.webp"
+        f"figures/{session_id}_L1_RCS_532nmAN_15km.webp"
     )
     assert global_mean_rcs_output_path("figures", session_id, ".png") == Path(
         f"figures/{session_id}_L1_MeanRCS.png"
