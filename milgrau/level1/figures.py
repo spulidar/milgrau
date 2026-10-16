@@ -31,7 +31,7 @@ from milgrau.viz.quicklooks import (
     plot_global_mean_rcs,
     plot_quicklook,
 )
-from milgrau.viz.style import DEFAULT_LOGO_SPECS, get_output_settings
+from milgrau.viz.style import get_output_settings, logo_file_dependencies
 
 
 def level1_figures_enabled(config: Mapping[str, Any]) -> bool:
@@ -83,12 +83,8 @@ def _plot_ready_level1(ds: xr.Dataset) -> xr.Dataset:
     return result
 
 
-def _figure_dependencies(root_path: Path) -> list[Path]:
-    return [
-        logo_path
-        for logo_name, _height in DEFAULT_LOGO_SPECS
-        if (logo_path := root_path / "img" / logo_name).is_file()
-    ]
+def _figure_dependencies(root_path: Path, config: Mapping[str, Any]) -> list[Path]:
+    return logo_file_dependencies(config, root_path)
 
 
 def _atmospheric_output_path(
@@ -141,7 +137,7 @@ def generate_level1_figures(
     skipped = 0
     failures: list[str] = []
     prefix = _figure_prefix(path)
-    dependencies = _figure_dependencies(root)
+    dependencies = _figure_dependencies(root, config)
     incremental = bool(config.get("processing", {}).get("incremental", False))
 
     try:
