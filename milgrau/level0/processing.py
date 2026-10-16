@@ -479,9 +479,9 @@ def process_session_group(
     stage = "level0.measurements"
     files_meas: list[str] = []
     try:
-        df_meas = group_df[group_df["meas_type"] == "measurements"].sort_values(
-            "start_time_utc"
-        )
+        df_meas = group_df[group_df["meas_type"] == "measurements"]
+        if not df_meas.empty:
+            df_meas = df_meas.sort_values("start_time_utc")
         files_meas = df_meas["filepath"].tolist()
         if not files_meas:
             return ExecutionResult.skipped(
