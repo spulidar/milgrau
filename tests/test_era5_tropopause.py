@@ -39,6 +39,11 @@ def test_era5_reuses_thermal_tropopause_kernel(monkeypatch) -> None:
         lambda *args, **kwargs: profile,
     )
 
+    monkeypatch.setattr(
+        "milgrau.level1.thermodynamics.prefetch_era5_pressure_level_profiles",
+        lambda *args, **kwargs: None,
+    )
+
     config = deepcopy(load_config("config.yaml"))
     config["level1"]["atmosphere"]["source_priority"] = ["era5", "ussa76"]
     shell = xr.Dataset(
