@@ -2,7 +2,6 @@
 from __future__ import annotations
 from typing import Any
 import numpy as np
-import pandas as pd
 import plotly.graph_objects as go
 import xarray as xr
 from plotly.subplots import make_subplots

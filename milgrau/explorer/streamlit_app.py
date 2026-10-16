@@ -14,6 +14,7 @@ from milgrau.explorer.catalog import (
     selected_session_context, station_timezone_from_config,
 )
 from milgrau.explorer.views import render_diagnostics, render_level, render_metadata
+from milgrau.explorer.data import open_dataset
 from milgrau.explorer.l2_products import render_l2_products
 
 
@@ -148,7 +149,7 @@ def main() -> None:
         render_level(row, "Level 2")
     elif page in ("Metadados", "QA · Indicadores"):
         key = LEVEL_TO_PATH[level]
-        with __import__("milgrau.explorer.data", fromlist=["open_dataset"]).open_dataset(row[key]) as ds:
+        with open_dataset(row[key]) as ds:
             if page == "Metadados":
                 render_metadata(ds, key_prefix=f"{row['session_id']}_{level}")
             else:

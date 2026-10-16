@@ -47,7 +47,7 @@ def channel_name(obj: xr.Dataset | xr.DataArray) -> str | None:
 
 
 def time_name(obj: xr.Dataset | xr.DataArray) -> str | None:
-    return coord_name(obj, ("time", "Time", "Raw_Data_Start_Time", "block_time", "profile"))
+    return coord_name(obj, ("time", "time_bck", "Time", "Raw_Data_Start_Time", "block_time", "profile"))
 
 
 def vertical_name(obj: xr.Dataset | xr.DataArray, level: str) -> str | None:

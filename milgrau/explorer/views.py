@@ -75,6 +75,8 @@ def render_level0(row: dict[str, Any]) -> None:
         return
     st.caption(f"Arquivo: `{path}`")
     with open_dataset(path) as ds:
+        if "channel_string" in ds and "channels" in ds.dims:
+            ds = ds.assign_coords(channels=ds["channel_string"].values.astype(str))
         variables = [name for name in ("Raw_Lidar_Data", "Background_Profile") if name in ds]
         variables += [name for name in numeric_variables(ds) if name not in variables]
         if not variables:
