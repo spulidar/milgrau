@@ -15,7 +15,7 @@ from milgrau.level0.config import (
     station_coordinates,
     station_timezone,
 )
-from milgrau.level0.processing import _weather_for_interval, fetch_group_weather
+from milgrau.level0.processing import _weather_for_measurement_rows, fetch_group_weather
 
 
 def _minimal_config() -> dict:
@@ -160,7 +160,7 @@ def test_missing_surface_weather_fail_policy_stops_processing(monkeypatch) -> No
 
 
 
-def test_scc_weather_subset_uses_segment_hour_bracket() -> None:
+def test_scc_weather_subset_uses_scientific_segment_hour_bracket() -> None:
     weather = {
         "weather_time": np.array(
             [
@@ -180,11 +180,14 @@ def test_scc_weather_subset_uses_segment_hour_bracket() -> None:
         "cadence": "hourly",
     }
 
-    result = _weather_for_interval(
-        weather,
-        pd.Timestamp("2025-01-01T19:10:00Z"),
-        pd.Timestamp("2025-01-01T19:50:00Z"),
+    rows = pd.DataFrame(
+        {
+            "segment_id": ["seg00"],
+            "start_time_utc": [pd.Timestamp("2025-01-01T19:10:00Z")],
+            "stop_time": [pd.Timestamp("2025-01-01T19:50:00Z")],
+        }
     )
+    result = _weather_for_measurement_rows(weather, rows)
 
     np.testing.assert_array_equal(
         result["weather_time"],
