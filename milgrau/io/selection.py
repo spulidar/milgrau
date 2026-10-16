@@ -162,16 +162,19 @@ def resolve_product_selection(
     suffix: str,
 ) -> list[Path]:
     """Resolve a session/date/path selection to existing canonical product files."""
-    root = processed_data_root(config)
+    # An explicitly named input file is valid without project-local discovery.
+    # Only session/date selectors or an empty selector need the configured root.
     discovered: dict[str, list[Path]] = {}
-    for path in sorted(root.rglob(f"*{suffix}")):
-        if not path.is_file():
-            continue
-        try:
-            session_id = product_session_id(path)
-        except ValueError:
-            continue
-        discovered.setdefault(session_id, []).append(path)
+    if selection.is_empty or selection.session_ids or selection.dates:
+        root = processed_data_root(config)
+        for path in sorted(root.rglob(f"*{suffix}")):
+            if not path.is_file():
+                continue
+            try:
+                session_id = product_session_id(path)
+            except ValueError:
+                continue
+            discovered.setdefault(session_id, []).append(path)
 
     if selection.is_empty:
         return [path for paths in discovered.values() for path in paths]
