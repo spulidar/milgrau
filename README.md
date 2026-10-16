@@ -197,6 +197,26 @@ MILGRAU keeps responsibilities separate:
 - **`config.yaml`** — processing/scientific recipe: how the run should be processed;
 - **`station.yaml`** — observational reality: station/instrument history, calibration identity and station-derived information;
 
+Institutional logos for **all Matplotlib Level 1 and Level 2 figures** are
+controlled by `visualization.logos` in `config.yaml`. The default selects
+`img/LEAEL_LOGO.png` alongside the CC and LALINET marks. Replace a path to use
+your own PNG/JPEG/WebP, reorder entries, change `height`, or use `logos: []`
+to hide them completely. For example:
+
+```yaml
+visualization:
+  logos:
+    - path: "img/my_institute_logo.png"
+      height: 0.065
+```
+
+A bare filename resolves from `img/`; a relative path containing folders
+resolves from the project root. Absolute paths are also supported.
+`height` is a fraction of figure height; figures place logos from right to
+left at the bottom. Missing images are skipped. Editing a selected image
+regenerates figure assets on incremental runs without recomputing scientific
+NetCDF products.
+
 The exact ownership boundary and hash/provenance policy are documented in [`docs/configuration_ownership.md`](docs/configuration_ownership.md). The canonical code-owner inventory is in [`docs/code_inventory.md`](docs/code_inventory.md).
 
 Published NetCDF provenance embeds the exact processing/station YAML snapshots. Level 2 also identifies exact upstream Level 1 bytes and the installed MILGRAU Python source content, so scientific input/code states can be distinguished without relying on machine-local paths.
@@ -214,7 +234,7 @@ Published NetCDF provenance embeds the exact processing/station YAML snapshots. 
 
 ## Citation
 
-If you use MILGRAU, cite the software using [`CITATION.cff`](CITATION.cff). The current citation metadata identifies MILGRAU version `2026.9` and Zenodo DOI `10.5281/zenodo.20330638`.
+If you use MILGRAU, cite the software using [`CITATION.cff`](CITATION.cff). The working source version is `2026.10`. The historical Zenodo DOI `10.5281/zenodo.20330638` refers to an earlier deposit and is not claimed as the archival DOI for the present source.
 
 
 ## License
