@@ -14,7 +14,6 @@ from milgrau.incremental import output_is_current
 from milgrau.io.logging_utils import bind_log_context
 from milgrau.io.paths import logging_session_id
 from milgrau.operations import ExecutionResult
-from milgrau.viz.style import logo_file_dependencies
 
 type Level2FigurePlotter = Callable[..., list[Path]]
 
@@ -55,6 +54,9 @@ def _figure_dependencies(
     root_path: Path,
     config: Mapping[str, Any],
 ) -> tuple[list[Path], list[Path]]:
+    # Keep the scientific L2 import path independent of matplotlib.
+    from milgrau.viz.style import logo_file_dependencies
+
     inputs = [level1_path, level2_path]
     return inputs, logo_file_dependencies(config, root_path)
 
