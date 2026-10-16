@@ -199,7 +199,7 @@ def _level2_config(tmp_path: Path) -> dict:
             "lidar_ratios_sr": {"532": months},
             "lidar_ratio_std_sr": {"532": 5.0},
         },
-        "visualization": {"level2_qa": {"enabled": False}},
+        "visualization": {"level2_figures": {"enabled": False}},
     }
 
 
