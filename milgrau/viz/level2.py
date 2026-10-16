@@ -410,7 +410,7 @@ def plot_molecular_reference(
         fontsize=8.2,
     )
     fig.subplots_adjust(top=0.86, bottom=0.17, left=0.08, right=0.96)
-    add_footer_and_logos(fig, root_dir)
+    add_footer_and_logos(fig, root_dir, config=config)
     return _save(
         fig,
         output_folder,
@@ -593,7 +593,7 @@ def plot_optical_profiles(
         fontsize=8.5,
     )
     fig.subplots_adjust(top=0.86, bottom=0.17, left=0.065, right=0.97)
-    add_footer_and_logos(fig, root_dir)
+    add_footer_and_logos(fig, root_dir, config=config)
     return _save(
         fig,
         output_folder,
@@ -646,7 +646,7 @@ def plot_mc_reference(
         fontweight="bold",
     )
     fig.tight_layout(rect=(0, 0.06, 1, 0.92))
-    add_footer_and_logos(fig, root_dir)
+    add_footer_and_logos(fig, root_dir, config=config)
     return _save(
         fig,
         output_folder,
@@ -879,7 +879,7 @@ def plot_gluing(
         y=0.975,
     )
     fig.tight_layout(rect=(0, 0.07, 1, 0.93))
-    add_footer_and_logos(fig, root_dir)
+    add_footer_and_logos(fig, root_dir, config=config)
     return _save(
         fig,
         output_folder,
