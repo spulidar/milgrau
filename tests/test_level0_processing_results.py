@@ -43,7 +43,8 @@ def test_session_without_measurements_is_explicit_skip(tmp_path: Path) -> None:
 def test_session_preserves_parse_failure_stage_and_cause(tmp_path: Path, monkeypatch) -> None:
     input_path = tmp_path / "measurement"
     input_path.write_text("invalid raw lidar", encoding="utf-8")
-    group = pd.DataFrame({"meas_type": ["measurements"], "filepath": [str(input_path)]})
+    group = pd.DataFrame({"meas_type": ["measurements"], "filepath": [str(input_path)],
+         "start_time_utc": [pd.Timestamp("2024-01-01T12:00:00Z")]})
     monkeypatch.setattr(processing, "fetch_group_weather", lambda *_args: {})
 
     def fail_parse(*_args):
@@ -63,7 +64,8 @@ def test_session_success_keeps_only_level0_file_effect(tmp_path: Path, monkeypat
     input_path = tmp_path / "measurement"
     input_path.write_text("raw lidar", encoding="utf-8")
     group = pd.DataFrame(
-        {"meas_type": ["measurements"], "filepath": [str(input_path)]}
+        {"meas_type": ["measurements"], "filepath": [str(input_path)],
+         "start_time_utc": [pd.Timestamp("2024-01-01T12:00:00Z")]}
     )
     monkeypatch.setattr(processing, "fetch_group_weather", lambda *_args: {})
     monkeypatch.setattr(
@@ -71,6 +73,7 @@ def test_session_success_keeps_only_level0_file_effect(tmp_path: Path, monkeypat
         "parse_licel_group",
         lambda *_args: {"tensors": {"532.AN": [[1.0]]}, "channels": ["532.AN"]},
     )
+    monkeypatch.setattr(processing, "_annotate_solar_context", lambda frame, _config: frame)
     monkeypatch.setattr(
         processing,
         "_resolve_group_station_config",
@@ -83,6 +86,7 @@ def test_session_success_keeps_only_level0_file_effect(tmp_path: Path, monkeypat
 
     monkeypatch.setattr(processing, "build_level0_netcdf", fake_build)
     monkeypatch.setattr(processing, "write_netcdf_provenance", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(processing, "_write_scc_exports", lambda **_kwargs: [])
 
     result = processing.process_session_group(SESSION_ID, group, _config(tmp_path), _logger())
 
@@ -100,7 +104,8 @@ def test_session_success_execution_metadata_remains_json_scalar(
     input_path = tmp_path / "measurement"
     input_path.write_text("raw lidar", encoding="utf-8")
     group = pd.DataFrame(
-        {"meas_type": ["measurements"], "filepath": [str(input_path)]}
+        {"meas_type": ["measurements"], "filepath": [str(input_path)],
+         "start_time_utc": [pd.Timestamp("2024-01-01T12:00:00Z")]}
     )
     lidar = {"tensors": {"532.AN": [[1.0]]}, "channels": ["532.AN"]}
     station_context = {
