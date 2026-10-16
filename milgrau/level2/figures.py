@@ -14,9 +14,9 @@ from milgrau.incremental import output_is_current
 from milgrau.io.logging_utils import bind_log_context
 from milgrau.io.paths import logging_session_id
 from milgrau.operations import ExecutionResult
+from milgrau.viz.style import logo_file_dependencies
 
 type Level2FigurePlotter = Callable[..., list[Path]]
-_FIGURE_LOGO_NAMES = ("CC_BY-NC-ND.png", "lalinet_logo2.png", "logo_leal2.png")
 
 
 def level2_figures_enabled(config: Mapping[str, Any]) -> bool:
@@ -53,14 +53,10 @@ def _figure_dependencies(
     level1_path: Path,
     level2_path: Path,
     root_path: Path,
+    config: Mapping[str, Any],
 ) -> tuple[list[Path], list[Path]]:
     inputs = [level1_path, level2_path]
-    logos = [
-        logo_path
-        for logo_name in _FIGURE_LOGO_NAMES
-        if (logo_path := root_path / "img" / logo_name).is_file()
-    ]
-    return inputs, logos
+    return inputs, logo_file_dependencies(config, root_path)
 
 
 def level2_figures_are_current(
@@ -89,7 +85,7 @@ def level2_figures_are_current(
     if not outputs:
         return False
 
-    inputs, logos = _figure_dependencies(level1_path, level2_path, root_path)
+    inputs, logos = _figure_dependencies(level1_path, level2_path, root_path, config)
     return all(
         output_is_current(
             output,
