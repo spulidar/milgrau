@@ -21,6 +21,7 @@ def _config(*, max_gap_seconds: float = 1800.0, max_association_hours: float = 1
         "_station_catalog": {
             "station": {
                 "id": "spu",
+                "name": "Synthetic SPU",
                 "timezone": "America/Sao_Paulo",
                 "site": {},
             },
