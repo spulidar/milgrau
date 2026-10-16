@@ -29,11 +29,19 @@ def test_calendar_version_is_synchronized_with_packaging_and_citation() -> None:
     root = Path(__file__).resolve().parents[1]
     pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     citation = yaml.safe_load((root / "CITATION.cff").read_text(encoding="utf-8"))
-    assert pyproject["project"]["version"] == __version__
+    assert "version" not in pyproject["project"]
+    assert pyproject["project"]["dynamic"] == ["version"]
+    assert pyproject["tool"]["setuptools"]["dynamic"]["version"]["attr"] == (
+        "milgrau.version.__version__"
+    )
     assert str(citation["version"]) == __version__
-    year, month = __version__.split(".")
+    parts = __version__.split(".")
+    assert len(parts) in (2, 3)
+    year, month = parts[:2]
     assert len(year) == 4 and year.isdigit()
     assert month.isdigit() and 1 <= int(month) <= 12
+    if len(parts) == 3:
+        assert parts[2].isdigit() and int(parts[2]) >= 1
 
 
 def test_lipancora_explicit_file_does_not_require_milgrau_filename(tmp_path: Path, monkeypatch) -> None:
