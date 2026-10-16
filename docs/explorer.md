@@ -17,6 +17,23 @@ directory in the sidebar. Sessions are identified from
 (`day/night`, SCC, derived segment/UTC selections) are listed under the same
 continuous source session and can be selected independently.
 
+## Interface — Hybrid Scientific
+
+The Explorer uses a fixed, local **Hybrid Scientific** design: a navy sidebar
+and a light scientific workspace. Styles are injected only by
+`milgrau/explorer/theme.py`, so no `.streamlit/config.toml` or global
+Streamlit configuration is required.
+
+Only the active page opens a scientific dataset. A single discovered session
+is selected automatically; search and year/month/level filters appear only
+when several sessions are available. Source paths are in the collapsed
+`Fontes de dados` panel. The overview summarizes scientific availability,
+and technical identifiers and product listings remain available in expanders.
+
+The `Modo foco` control hides the sidebar for wide scientific plots.
+Level 2 keeps plot mode, optical property, wavelength and altitude prominent,
+with solar-regime, segment and time-range controls grouped in an expander.
+
 ## Pages and performance
 
 - **Visão geral**: fast filename-only session inventory, products and figures.
