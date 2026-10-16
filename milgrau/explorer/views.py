@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 import xarray as xr
 from milgrau.explorer.catalog import LEVEL_TO_PATH, safe_key
+from milgrau.explorer.theme import plot_scientific
 from milgrau.explorer.level2 import available_level2_wavelengths, level2_status_summary
 from milgrau.explorer.data import (
     open_dataset,
@@ -96,9 +97,9 @@ def render_level0(row: dict[str, Any]) -> None:
         color_range = c7.text_input("Range de cor `min,max`", value="", key=f"{prefix}_range")
         view = reduce_for_heatmap(ds[variable], "Level 0", channel, None, float(max_bin))
         title = f"Level 0 · {variable}" + (f" · {channel}" if channel is not None else "")
-        st.plotly_chart(heatmap_figure(view, title, "Level 0", log10, color_range, robust, percentile_span[0], percentile_span[1], ds=ds), use_container_width=True)
+        plot_scientific(heatmap_figure(view, title, "Level 0", log10, color_range, robust, percentile_span[0], percentile_span[1], ds=ds), use_container_width=True)
         with st.expander("Perfil médio em bins"):
-            st.plotly_chart(profile_figure(view, f"Mean profile · {variable}", "Level 0", smooth_bins=1), use_container_width=True)
+            plot_scientific(profile_figure(view, f"Mean profile · {variable}", "Level 0", smooth_bins=1), use_container_width=True)
         with st.expander("Tempo bruto dos perfis"):
             if "Raw_Data_Start_Time" in ds:
                 try:
@@ -153,11 +154,11 @@ def render_level1(row: dict[str, Any]) -> None:
             c5, c6 = st.columns([1, 2])
             robust = c5.checkbox("robust color", value=True, key=f"{prefix}_robust")
             percentiles = c6.slider("percentis do colormap", 0.0, 100.0, (2.0, 98.0), step=0.5, key=f"{prefix}_pct")
-            st.plotly_chart(level1_quicklook_figure(ds, channel, variable, max_alt_km, log10, smooth_bins, color_range, robust, percentiles[0], percentiles[1]), use_container_width=True)
+            plot_scientific(level1_quicklook_figure(ds, channel, variable, max_alt_km, log10, smooth_bins, color_range, robust, percentiles[0], percentiles[1]), use_container_width=True)
         elif mode == "Global mean RCS":
             default_channels = channels[: min(6, len(channels))]
             chosen = st.multiselect("Canais", channels, default=default_channels, key=f"{prefix}_global_channels")
-            st.plotly_chart(global_mean_rcs_figure(ds, chosen, max_alt_km, smooth_bins), use_container_width=True)
+            plot_scientific(global_mean_rcs_figure(ds, chosen, max_alt_km, smooth_bins), use_container_width=True)
         else:
             render_generic_level(row, "Level 1", ds=ds)
         with st.expander("Metadados deste nível"):
@@ -226,7 +227,7 @@ def render_level2(row: dict[str, Any]) -> None:
             fig = None
             render_generic_level(row, "Level 2", ds=ds_l2, default_wavelength=wavelength)
         if fig is not None:
-            st.plotly_chart(fig, use_container_width=True)
+            plot_scientific(fig, use_container_width=True)
         elif mode != "Genérico":
             st.warning("Esse painel QA não encontrou as variáveis necessárias neste arquivo.")
         with st.expander("Metadados deste nível"):
@@ -277,7 +278,7 @@ def _render_generic_level(
     view = reduce_for_heatmap(ds[variable], level, channel, wavelength, float(max_vertical))
     title = f"{level} · {variable}" + (f" · {channel}" if channel is not None else "") + (f" · {wavelength_label(wavelength)}" if wavelength is not None else "")
     fig = profile_figure(view, title, level, int(smooth_bins)) if mode == "perfil médio" else heatmap_figure(view, title, level, log10, color_range, robust, percentiles[0], percentiles[1], ds=ds)
-    st.plotly_chart(fig, use_container_width=True)
+    plot_scientific(fig, use_container_width=True)
 
 def render_level(row: dict[str, Any], level: str) -> None:
     if level == "Level 0":
