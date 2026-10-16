@@ -413,7 +413,7 @@ def plot_atmospheric_profile(
         fontsize=10.2,
     )
     fig.subplots_adjust(top=0.84, bottom=0.14, left=0.07, right=0.98, wspace=0.20)
-    add_footer_and_logos(fig, root_dir)
+    add_footer_and_logos(fig, root_dir, config=config)
 
     folder = Path(output_folder)
     folder.mkdir(parents=True, exist_ok=True)
@@ -528,7 +528,7 @@ def plot_atmospheric_evolution(
         y=0.98,
     )
     fig.subplots_adjust(top=0.88, bottom=0.14, left=0.08, right=0.92, hspace=0.20)
-    add_footer_and_logos(fig, root_dir)
+    add_footer_and_logos(fig, root_dir, config=config)
 
     folder = Path(output_folder)
     folder.mkdir(parents=True, exist_ok=True)
