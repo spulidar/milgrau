@@ -369,7 +369,7 @@ def plot_quicklook(
     cb_ax.yaxis.set_ticks_position("left")
     cb_ax.yaxis.set_label_position("left")
     footer_subtitle = period_label
-    add_footer_and_logos(fig, root_dir, subtitle=footer_subtitle)
+    add_footer_and_logos(fig, root_dir, subtitle=footer_subtitle, config=config)
 
     out_path = Path(output_folder) / (
         f"{file_name_prefix}_L1_RCS_{channel_file_token(channel_name)}_"
@@ -438,7 +438,7 @@ def plot_global_mean_rcs(
     ax.set_ylim(0, max_altitude)
     ax.legend(fontsize=12, loc="best")
     ax.grid(True, which="both", alpha=0.5)
-    add_footer_and_logos(fig, root_dir)
+    add_footer_and_logos(fig, root_dir, config=config)
 
     out_path = Path(output_folder) / f"{file_name_prefix}_L1_MeanRCS.{output_format}"
     return _save_figure(fig, out_path, dpi=dpi)
