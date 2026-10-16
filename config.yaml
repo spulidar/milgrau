@@ -104,6 +104,16 @@ surface_weather:
 visualization:
   output_format: "webp"
   dpi: 120
+  # Logos for L1 and L2 figures, right to left. [] hides all logos.
+  # Filename only => img/; relative path with a folder => project root.
+  # Absolute paths work too. Image changes do not modify scientific NetCDF.
+  logos:
+    - path: "img/CC_BY-NC-ND.png"
+      height: 0.040
+    - path: "img/lalinet_logo2.png"
+      height: 0.070
+    - path: "img/LEAEL_LOGO.png"
+      height: 0.065
   level1_figures:
     enabled: true
   altitude_ranges_km: [5, 15, 30]
