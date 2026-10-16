@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [new-architecture]
+    branches: [session-refactor, milgraumaxxing]
   pull_request:
 
 permissions:
