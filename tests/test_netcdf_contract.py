@@ -217,7 +217,7 @@ def test_lebear_generates_two_sided_level2_from_level1_atmosphere(tmp_path: Path
 
     summary = process_single_level1_file(path, _level2_config(tmp_path), logger)
     output_path = tmp_path / "synthetic_level1_rcs_L2.nc"
-    assert summary.results[0].status is ExecutionStatus.OK
+    assert summary.results[0].status is ExecutionStatus.OK, summary.results[0].traceback
     assert output_path.exists()
 
     with xr.open_dataset(output_path) as ds_l2:
