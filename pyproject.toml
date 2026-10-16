@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "milgrau"
-version = "2026.10"
+dynamic = ["version"]
 description = "MILGRAU processing suite for SPU-Lidar atmospheric products"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -46,6 +46,9 @@ milgrau-lipancora = "milgrau.cli.lipancora:main"
 milgrau-lebear = "milgrau.cli.lebear:main"
 milgrau-explorer = "milgrau.cli.explorer:main"
 milgrau-inspect = "milgrau.cli.inspect:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "milgrau.version.__version__"}
 
 [tool.setuptools.packages.find]
 include = ["milgrau*"]
