@@ -102,7 +102,7 @@ def test_lebear_selected_batch_continues_and_aggregates_mixed_results(tmp_path: 
         path.write_text("synthetic", encoding="utf-8")
     logger, _handler = _logger("test.cli.lebear.selected")
     calls: list[Path] = []
-    args = argparse.Namespace(inputs=[str(path) for path in files], time_window=None, force=True)
+    args = argparse.Namespace(inputs=[str(path) for path in files], time_window=None, regime=None, segment_id=None, force=True)
 
     def fake_process(path, *_args, **_kwargs) -> ExecutionSummary:
         path = Path(path)
