@@ -43,6 +43,7 @@ def _config(*, max_gap_seconds: float = 1800.0, max_association_hours: float = 1
                 "licel_header_time_jitter_s": 1.0,
             },
             "session": {"max_gap_seconds": max_gap_seconds},
+            "solar_regime": {"day_night_threshold_deg": -3.0},
             "dark_current": {"max_association_hours": max_association_hours},
             "surface_weather": {"missing_policy": "nan"},
         },
