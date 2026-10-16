@@ -43,7 +43,7 @@ def test_repository_config_passes_stage_specific_resolvers() -> None:
     wavelengths = get_wavelengths_to_process(config)
 
     assert level0.directories.raw_data == "01-data"
-    assert level0.discovery.raw_scan_ignore_dirs == ("openmeteo_cache", "wyoming_cache")
+    assert level0.discovery.raw_scan_ignore_dirs == ()
     assert level1.background.start_altitude_m == 29000.0
     assert visualization.output_format == "webp"
     assert wavelengths == [355, 532]
