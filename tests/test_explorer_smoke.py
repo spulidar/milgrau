@@ -90,6 +90,20 @@ def test_streamlit_can_select_and_view_saved_l2_product(tmp_path: Path) -> None:
     root_widget = next(x for x in app.sidebar.text_input if x.label == "processed_data")
     app = root_widget.set_value(str(tmp_path)).run()
     assert not app.exception, [str(e.message) for e in app.exception]
+    assert not any(w.label == "Ano" for w in app.sidebar.selectbox)
+    assert not any(w.label == "Abrir sessão" for w in app.sidebar.selectbox)
     nav = next(x for x in app.sidebar.radio if x.label == "Explorar")
     app = nav.set_value("Level 2 · Produtos ópticos").run()
     assert not app.exception, [str(e.message) for e in app.exception]
+    focus = next(w for w in app.button if w.label == "⛶ Modo foco")
+    app = focus.click().run()
+    assert not app.exception, [str(e.message) for e in app.exception]
+    assert any(w.label == "Sair do foco" for w in app.button)
+
+
+def test_hybrid_theme_is_local_to_explorer() -> None:
+    from milgrau.explorer.theme import _BASE_CSS, _FOCUS_CSS
+
+    assert '[data-testid="stSidebar"]' in _BASE_CSS
+    assert '[data-testid="stMain"]' in _BASE_CSS
+    assert "display: none" in _FOCUS_CSS
