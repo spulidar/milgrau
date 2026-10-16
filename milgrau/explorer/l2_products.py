@@ -13,6 +13,7 @@ import streamlit as st
 import xarray as xr
 
 from milgrau.explorer.data import open_dataset
+from milgrau.explorer.theme import plot_scientific
 from milgrau.explorer.science import (
     OPTICAL_FIELDS, OPTICAL_SCALE, bounded_view, optical_field,
     scenario_options, support_mask, display_block_mask, time_label, wavelength_options,
@@ -162,91 +163,136 @@ def _time_series(
 
 
 def render_l2_products(row: dict) -> None:
-    """Expose time-altitude, block profiles, spectral and fixed-height plots."""
+    """Explore the saved L2 optical fields without recomputing retrievals."""
     path = row.get("level2_path", "")
     if not path or not Path(path).is_file():
         st.info("Nenhum produto L2 disponível nesta sessão.")
         return
-    st.caption(f"Produto: `{Path(path).name}` · apenas visualização, sem reprocessamento.")
+    st.caption(f"Fonte: {Path(path).name} · leitura apenas")
     with open_dataset(path) as ds:
         wavelengths = wavelength_options(ds)
-        if not wavelengths or ds.sizes.get("block_time", 0) == 0:
-            st.warning("Produto L2 sem comprimentos de onda científicos ou blocos temporais.")
+        n = int(ds.sizes.get("block_time", 0))
+        if not wavelengths or n == 0:
+            st.warning("Este L2 não contém comprimentos de onda e blocos científicos.")
             return
-        regime_options = (
-            sorted(set(ds["solar_regime"].values.astype(str)))
-            if "solar_regime" in ds else []
-        )
-        segment_options = (
-            list(dict.fromkeys(ds["segment_id"].values.astype(str)))
-            if "segment_id" in ds else []
-        )
-        regimes = st.multiselect("Regime solar (blocos)", regime_options, default=regime_options)
-        segments = st.multiselect("Segmentos da sessão", segment_options, default=segment_options)
-        eligible = display_block_mask(ds, ds["block_time"].values, regimes, segments)
-        if not eligible.any():
-            st.info("Não há blocos para esta seleção de regime e segmento.")
-            return
-        c1, c2 = st.columns(2)
-        quantity = c1.selectbox("Propriedade óptica", list(OPTICAL_FIELDS), key="l2_science_qty")
-        wavelength = c2.selectbox("Comprimento de onda", wavelengths, key="l2_science_wave")
-        n = int(ds.sizes["block_time"])
-        scenarios = scenario_options(ds)
-        max_altitude = float(np.nanmax(ds["altitude"].values)) / 1000.0
-        c3, c4 = st.columns(2)
-        top_km = c3.slider(
-            "Altitude máxima (km)", min_value=0.5, max_value=max(0.5, max_altitude),
-            value=min(15.0, max(0.5, max_altitude)), step=0.5,
-        )
-        index_interval = c4.slider(
-            "Blocos temporais (índices UTC)", min_value=0, max_value=max(1, n-1),
-            value=(0, max(0, n-1)),
-        ) if n > 1 else (0, 0)
-        first, last = index_interval
-        eligible_indices = [
-            i for i in range(first, last + 1) if bool(eligible[i])
-        ]
-        if not eligible_indices:
-            st.info("Nenhum bloco no intervalo UTC selecionado.")
-            return
-        selected = st.radio(
+        mode = st.radio(
             "Visualização",
             ["Evolução tempo × altitude", "Perfil de um bloco",
-             "Comparação 355 / 532 nm", "Série temporal por altitude"],
+             "Comparação espectral", "Série temporal por altitude"],
             horizontal=True,
+            key="mg_l2_view",
         )
-        if selected == "Evolução tempo × altitude":
-            source = st.radio("Estimativa", ["nominal", "mc"], horizontal=True)
-            scenario = st.selectbox("Fração residual (MC)", scenarios) if source == "mc" else 0.0
-            fig = _heatmap(ds, quantity, wavelength, source, scenario, first, last+1, top_km, regimes, segments)
-        elif selected == "Perfil de um bloco":
-            block = st.selectbox(
-                "Bloco selecionado", eligible_indices,
-                format_func=lambda i: time_label(ds["block_time"].values[i]),
+        c1, c2, c3 = st.columns([1.35, 1, 1])
+        quantity = c1.selectbox(
+            "Propriedade óptica", list(OPTICAL_FIELDS), key="l2_science_qty"
+        )
+        wavelength = c2.selectbox(
+            "Comprimento de onda (nm)", wavelengths, key="l2_science_wave"
+        )
+        max_altitude = float(np.nanmax(ds["altitude"].values)) / 1000.0
+        limit = max(0.5, max_altitude)
+        top_km = c3.slider(
+            "Altitude máxima (km)",
+            min_value=0.5, max_value=limit,
+            value=min(15.0, limit), step=0.5,
+            key="mg_l2_top",
+        )
+
+        # Selectors inside an expander are still available to Streamlit's
+        # state engine, but they occupy no space unless the user needs them.
+        with st.expander("Período, regime solar e segmentos", expanded=False):
+            regime_options = (
+                sorted(set(ds["solar_regime"].values.astype(str)))
+                if "solar_regime" in ds else []
             )
-            scenario = st.selectbox("Fração residual (MC)", scenarios)
+            segment_options = (
+                list(dict.fromkeys(ds["segment_id"].values.astype(str)))
+                if "segment_id" in ds else []
+            )
+            c4, c5 = st.columns(2)
+            regimes = c4.multiselect(
+                "Regime solar", regime_options, default=regime_options,
+                key="mg_l2_regimes",
+            )
+            segments = c5.multiselect(
+                "Segmentos", segment_options, default=segment_options,
+                key="mg_l2_segments",
+            )
+            index_interval = st.slider(
+                "Intervalo de blocos UTC",
+                min_value=0, max_value=n - 1,
+                value=(0, n - 1), key="mg_l2_time",
+            ) if n > 1 else (0, 0)
+            st.caption(
+                f"{time_label(ds['block_time'].values[index_interval[0]])} → "
+                f"{time_label(ds['block_time'].values[index_interval[1]])}"
+            )
+        first, last = index_interval
+        eligible = display_block_mask(ds, ds["block_time"].values, regimes, segments)
+        indices = [i for i in range(first, last + 1) if bool(eligible[i])]
+        if not indices:
+            st.info("Nenhum bloco encontrado no intervalo e filtros selecionados.")
+            return
+        scenarios = scenario_options(ds)
+        if mode == "Evolução tempo × altitude":
+            source = st.radio(
+                "Estimativa", ["nominal", "mc"], horizontal=True,
+                format_func=lambda v: "Nominal" if v == "nominal" else "Média Monte Carlo",
+                key="mg_l2_estimate",
+            )
+            scenario = (
+                st.selectbox("Fração residual (MC)", scenarios, key="mg_l2_fraction_map")
+                if source == "mc" else 0.0
+            )
+            fig = _heatmap(
+                ds, quantity, wavelength, source, scenario,
+                first, last + 1, top_km, regimes, segments,
+            )
+        elif mode == "Perfil de um bloco":
+            block = st.selectbox(
+                "Bloco UTC", indices,
+                format_func=lambda i: time_label(ds["block_time"].values[i]),
+                key="mg_l2_block",
+            )
+            scenario = st.selectbox(
+                "Fração residual (MC)", scenarios, key="mg_l2_fraction_profile"
+            )
             fig = _profile(ds, quantity, wavelength, block, scenario, top_km)
-            st.caption("As bandas P2.5–P97.5 descrevem a distribuição Monte Carlo disponível; não equivalem automaticamente à incerteza total.")
-        elif selected == "Comparação 355 / 532 nm":
-            waves = st.multiselect("Comprimentos de onda", wavelengths, default=wavelengths)
+            st.caption(
+                "P2,5–P97,5 descrevem a distribuição Monte Carlo disponível, "
+                "não necessariamente a incerteza científica total."
+            )
+        elif mode == "Comparação espectral":
+            waves = st.multiselect(
+                "Comprimentos de onda", wavelengths, default=wavelengths,
+                key="mg_l2_spectral_waves",
+            )
             if not waves:
                 st.info("Selecione pelo menos um comprimento de onda.")
                 return
-            fig = _spectral(ds, quantity, waves, first, last+1, top_km, regimes, segments)
-            st.caption("Média calculada apenas para a visualização, sobre blocos válidos no intervalo selecionado.")
+            fig = _spectral(
+                ds, quantity, waves, first, last + 1, top_km, regimes, segments
+            )
+            st.caption("Médias para visualização calculadas somente em blocos suportados.")
         else:
             candidates = [
-                round(x * 0.5, 1) for x in range(1, int(np.floor(top_km / 0.5)) + 1)
+                round(i * 0.5, 1)
+                for i in range(1, int(np.floor(top_km / 0.5)) + 1)
             ]
             altitudes = st.multiselect(
                 "Altitudes (km)", candidates,
                 default=[v for v in (1.0, 3.0, 5.0) if v in candidates],
+                key="mg_l2_altitudes",
             )
             if not altitudes:
-                st.info("Escolha pelo menos uma altitude.")
+                st.info("Escolha uma ou mais altitudes.")
                 return
-            fig = _time_series(ds, quantity, wavelength, altitudes, first, last+1, regimes, segments)
-        st.plotly_chart(fig, use_container_width=True)
+            fig = _time_series(
+                ds, quantity, wavelength, altitudes, first, last + 1,
+                regimes, segments,
+            )
+        plot_scientific(fig, use_container_width=True)
         st.caption(
-            "As regiões sem suporte continuam NaN. Limites de visualização não modificam o NetCDF."
+            "Regiões sem suporte permanecem vazias (NaN). Os controles nunca "
+            "alteram os dados científicos do NetCDF."
         )
