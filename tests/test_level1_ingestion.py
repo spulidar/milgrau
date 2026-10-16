@@ -112,6 +112,10 @@ def _write_scc_id_level0(
     ds["channel_ID"] = xr.DataArray(np.asarray(channel_ids, dtype=np.int32), dims=("channels",))
     if attrs:
         ds.attrs.update(attrs)
+        # Keep the synthetic solar table consistent with an explicit SCC regime.
+        if attrs.get("Solar_Regime") == "night":
+            ds["solar_regime"] = xr.DataArray(["night", "night"], dims=("time",))
+            ds["Segment_Regime"] = xr.DataArray(["night"], dims=("segments",))
     ds.to_netcdf(destination)
     return destination
 
@@ -163,7 +167,7 @@ def test_scc_raw_channel_ids_are_canonicalized_from_station_mapping(tmp_path: Pa
         np.testing.assert_array_equal(ds.channel.values.astype(str), np.array(["532.AN", "532.PC"]))
         assert ds.attrs["milgrau_level0_input_schema"] == "scc_raw_channel_ID_canonicalized"
         assert ds.attrs["milgrau_channel_identity_source"] == "station.yaml_scc_channel_ID_mapping"
-        assert ds.attrs["milgrau_scc_mapping_modes"] == "day,night"
+        assert ds.attrs["milgrau_scc_mapping_modes"] == "day"
     finally:
         ds.close()
 
@@ -228,6 +232,10 @@ def test_scc_channel_id_mapping_uses_explicit_solar_regime_identity(tmp_path: Pa
 def test_scc_channel_id_mapping_rejects_ambiguous_day_night_without_metadata(tmp_path: Path) -> None:
     source = _write_level0(tmp_path / "canonical.nc", np.array([7.5, 7.5]))
     path = _write_scc_id_level0(source, tmp_path / "external_scc.nc", np.array([20, 21]))
+    # This negative case intentionally models external SCC data without solar identity.
+    with xr.open_dataset(path) as opened:
+        without_regime = opened.load().drop_vars("solar_regime")
+    without_regime.to_netcdf(path)
     logger = _ListLogger()
     config = _station_config(
         {"532.AN": 20, "532.PC": 21},
