@@ -234,7 +234,7 @@ Published NetCDF provenance embeds the exact processing/station YAML snapshots. 
 
 ## Citation
 
-If you use MILGRAU, cite the software using [`CITATION.cff`](CITATION.cff). The working source version is `2026.10`. The historical Zenodo DOI `10.5281/zenodo.20330638` refers to an earlier deposit and is not claimed as the archival DOI for the present source.
+If you use MILGRAU, cite the software using [`CITATION.cff`](CITATION.cff). The current source version is recorded in `CITATION.cff` and `milgrau/version.py`. The historical Zenodo DOI `10.5281/zenodo.20330638` refers to an earlier deposit and is not claimed as the archival DOI for the present source.
 
 
 ## License
