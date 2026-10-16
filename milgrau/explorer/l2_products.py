@@ -15,7 +15,7 @@ import xarray as xr
 from milgrau.explorer.data import open_dataset
 from milgrau.explorer.science import (
     OPTICAL_FIELDS, OPTICAL_SCALE, bounded_view, optical_field,
-    scenario_options, support_mask, time_label, wavelength_options,
+    scenario_options, support_mask, display_block_mask, time_label, wavelength_options,
 )
 
 
@@ -27,10 +27,12 @@ def _matrix(da: xr.DataArray) -> np.ndarray:
 def _heatmap(
     ds: xr.Dataset, quantity: str, wavelength: int, source: str,
     scenario: float, start: int, stop: int, top_km: float,
+    regimes: list[str] | None = None, segments: list[str] | None = None,
 ) -> go.Figure:
     da = optical_field(ds, quantity, source, wavelength, scenario)
     view = bounded_view(da, start=start, stop=stop, top_km=top_km)
     values = _matrix(view) * OPTICAL_SCALE
+    values[~display_block_mask(ds, view["block_time"].values, regimes, segments), :] = np.nan
     if source == "mc":
         valid = support_mask(ds, quantity, wavelength, scenario)
         mask = bounded_view(valid, start=start, stop=stop, top_km=top_km)
@@ -104,6 +106,7 @@ def _profile(
 def _spectral(
     ds: xr.Dataset, quantity: str, waves: list[int],
     start: int, stop: int, top_km: float,
+    regimes: list[str] | None = None, segments: list[str] | None = None,
 ) -> go.Figure:
     fig = go.Figure()
     for wavelength in waves:
@@ -111,6 +114,8 @@ def _spectral(
             optical_field(ds, quantity, "nominal", wavelength),
             start=start, stop=stop, top_km=top_km,
         )
+        keep = display_block_mask(ds, da["block_time"].values, regimes, segments)
+        da = da.where(xr.DataArray(keep, dims=("block_time",), coords={"block_time": da["block_time"]}))
         profile = da.mean(dim="block_time", skipna=True)
         fig.add_trace(go.Scatter(
             x=np.asarray(profile.values, dtype=float) * OPTICAL_SCALE,
@@ -128,6 +133,7 @@ def _spectral(
 def _time_series(
     ds: xr.Dataset, quantity: str, wavelength: int,
     altitudes: list[float], start: int, stop: int,
+    regimes: list[str] | None = None, segments: list[str] | None = None,
 ) -> go.Figure:
     fig = go.Figure()
     for altitude in altitudes:
@@ -138,9 +144,11 @@ def _time_series(
         )
         nearest = da.sel(altitude=altitude * 1000.0, method="nearest")
         actual = float(nearest["altitude"].values) / 1000.0
+        vals = np.asarray(nearest.values, dtype=float) * OPTICAL_SCALE
+        vals[~display_block_mask(ds, nearest["block_time"].values, regimes, segments)] = np.nan
         fig.add_trace(go.Scatter(
             x=np.asarray(nearest["block_time"].values),
-            y=np.asarray(nearest.values, dtype=float) * OPTICAL_SCALE,
+            y=vals,
             mode="lines+markers", name=f"{actual:.2f} km",
             connectgaps=False,
         ))
@@ -165,6 +173,20 @@ def render_l2_products(row: dict) -> None:
         if not wavelengths or ds.sizes.get("block_time", 0) == 0:
             st.warning("Produto L2 sem comprimentos de onda científicos ou blocos temporais.")
             return
+        regime_options = (
+            sorted(set(ds["solar_regime"].values.astype(str)))
+            if "solar_regime" in ds else []
+        )
+        segment_options = (
+            list(dict.fromkeys(ds["segment_id"].values.astype(str)))
+            if "segment_id" in ds else []
+        )
+        regimes = st.multiselect("Regime solar (blocos)", regime_options, default=regime_options)
+        segments = st.multiselect("Segmentos da sessão", segment_options, default=segment_options)
+        eligible = display_block_mask(ds, ds["block_time"].values, regimes, segments)
+        if not eligible.any():
+            st.info("Não há blocos para esta seleção de regime e segmento.")
+            return
         c1, c2 = st.columns(2)
         quantity = c1.selectbox("Propriedade óptica", list(OPTICAL_FIELDS), key="l2_science_qty")
         wavelength = c2.selectbox("Comprimento de onda", wavelengths, key="l2_science_wave")
@@ -181,6 +203,12 @@ def render_l2_products(row: dict) -> None:
             value=(0, max(0, n-1)),
         ) if n > 1 else (0, 0)
         first, last = index_interval
+        eligible_indices = [
+            i for i in range(first, last + 1) if bool(eligible[i])
+        ]
+        if not eligible_indices:
+            st.info("Nenhum bloco no intervalo UTC selecionado.")
+            return
         selected = st.radio(
             "Visualização",
             ["Evolução tempo × altitude", "Perfil de um bloco",
@@ -190,9 +218,12 @@ def render_l2_products(row: dict) -> None:
         if selected == "Evolução tempo × altitude":
             source = st.radio("Estimativa", ["nominal", "mc"], horizontal=True)
             scenario = st.selectbox("Fração residual (MC)", scenarios) if source == "mc" else 0.0
-            fig = _heatmap(ds, quantity, wavelength, source, scenario, first, last+1, top_km)
+            fig = _heatmap(ds, quantity, wavelength, source, scenario, first, last+1, top_km, regimes, segments)
         elif selected == "Perfil de um bloco":
-            block = st.slider("Bloco selecionado", min_value=first, max_value=last, value=first)
+            block = st.selectbox(
+                "Bloco selecionado", eligible_indices,
+                format_func=lambda i: time_label(ds["block_time"].values[i]),
+            )
             scenario = st.selectbox("Fração residual (MC)", scenarios)
             fig = _profile(ds, quantity, wavelength, block, scenario, top_km)
             st.caption("As bandas P2.5–P97.5 descrevem a distribuição Monte Carlo disponível; não equivalem automaticamente à incerteza total.")
@@ -201,7 +232,7 @@ def render_l2_products(row: dict) -> None:
             if not waves:
                 st.info("Selecione pelo menos um comprimento de onda.")
                 return
-            fig = _spectral(ds, quantity, waves, first, last+1, top_km)
+            fig = _spectral(ds, quantity, waves, first, last+1, top_km, regimes, segments)
             st.caption("Média calculada apenas para a visualização, sobre blocos válidos no intervalo selecionado.")
         else:
             candidates = [
@@ -214,7 +245,7 @@ def render_l2_products(row: dict) -> None:
             if not altitudes:
                 st.info("Escolha pelo menos uma altitude.")
                 return
-            fig = _time_series(ds, quantity, wavelength, altitudes, first, last+1)
+            fig = _time_series(ds, quantity, wavelength, altitudes, first, last+1, regimes, segments)
         st.plotly_chart(fig, use_container_width=True)
         st.caption(
             "As regiões sem suporte continuam NaN. Limites de visualização não modificam o NetCDF."

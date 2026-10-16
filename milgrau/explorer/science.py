@@ -88,6 +88,24 @@ def bounded_view(
     return da.isel(steps) if steps else da
 
 
+def display_block_mask(
+    ds: xr.Dataset, shown_times: np.ndarray,
+    regimes: list[str] | None = None,
+    segments: list[str] | None = None,
+) -> np.ndarray:
+    """Choose visible blocks without merging or renaming scientific sessions.
+
+    Filtered blocks are represented by NaNs at their original timestamps.
+    """
+    n = int(ds.sizes["block_time"])
+    allowed = np.ones(n, dtype=bool)
+    if regimes is not None and "solar_regime" in ds:
+        allowed &= np.isin(ds["solar_regime"].values.astype(str), regimes)
+    if segments is not None and "segment_id" in ds:
+        allowed &= np.isin(ds["segment_id"].values.astype(str), segments)
+    return np.isin(np.asarray(shown_times), ds["block_time"].values[allowed])
+
+
 def time_label(value: object) -> str:
     value = np.datetime64(value, "m")
     return np.datetime_as_string(value, unit="m").replace("T", " ") + " UTC"
@@ -96,5 +114,5 @@ def time_label(value: object) -> str:
 __all__ = [
     "OPTICAL_FIELDS", "OPTICAL_SCALE", "wavelength_options",
     "scenario_options", "optical_field", "support_mask",
-    "bounded_view", "time_label",
+    "bounded_view", "display_block_mask", "time_label",
 ]

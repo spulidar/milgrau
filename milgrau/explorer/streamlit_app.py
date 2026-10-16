@@ -31,6 +31,14 @@ def _choose_session(inv: pd.DataFrame) -> dict:
     month_options = sorted(int(v) for v in filtered["month"].dropna().unique())
     month = st.selectbox("Mês", month_options, index=len(month_options)-1)
     filtered = filtered[filtered["month"] == month]
+    days = ["Todos"] + sorted(int(v) for v in filtered["day"].dropna().unique())
+    chosen_day = st.selectbox("Dia", days)
+    if chosen_day != "Todos":
+        filtered = filtered[filtered["day"] == chosen_day]
+    level_choices = ["Todos", "Level 0", "Level 1", "Level 2"]
+    chosen_level = st.selectbox("Nível disponível", level_choices)
+    if chosen_level != "Todos":
+        filtered = filtered[filtered[LEVEL_TO_PATH[chosen_level]].astype(bool)]
     search = st.text_input("Buscar sessão", placeholder="session_id")
     if search:
         filtered = filtered[filtered["session_id"].str.contains(search, case=False, regex=False)]
