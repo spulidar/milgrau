@@ -137,11 +137,11 @@ def generate_level1_figures(
     skipped = 0
     failures: list[str] = []
     prefix = _figure_prefix(path)
-    dependencies = _figure_dependencies(root, config)
     incremental = bool(config.get("processing", {}).get("incremental", False))
 
     try:
         output_dir.mkdir(parents=True, exist_ok=True)
+        dependencies = _figure_dependencies(root, config)
         resolved = resolve_visualization_config(config)
         output_format, _dpi = get_output_settings(dict(config))
         with xr.open_dataset(path, cache=False) as source:
