@@ -129,7 +129,7 @@ def _toggle_focus() -> None:
 
 
 def _header(row: dict) -> None:
-    left, right = st.columns([5, 1], vertical_alignment="center")
+    left, right = st.columns([5, 1])
     with left:
         st.markdown('<div class="mg-eyebrow">SPU LIDAR · WORKSPACE CIENTÍFICO</div>', unsafe_allow_html=True)
         st.markdown('<div class="mg-title">MILGRAU Explorer</div>', unsafe_allow_html=True)
