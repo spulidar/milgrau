@@ -30,6 +30,18 @@ class _ListLogger(logging.Logger):
 def _write_level0(path: Path, resolutions: np.ndarray) -> Path:
     ds = xr.Dataset(
         data_vars={
+            "Surface_Temperature_C": (("weather_time",), np.array([20.0])),
+            "Surface_Pressure_hPa": (("weather_time",), np.array([930.0])),
+            "Surface_Relative_Humidity_percent": (("weather_time",), np.array([50.0])),
+            "Surface_Cloud_Cover_percent": (("weather_time",), np.array([10.0])),
+            "Surface_Wind_Speed_kmh": (("weather_time",), np.array([5.0])),
+            "solar_elevation_deg": (("time",), np.array([15.0, 15.0])),
+            "solar_regime": (("time",), np.array(["day", "day"])),
+            "segment_id": (("time",), np.array(["seg00", "seg00"])),
+            "Segment_Label": (("segments",), np.array(["seg00"])),
+            "Segment_Regime": (("segments",), np.array(["day"])),
+            "Segment_Start_Time_UTC": (("segments",), np.array([1704067200], dtype=np.int64)),
+            "Segment_End_Time_UTC": (("segments",), np.array([1704067320], dtype=np.int64)),
             "Raw_Data_Start_Time": (("time", "nb_of_time_scales"), np.array([[0], [60]], dtype=np.int32)),
             "Raw_Data_Stop_Time": (("time", "nb_of_time_scales"), np.array([[60], [120]], dtype=np.int32)),
             "Raw_Data_Range_Resolution": (("channels",), resolutions),
@@ -42,7 +54,13 @@ def _write_level0(path: Path, resolutions: np.ndarray) -> Path:
             "DAQ_Range": (("channels",), np.array([500.0, np.nan])),
             "Raw_Lidar_Data": (("time", "channels", "points"), np.ones((2, 2, 4), dtype=np.float32)),
         },
-        attrs={"RawData_Start_Date": "20240101", "RawData_Start_Time_UT": "000000"},
+        coords={"weather_time": pd.date_range("2024-01-01T00:00:00", periods=1, freq="1h")},
+        attrs={
+            "RawData_Start_Date": "20240101",
+            "RawData_Start_Time_UT": "000000",
+            "Solar_Day_Night_Threshold_deg": -3.0,
+            "Solar_Position_Algorithm": "synthetic-test-fixture",
+        },
     )
     ds.to_netcdf(path)
     return path
