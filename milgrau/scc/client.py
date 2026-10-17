@@ -107,9 +107,21 @@ class SCCClient:
         for attempt in range(self.retries + 1):
             try:
                 response = self.session.get(
-                    url, timeout=self.timeout, allow_redirects=True, **kwargs,
+                    url, timeout=self.timeout, allow_redirects=False, **kwargs,
                 )
                 self._require_origin(response.url)
+                if response.status_code in {301, 302, 303, 307, 308}:
+                    location = response.headers.get("Location")
+                    if not location:
+                        raise SCCRemoteError("SCC GET redirect has no Location header.")
+                    redirected = urljoin(url, location)
+                    self._require_origin(redirected)
+                    response = self.session.get(
+                        redirected, timeout=self.timeout, allow_redirects=False,
+                    )
+                    self._require_origin(response.url)
+                    if response.status_code in {301, 302, 303, 307, 308}:
+                        raise SCCRemoteError("SCC issued multiple GET redirects.")
             except Exception as exc:
                 if attempt == self.retries:
                     raise SCCRemoteError(f"Could not retrieve SCC {relative}: {type(exc).__name__}") from exc
@@ -120,6 +132,20 @@ class SCCClient:
                 continue
             return response
         raise AssertionError("Unreachable retry loop")
+
+    def _complete_post(self, response: Any, request_url: str) -> Any:
+        """Follow only an allowed same-origin 302/303 redirect via a safe GET."""
+        self._require_origin(response.url)
+        if response.status_code in {301, 302, 303}:
+            location = response.headers.get("Location")
+            if not location:
+                raise SCCRemoteError("SCC POST redirect has no Location.")
+            destination = urljoin(request_url, location)
+            self._require_origin(destination)
+            return self._read(destination.removeprefix(self.base_url))
+        if response.status_code in {307, 308}:
+            raise SCCRemoteError("SCC requested repeating a POST; refusing unsafe redirect.")
+        return response
 
     def _csrf(self, response: Any) -> str:
         token = response.cookies.get("csrftoken")
@@ -144,11 +170,11 @@ class SCCClient:
                 },
                 headers={"X-CSRFToken": token, "Referer": url},
                 timeout=self.timeout,
-                allow_redirects=True,
+                allow_redirects=False,
             )
         except Exception as exc:
             raise SCCRemoteError("SCC authentication failed due to a transport error.") from exc
-        self._require_origin(response.url)
+        response = self._complete_post(response, url)
         if response.status_code != 200 or urlsplit(response.url).path.rstrip("/") == "/accounts/login":
             raise SCCRemoteError(
                 "SCC login was rejected or stayed on the login page. "
@@ -218,14 +244,14 @@ class SCCClient:
                     files=uploads,
                     headers={"X-CSRFToken": token, "Referer": url},
                     timeout=self.timeout,
-                    allow_redirects=True,
+                    allow_redirects=False,
                 )
             except Exception as exc:
                 raise SCCRemoteError(
                     f"SCC POST for {identity} has an UNKNOWN remote outcome. "
                     "Never resend blindly; inspect status first."
                 ) from exc
-        self._require_origin(response.url)
+        response = self._complete_post(response, url)
         if response.status_code != 200:
             raise SCCRemoteError(
                 f"SCC returned HTTP {response.status_code} after uploading {identity}; "
