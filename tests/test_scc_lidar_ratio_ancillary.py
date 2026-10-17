@@ -27,7 +27,7 @@ def _setup(tmp_path: Path, *, regime: str = "day", month: int = 9):
     catalog = yaml.safe_load(Path("scc.yaml").read_text(encoding="utf-8"))
     config["_scc_catalog"] = catalog
     catalog["scc_policy"]["lr_input"]["source"] = "climatology_ancillary"
-     validate_scc_config(catalog, config["_station_catalog"])
+    validate_scc_config(catalog, config["_station_catalog"])
     channels = (
         ["532.AN", "532.PC", "1064.AN", "355.PC", "355.AN"]
         if regime == "day"
