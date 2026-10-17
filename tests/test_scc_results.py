@@ -229,7 +229,7 @@ def test_partial_network_failure_leaves_no_visible_results_and_retains_cache(
     with pytest.raises(SCCRemoteError, match="transfer interruption"):
         download_results(config, ID, FakeClient())
     path = level0_output_path(SESSION, config).parent / "scc-results"
-    assert not (path / ID).exists()
+    assert not results.result_location(config, SESSION, ID, CREATION).exists()
     assert pending_scc_package(config, ID).exists()
     with SubmissionStore(state_root(config)) as store:
         assert store.get(ID)["state"] == "accepted"
