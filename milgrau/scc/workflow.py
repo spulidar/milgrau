@@ -6,6 +6,7 @@ if the server may have deleted the previous version or accepted new bytes.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -208,6 +209,14 @@ def resume_after_uncertain_delete(
             )
             or row["start_utc"] != manifest["measurement_start_utc"]
             or row["stop_utc"] != manifest["measurement_stop_utc"]
+            or row["product_ids_json"] != json.dumps(
+                [int(value) for value in manifest["scc_product_ids"]],
+                separators=(",", ":"),
+            )
+            or row["source_segments_json"] != json.dumps(
+                manifest.get("source_segments", []), separators=(",", ":"),
+            )
+            or row["scc_config_sha256"] != manifest.get("scc_config_sha256")
         ):
             raise SCCRemoteError(
                 "Local SCC staged data/period diverges from the immutable "
