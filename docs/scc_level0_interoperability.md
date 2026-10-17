@@ -4,14 +4,31 @@ MILGRAU treats SCC raw NetCDF as an interoperability input format, not as a subs
 
 ## Goal
 
-LIPANCORA should process a structurally compatible SCC raw Level 0 file from another lidar station without station-specific Python code. Instrument identity, temporal configuration, and calibration remain explicit in that station's `station.yaml`.
+LIPANCORA should process a structurally compatible SCC raw Level 0 file from another lidar station without station-specific Python code. Instrument identity and calibration remain in `station.yaml`; SCC database mapping is optional and belongs to `scc.yaml`.
 
 The intended separation is:
 
 - SCC raw NetCDF owns acquired arrays and acquisition metadata.
-- `station.yaml` owns the mapping from SCC channel identifiers to canonical physical channels and the corresponding instrument calibration history.
+- `station.yaml` owns physical channel identity, calibration, station-profile history and observational climatology.
+- `scc.yaml` owns SCC channel/configuration IDs and optical product identities.
 - `config.yaml` owns the generic processing recipe.
 - Python owns schema adaptation, validation, and generic correction equations.
+
+## Phase 12.1 — SCC is opt-in and separately configured
+
+`config.yaml` sets `scc.enabled: false` by default. In that state,
+MILGRAU does not load or validate `scc.yaml` and LIBIDS writes only
+the canonical scientific Level 0. SCC derivatives are not part of
+scientific incremental-current decisions.
+
+With `scc.enabled: true`, `scc.config_file` is required and resolved
+relative to the processing configuration. The separate SCC catalog's
+station/profile IDs must match those in `station.yaml`; SCC channel and
+configuration IDs are not scientific identifiers.
+
+Phase 12.1 preserves SCC derivative placement as an interim step.
+Phase 12.3 will move staging to `.cache/scc/` and provide independent
+publication-state tracking.
 
 ## Supported channel identity
 
@@ -20,13 +37,13 @@ MILGRAU's internal Level 1 code uses canonical channel names such as `532.AN` an
 LIPANCORA ingestion accepts two identity paths:
 
 1. A Level 0 file already containing `channel_string` with canonical MILGRAU names.
-2. An SCC raw file containing numeric `channel_ID`. The IDs are resolved in memory through the temporally valid SCC mapping in `station.yaml` before the strict Level 0 contract and physical corrections are applied.
+2. An SCC raw file containing numeric `channel_ID`. The IDs are resolved in memory through the temporally valid SCC mapping in `scc.yaml` before the strict Level 0 contract and physical corrections are applied.
 
 When both `channel_string` and `channel_ID` are present, and a station catalog is available, LIPANCORA verifies that they agree. An SCC ID is never used to infer wavelength or detector mode without station metadata.
 
 Resolution uses acquisition time together with the station timezone and may additionally use `SCC_Configuration_ID`. Session filenames do not encode SCC day/night identity. Unknown IDs, duplicate IDs, or genuinely ambiguous mappings fail explicitly.
 
-The alternative SCC `channel_string_ID` convention is not currently a productive input identity path because MILGRAU's station catalog intentionally uses numeric SCC channel IDs. It can be added later through an explicit station-owned mapping if a real interoperability case requires it.
+The alternative SCC `channel_string_ID` convention is not currently a productive input identity path because MILGRAU's optional SCC catalog uses numeric SCC channel IDs. It can be added later through an explicit station-owned mapping if a real interoperability case requires it.
 
 ## Core structural requirements
 
@@ -66,7 +83,7 @@ values are preserved, so the intervening gap is not filled or presented as
 continuous acquisition. The derivative records `Solar_Regime`,
 `Source_Segments`, `Source_Segment_Count`, and `Contains_Time_Gaps`.
 
-The day/night SCC configuration is selected from `station.yaml` using the
+The day/night SCC configuration is selected from `scc.yaml` using the
 stored solar regime, not a fixed 06/18 clock rule.
 
 ### SCC upload measurement identity
@@ -99,23 +116,22 @@ MILGRAU L0/L1/L2 files. The current repository default is explicitly
 real optical `product_ID` values have been confirmed.
 
 To enable it **after configuring product IDs**, set
-`scc_policy.lr_input.source: climatology_ancillary` in `station.yaml`, and add
-`elastic_product_ids` to each applicable station profile's
-`scc.day`/`scc.night` mapping, keyed by the *elastic product* wavelength.
+`scc_policy.lr_input.source: climatology_ancillary` in `scc.yaml`, and add
+`elastic_product_ids` to each applicable profile's
+`day`/`night` mapping in `scc.yaml`, keyed by the *elastic product* wavelength.
 One wavelength can map to either one integer ID or a list of distinct IDs.
 They must be genuine optical **product IDs**, NOT the SCC configuration ID or
 any channel ID from `channels`. Example shape (illustrative placeholders):
 
 ```yaml
 profiles:
-  - id: some-hardware-profile
-    scc:
-      day:
-        configuration_id: 1234
-        name: "Example SCC day configuration"
-        channels: {"1064.AN": 9999}
-        elastic_product_ids:
-          "1064": [REPLACE_WITH_REAL_SCC_PRODUCT_ID]
+  some-hardware-profile:
+    day:
+      configuration_id: 1234
+      name: "Example SCC day configuration"
+      channels: {"1064.AN": 9999}
+      elastic_product_ids:
+        "1064": [REPLACE_WITH_REAL_SCC_PRODUCT_ID]
 ```
 
 The exporter selects the UTC calendar month of the actual SCC measurement
