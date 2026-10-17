@@ -10,7 +10,7 @@ The guiding rule is conservative: a historical receiver/filter number is not pro
 
 ## Current repository state
 
-`station.yaml` profile `spu-merionc-2024` applies from 2024-09-10 onward and documents a 100 Hz Quantel MerionC laser. Its night SCC configuration includes `387.AN`, `387.PC`, `530.AN` and `530.PC` in addition to the elastic channels. The current profile now carries a `raman_detection` metadata block that records channel identity separately from unresolved spectral-response metadata.
+`station.yaml` profile `spu-merionc-2024` applies from 2024-09-10 onward and documents a 100 Hz Quantel MerionC laser. The separately configured night SCC system 1046 (in `scc.yaml`) includes `387.AN`, `387.PC`, `530.AN` and `530.PC` in addition to the elastic channels. The physical profile keeps the `raman_detection` block for channel identity and unresolved spectral response; SCC-only numeric identifiers now live in `scc.yaml`.
 
 The evaluated 2025-06-29 SPU measurement contains corrected 387 and 530 analog/photon-counting channels with useful high-altitude block SNR. This establishes feasibility only; it does not authorize Raman retrievals.
 
