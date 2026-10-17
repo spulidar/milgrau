@@ -16,6 +16,7 @@ from milgrau.level0.scc_staging import (
     manifest_raw_name,
     validate_pending_scc_package,
 )
+from milgrau.level0.scc_lidar_ratio import scc_lr_file_name
 
 
 class SCCPackageError(ValueError):
@@ -66,7 +67,7 @@ def validate_upload_package(path: Path) -> dict[str, Any]:
                 str(raw.getncattr("LR_File_Name"))
                 if "LR_File_Name" in raw.ncattrs() else None
             )
-        expected_lr = f"lr_{identity}.nc"
+        expected_lr = scc_lr_file_name(identity)
         if lr_name is None:
             if file_names != {raw_name}:
                 raise SCCPackageError("Unreferenced lidar-ratio ancillary is staged.")
