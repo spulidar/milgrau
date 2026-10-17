@@ -31,6 +31,16 @@ build is required: Plotly.js is served from the installed Python package.
   variables.
 - Time–altitude heatmap and accompanying time-mean vertical profile.
 - Hover inspection, interactive Plotly zoom, pan and PNG export.
+- Expandable **Plot settings**: robust displayed-cell percentiles (default P2–P98),
+  full-range auto or manual color minimum/maximum (scientific notation accepted),
+  color palette selection and optional log10 heatmap. Appearance updates occur
+  in the browser without reopening NetCDF, and preserve the current Plotly zoom.
+  Robust percentiles describe finite cells in the *display-reduced* matrix,
+  not quantiles of the entire scientific NetCDF. Values above/below the color
+  limits are saturated in the palette, never removed from the dataset.
+  Log10 excludes zero/negative cells from the heatmap (without altering data)
+  and manual limits in that mode are log10 units; the time-mean profile remains
+  in the original linear signal units.
 - Explicit visual aggregation (`mean` or `maximum`) to limit browser
   resolution. These displayed aggregate values are **not** original native
   RCS samples or new scientific retrievals.
