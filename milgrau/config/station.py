@@ -130,94 +130,9 @@ def _validate_calibrations(catalog: Mapping[str, Any]) -> None:
                 )
 
 
-def _validate_scc_policy(catalog: Mapping[str, Any]) -> None:
-    policy = _mapping(catalog.get("scc_policy"), "scc_policy")
-    if set(policy) != {"lr_input"}:
-        raise ValueError("scc_policy must contain exactly ['lr_input'].")
-    lr_policy = _mapping(policy["lr_input"], "scc_policy.lr_input")
-    required = {"fixed_value", "raman_companions_nm"}
-    allowed = required | {"source"}
-    if set(lr_policy) - allowed or required - set(lr_policy):
-        raise ValueError(
-            f"scc_policy.lr_input requires {sorted(required)} and allows only {sorted(allowed)}."
-        )
-    source = lr_policy.get("source", "scc_db")
-    if source not in {"scc_db", "climatology_ancillary"}:
-        raise ValueError("scc_policy.lr_input.source must be scc_db or climatology_ancillary.")
-    if source == "climatology_ancillary":
-        station = _mapping(catalog.get("station"), "station")
-        if not isinstance(station.get("lidar_ratio_climatology"), Mapping):
-            raise ValueError("SCC climatology_ancillary requires station.lidar_ratio_climatology.")
-    fixed = lr_policy["fixed_value"]
-    if isinstance(fixed, bool) or not isinstance(fixed, Integral) or int(fixed) not in {0, 1}:
-        raise ValueError("scc_policy.lr_input.fixed_value must be integer 0 or 1.")
-    companions = _mapping(lr_policy["raman_companions_nm"], "scc_policy.lr_input.raman_companions_nm")
-    if not companions:
-        raise ValueError("scc_policy.lr_input.raman_companions_nm must not be empty.")
-    for raw_wavelength, raw_companions in companions.items():
-        try:
-            wavelength = int(raw_wavelength)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"Invalid elastic wavelength in SCC policy: {raw_wavelength!r}.") from exc
-        if wavelength <= 0:
-            raise ValueError("SCC elastic wavelengths must be positive integers.")
-        if not isinstance(raw_companions, Sequence) or isinstance(raw_companions, (str, bytes)):
-            raise ValueError(f"scc_policy.lr_input.raman_companions_nm.{raw_wavelength} must be a list.")
-        for companion in raw_companions:
-            if isinstance(companion, bool) or not isinstance(companion, Integral) or int(companion) <= 0:
-                raise ValueError(
-                    f"scc_policy.lr_input.raman_companions_nm.{raw_wavelength} companions must be positive integers."
-                )
-
-
-def _validate_scc(profile_id: str, scc: Mapping[str, Any]) -> None:
-    for mode in ("day", "night"):
-        if mode not in scc:
-            raise ValueError(f"profiles.{profile_id}.scc.{mode} is required when scc is configured.")
-        config = _mapping(scc[mode], f"profiles.{profile_id}.scc.{mode}")
-        _positive_int(config.get("configuration_id"), f"profiles.{profile_id}.scc.{mode}.configuration_id")
-        _text(config.get("name"), f"profiles.{profile_id}.scc.{mode}.name")
-        channels = _mapping(config.get("channels"), f"profiles.{profile_id}.scc.{mode}.channels")
-        if not channels:
-            raise ValueError(f"profiles.{profile_id}.scc.{mode}.channels must not be empty.")
-        ids: set[int] = set()
-        for channel, channel_id in channels.items():
-            _text(channel, f"profiles.{profile_id}.scc.{mode} channel")
-            resolved = _positive_int(channel_id, f"profiles.{profile_id}.scc.{mode}.channels.{channel}")
-            if resolved in ids:
-                raise ValueError(f"profiles.{profile_id}.scc.{mode} duplicates SCC channel ID {resolved}.")
-            ids.add(resolved)
-
-        # Product IDs are not channel IDs or configuration IDs.
-        product_map = config.get("elastic_product_ids", {})
-        if not isinstance(product_map, Mapping):
-            raise ValueError(
-                f"profiles.{profile_id}.scc.{mode}.elastic_product_ids must be a mapping."
-            )
-        known_wavelengths = {_channel_wavelength_nm(name) for name in channels}
-        product_ids: set[int] = set()
-        for raw_wavelength, raw_ids in product_map.items():
-            try:
-                wavelength = int(raw_wavelength)
-            except (TypeError, ValueError) as exc:
-                raise ValueError("SCC elastic product wavelength must be numeric.") from exc
-            if wavelength not in known_wavelengths or wavelength <= 0:
-                raise ValueError(
-                    f"profiles.{profile_id}.scc.{mode} product wavelength {wavelength} has no channel."
-                )
-            values = raw_ids if isinstance(raw_ids, list) else [raw_ids]
-            if not values:
-                raise ValueError("SCC elastic_product_ids must not contain an empty list.")
-            for raw_id in values:
-                product_id = _positive_int(raw_id, "SCC elastic product_ID")
-                if product_id in product_ids:
-                    raise ValueError(f"Duplicate SCC product_ID {product_id}.")
-                product_ids.add(product_id)
-
-
 def validate_station_config(catalog: Mapping[str, Any]) -> None:
     """Validate station metadata, geometry, calibrations, temporal profiles, and SCC policy."""
-    allowed_root = {"station", "scc_policy", "calibrations", "profiles"}
+    allowed_root = {"station", "calibrations", "profiles"}
     unknown_root = sorted(set(catalog) - allowed_root)
     if unknown_root:
         raise ValueError(f"Unknown station catalog key(s): {unknown_root}")
@@ -266,7 +181,6 @@ def validate_station_config(catalog: Mapping[str, Any]) -> None:
     _text(radiosonde["station_name"], "station.radiosonde.station_name")
 
     validate_overlap_catalog(catalog)
-    _validate_scc_policy(catalog)
     _validate_calibrations(catalog)
     calibration_ids = set(catalog["calibrations"])
 
@@ -290,7 +204,9 @@ def validate_station_config(catalog: Mapping[str, Any]) -> None:
             raise ValueError(f"profiles.{profile_id}.valid_to precedes valid_from.")
         intervals.append((start, end, profile_id))
         if "scc" in profile:
-            _validate_scc(profile_id, _mapping(profile["scc"], f"profiles.{profile_id}.scc"))
+            raise ValueError(
+                f"profiles.{profile_id}.scc is SCC-only metadata; move it to scc.yaml."
+            )
 
     intervals.sort(key=lambda item: item[0])
     for left, right in zip(intervals, intervals[1:]):
@@ -320,37 +236,6 @@ def _scc_mode(value: str | None) -> str | None:
     return mode
 
 
-def _default_lr_input(catalog: Mapping[str, Any], scc_config: Mapping[str, Any]) -> dict[str, int]:
-    """Resolve station-wide LR_Input policy for one concrete SCC configuration."""
-    lr_policy = catalog["scc_policy"]["lr_input"]
-    companions_by_elastic = lr_policy["raman_companions_nm"]
-    value = (
-        0 if lr_policy.get("source", "scc_db") == "climatology_ancillary"
-        else int(lr_policy["fixed_value"])
-    )
-    channels = [str(name) for name in scc_config["channels"]]
-    wavelengths_present = {
-        wavelength for name in channels if (wavelength := _channel_wavelength_nm(name)) is not None
-    }
-    result: dict[str, int] = {}
-    for raw_elastic, raw_companions in companions_by_elastic.items():
-        elastic_nm = int(raw_elastic)
-        companions = {int(item) for item in raw_companions}
-        if companions & wavelengths_present:
-            continue
-        for channel_name in channels:
-            if _channel_wavelength_nm(channel_name) == elastic_nm:
-                result[channel_name] = value
-    return result
-
-
-def _resolve_lr_input(catalog: Mapping[str, Any], scc_config: Mapping[str, Any]) -> dict[str, int]:
-    explicit = scc_config.get("lr_input")
-    if isinstance(explicit, Mapping):
-        return {str(name): int(value) for name, value in explicit.items()}
-    return _default_lr_input(catalog, scc_config)
-
-
 def resolve_station_context(
     config: Mapping[str, Any],
     measurement_time: datetime,
@@ -358,7 +243,7 @@ def resolve_station_context(
     *,
     mode: str | None = None,
 ) -> dict[str, Any]:
-    """Resolve one station profile/calibration and optional solar-selected SCC map."""
+    """Resolve instrument science; add SCC mapping only when explicitly loaded."""
     catalog = config.get("_station_catalog")
     if not isinstance(catalog, Mapping):
         raise KeyError("No station catalog is loaded; configure station_config in config.yaml.")
@@ -377,7 +262,6 @@ def resolve_station_context(
     profile = matches[0]
     resolved_mode = _scc_mode(mode)
     available = [str(channel) for channel in available_channels]
-    available_set = set(available)
     resolved_site = deepcopy(station["site"])
     resolved_site.update(profile.get("site", {}))
     calibration_id = str(profile["calibration_id"])
@@ -399,7 +283,9 @@ def resolve_station_context(
         "overlap": resolve_overlap_context(catalog, profile),
         "selected_channels": available,
     }
-    if "scc" not in profile:
+    scc_catalog = config.get("_scc_catalog")
+    if not isinstance(scc_catalog, Mapping):
+        # Disabled/unconfigured SCC is completely absent from scientific execution.
         return {
             **common,
             "scc_available": False,
@@ -414,39 +300,12 @@ def resolve_station_context(
             "extra_channels": available,
         }
 
-    if resolved_mode is None:
-        return {
-            **common,
-            "scc_available": True,
-            "scc_export_ready": False,
-            "scc_configuration_id": None,
-            "scc_configuration_name": None,
-            "channel_ids": {},
-            "lr_input": {},
-            "elastic_product_ids": {},
-            "scc_channels": [],
-            "missing_scc_channels": [],
-            "extra_channels": available,
-        }
+    # Import the SCC adapter only for explicitly enabled integration.
+    from milgrau.config.scc import resolve_scc_context
 
-    scc = profile["scc"][resolved_mode]
-    channel_ids = {str(name): int(value) for name, value in scc["channels"].items()}
-    lr_input = _resolve_lr_input(catalog, scc)
-    missing = [name for name in channel_ids if name not in available_set]
-    scc_channels = [name for name in channel_ids if name in available_set]
-    extra = [name for name in available if name not in channel_ids]
     return {
         **common,
-        "scc_available": True,
-        "scc_export_ready": not missing,
-        "scc_configuration_id": int(scc["configuration_id"]),
-        "scc_configuration_name": str(scc["name"]),
-        "channel_ids": channel_ids,
-        "lr_input": lr_input,
-        "elastic_product_ids": deepcopy(dict(scc.get("elastic_product_ids", {}))),
-        "scc_channels": scc_channels,
-        "missing_scc_channels": missing,
-        "extra_channels": extra,
+        **resolve_scc_context(scc_catalog, str(profile["id"]), available, resolved_mode),
     }
 
 
