@@ -127,11 +127,10 @@ times remain in the NetCDF metadata. A session may cross midnight or any former
 six-hour site boundary without being split. A true acquisition gap or a change in station profile/calibration starts a
 new session. Inside one session, MILGRAU stores geometric solar elevation,
 classifies each profile as `day` or `night` using the configured threshold,
-and assigns contiguous `segXX` scientific segments. SCC interoperability
-derivatives are grouped by solar regime, so repeated `day` or `night`
-segments are combined into one `SESSION_day_L0_scc.nc` or
-`SESSION_night_L0_scc.nc` while retaining their original segment identities
-inside the file.
+and assigns contiguous `segXX` scientific segments. When explicitly enabled,
+SCC submission derivatives are independently grouped by solar regime and UTC
+calendar month under `.cache/scc/pending/<Measurement_ID>/`. The original
+scientific session and its segment IDs remain unchanged.
 
 Products are grouped by the UTC month in which the session starts:
 
@@ -144,10 +143,24 @@ Products are grouped by the UTC month in which the session starts:
           spu_20250511-0012Z_20250511-0737Z_L0.nc
           spu_20250511-0012Z_20250511-0737Z_L1.nc
           spu_20250511-0012Z_20250511-0737Z_L2.nc
-          spu_20250511-0012Z_20250511-0737Z_day_L0_scc.nc   # when day SCC export applies
-          spu_20250511-0012Z_20250511-0737Z_night_L0_scc.nc # when night SCC export applies
           figures/
 ```
+
+SCC integration is disabled by default (`config.yaml: scc.enabled: false`).
+When enabled, LIBIDS can stage an upload-ready `raw.nc`, optional
+`lr_<Measurement_ID>.nc` and checksum `manifest.json` in
+`.cache/scc/pending/<Measurement_ID>/`:
+
+```bash
+# SCC-only re-export of an already scientifically processed session:
+milgrau-libids -i spu_20250511-0012Z_20250511-0737Z --scc-reexport
+```
+
+This command requires the archived raw measurements and a valid existing
+canonical L0 but **does not rewrite that L0**. Normal incremental processing
+does not regenerate deleted cache files. Existing `*_L0_scc.nc` files from
+older runs are retained without modification. No SCC network upload or cleanup
+is available until the optional client is implemented (Phases 12.4–12.6).
 
 The primary CLIs accept a session ID, a station-local civil date, or an
 explicit file/directory path. A date selects sessions that intersect that local day.
