@@ -19,7 +19,6 @@ from milgrau.io.paths import level0_output_path, level0_scc_output_path
 from milgrau.io.weather import fetch_surface_weather
 from milgrau.level0.config import resolve_level0_config, station_coordinates
 from milgrau.level0.netcdf import build_level0_netcdf
-from milgrau.level0.scc_lidar_ratio import write_scc_lidar_ratio_ancillary
 from milgrau.physics.solar import (
     SOLAR_POSITION_ALGORITHM,
     build_solar_segments,
@@ -345,6 +344,11 @@ def _write_scc_exports(
     logger: logging.Logger,
 ) -> list[Path]:
     """Write at most one SCC-compatible Level 0 derivative per day/night regime."""
+    if not isinstance(config.get("_scc_catalog"), Mapping):
+        return []
+
+    from milgrau.level0.scc_lidar_ratio import write_scc_lidar_ratio_ancillary
+
     measurement_rows = group_df[group_df["meas_type"] == "measurements"].copy()
     if measurement_rows.empty:
         return []
