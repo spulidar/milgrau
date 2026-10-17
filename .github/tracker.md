@@ -99,6 +99,16 @@ at implementation commit `130f5a3c1e9b5c35b1b195f772fb876145d78269`
 (Ubuntu and Windows, Python 3.12/3.14, Ruff and Explorer). Subsequent
 changes are documentation/tracker-only. Real SCC submission is not yet tested.
 
+**Real-data local validation (2026-10-17):** `milgrau-libids --scc-reexport`
+finished with **19 processed / 0 skipped / 0 errors** on archived acquisitions
+(9 day using SCC configuration 1047, 10 night using configuration 1046).
+All 19 `.cache/scc/pending/<Measurement_ID>/` manifests passed local
+checksum/size validation and each included raw NetCDF plus LR auxiliary.
+Two unrelated dark-current Licel headers were skipped for invalid `NShots`;
+some profile rows also failed acquisition QA as logged. The run validates
+local staging, **not** SCC remote acceptance or all scientific NetCDF content;
+validate dark-current availability for affected sessions before live upload.
+
 **Gate 12.3:** Removing staging cache never triggers canonical L0 reprocessing.
 
 ## 12.4 — Optional native SCC client
