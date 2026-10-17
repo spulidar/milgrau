@@ -268,7 +268,10 @@ def compare_staged_to_archive(
         timestamp(manifest["measurement_start_utc"]) != timestamp(remote["start"])
         or timestamp(manifest["measurement_stop_utc"]) != timestamp(remote["stop"])
     )
-    staged_lr = next((name for name in manifest["files"] if name != "raw.nc"), None)
+    from milgrau.level0.scc_staging import manifest_raw_name
+
+    raw_name = manifest_raw_name(manifest)
+    staged_lr = next((name for name in manifest["files"] if name != raw_name), None)
     remote_lr = snapshot.get("remote_original_lr_file_name")
     path = Path(snapshot["_archive_path"])
     source_hash = _single_netcdf_digest(
@@ -277,7 +280,7 @@ def compare_staged_to_archive(
     )
     raw_equal = (
         source_hash is not None
-        and source_hash == manifest["files"]["raw.nc"]["sha256"]
+        and source_hash == manifest["files"][raw_name]["sha256"]
     )
     if staged_lr is None and remote_lr is None:
         lr_equal = True
