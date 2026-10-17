@@ -1,7 +1,7 @@
 # Phase 12 — Optional SCC integration and publication workflow
 
 **Branch:** `scc-integration-refactor` (base: `milgraumaxxing`)  
-**Status:** Phases 12.1–12.3 validated; Phase 12.4 implementation complete (mock CI in progress, live SCC validation pending)  
+**Status:** Phases 12.1–12.4 implemented/CI validated (12.4 live API GET verified); Phase 12.5 implemented — final CI pending; live replacement NOT tested  
 **Scope:** SCC configuration, optional export, staging, native upload/status/download/cleanup client.
 This branch's tracker intentionally contains **only Phase 12**. The earlier scientific tracker remains on the base branch.
 
@@ -172,17 +172,46 @@ the new raw + ancillary under the **same ID**) rather than introducing
 version-suffix IDs. No remote deletion is permitted before implementing
 safeguards and explicit operator confirmation.
 
-- [ ] Track original session, SCC Measurement ID, configuration/products, source periods, raw/LR checksums, timestamps, and remote IDs outside disposable cache.
-- [ ] Compare existing SCC metadata and, when necessary, downloaded remote raw NetCDF/LR references; do not infer LR equivalence solely from API status or the remote timestamp.
-- [ ] Preserve stable Measurement_ID when local period/profiles/LR differ from the remote record.
-- [ ] Before replacement, validate new raw and LR package completely, archive original remote raw/configuration and downloadable products, and verify the archive locally.
-- [ ] Implement exact-ID opt-in `upload --id ID --replace-existing --confirm`, keeping destructive replacement disabled by default.
-- [ ] Use SCC's supported authenticated web deletion flow (not an invented overwrite API), verify disappearance, then submit original ID with new raw+LR.
-- [ ] Protect against intervening remote changes and concurrent clients; record all transitions in durable state outside cache, with process locking.
-- [ ] Record replacement as non-atomic: if deletion succeeds but POST or confirmation fails, keep explicit recoverable/uncertain state and do not falsely report success or automatically loop/overwrite.
-- [ ] Represent pending/uploading/accepted/processing/completed/failed/uncertain and replacement-specific states explicitly.
-- [ ] Guarantee retry reconciliation, prevent accidental duplicates, and make `status` useful offline and online.
+- [x] Track original session, SCC Measurement ID, configuration/products, source periods, raw/LR checksums, timestamps, and remote IDs outside disposable cache.
+- [x] Compare existing SCC metadata and, when necessary, downloaded remote raw NetCDF/LR references; do not infer LR equivalence solely from API status or the remote timestamp.
+- [x] Preserve stable Measurement_ID when local period/profiles/LR differ from the remote record.
+- [x] Before replacement, validate new raw and LR package completely, archive original remote raw/configuration and downloadable products, and verify the archive locally.
+- [x] Implement exact-ID opt-in `upload --id ID --replace-existing --confirm`, keeping destructive replacement disabled by default.
+- [x] Use SCC's supported authenticated web deletion flow (not an invented overwrite API), verify disappearance, then submit original ID with new raw+LR.
+- [x] Protect against intervening remote changes and concurrent clients; record all transitions in durable state outside cache, with process locking.
+- [x] Record replacement as non-atomic: if deletion succeeds but POST or confirmation fails, keep explicit recoverable/uncertain state and do not falsely report success or automatically loop/overwrite.
+- [x] Represent pending/uploading/accepted/processing/completed/failed/uncertain and replacement-specific states explicitly.
+- [x] Guarantee retry reconciliation, prevent accidental duplicates, and make `status` useful offline and online.
 - [ ] Test deletion/backup failure, incomplete archive, same-data no-op, LR-only change, period-only change, stale-remote conflict, ambiguous POST, rollback best effort and absence of silent data loss with mocked server.
+
+**Implementation evidence:** `milgrau/scc/state.py` provides the
+durable SQLite ledger, append-only event journal and exclusive per-ID lock
+in `.state/scc` (ignored by Git; independent of `.cache/scc`).
+`milgrau/scc/backup.py` archives original remote raw NetCDF/ZIP and all
+advertised completed results with streaming limits, container verification
+and SHA-256 checks. If an existing external LR cannot also be retrieved,
+replacement is blocked before the remote delete.
+`milgrau/scc/workflow.py` integrates full local preflight, status/fingerprint
+checks, immutable archive verification, proven-identical no-op, and
+delete-then-upload under the **same** Measurement_ID. The native
+`milgrau/scc/client.py` implements the SCC administrative CSRF deletion form
+with `not_delete_related`, followed by authoritative API recheck. Uncertain
+POST outcomes always block further automatic attempts. `milgrau-scc status`
+now displays durable state even after deleting the disposable cache.
+New `tests/test_scc_state.py`, `tests/test_scc_backup.py`,
+`tests/test_scc_workflow.py` and expanded `tests/test_scc_client.py`
+exercise the non-destructive and simulated replacement cases.
+
+**Remaining gates:** Simulated rollback/recovery after every destructive failure,
+especially when the SCC's original LR or raw archive schema differs, requires
+additional integration evidence. The SCC has no atomic compare-and-swap
+on deletion: independent portal edits between the last GET and deletion
+cannot be eliminated client-side; the operator must coordinate a maintenance
+window. **No live remote DELETE or replacement POST occurred.** Phase 12.6
+is still responsible for final download and cleanup.
+
+**Validation:** New unit and mock-network tests are running on CI;
+mark full cross-platform validation only after all jobs pass.
 
 **Gate 12.5:** No prior SCC measurement can be deleted without a locally verified archive of available remote inputs/results, explicit exact-ID operator authorization, and durable recoverability tracking. Interrupted replacement must never be reported as successful without API confirmation.
 
