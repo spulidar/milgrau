@@ -80,8 +80,14 @@ verification is **always on**.
 ## Four operator commands
 
 ```bash
-# Upgrade older local pending caches offline, no server requests.
+# Upgrade older local raw filenames and fix deployed SCC LR form validation.
 milgrau-scc upload --migrate-cache
+milgrau-scc upload --repair-lr-cache
+milgrau-scc upload --dry-run
+
+# Explicit single-ID upload-only retry after local LR filename correction,
+# original SCC backup validation and portal/API absence; NOT batch-safe:
+milgrau-scc upload --id 20240913spu1549 --retry-after-lr-fix --confirm
 
 # After a confirmed portal/API absence and recovery_upload_uncertain,
 # one explicitly authorized upload-only retry (never deletes):
