@@ -289,6 +289,22 @@ def _discover_level0_files(config: Mapping[str, Any]) -> list[Path]:
     return discovered
 
 
+def _finalize_scc_after_level1(
+    source_level0: Path, level1_file: Path,
+    config: Mapping[str, Any], logger: logging.Logger,
+) -> list[str]:
+    """Finalize SCC staging only after science L1 succeeded or was verified current."""
+    if (
+        config.get("scc", {}).get("enabled") is not True
+        or config.get("_scc_catalog", {}).get("scc_policy", {})
+        .get("sounding", {}).get("enabled") is not True
+    ):
+        return []
+    from milgrau.scc.sounding_finalize import finalize_session_soundings
+
+    return finalize_session_soundings(source_level0, level1_file, config, logger)
+
+
 def _files_requiring_level1(
     files: list[Path],
     config: Mapping[str, Any],
@@ -311,6 +327,21 @@ def _files_requiring_level1(
         if is_current:
             file_logger = bind_log_context(logger, session_id=session_id)
             bind_log_context(file_logger, stage="skip").info("up to date | %s", output_path.name)
+            try:
+                _finalize_scc_after_level1(
+                    file_path, output_path, config,
+                    bind_log_context(file_logger, stage="scc_sounding"),
+                )
+            except Exception as exc:
+                skipped_results.append(ExecutionResult.failure(
+                    "scc.sounding", "SCC sounding finalization failed after current L1",
+                    input_path=file_path, output_path=output_path,
+                    cause=exc, include_traceback=True,
+                    metadata={"pipeline": "SCC", "session_id": session_id},
+                ))
+                bind_log_context(file_logger, stage="scc_sounding").error(
+                    "SCC pending package not upload-ready: %s", exc,
+                )
             skipped_results.append(
                 ExecutionResult.skipped(
                     "level1.incremental",
@@ -475,6 +506,11 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
             config,
             bind_log_context(file_logger, stage="figures"),
             root_dir=figure_root,
+        )
+        stage = "scc.sounding"
+        _finalize_scc_after_level1(
+            nc_file, save_path, config,
+            bind_log_context(file_logger, stage="scc_sounding"),
         )
         return ExecutionResult.success(
             "level1.complete",
