@@ -45,7 +45,10 @@ QA_L2 = {
 def _short(value: Any, *, width: int = 320) -> str:
     """Safely serialize metadata without expanding large coordinate arrays."""
     if isinstance(value, np.ndarray):
-        return f"array(shape={value.shape}, dtype={value.dtype})"
+        if value.ndim == 0:
+            value = value.item()
+        else:
+            return f"array(shape={value.shape}, dtype={value.dtype})"
     return str(value).replace("\n", " ")[:width]
 
 
