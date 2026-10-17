@@ -163,7 +163,7 @@ def test_libids_resolves_segment_scc_context_from_decoded_utc_timestamp(
     contexts = libids._resolve_expected_scc_contexts(
         "spu_20250101-0000Z_20250101-0100Z",
         pd.DataFrame(),
-        {"_station_catalog": {}},
+        {"_station_catalog": {}, "_scc_catalog": {}},
         output,
     )
 
@@ -232,7 +232,7 @@ def test_libids_groups_repeated_day_segments_into_one_expected_scc_context(
     contexts = libids._resolve_expected_scc_contexts(
         "spu_20250101-1200Z_20250102-1200Z",
         pd.DataFrame(),
-        {"_station_catalog": {}},
+        {"_station_catalog": {}, "_scc_catalog": {}},
         output,
     )
 
