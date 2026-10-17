@@ -60,21 +60,21 @@ def test_repository_station_catalog_covers_all_scc_eras() -> None:
 
     assert apel_day["profile_id"] == "spu-apel-2017"
     assert apel_day["scc_configuration_id"] == 248
-    assert apel_day["lr_input"] == {"1064.AN": 1, "1064.PC": 1}
+    assert apel_day["lr_input"] == {"1064.AN": 0, "1064.PC": 0}
     assert raman_night["profile_id"] == "spu-raman-2018"
     assert raman_night["scc_configuration_id"] == 484
-    assert raman_night["lr_input"] == {"1064.AN": 1, "1064.PC": 1}
+    assert raman_night["lr_input"] == {"1064.AN": 0, "1064.PC": 0}
     assert merion_day["profile_id"] == "spu-merionc-2024"
     assert merion_day["scc_configuration_id"] == 1047
     assert merion_day["channel_ids"]["532.AN"] == 4069
     assert merion_day["channel_ids"]["355.AN"] == 4073
     assert merion_day["scc_export_ready"] is True
     assert merion_day["lr_input"] == {
-        "532.AN": 1,
-        "532.PC": 1,
-        "1064.AN": 1,
-        "355.PC": 1,
-        "355.AN": 1,
+        "532.AN": 0,
+        "532.PC": 0,
+        "1064.AN": 0,
+        "355.PC": 0,
+        "355.AN": 0,
     }
 
 
@@ -122,16 +122,16 @@ def test_merion_night_configuration_contains_raman_channels_and_only_1064_lr_inp
     assert context["channel_ids"]["530.AN"] == 4075
     assert context["channel_ids"]["387.AN"] == 4076
     assert context["channel_ids"]["387.PC"] == 4077
-    assert context["lr_input"] == {"1064.AN": 1}
+    assert context["lr_input"] == {"1064.AN": 0}
 
 
-def test_raman_2018_day_uses_raman_for_355_532_and_fixed_lr_only_for_1064() -> None:
+def test_raman_2018_day_uses_raman_for_355_532_and_external_lr_for_1064() -> None:
     config = load_config("config.yaml")
     channels = ["1064.AN", "532.AN", "355.AN", "530.AN", "387.AN"]
     context = _context(config, "2019-06-01T15:00:00", channels)
 
     assert context["scc_configuration_id"] == 565
-    assert context["lr_input"] == {"1064.AN": 1}
+    assert context["lr_input"] == {"1064.AN": 0}
 
 
 def test_station_resolver_preserves_all_raw_channels_and_separates_scc_subset() -> None:
@@ -182,7 +182,7 @@ def test_station_context_is_self_contained_for_productive_consumers() -> None:
     }
     assert context["calibration_id"] == "spu-channel-corrections-v1"
     assert context["timezone"] == "America/Sao_Paulo"
-    assert context["lr_input"]["532.AN"] == 1
+    assert context["lr_input"]["532.AN"] == 0
     assert "hardware" not in config
     assert "site" not in config
     assert "physics" not in config
