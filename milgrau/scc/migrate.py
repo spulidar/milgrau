@@ -11,7 +11,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Mapping
+from typing import Any, Mapping
 
 from milgrau.level0.scc_staging import (
     manifest_raw_name, pending_scc_package, scc_raw_filename,
