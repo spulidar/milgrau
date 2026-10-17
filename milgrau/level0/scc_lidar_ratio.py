@@ -135,11 +135,17 @@ def write_scc_lidar_ratio_ancillary(
     ]
     if not bin_widths or not np.all(np.isfinite(bin_widths)) or min(bin_widths) <= 0:
         raise ValueError("SCC lidar-ratio altitude requires positive native bin widths.")
-    points = int(np.asarray(lidar_data["tensors"][channels[0]]).shape[1])
-    if points <= 0:
-        raise ValueError("SCC lidar-ratio altitude requires non-empty raw profiles.")
-    # Overshoot by one bin so interpolation spans every detector's full range.
-    altitude = np.arange(points + 2, dtype=np.float64) * max(bin_widths)
+    native_extents = []
+    for channel, bin_width in zip(channels, bin_widths, strict=True):
+        tensor = np.asarray(lidar_data["tensors"][channel])
+        if tensor.ndim != 2 or tensor.shape[1] <= 0:
+            raise ValueError(f"SCC lidar-ratio altitude requires non-empty profiles for {channel}.")
+        native_extents.append(tensor.shape[1] * bin_width)
+    # One common ascending grid must span every channel, including longer
+    # photon-counting records with coarser native vertical resolutions.
+    spacing = min(bin_widths)
+    count = int(np.ceil(max(native_extents) / spacing)) + 2
+    altitude = np.arange(count, dtype=np.float64) * spacing
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     handle, temp_name = tempfile.mkstemp(
