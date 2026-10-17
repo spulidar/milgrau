@@ -1,7 +1,7 @@
 # Phase 12 — Optional SCC integration and publication workflow
 
 **Branch:** `scc-integration-refactor` (base: `milgraumaxxing`)  
-**Status:** Phases 12.1–12.2 validated; Phase 12.3 implemented — final CI validation pending  
+**Status:** Phases 12.1–12.3 implemented and cross-platform validated; Phase 12.4 pending  
 **Scope:** SCC configuration, optional export, staging, native upload/status/download/cleanup client.
 This branch's tracker intentionally contains **only Phase 12**. The earlier scientific tracker remains on the base branch.
 
@@ -93,8 +93,11 @@ regime/month partitioning, source profiles and scientific independence.
 Phase 12.3 does not submit or delete remote measurements: those capabilities
 remain scheduled for Phases 12.4–12.6.
 
-**Validation:** implementation and regression tests added; final branch CI
-pending after latest profile-lineage manifest improvement.
+**Validation:** All six checks passed in GitHub Actions run
+[39049077255](https://github.com/spulidar/milgrau/actions/runs/39049077255),
+at implementation commit `130f5a3c1e9b5c35b1b195f772fb876145d78269`
+(Ubuntu and Windows, Python 3.12/3.14, Ruff and Explorer). Subsequent
+changes are documentation/tracker-only. Real SCC submission is not yet tested.
 
 **Gate 12.3:** Removing staging cache never triggers canonical L0 reprocessing.
 
