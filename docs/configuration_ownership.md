@@ -73,10 +73,15 @@ relative to the config file and loads a separate `_scc_catalog` runtime view.
 Do not copy database IDs back into the station catalog. Configurations from the
 six known historical SCC systems are migrated without changing their IDs.
 
-Phase 12.1 preserves the existing SCC-only derivative placement until Phase
-12.3 moves them into the temporary staging queue and decouples publication
-identity from scientific session identity. Disabled canonical L0 incrementality
-already ignores SCC derivatives.
+Phase 12.3 stages all new SCC-only upload packages in the **disposable**
+`.cache/scc/pending/<Measurement_ID>/` directory, not the scientific output
+tree. Raw NetCDF, optional monthly lidar-ratio ancillary and a checksum
+manifest are committed together atomically per SCC measurement. Scientific
+L0 incrementality is independent of SCC cache existence, regardless of
+whether the integration is enabled. Existing old `*_L0_scc.nc` files
+remain untouched in scientific folders. `milgrau-libids --scc-reexport`
+explicitly restages historical packets without rewriting scientific L0.
+Remote client/upload and durable submission tracking are later phases.
 
 ## Python
 
