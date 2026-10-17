@@ -271,8 +271,9 @@ class SCCClient:
             )
         except Exception as exc:
             raise SCCRemoteError(
-                f"Deletion POST for {identity} has an UNKNOWN outcome; "
-                "check remote state, do not automatically retry."
+                f"Deletion POST for {identity} has an UNKNOWN outcome "
+                f"({type(exc).__name__}); check remote state and journal, "
+                "do not automatically retry."
             ) from exc
         response = self._complete_post(response, url)
         if response.status_code != 200:
