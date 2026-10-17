@@ -365,6 +365,15 @@ Mocked tests cover successful recovery, absent/present SCC record,
 tampered/missing backup, wrong uncertainty event and uncertain
 recovery-upload failure.
 
+**Recovery regression validation:** All six jobs passed in
+[GitHub Actions run 39071990618](https://github.com/spulidar/milgrau/actions/runs/39071990618)
+for recovery code commit `d43d2da858a95fa7caacbf5f7a1df5b490b6723f`
+(Ubuntu/Windows Python 3.12/3.14, Ruff, Explorer).
+This includes simulated success and failure of the explicit
+`--resume-after-delete` command. The real SCC recovery upload
+is **NOT** validated by this CI run; it remains an operator-controlled
+one-time live test, not a batch action.
+
 **Open live gate:** Operator must verify retained local backup independently,
 confirm SCC ID remains absent, decide whether to restore original or
 finish replacement, and only then authorize the single-ID
