@@ -21,8 +21,18 @@ def _validate_scc_policy(
     catalog: Mapping[str, Any], station_catalog: Mapping[str, Any],
 ) -> None:
     policy = _mapping(catalog.get("scc_policy"), "scc_policy")
-    if set(policy) != {"lr_input"}:
-        raise ValueError("scc_policy must contain exactly ['lr_input'].")
+    if "lr_input" not in policy or set(policy) - {"lr_input", "sounding"}:
+        raise ValueError("scc_policy requires lr_input; optional sounding policy allowed.")
+    sounding = policy.get("sounding", {"enabled": False})
+    sounding = _mapping(sounding, "scc_policy.sounding")
+    if set(sounding) - {"enabled", "source", "missing_policy"}:
+        raise ValueError("scc_policy.sounding has unknown keys.")
+    if not isinstance(sounding.get("enabled", False), bool):
+        raise ValueError("scc_policy.sounding.enabled must be boolean.")
+    if sounding.get("source", "cached_wyoming") != "cached_wyoming":
+        raise ValueError("scc_policy.sounding.source must be cached_wyoming.")
+    if sounding.get("missing_policy", "skip") not in {"skip", "fail"}:
+        raise ValueError("scc_policy.sounding.missing_policy must be skip or fail.")
     lr_policy = _mapping(policy["lr_input"], "scc_policy.lr_input")
     required = {"fixed_value", "raman_companions_nm"}
     allowed = required | {"source"}
