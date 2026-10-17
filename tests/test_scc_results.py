@@ -87,10 +87,10 @@ def _stage(config: dict) -> dict:
         with nc.Dataset(directory / f"{ID}.nc", "w") as raw:
             raw.setncattr("Measurement_ID", ID)
             raw.setncattr("SCC_Configuration_ID", 1047)
-            raw.setncattr("LR_File_Name", f"lr_{ID}.nc")
+            raw.setncattr("LR_File_Name", f"lr_{ID[:13]}.nc")
             raw.createDimension("channels", 1)
             raw.createVariable("channel_ID", "i4", ("channels",))[:] = [4071]
-        with nc.Dataset(directory / f"lr_{ID}.nc", "w") as lr:
+        with nc.Dataset(directory / f"lr_{ID[:13]}.nc", "w") as lr:
             lr.createDimension("products", 1)
             lr.createDimension("points", 3)
             lr.createVariable("Altitude", "f8", ("points",))[:] = [0, 15, 30]
@@ -105,7 +105,7 @@ def _stage(config: dict) -> dict:
             profile_start_utc="2024-09-13T15:49:32+00:00",
             profile_stop_utc="2024-09-13T17:50:42+00:00",
             source_canonical_l0=scientific,
-            config=config, ancillary_name=f"lr_{ID}.nc",
+            config=config, ancillary_name=f"lr_{ID[:13]}.nc",
         )
     return manifest
 
