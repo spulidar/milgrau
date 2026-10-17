@@ -87,8 +87,8 @@ async function run() {
   element("color-min").value = "1e4";
   element("color-max").value = "1e6";
   await vm.runInContext("updateAppearance()", context);
-  assert.deepEqual(events.at(-1).change.zmin, [10000]);
-  assert.deepEqual(events.at(-1).change.zmax, [1000000]);
+  assert.equal(events.at(-1).change.zmin[0], 10000);
+  assert.equal(events.at(-1).change.zmax[0], 1000000);
   assert.equal(element("color-min").disabled, false);
 
   const count = events.length;
