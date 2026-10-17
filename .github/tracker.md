@@ -135,6 +135,8 @@ durable state/download/cleanup are **intentionally pending**.
 a real SPU SCC login/upload is still required before declaring live compatibility.
 **No real remote upload was performed by this development session.**
 
+**Real local CLI validation (2026-10-17):** Operator installed `.[scc]` after updating the branch and ran `milgrau-scc upload --dry-run` and `milgrau-scc status` successfully on **19/19** pending uploads (**9** SCC day configuration 1047, **10** SCC night configuration 1046); each package includes `raw.nc` plus a climatological `lr_<Measurement_ID>.nc`. No network request was made or required. **Next:** read-only SCC login/measurement-status check with environment-only credentials; actual remote Quick upload is still unverified.
+
 **Gate 12.4:** Offline client and authentication mocks pass; real upload remains
 explicitly opt-in. Live integration validation is tracked separately in 12.7.
 
