@@ -21,6 +21,7 @@ from milgrau.level0.config import resolve_level0_config, validate_level0_config
 from milgrau.level0.inventory import build_session_inventory
 from milgrau.level0.netcdf import scc_measurement_id
 from milgrau.level0.processing import process_session_group
+from milgrau.level0.scc_lidar_ratio import scc_lr_ancillary_matches
 from milgrau.level0.quality import filter_laser_shots
 from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary
 from milgrau.provenance import netcdf_provenance_is_complete
@@ -89,8 +90,12 @@ def _primary_output_satisfies_contract(path: Path) -> bool:
     ) and netcdf_provenance_is_complete(path)
 
 
-def _scc_output_satisfies_context(path: Path, context: Mapping) -> bool:
-    """Validate one solar-regime SCC Level 0 derivative."""
+def _scc_output_satisfies_context(
+    path: Path,
+    context: Mapping,
+    catalog: Mapping | None = None,
+) -> bool:
+    """Validate one solar-regime SCC Level 0 derivative and its ancillary."""
     if not _primary_output_satisfies_contract(path):
         return False
     try:
@@ -106,6 +111,14 @@ def _scc_output_satisfies_context(path: Path, context: Mapping) -> bool:
             )
             expected_id = scc_measurement_id(start_utc, str(context["station_id"]))
             if ds.attrs.get("Measurement_ID") != expected_id:
+                return False
+            lr_flags = context.get("lr_input", {})
+            if any(int(value) == 0 for value in lr_flags.values()):
+                if catalog is None or not scc_lr_ancillary_matches(
+                    path, ds.attrs, context, catalog,
+                ):
+                    return False
+            elif "LR_File_Name" in ds.attrs:
                 return False
             if str(ds.attrs.get("Solar_Regime", "")).lower() != str(
                 context.get("solar_regime", "")
@@ -192,7 +205,7 @@ def _level0_is_current(
             inputs,
             config=config,
             integrity_check=lambda path, ctx=context: _scc_output_satisfies_context(
-                path, ctx
+                path, ctx, config.get("_station_catalog"),
             ),
         ):
             return False
