@@ -161,8 +161,8 @@ def test_site_serves_only_configured_local_logos(prepared) -> None:
 def test_all_session_order_is_newest_first(prepared) -> None:
     config_path, source, folder = prepared
     new_sid = "spu_20240920-1300Z_20240920-1400Z"
-    new_folder = folder.parent / new_sid
-    new_folder.mkdir()
+    new_folder = folder.parents[1] / "09" / new_sid
+    new_folder.mkdir(parents=True)
     (new_folder / f"{new_sid}_L1.nc").write_bytes(source.read_bytes())
     client = TestClient(create_app(str(config_path)))
     sessions = client.get("/api/sessions").json()["sessions"]
