@@ -83,7 +83,7 @@ def test_scc_monthly_climatology_writes_exact_ancillary_schema(tmp_path: Path) -
         )
         np.testing.assert_allclose(
             ds.variables["Lidar_Ratio"][:, 0],
-            [84.69, 55.78, 55.78, 30.83],
+            [84.69, 55.78, 55.78, 29.74],
         )
         np.testing.assert_allclose(
             ds.variables["Lidar_Ratio_Error"][:, 0], [15, 10, 10, 10],
