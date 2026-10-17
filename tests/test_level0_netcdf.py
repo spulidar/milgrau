@@ -5,12 +5,14 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import netCDF4 as nc
 import numpy as np
 import pandas as pd
 import pytest
 import xarray as xr
 
 from milgrau.io.contracts import validate_level0_contract
+from milgrau.level0 import libids
 from milgrau.level0.netcdf import (
     build_level0_netcdf,
     scc_measurement_id,
@@ -211,6 +213,37 @@ def test_grouped_scc_records_source_segments_and_gap_state(tmp_path: Path) -> No
             "day",
             "day",
         ]
+
+
+def test_scc_cache_rejects_old_export_without_measurement_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _config()
+    config["_resolved_station"].update(
+        {
+            "solar_regime": "night",
+            "source_segments": "seg00",
+            "source_segment_count": 1,
+            "contains_time_gaps": False,
+            "scc_channels": ["532.AN", "532.PC"],
+        }
+    )
+    path = tmp_path / "regression_night_L0_scc.nc"
+    build_level0_netcdf(
+        str(path), SESSION_ID, _lidar_data(), _group_df(tmp_path, False),
+        _weather_data(), config, logging.getLogger("test.scc_cache"),
+        scc_export=True,
+    )
+    # This test targets only SCC metadata, not the separate provenance check.
+    monkeypatch.setattr(libids, "_primary_output_satisfies_contract", lambda _path: True)
+    assert libids._scc_output_satisfies_context(
+        path, config["_resolved_station"]
+    )
+    with nc.Dataset(path, "a") as ds:
+        ds.delncattr("Measurement_ID")
+    assert not libids._scc_output_satisfies_context(
+        path, config["_resolved_station"]
+    )
 
 
 def test_pointing_angle_has_no_physics_fallback(tmp_path: Path) -> None:
