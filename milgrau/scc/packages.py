@@ -48,6 +48,11 @@ def validate_upload_package(
     """Verify checksums, raw SCC ID/config and climatological LR content."""
     try:
         manifest = validate_pending_scc_package(path)
+        if manifest.get("sounding_stage") == "awaiting_lipancora":
+            raise SCCPackageError(
+                "SCC sounding is enabled but LIPANCORA has not finalized this "
+                "packet. Run milgrau-lipancora before upload."
+            )
         raw_name = manifest_raw_name(manifest)
         if path.is_symlink() or (path / raw_name).is_symlink():
             raise SCCPackageError("Symlinks are forbidden in SCC upload packages.")
