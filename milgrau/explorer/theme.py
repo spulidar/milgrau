@@ -203,6 +203,118 @@ _BASE_CSS = """
 </style>
 """
 
+
+_SITE_CSS = """
+<style>
+/* Compact, site-inspired horizontal layout. No sidebar or theme configuration. */
+[data-testid="stSidebar"],
+[data-testid="stSidebarCollapsedControl"] { display: none !important; }
+[data-testid="stAppViewContainer"], [data-testid="stMain"] {
+    background: #edf1f5 !important;
+}
+[data-testid="stMain"] .block-container {
+    max-width: 1550px !important;
+    width: 100%;
+    padding-top: .75rem !important;
+    padding-left: 2.1rem !important;
+    padding-right: 2.1rem !important;
+}
+[data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(.mg-site-brand) {
+    background: #191c20;
+    border-radius: 8px 8px 0 0;
+    padding: .55rem 1rem;
+    align-items: center;
+    min-height: 70px;
+}
+.mg-site-brand {
+    color: #f3f6f9 !important;
+    letter-spacing: .045em;
+    font-size: 1.18rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.mg-site-divider { color: #648497; padding: 0 .55rem; }
+.mg-site-subbrand { color: #43bde4; font-weight: 650; font-size: .92rem; }
+.mg-site-location {
+    color: #a8b7c0 !important;
+    text-align: right;
+    font-size: .72rem;
+    letter-spacing: .015em;
+    white-space: nowrap;
+}
+[data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(.mg-site-brand)
+[data-testid="stCaptionContainer"] p {
+    color: #9cc6d3 !important;
+    font-size: .68rem;
+    margin: 0;
+}
+[data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(.mg-site-brand)
+[data-baseweb="select"] > div {
+    color: #eff7fb !important;
+    background: #303942 !important;
+    border: 1px solid #445460 !important;
+    min-height: 38px;
+}
+[data-testid="stMain"] [data-testid="stHorizontalBlock"]:has(.mg-site-brand)
+[data-baseweb="select"] * {
+    color: #eff7fb !important;
+}
+[data-testid="stMain"] [data-testid="stRadio"]:has([role="radiogroup"]) {
+    background: #fff;
+    border-bottom: 1px solid #cdd8df;
+    padding: .35rem .65rem;
+}
+[data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"] {
+    flex-wrap: wrap;
+    gap: .35rem !important;
+}
+[data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"] label {
+    border-radius: 5px;
+    padding: .3rem .6rem;
+    white-space: nowrap;
+}
+[data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"] label:has(input:checked) {
+    background: #e1f2f7;
+    color: #006ea1 !important;
+    box-shadow: inset 0 -2px #1172b6;
+}
+[data-testid="stMain"] [data-testid="stRadio"] [role="radiogroup"] label p {
+    font-size: .83rem !important;
+    font-weight: 630;
+}
+.mg-site-session {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: 1.2rem;
+    row-gap: .3rem;
+    padding: .7rem 1rem;
+    background: #f7fafc;
+    border: 1px solid #dce5eb;
+    border-top: 0;
+    margin-bottom: 1.1rem;
+    color: #607788;
+    font-size: .76rem;
+}
+.mg-site-session strong { color: #1b3e52; font-weight: 750; }
+.mg-site-session span { overflow-wrap: anywhere; }
+[data-testid="stMain"] [data-testid="stPlotlyChart"] {
+    border: 1px solid #dce5eb;
+    background: #ffffff;
+    padding: .5rem;
+    border-radius: 8px;
+}
+@media (max-width: 1100px) {
+    .mg-site-brand { font-size: .96rem; white-space: normal; }
+    .mg-site-subbrand { font-size: .8rem; }
+    .mg-site-location { white-space: normal; }
+    [data-testid="stMain"] .block-container {
+        padding-left: .8rem !important;
+        padding-right: .8rem !important;
+    }
+}
+</style>
+"""
+
 _FOCUS_CSS = """
 <style>
 [data-testid="stSidebar"] { display: none !important; }
@@ -215,6 +327,7 @@ _FOCUS_CSS = """
 def apply_theme(*, focus: bool = False) -> None:
     """Apply Hybrid Scientific only inside the running Explorer."""
     st.markdown(_BASE_CSS, unsafe_allow_html=True)
+    st.markdown(_SITE_CSS, unsafe_allow_html=True)
     if focus:
         st.markdown(_FOCUS_CSS, unsafe_allow_html=True)
 
