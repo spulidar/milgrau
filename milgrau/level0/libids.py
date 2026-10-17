@@ -14,7 +14,7 @@ from milgrau.config.station import resolve_station_context
 from milgrau.incremental import output_is_current
 from milgrau.io.contracts import netcdf_satisfies_contract, validate_level0_contract
 from milgrau.io.logging_utils import bind_log_context
-from milgrau.io.paths import level0_output_path, level0_scc_output_path, raw_data_root
+from milgrau.io.paths import level0_output_path, raw_data_root
 from milgrau.io.selection import parse_input_selection, select_available_session_ids
 from milgrau.level0.common import incremental_enabled
 from milgrau.level0.config import resolve_level0_config, validate_level0_config
@@ -189,30 +189,9 @@ def _level0_is_current(
         config=config,
         integrity_check=_primary_output_satisfies_contract,
     )
-    if not primary_current:
-        return False
-    if not isinstance(config.get("_scc_catalog"), Mapping):
-        return True
-
-    contexts = _resolve_expected_scc_contexts(
-        session_id, group_df, config, output
-    )
-    for regime, context in contexts:
-        scc_path = level0_scc_output_path(
-            session_id,
-            config,
-            solar_regime=regime,
-        )
-        if not output_is_current(
-            scc_path,
-            inputs,
-            config=config,
-            integrity_check=lambda path, ctx=context: _scc_output_satisfies_context(
-                path, ctx, config.get("_station_catalog"),
-            ),
-        ):
-            return False
-    return True
+    # A published/cached SCC derivative has its own independent lifetime.
+    # It must never make a canonical Level 0 session stale.
+    return primary_current
 
 
 def _requested_session_ids(values, config: dict, df_raw) -> set[str] | None:
@@ -248,8 +227,13 @@ def process_level_0(
     *,
     inputs: Sequence[str] | None = None,
     force: bool = False,
+    scc_reexport: bool = False,
 ) -> ExecutionSummary:
-    """Run LIBIDS, optionally restricting processing to selected session IDs."""
+    """Run LIBIDS; optionally stage only SCC products for existing scientific L0."""
+    if force and scc_reexport:
+        raise ValueError("--force and --scc-reexport are mutually exclusive.")
+    if scc_reexport and not isinstance(config.get("_scc_catalog"), Mapping):
+        raise ValueError("--scc-reexport requires config.scc.enabled: true.")
     validate_level0_config(config)
     level0_config = resolve_level0_config(config)
     pipeline_logger = bind_log_context(logger, pipeline="L0")
@@ -282,7 +266,7 @@ def process_level_0(
     for session_id, group_df in df_good.groupby("session_id"):
         group_logger = bind_log_context(pipeline_logger, session_id=session_id)
         netcdf_path = level0_output_path(session_id, config)
-        if not force and incremental and _level0_is_current(session_id, group_df, config, netcdf_path):
+        if not scc_reexport and not force and incremental and _level0_is_current(session_id, group_df, config, netcdf_path):
             bind_log_context(group_logger, stage="skip").info("up to date | %s", netcdf_path.name)
             results.append(ExecutionResult.skipped("level0.incremental", "Level 0 is up to date", output_path=netcdf_path, metadata={"pipeline": "L0", "session_id": session_id}))
             continue
@@ -290,7 +274,12 @@ def process_level_0(
         measurement_count = int((group_df["meas_type"] == "measurements").sum())
         bind_log_context(group_logger, stage="start").info("%d raw files", measurement_count)
         try:
-            result = process_session_group(session_id, group_df, config, group_logger)
+            if scc_reexport:
+                result = process_session_group(
+                    session_id, group_df, config, group_logger, scc_only=True,
+                )
+            else:
+                result = process_session_group(session_id, group_df, config, group_logger)
             if not isinstance(result, ExecutionResult):
                 raise TypeError(f"process_session_group returned {type(result).__name__}; expected ExecutionResult.")
         except Exception as exc:
