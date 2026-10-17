@@ -44,8 +44,6 @@ def test_merionc_raman_identity_is_explicit_without_invented_passbands() -> None
 
 
 def test_merionc_raman_metadata_matches_current_scc_exposure() -> None:
-    profile = _merionc_profile()
-    channels = profile["raman_detection"]["channels"]
     scc = yaml.safe_load(Path("scc.yaml").read_text(encoding="utf-8"))
     merionc = scc["profiles"]["spu-merionc-2024"]
     night = merionc["night"]["channels"]
