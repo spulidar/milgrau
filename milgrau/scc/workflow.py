@@ -300,6 +300,7 @@ def resume_after_uncertain_delete(
 
 def retry_rejected_recovery_upload(
     config: Mapping[str, Any], package: Path, client: Any,
+    *, after_lr_fix: bool = False,
 ) -> dict[str, Any]:
     """One explicit upload-only retry after prior *recovery* POST was uncertain.
 
@@ -327,16 +328,25 @@ def retry_rejected_recovery_upload(
         if row is None or row["state"] != "uncertain":
             raise SCCRemoteError("SCC journal is not in the required uncertain state.")
         events = store.events(identity)
-        if not events or events[-1]["action"] != "recovery_upload_uncertain":
+        expected_action = (
+            "local_lr_filename_repair" if after_lr_fix
+            else "recovery_upload_uncertain"
+        )
+        if not events or events[-1]["action"] != expected_action:
             raise SCCRemoteError(
-                "Only one operator-confirmed retry after recovery_upload_uncertain "
-                "is permitted. Never retry an ambiguous follow-up POST."
+                f"Retry requires exact latest journal event {expected_action}; "
+                "never repeat a previous uncertain POST."
             )
         required = {
             "backup_verified", "delete_result_uncertain",
             "operator_confirmed_remote_absence_after_uncertain_delete",
             "recovery_upload_requested",
         }
+        if after_lr_fix:
+            required.update({
+                "recovery_upload_uncertain",
+                "manual_corrected_upload_uncertain",
+            })
         if not required.issubset({event["action"] for event in events}):
             raise SCCRemoteError("Incomplete original SCC recovery audit trail.")
         files = manifest["files"]
@@ -385,9 +395,30 @@ def retry_rejected_recovery_upload(
             )
         if validate_upload_package(package) != manifest:
             raise SCCRemoteError("Pending package changed during reconciliation.")
+        if after_lr_fix:
+            from milgrau.level0.scc_lidar_ratio import scc_lr_file_name
 
+            repaired_name = scc_lr_file_name(identity)
+            old_name = f"lr_{identity}.nc"
+            if repaired_name not in files or old_name in files:
+                raise SCCRemoteError("SCC LR filename repair is incomplete.")
+            # The newly recorded revision must be exactly the fix described
+            # by the last durable event. No other input changes are accepted.
+            detail = json.loads(events[-1]["payload_json"])
+            if (
+                detail.get("new_lr_filename") != repaired_name
+                or detail.get("new_raw_sha256") != row["raw_sha256"]
+                or detail.get("unchanged_lr_sha256") != row["lr_sha256"]
+                or detail.get("previous_action") != "manual_corrected_upload_uncertain"
+            ):
+                raise SCCRemoteError("Local LR repair journal revision disagrees with staged inputs.")
+
+        requested_action = (
+            "manual_lr_fixed_upload_requested" if after_lr_fix
+            else "manual_corrected_filename_upload_requested"
+        )
         store.transition(
-            identity, "uploading", action="manual_corrected_filename_upload_requested",
+            identity, "uploading", action=requested_action,
             detail={
                 "multipart_filename": raw_name,
                 "remote_delete": False,
@@ -409,13 +440,21 @@ def retry_rejected_recovery_upload(
                 raise SCCRemoteError("Recovered SCC record has unexpected configuration/date.")
         except Exception as exc:
             store.transition(
-                identity, "uncertain", action="manual_corrected_upload_uncertain",
+                identity, "uncertain",
+                action=(
+                    "manual_lr_fixed_upload_uncertain" if after_lr_fix
+                    else "manual_corrected_upload_uncertain"
+                ),
                 error=f"{type(exc).__name__}: {exc}",
             )
             raise
 
         store.transition(
-            identity, "accepted", action="manual_corrected_upload_verified",
+            identity, "accepted",
+            action=(
+                "manual_lr_fixed_upload_verified" if after_lr_fix
+                else "manual_corrected_upload_verified"
+            ),
             remote_creation_date=str(confirmed["creation_date"]),
             detail={
                 "remote_page": str(result["remote_page"]),
