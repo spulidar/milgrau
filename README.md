@@ -66,8 +66,16 @@ pip install .
 For editable development/testing:
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev,explorer,web]"
 ```
+
+For a shared MILGRAU + `spulidar/measurements` workspace, use `pip install -e ".[web]"`.
+The `web` extra adds the publisher's optional cloud SDK (`boto3`); it does
+**not** move website logic into MILGRAU. The `explorer` selector is intentionally
+empty because Explorer dependencies are already in core. During development
+of `measurements/publication-v2`, run only `--stage-only`: do not access
+the production R2 bucket or modify `measurements/main`. See
+[`docs/publication_integration.md`](docs/publication_integration.md).
 
 ERA5 support is installed with the core package because it is the productive
 Level 1 atmospheric backbone. Credentials are not stored in MILGRAU YAML or
