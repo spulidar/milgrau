@@ -7,7 +7,7 @@ scc_policy:
   lr_input:
     # SCC upload LR policy: scc_db (current) or climatology_ancillary.
     # Enable climatology_ancillary only after the TRUE optical product_IDs
-    # are supplied under profiles[*].scc.{day,night}.elastic_product_ids.
+    # are supplied under profiles.<profile-id>.{day,night}.elastic_product_ids.
     # Existing configuration_id and channels are NOT product IDs.
     source: scc_db
     fixed_value: 1
