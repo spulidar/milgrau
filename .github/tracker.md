@@ -383,4 +383,30 @@ An SCC administrator should inspect server access/error logs for the
 unexpected POST transport failure. The new recovery path has no
 confirmed live POST yet.
 
+**Second live upload recovery incident (operator, 2026-10-17):** An explicitly
+authorized `milgrau-scc upload --id 20240913spu1549
+--resume-after-delete --confirm` reached the upload stage but raised
+`Upload response ... was not confirmed by the SCC API; remote state is
+uncertain. Do not repeat the POST.` This does **not** establish whether
+the server accepted, delayed indexing, or rejected the upload. The
+durable journal should now have `state=uncertain` with last action
+`recovery_upload_uncertain`; no batch or repeat upload is authorized.
+The operator has been asked for a **new read-only** `status --remote`
+and confirmation in the SCC portal.
+
+The official `scc_access` implementation recognizes that API visibility
+may be delayed after POST (multiple safe GETs) and that HTTP 200 ending
+on the Quick upload form can signal rejected form validation. The
+MILGRAU client now tries **three read-only GET confirmations** without
+a second POST and gives distinct diagnostics for Quick-form rejection
+versus unconfirmed delayed API visibility. New unit tests simulate
+both scenarios. Another potential explanation is an already registered
+auxiliary LR file; the official `scc_access` checks LR existence before
+multipart attachment, whereas MILGRAU currently attaches the staged LR.
+Do not silently reuse an unverified remote LR: it must match the intended
+scientific auxiliary by content, not just filename. The previous HTTP
+response body was not recorded, so its form-validation reason cannot be
+retroactively determined. A new live POST is **not** warranted without
+remote diagnosis and explicit manual reconciliation.
+
 **Gate 12.7:** End-to-end SCC interoperability confirmed with real responses.
