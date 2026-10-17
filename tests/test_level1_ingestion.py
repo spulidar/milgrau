@@ -81,19 +81,23 @@ def _station_config(
                     "id": "test-profile",
                     "valid_from": "2020-01-01",
                     "valid_to": None,
-                    "scc": {
-                        "day": {
-                            "configuration_id": day_configuration_id,
-                            "channels": day_channels,
-                        },
-                        "night": {
-                            "configuration_id": night_configuration_id,
-                            "channels": day_channels if night_channels is None else night_channels,
-                        },
-                    },
                 }
             ]
-        }
+        },
+        "_scc_catalog": {
+            "profiles": {
+                "test-profile": {
+                    "day": {
+                        "configuration_id": day_configuration_id,
+                        "channels": day_channels,
+                    },
+                    "night": {
+                        "configuration_id": night_configuration_id,
+                        "channels": day_channels if night_channels is None else night_channels,
+                    },
+                }
+            }
+        },
     }
 
 
@@ -166,7 +170,7 @@ def test_scc_raw_channel_ids_are_canonicalized_from_station_mapping(tmp_path: Pa
     try:
         np.testing.assert_array_equal(ds.channel.values.astype(str), np.array(["532.AN", "532.PC"]))
         assert ds.attrs["milgrau_level0_input_schema"] == "scc_raw_channel_ID_canonicalized"
-        assert ds.attrs["milgrau_channel_identity_source"] == "station.yaml_scc_channel_ID_mapping"
+        assert ds.attrs["milgrau_channel_identity_source"] == "scc.yaml_channel_ID_mapping"
         assert ds.attrs["milgrau_scc_mapping_modes"] == "day"
     finally:
         ds.close()
