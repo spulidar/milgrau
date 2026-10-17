@@ -359,6 +359,7 @@ def _write_scc_exports(
 
     from milgrau.level0.netcdf import scc_measurement_id
     from milgrau.level0.scc_lidar_ratio import write_scc_lidar_ratio_ancillary
+    from milgrau.level0.scc_sounding import stage_cached_sounding
     from milgrau.level0.scc_staging import (
         atomic_scc_package,
         pending_scc_package,
@@ -465,6 +466,18 @@ def _write_scc_exports(
                 logger=scc_logger,
                 scc_export=True,
             )
+            sounding = stage_cached_sounding(
+                staging, measurement_id, first, regime_config,
+            )
+            if sounding is not None:
+                import netCDF4 as nc
+
+                # SCC requires both the reference and molecular mode 1 when a
+                # real observed radiosonde is staged. No fallback is invented.
+                with nc.Dataset(scc_path, "r+") as ds:
+                    ds.setncattr("Sounding_File_Name", sounding.name)
+                    ds.variables["Molecular_Calc"].assignValue(1)
+                scc_logger.info("SCC observed sounding staged: %s", sounding.name)
             write_netcdf_provenance(scc_path, regime_config)
             write_scc_manifest(
                 staging,
@@ -480,6 +493,7 @@ def _write_scc_exports(
                 source_canonical_l0=canonical,
                 config=config,
                 ancillary_name=None if lr_path is None else lr_path.name,
+                sounding_name=None if sounding is None else sounding.name,
                 source_profile_indices=profile_indices.tolist(),
                 source_measurement_files=regime_measurements["filepath"].astype(str).tolist(),
             )
