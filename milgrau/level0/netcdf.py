@@ -635,8 +635,13 @@ def build_level0_global_attributes(
         if lr_file is not None:
             if not isinstance(lr_file, str) or not lr_file.startswith("lr_"):
                 raise ValueError("Invalid SCC lidar-ratio ancillary filename.")
-            if lr_file != f"lr_{attrs['Measurement_ID']}.nc":
-                raise ValueError("SCC LR_File_Name must match the Measurement_ID.")
+            from milgrau.level0.scc_lidar_ratio import scc_lr_file_name
+
+            if lr_file != scc_lr_file_name(str(attrs["Measurement_ID"])):
+                raise ValueError(
+                    "SCC LR_File_Name must match the assigned two-digit "
+                    "station/date ancillary name."
+                )
             attrs["LR_File_Name"] = lr_file
     if ready:
         attrs["SCC_Configuration_ID"] = int(resolved["scc_configuration_id"])
