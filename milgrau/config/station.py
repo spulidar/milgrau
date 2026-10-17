@@ -136,8 +136,18 @@ def _validate_scc_policy(catalog: Mapping[str, Any]) -> None:
         raise ValueError("scc_policy must contain exactly ['lr_input'].")
     lr_policy = _mapping(policy["lr_input"], "scc_policy.lr_input")
     required = {"fixed_value", "raman_companions_nm"}
-    if set(lr_policy) != required:
-        raise ValueError(f"scc_policy.lr_input must contain exactly {sorted(required)}.")
+    allowed = required | {"source"}
+    if set(lr_policy) - allowed or required - set(lr_policy):
+        raise ValueError(
+            f"scc_policy.lr_input requires {sorted(required)} and allows only {sorted(allowed)}."
+        )
+    source = lr_policy.get("source", "scc_db")
+    if source not in {"scc_db", "climatology_ancillary"}:
+        raise ValueError("scc_policy.lr_input.source must be scc_db or climatology_ancillary.")
+    if source == "climatology_ancillary":
+        station = _mapping(catalog.get("station"), "station")
+        if not isinstance(station.get("lidar_ratio_climatology"), Mapping):
+            raise ValueError("SCC climatology_ancillary requires station.lidar_ratio_climatology.")
     fixed = lr_policy["fixed_value"]
     if isinstance(fixed, bool) or not isinstance(fixed, Integral) or int(fixed) not in {0, 1}:
         raise ValueError("scc_policy.lr_input.fixed_value must be integer 0 or 1.")
@@ -177,6 +187,32 @@ def _validate_scc(profile_id: str, scc: Mapping[str, Any]) -> None:
             if resolved in ids:
                 raise ValueError(f"profiles.{profile_id}.scc.{mode} duplicates SCC channel ID {resolved}.")
             ids.add(resolved)
+
+        # Product IDs are not channel IDs or configuration IDs.
+        product_map = config.get("elastic_product_ids", {})
+        if not isinstance(product_map, Mapping):
+            raise ValueError(
+                f"profiles.{profile_id}.scc.{mode}.elastic_product_ids must be a mapping."
+            )
+        known_wavelengths = {_channel_wavelength_nm(name) for name in channels}
+        product_ids: set[int] = set()
+        for raw_wavelength, raw_ids in product_map.items():
+            try:
+                wavelength = int(raw_wavelength)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("SCC elastic product wavelength must be numeric.") from exc
+            if wavelength not in known_wavelengths or wavelength <= 0:
+                raise ValueError(
+                    f"profiles.{profile_id}.scc.{mode} product wavelength {wavelength} has no channel."
+                )
+            values = raw_ids if isinstance(raw_ids, list) else [raw_ids]
+            if not values:
+                raise ValueError("SCC elastic_product_ids must not contain an empty list.")
+            for raw_id in values:
+                product_id = _positive_int(raw_id, "SCC elastic product_ID")
+                if product_id in product_ids:
+                    raise ValueError(f"Duplicate SCC product_ID {product_id}.")
+                product_ids.add(product_id)
 
 
 def validate_station_config(catalog: Mapping[str, Any]) -> None:
@@ -288,7 +324,10 @@ def _default_lr_input(catalog: Mapping[str, Any], scc_config: Mapping[str, Any])
     """Resolve station-wide LR_Input policy for one concrete SCC configuration."""
     lr_policy = catalog["scc_policy"]["lr_input"]
     companions_by_elastic = lr_policy["raman_companions_nm"]
-    value = int(lr_policy["fixed_value"])
+    value = (
+        0 if lr_policy.get("source", "scc_db") == "climatology_ancillary"
+        else int(lr_policy["fixed_value"])
+    )
     channels = [str(name) for name in scc_config["channels"]]
     wavelengths_present = {
         wavelength for name in channels if (wavelength := _channel_wavelength_nm(name)) is not None
@@ -369,6 +408,7 @@ def resolve_station_context(
             "scc_configuration_name": None,
             "channel_ids": {},
             "lr_input": {},
+            "elastic_product_ids": {},
             "scc_channels": [],
             "missing_scc_channels": [],
             "extra_channels": available,
@@ -383,6 +423,7 @@ def resolve_station_context(
             "scc_configuration_name": None,
             "channel_ids": {},
             "lr_input": {},
+            "elastic_product_ids": {},
             "scc_channels": [],
             "missing_scc_channels": [],
             "extra_channels": available,
@@ -402,6 +443,7 @@ def resolve_station_context(
         "scc_configuration_name": str(scc["name"]),
         "channel_ids": channel_ids,
         "lr_input": lr_input,
+        "elastic_product_ids": deepcopy(dict(scc.get("elastic_product_ids", {}))),
         "scc_channels": scc_channels,
         "missing_scc_channels": missing,
         "extra_channels": extra,
