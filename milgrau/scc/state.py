@@ -144,7 +144,9 @@ class SubmissionStore:
             (_id(identity),),
         ).fetchall()]
 
-    def begin(self, manifest: Mapping[str, Any]) -> dict[str, Any]:
+    def begin(
+        self, manifest: Mapping[str, Any], *, allow_new_revision: bool = False,
+    ) -> dict[str, Any]:
         """Insert once; prevent changed cached bytes from silently resetting state."""
         identity = _id(str(manifest["measurement_id"]))
         files = manifest["files"]
@@ -167,17 +169,47 @@ class SubmissionStore:
         }
         row = self.get(identity)
         if row is not None:
-            if any(row[key] != value for key, value in expected.items()):
+            if row["state"] in BLOCKED_RESTART:
                 raise RuntimeError(
-                    f"SCC {identity} has different source bytes/period from the "
-                    "durable journal; reconcile before modifying this submission."
+                    f"SCC {identity} recorded as {row['state']}; manual remote "
+                    "reconciliation is required before any new operation."
                 )
-            if row["state"] in BLOCKED_RESTART or row["state"] in {
-                "accepted", "processing", "completed",
-            }:
+            if row["state"] in {"accepted", "processing", "completed"}:
+                if not allow_new_revision:
+                    raise RuntimeError(
+                        f"SCC {identity} was already submitted; use an explicit "
+                        "replacement workflow for new contents."
+                    )
+            changed = any(row[key] != value for key, value in expected.items())
+            if changed:
+                if not allow_new_revision:
+                    raise RuntimeError(
+                        f"SCC {identity} has different source bytes/period from "
+                        "the durable journal; explicit replacement is required."
+                    )
+                previous = {key: row[key] for key in expected}
+                with self._conn:
+                    self._conn.execute(
+                        """
+                        UPDATE submissions SET
+                            scientific_session_id=?, configuration_id=?,
+                            raw_sha256=?, lr_sha256=?, product_ids_json=?,
+                            source_segments_json=?, scc_config_sha256=?,
+                            start_utc=?, stop_utc=?, state='pending',
+                            archive_path=NULL, archive_manifest_sha256=NULL,
+                            remote_creation_date=NULL, last_error=NULL,
+                            updated_utc=? WHERE measurement_id=?
+                        """,
+                        (*expected.values(), _utcnow(), identity),
+                    )
+                    self._add_event(identity, "new_explicit_revision", "pending", {
+                        "prior": previous, "new": expected,
+                    })
+                return self.get(identity) or {}
+            if row["state"] in {"accepted", "processing", "completed"}:
                 raise RuntimeError(
-                    f"SCC {identity} recorded as {row['state']}; do not "
-                    "resubmit until explicit remote reconciliation."
+                    f"SCC {identity} local content already submitted; "
+                    "no duplicate upload without a new revision."
                 )
             return row
         with self._conn:
