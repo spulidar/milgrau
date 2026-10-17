@@ -11,7 +11,8 @@ import netCDF4 as nc
 import pytest
 
 from milgrau.scc.backup import (
-    archive_remote_measurement, verify_archive, remote_fingerprint,
+    archive_remote_measurement, compare_staged_to_archive,
+    verify_archive, remote_fingerprint,
 )
 from milgrau.scc.client import SCCRemoteError
 
@@ -146,6 +147,37 @@ def test_backup_manifest_and_data_tampering_is_detected(tmp_path: Path):
     (destination / "raw.archive").write_bytes(b"altered")
     with pytest.raises(SCCRemoteError, match="checksum"):
         verify_archive(destination, digest)
+
+
+def test_period_and_lidar_ratio_changes_trigger_replacement(tmp_path: Path):
+    import hashlib
+
+    record = _record()
+    raw = _netcdf_bytes(tmp_path)
+    client = BinaryClient({
+        f"data_processing/measurements/{ID}/download-raw/": _zip(raw),
+    })
+    archive, sha = archive_remote_measurement(
+        client, record, tmp_path / ".state/scc",
+    )
+    snapshot = verify_archive(archive, sha)
+    local = {
+        "measurement_id": ID,
+        "measurement_start_utc": "2024-09-13T15:49:32+00:00",
+        "measurement_stop_utc": "2024-09-13T17:50:42+00:00",
+        "files": {"raw.nc": {"sha256": hashlib.sha256(raw).hexdigest()}},
+    }
+    result = compare_staged_to_archive(local, snapshot)
+    assert result["identical"]
+    local["measurement_stop_utc"] = "2024-09-13T18:10:00+00:00"
+    assert compare_staged_to_archive(local, snapshot)["period_differs"]
+    assert not compare_staged_to_archive(local, snapshot)["identical"]
+    local["measurement_stop_utc"] = "2024-09-13T17:50:42+00:00"
+    local["files"][f"lr_{ID}.nc"] = {"sha256": "a" * 64}
+    result = compare_staged_to_archive(local, snapshot)
+    assert result["raw_identical"]
+    assert not result["lr_identical"]
+    assert not result["identical"]
 
 
 def test_remote_fingerprint_rejects_record_changes():
