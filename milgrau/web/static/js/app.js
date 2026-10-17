@@ -2,7 +2,7 @@
 
 /* UI-only module: scientific values are supplied by the read-only Python API. */
 const byId = (id) => document.getElementById(id);
-const state = { session: "", product: "", dates: [] };
+const state = { session: "", product: "" };
 let requestVersion = 0;
 let displayedResult = null;
 let colorCache = null;
@@ -68,7 +68,7 @@ async function updateAppearance() {
   if (!values || !values.finite.length) {
     const empty = values ? values.matrix : displayedResult.rcs.map((row) => row.map(() => null));
     await Plotly.restyle("rcs-chart", { z: [empty], zauto: [false], zmin: [0], zmax: [1] }, [0]);
-    byId("settings-hint").textContent = "No displayable signal";
+    byId("edit-plot").textContent = "✎ Edit plot";
     scaleStatus("No finite " + (useLog ? "positive " : "") + "signal values to display.", true);
     return;
   }
@@ -129,8 +129,8 @@ async function updateAppearance() {
     colorCache.lastLog = useLog;
   }
   await Plotly.restyle("rcs-chart", update, [0]);
-  byId("settings-hint").textContent = description +
-    (useLog ? " · log10" : "") + " · click to adjust";
+  byId("edit-plot").textContent = "✎ " + description +
+    (useLog ? " · log10" : "");
   scaleStatus(
     description + " · colors [" + formatScale(low) + ", " + formatScale(high) + "]" +
     (useLog ? " log10 units" : " " + displayedResult.units) +
@@ -186,6 +186,7 @@ function populate(id, options, selected = "") {
 }
 
 function resetPlots() {
+  closePlotEditor();
   requestVersion += 1;
   displayedResult = null;
   colorCache = null;
@@ -196,13 +197,11 @@ function resetPlots() {
 }
 
 async function loadSessions() {
-  const requested = byId("utc-date").value;
-  const response = await api("/api/sessions", { date: requested });
-  const entries = response.sessions;
-  populate("session", entries.map((item) => ({
+  const { sessions } = await api("/api/sessions");
+  populate("session", sessions.map((item) => ({
     value: item.id,
-    label: item.start_utc.replace("+00:00", "Z") + " → " +
-      item.end_utc.replace("+00:00", "Z"),
+    label: item.start_utc.replace("+00:00", "Z").replace("T", " ") +
+      " → " + item.end_utc.replace("+00:00", "Z").replace("T", " "),
   })), state.session);
   state.session = byId("session").value;
   await loadProducts();
@@ -211,14 +210,11 @@ async function loadSessions() {
 async function loadProducts() {
   resetPlots();
   state.session = byId("session").value;
-  byId("session-title").textContent = state.session || "No sessions available";
-  byId("session-subtitle").textContent =
-    state.session ? "Scientific session identity is preserved across UTC dates." : "No NetCDF sessions intersect this date.";
-  if (!state.session) {
+   if (!state.session) {
     populate("product", []);
     populate("channel", []);
     populate("variable", []);
-    setMessage("No scientific session for the selected date.");
+    setMessage("No saved scientific sessions were found in the configured processed-data directory.");
     return;
   }
   const { products } = await api(
@@ -276,6 +272,7 @@ async function loadRcs() {
   byId("plot-title").textContent = result.variable + " · " + result.channel;
   const plotConfig = {
     responsive: true,
+    editable: true,
     displaylogo: false,
     modeBarButtonsToRemove: ["lasso2d", "select2d"],
     toImageButtonOptions: { format: "png", filename: "milgrau-rcs" },
@@ -340,6 +337,76 @@ async function showTab(event) {
   }
 }
 
+/** Contextual editing lives over the plot and never changes the source NetCDF. */
+function switchEditorTab(section) {
+  for (const id of ["colors", "axes"]) {
+    const active = id === section;
+    byId("editor-" + id).hidden = !active;
+    byId("editor-" + id + "-tab").classList.toggle("active", active);
+    byId("editor-" + id + "-tab").setAttribute("aria-pressed", String(active));
+  }
+}
+
+function axisTimeLabel(raw) {
+  if (!raw) return "";
+  // Plotly dates represent the UTC x coordinate; datetime-local is explicitly labeled UTC.
+  const str = String(raw).replace(" ", "T");
+  return str.slice(0, 16);
+}
+
+function fillAxisInputs() {
+  const view = byId("rcs-chart")._fullLayout;
+  if (!view) return;
+  const xr = view.xaxis.range;
+  const yr = view.yaxis.range;
+  byId("axis-tmin").value = axisTimeLabel(xr[0]);
+  byId("axis-tmax").value = axisTimeLabel(xr[1]);
+  byId("axis-ymin").value = Number(yr[0]).toPrecision(6);
+  byId("axis-ymax").value = Number(yr[1]).toPrecision(6);
+}
+
+function openPlotEditor(section = "colors") {
+  const editor = byId("plot-editor");
+  editor.hidden = false;
+  byId("edit-plot").setAttribute("aria-expanded", "true");
+  switchEditorTab(section);
+  if (section === "axes") fillAxisInputs();
+}
+
+function closePlotEditor() {
+  byId("plot-editor").hidden = true;
+  byId("edit-plot").setAttribute("aria-expanded", "false");
+}
+
+async function applyAxisLimits() {
+  const t0 = byId("axis-tmin").value;
+  const t1 = byId("axis-tmax").value;
+  const amin = byId("axis-ymin").value.trim();
+  const amax = byId("axis-ymax").value.trim();
+  const y0 = Number(amin);
+  const y1 = Number(amax);
+  if (!t0 || !t1 || !Number.isFinite(Date.parse(t0 + "Z")) ||
+      !Number.isFinite(Date.parse(t1 + "Z")) || t0 >= t1 ||
+      !amin || !amax || !Number.isFinite(y0) || !Number.isFinite(y1) || y0 >= y1) {
+    scaleStatus("Invalid axes: start must precede end and altitude minimum must be below maximum.", true);
+    return;
+  }
+  await Plotly.relayout("rcs-chart", {
+    "xaxis.range": [t0 + ":00Z", t1 + ":00Z"],
+    "yaxis.range": [y0, y1],
+  });
+  scaleStatus("Axis ranges updated for this plot only.");
+}
+
+function editClick(event) {
+  if (!displayedResult || !event.target || typeof event.target.closest !== "function") return;
+  if (event.target.closest(".colorbar, .cbaxis")) {
+    openPlotEditor("colors");
+  } else if (event.target.closest(".xaxislayer-above, .yaxislayer-above, .xtitle, .ytitle")) {
+    openPlotEditor("axes");
+  }
+}
+
 function safeTask(task) {
   return async () => {
     try { await task(); } catch (error) { setMessage(error.message, true); }
@@ -348,7 +415,6 @@ function safeTask(task) {
 
 async function initialize() {
   for (const tab of document.querySelectorAll(".tab")) tab.addEventListener("click", showTab);
-  byId("utc-date").addEventListener("change", safeTask(loadSessions));
   byId("session").addEventListener("change", safeTask(loadProducts));
   byId("product").addEventListener("change", safeTask(loadOptions));
   byId("channel").addEventListener("change", safeTask(loadRcs));
@@ -367,19 +433,40 @@ async function initialize() {
     else await updateAppearance();
   }));
   updateSettingAvailability();
+  byId("edit-plot").addEventListener("click", () => {
+    if (byId("plot-editor").hidden) openPlotEditor("colors");
+    else closePlotEditor();
+  });
+  byId("close-editor").addEventListener("click", closePlotEditor);
+  byId("editor-colors-tab").addEventListener("click", () => switchEditorTab("colors"));
+  byId("editor-axes-tab").addEventListener("click", () => {
+    switchEditorTab("axes");
+    fillAxisInputs();
+  });
+  byId("rcs-chart").addEventListener("click", editClick);
+  byId("axes-apply").addEventListener("click", safeTask(applyAxisLimits));
+  byId("axes-reset").addEventListener("click", safeTask(async () => {
+    await Plotly.relayout("rcs-chart", {"xaxis.autorange": true, "yaxis.autorange": true});
+    fillAxisInputs();
+  }));
+  byId("plot-editor").addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closePlotEditor();
+  });
   try {
-    const [site, available] = await Promise.all([api("/api/site"), api("/api/dates")]);
+    const site = await api("/api/site");
     byId("station-name").textContent = site.name;
     byId("site-location").textContent =
       "LAT " + site.latitude + "° · LON " + site.longitude +
       "° · ELEV " + site.elevation_m + " m";
-    state.dates = available.dates;
-    populate("utc-date", state.dates.map((value) => ({ value, label: value + " UTC" })));
-    if (state.dates.length) await loadSessions();
-    else {
-      byId("session-title").textContent = "No processed sessions found";
-      setMessage("Check the processed_data directory configured in config.yaml.");
+    const logoBox = byId("footer-logos");
+    for (const logo of (site.logos || [])) {
+      const img = document.createElement("img");
+      img.src = logo.url;
+      img.alt = logo.alt;
+      img.loading = "lazy";
+      logoBox.appendChild(img);
     }
+    await loadSessions();
   } catch (error) { setMessage(error.message, true); }
 }
 
