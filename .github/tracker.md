@@ -569,7 +569,7 @@ and synoptic launch date/time. When supplied, the SCC raw file must set
 `scc_access` Quick Upload field is `sounding_file`.
 
 MILGRAU now includes `milgrau/level0/scc_sounding.py` for optional,
-**default-disabled**, observed Wyoming cache-only sounding staging in
+**policy-configured (now enabled in the SCC example)**, observed Wyoming cache-only sounding staging in
 **new** SCC Level 0 exports. It uses the pre-existing scientific
 radiosonde nearest-synoptic policy and its historical cached
 CSV/JSON metadata; it does not issue weather-provider requests,
@@ -602,7 +602,7 @@ journal migration. All **6/6** cross-platform checks passed in
 [GitHub Actions run 39079349685](https://github.com/spulidar/milgrau/actions/runs/39079349685)
 (Ubuntu/Windows Python 3.12/3.14, Ruff and Explorer); later commits changed
 documentation/tracker only. **No live SCC sounding upload has been tested**.
-The current production incident must first be resolved without sounding.
+The original production incident has now been accepted with LR and downloaded; do not retroactively rewrite it with sounding.
 
 **New 12.7.1 — LIBIDS → LIPANCORA SCC radiosounding handoff (2026-10-17):**
 Confirmed the user's LR-corrected `20240913spu1549` upload was
