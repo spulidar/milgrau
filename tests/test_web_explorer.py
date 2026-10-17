@@ -61,6 +61,7 @@ def test_catalog_reads_config_and_preserves_cross_midnight_session(prepared) -> 
     catalog = Catalog(config_path)
     assert catalog.site["name"] == "SPU-Lidar"
     assert catalog.dates() == ["2024-06-21", "2024-06-20"]
+    assert [row["id"] for row in catalog.all_sessions()] == [SESSION]
     from datetime import date
     assert catalog.sessions(date(2024, 6, 20))[0]["id"] == SESSION
     assert catalog.sessions(date(2024, 6, 21))[0]["id"] == SESSION
@@ -104,6 +105,8 @@ def test_api_serves_ui_catalog_and_selected_l1_data(prepared) -> None:
     assert "Plotly.js" in client.get("/").text
     assert client.get("/static/js/app.js").status_code == 200
     assert client.get("/api/site").json()["id"] == "spu"
+    # New header selects full scientific sessions, not a publication date.
+    assert [row["id"] for row in client.get("/api/sessions").json()["sessions"]] == [SESSION]
     assert client.get("/api/dates").json()["dates"] == ["2024-06-21", "2024-06-20"]
     sessions = client.get("/api/sessions", params={"date": "2024-06-20"}).json()
     assert [s["id"] for s in sessions["sessions"]] == [SESSION]
@@ -134,6 +137,36 @@ def test_api_never_accepts_unregistered_product_paths(prepared) -> None:
         "product": f"{SESSION}_L1.nc", "channel": "532.AN", "statistic": "bad",
     }).status_code == 422
 
+
+
+
+def test_site_serves_only_configured_local_logos(prepared) -> None:
+    config_path, _path, _folder = prepared
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    logo_dir = config_path.parent / "img"
+    logo_dir.mkdir()
+    (logo_dir / "SPU_LOGO.png").write_bytes(b"\\x89PNG\\r\\n\\x1a\\n")
+    config["visualization"]["logos"] = [{"path": "img/SPU_LOGO.png"}]
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    client = TestClient(create_app(str(config_path)))
+    logos = client.get("/api/site").json()["logos"]
+    assert len(logos) == 1
+    assert logos[0]["url"] == "/api/logo/0"
+    assert client.get(logos[0]["url"]).status_code == 200
+    assert client.get("/api/logo/1").status_code == 404
+    assert client.get("/api/logo/-1").status_code == 404
+
+
+def test_all_session_order_is_newest_first(prepared) -> None:
+    config_path, source, folder = prepared
+    new_sid = "spu_20240920-1300Z_20240920-1400Z"
+    new_folder = folder.parent / new_sid
+    new_folder.mkdir()
+    (new_folder / f"{new_sid}_L1.nc").write_bytes(source.read_bytes())
+    client = TestClient(create_app(str(config_path)))
+    sessions = client.get("/api/sessions").json()["sessions"]
+    assert [entry["id"] for entry in sessions] == [new_sid, SESSION]
 
 def test_cli_starts_web_server_without_streamlit(monkeypatch) -> None:
     from milgrau.cli import explorer
