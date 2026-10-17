@@ -161,12 +161,18 @@ def write_scc_lidar_ratio_ancillary(
             ids_var[:] = np.asarray(product_ids, dtype=np.int32)
             lr_var = ds.createVariable("Lidar_Ratio", "f8", ("products", "points"))
             lr_var.units = "sr"
-            lr_var[:, :] = np.asarray(values, dtype=np.float64)[:, None]
+            lr_var[:, :] = np.broadcast_to(
+                np.asarray(values, dtype=np.float64)[:, None],
+                (len(values), altitude.size),
+            )
             err_var = ds.createVariable(
                 "Lidar_Ratio_Error", "f8", ("products", "points"),
             )
             err_var.units = "sr"
-            err_var[:, :] = np.asarray(errors, dtype=np.float64)[:, None]
+            err_var[:, :] = np.broadcast_to(
+                np.asarray(errors, dtype=np.float64)[:, None],
+                (len(errors), altitude.size),
+            )
         os.replace(temp_name, output_path)
     finally:
         if os.path.exists(temp_name):
@@ -175,7 +181,10 @@ def write_scc_lidar_ratio_ancillary(
 
 
 def scc_lr_ancillary_matches(
-    scc_path: Path, raw_attrs: Mapping[str, Any], context: Mapping[str, Any],
+    scc_path: Path,
+    raw_attrs: Mapping[str, Any],
+    context: Mapping[str, Any],
+    catalog: Mapping[str, Any],
 ) -> bool:
     """Verify ancillary identity/content so cached SCC exports cannot go stale."""
     flags = context.get("lr_input", {})
@@ -189,9 +198,6 @@ def scc_lr_ancillary_matches(
     if not ancillary_path.is_file():
         return False
     month = str(raw_attrs["RawData_Start_Date"])[4:6]
-    catalog = context.get("_scc_ancillary_station_catalog")
-    if not isinstance(catalog, Mapping):
-        return False
     try:
         expected_ids, values, errors = _lr_products(
             {"_station_catalog": catalog}, context, month,
