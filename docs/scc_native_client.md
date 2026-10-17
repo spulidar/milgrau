@@ -86,8 +86,17 @@ milgrau-scc upload --dry-run
 # Validate one specific SCC Measurement_ID locally.
 milgrau-scc upload --id 20240913spu1549 --dry-run
 
-# Confirm a single real upload. Requires environment credentials.
+# Conservative sequential live batch, one SCC ID at a time:
+# Submit remote-absent IDs; skip every already-existing remote ID.
+milgrau-scc upload --confirm
+
+# Explicitly opt in to replacing existing remote IDs in batch
+# ONLY after the single-ID destructive trial has been approved and verified.
+milgrau-scc upload --confirm --replace-existing
+
+# Confirm a single real upload, or exact-ID guarded destructive replacement.
 milgrau-scc upload --id 20240913spu1549 --confirm
+milgrau-scc upload --id 20240913spu1549 --replace-existing --confirm
 
 # Local pending files and integrity.
 milgrau-scc status
@@ -110,10 +119,23 @@ milgrau-scc cleanup --id 20240913spu1549 --dry-run
 milgrau-scc cleanup --id 20240913spu1549 --confirm
 ```
 
-There is deliberately no batch live upload, remote delete, force-replace or
-automatic upload in Phase 12.4. The explicit `--id ... --confirm` command
-is necessary to authorize one real network submission. Setting
-`scc.upload.automatic: true` **does not** cause LIBIDS to perform a POST.
+The initial Phase 12.4 only implemented single-ID upload. In Phase 12.7,
+the explicit `upload --confirm` command now supports a **sequential batch**
+of all pending local packages. Local integrity preflight covers the whole
+batch before any network work. By default, pre-existing remote IDs are
+**skipped without deletion or journal ownership claims**. Only
+`upload --confirm --replace-existing` authorizes a batch to replace
+remote-existing IDs after verified original-data backups. A failed,
+interrupted or uncertain operation stops subsequent IDs; partial successes
+remain recorded in the durable journal, and no network POST is retried
+automatically. A final summary reports submitted, replaced, identical,
+skipped, failed and unprocessed counts. Single `--id` operations remain
+available and are the required first live replacement test.
+
+For a current operator workflow and exact runbook, read
+[batch submission and first replacement test](scc_batch_operator_guide.md).
+Setting `scc.upload.automatic: true` **does not** cause LIBIDS to perform
+a POST.
 
 ## Local preflight
 
