@@ -24,6 +24,27 @@ def processed_root_from_config(config_path: str) -> Path:
     return processed_data_root(config, root_dir=config_file.parent)
 
 
+def source_context_from_config(config_path: str = "config.yaml") -> dict[str, Any]:
+    """Resolve the one configured source path and public station metadata.
+
+    No manual directory picker: the source is always config.yaml's processed_data.
+    """
+    config_file = Path(config_path).expanduser().resolve()
+    config = load_config(config_file)
+    station = config.get("_station_catalog", {}).get("station", {})
+    site = station.get("site", {}) if isinstance(station, dict) else {}
+    timezone = str(station.get("timezone", "UTC"))
+    ZoneInfo(timezone)
+    return {
+        "root": processed_data_root(config, root_dir=config_file.parent),
+        "timezone": timezone,
+        "station": str(station.get("name") or station.get("id") or "Lidar station"),
+        "latitude": site.get("latitude"),
+        "longitude": site.get("longitude"),
+        "elevation_m": site.get("station_altitude_m"),
+    }
+
+
 def station_timezone_from_config(config_path: str) -> str:
     """Return station IANA timezone for human session presentation."""
     config_file = Path(config_path).expanduser().resolve()
