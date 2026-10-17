@@ -631,6 +631,13 @@ def build_level0_global_attributes(
         attrs["Measurement_ID"] = scc_measurement_id(
             min_start_utc, str(resolved["station_id"])
         )
+        lr_file = config.get("_scc_lr_file_name")
+        if lr_file is not None:
+            if not isinstance(lr_file, str) or not lr_file.startswith("lr_"):
+                raise ValueError("Invalid SCC lidar-ratio ancillary filename.")
+            if lr_file != f"lr_{attrs['Measurement_ID']}.nc":
+                raise ValueError("SCC LR_File_Name must match the Measurement_ID.")
+            attrs["LR_File_Name"] = lr_file
     if ready:
         attrs["SCC_Configuration_ID"] = int(resolved["scc_configuration_id"])
         attrs["SCC_Configuration_Name"] = str(resolved["scc_configuration_name"])
