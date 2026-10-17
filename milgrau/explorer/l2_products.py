@@ -182,21 +182,16 @@ def render_l2_products(row: dict) -> None:
             horizontal=True,
             key="mg_l2_view",
         )
-        c1, c2, c3 = st.columns([1.35, 1, 1])
+        c1, c2 = st.columns([1.5, 1])
         quantity = c1.selectbox(
             "Propriedade óptica", list(OPTICAL_FIELDS), key="l2_science_qty"
         )
         wavelength = c2.selectbox(
             "Comprimento de onda (nm)", wavelengths, key="l2_science_wave"
         )
-        max_altitude = float(np.nanmax(ds["altitude"].values)) / 1000.0
-        limit = max(0.5, max_altitude)
-        top_km = c3.slider(
-            "Altitude máxima (km)",
-            min_value=0.5, max_value=limit,
-            value=min(15.0, limit), step=0.5,
-            key="mg_l2_top",
-        )
+        # Show the entire scientific altitude range; Plotly handles zoom/pan.
+        # Bounded display sampling still limits browser-side matrix size.
+        top_km = float(np.nanmax(ds["altitude"].values)) / 1000.0
 
         # Selectors inside an expander are still available to Streamlit's
         # state engine, but they occupy no space unless the user needs them.
