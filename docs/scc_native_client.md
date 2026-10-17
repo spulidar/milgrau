@@ -80,6 +80,13 @@ verification is **always on**.
 ## Four operator commands
 
 ```bash
+# Upgrade older local pending caches offline, no server requests.
+milgrau-scc upload --migrate-cache
+
+# After a confirmed portal/API absence and recovery_upload_uncertain,
+# one explicitly authorized upload-only retry (never deletes):
+milgrau-scc upload --id 20240913spu1549 --retry-after-upload --confirm
+
 # Validate every staged packet, offline; no SCC credentials or network needed.
 milgrau-scc upload --dry-run
 
@@ -317,7 +324,7 @@ deleted/replaced.
 does not immediately remove staged files. Remote processing completion is
 observed through read-only status checks; Phase 12.6 downloads verified
 SCC products and removes only eligible disposable staging files.
-An uploaded `raw.nc` packet must not be assumed processed by ELPP/ELDA.
+An uploaded `<Measurement_ID>.nc` packet must not be assumed processed by ELPP/ELDA.
 
 ## Test evidence and outstanding validation
 
