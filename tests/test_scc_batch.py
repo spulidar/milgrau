@@ -180,6 +180,29 @@ def test_accepted_local_id_but_missing_remotely_halts_batch(
     assert submitted == []
 
 
+def test_nineteen_pending_are_sequential_and_cache_is_untouched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    submitted = _stubs(monkeypatch)
+    identities = [f"20240913spu{1500 + offset:04d}" for offset in range(19)]
+    paths = [tmp_path / identity for identity in reversed(identities)]
+    client = Client(existing={identities[0], identities[10]})
+    lines = []
+    report = batch.submit_batch(
+        _config(tmp_path), paths, client, report_line=lines.append,
+    )
+    assert report.successful
+    assert report.total == 19
+    assert report.submitted == 17 and report.skipped_existing == 2
+    assert client.reads == identities
+    assert [identity for identity, _ in submitted] == [
+        identity for identity in identities
+        if identity not in client.existing
+    ]
+    assert lines[0].startswith("Preflight OK: 19/19")
+    assert lines[-1].startswith("[19/19]")
+
+
 def test_cli_routes_batch_without_id_and_prints_summary(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
 ) -> None:
