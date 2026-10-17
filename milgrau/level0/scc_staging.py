@@ -21,6 +21,23 @@ from milgrau.provenance import file_sha256
 _MEASUREMENT_ID = re.compile(r"^\d{8}[a-z0-9]{3}\d{4}$")
 
 
+def scc_raw_filename(measurement_id: str) -> str:
+    """SCC-defined NetCDF basename, both on disk and as multipart filename."""
+    if not _MEASUREMENT_ID.fullmatch(measurement_id):
+        raise ValueError(f"Unsafe SCC Measurement_ID: {measurement_id!r}.")
+    return f"{measurement_id}.nc"
+
+
+def manifest_raw_name(manifest: Mapping[str, Any]) -> str:
+    """Read current files, or identify a *legacy* cache awaiting migration."""
+    new_name = scc_raw_filename(str(manifest["measurement_id"]))
+    files = manifest["files"]
+    names = [name for name in (new_name, "raw.nc") if name in files]
+    if len(names) != 1:
+        raise ValueError("SCC package must reference exactly one raw NetCDF.")
+    return names[0]
+
+
 def scc_staging_root(config: Mapping[str, Any]) -> Path:
     """Return the configured SCC cache, never a scientific output directory."""
     scc = config.get("scc")
@@ -60,8 +77,8 @@ def atomic_scc_package(
     try:
         yield staging
         manifest = staging / "manifest.json"
-        if not manifest.is_file() or not (staging / "raw.nc").is_file():
-            raise ValueError("SCC staging is incomplete: raw.nc and manifest.json are required.")
+        if not manifest.is_file() or not (staging / scc_raw_filename(measurement_id)).is_file():
+            raise ValueError("SCC staging requires <Measurement_ID>.nc and manifest.json.")
         if target.exists():
             raise FileExistsError(f"SCC Measurement_ID collision: {measurement_id}.")
         # Single-filesystem directory rename presents the complete package at once.
@@ -90,7 +107,9 @@ def write_scc_manifest(
     source_measurement_files: list[str] | None = None,
 ) -> dict[str, Any]:
     """Write a local handoff manifest with checksums of the actual upload bytes."""
-    names = ["raw.nc"] + ([] if ancillary_name is None else [ancillary_name])
+    names = [scc_raw_filename(measurement_id)] + (
+        [] if ancillary_name is None else [ancillary_name]
+    )
     checksums = {}
     for name in names:
         path = staging / name
@@ -141,10 +160,11 @@ def validate_pending_scc_package(path: Path) -> dict[str, Any]:
     if manifest.get("state") != "pending":
         raise ValueError("SCC package has invalid local staging state.")
     files = manifest.get("files")
-    if not isinstance(files, dict) or "raw.nc" not in files:
-        raise ValueError("SCC package has no raw.nc entry.")
+    if not isinstance(files, dict):
+        raise ValueError("SCC package has no files mapping.")
+    raw_name = manifest_raw_name(manifest)
     for name, entry in files.items():
-        if Path(name).name != name or name not in {"raw.nc", f"lr_{path.name}.nc"}:
+        if Path(name).name != name or name not in {raw_name, f"lr_{path.name}.nc"}:
             raise ValueError(f"Unsafe/unexpected SCC staged filename: {name!r}.")
         file_path = path / name
         if not file_path.is_file() or file_sha256(file_path) != entry["sha256"]:
