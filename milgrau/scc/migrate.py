@@ -33,7 +33,7 @@ def migrate_pending(
     path = pending_scc_package(config, identity)
     root = state_root(config)
     with operation_lock(root, identity):
-        manifest = validate_upload_package(path)
+        manifest = validate_upload_package(path, allow_legacy_lr=True)
         new_name = scc_raw_filename(identity)
         old_path = path / "raw.nc"
         new_path = path / new_name
@@ -94,7 +94,7 @@ def migrate_pending(
             if Path(temporary).exists():
                 Path(temporary).unlink()
 
-        verified = validate_upload_package(path)
+        verified = validate_upload_package(path, allow_legacy_lr=True)
         if (
             manifest_raw_name(verified) != new_name
             or verified["files"][new_name] != expected
