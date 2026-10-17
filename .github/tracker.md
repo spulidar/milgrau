@@ -1,7 +1,7 @@
 # Phase 12 — Optional SCC integration and publication workflow
 
 **Branch:** `scc-integration-refactor` (base: `milgraumaxxing`)  
-**Status:** Phases 12.1–12.6 implemented and CI validated; Phase 12.7 sequential batch-upload implementation under final cross-platform CI; live upload and same-ID replacement pending operator verification  
+**Status:** Phases 12.1–12.6 implemented and CI validated; Phase 12.7 sequential batch-upload code/mock CI 6/6 passed; live single-ID upload/replacement and full batch pending operator validation  
 **Scope:** SCC configuration, optional export, staging, native upload/status/download/cleanup client.
 This branch's tracker intentionally contains **only Phase 12**. The earlier scientific tracker remains on the base branch.
 
@@ -314,13 +314,16 @@ products are never deleted by SCC cleanup.
 - [ ] **Live controlled single-ID upload and replacement** with explicit operator authorization, including proof that climatological LR was received and ELPP/ELDA completed. This is NOT implied by earlier live read-only SCC downloads.
 - [ ] **Live full 19-packet batch** after controlled upload/replacement validation; retain cache with `cleanup.policy: manual` and `download --keep-cache`.
 
-**CI evidence:** The six-job cross-platform matrix is running on the
-latest batch test commit (Ruff, Explorer, Ubuntu/Windows and Python
-3.12/3.14). Never mark the whole SCC integration released merely because
-mocked integration tests pass. Batch replacement deletes real SCC records and
-has no server-side atomic rollback. Do not execute it until one approved
-single-ID replacement is independently validated, and archives have been
-retained.
+**CI evidence:** All six jobs in
+[GitHub Actions run 39070844616](https://github.com/spulidar/milgrau/actions/runs/39070844616)
+passed on batch test commit `7e71b239539bf1d531d837b68620c8e41bdecf06`
+(Ruff, Explorer, Ubuntu/Windows and Python 3.12/3.14).
+Later commits updated only operator documentation, README and tracker.
+Never mark the full SCC integration released merely because mocked
+integration tests pass. Batch replacement deletes real SCC records and has
+no server-side atomic rollback. Do not execute it until one approved
+single-ID replacement is independently validated, and archives have
+been retained.
 
 ## 12.7 — Validation and release
 
