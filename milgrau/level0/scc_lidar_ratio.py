@@ -102,7 +102,16 @@ def _lr_products(
 
 
 def scc_lr_file_name(measurement_id: str) -> str:
-    return f"lr_{measurement_id}.nc"
+    """SCC deployment requires lr_YYYYMMDDcccNN.nc (NN is two digits).
+
+    Use the UTC start-hour as stable two-digit suffix. A second measurement
+    beginning in the same UTC hour and station/day must be rejected before
+    staging rather than silently reusing its LR name.
+    """
+    from milgrau.level0.scc_staging import scc_raw_filename
+
+    scc_raw_filename(measurement_id)  # validate exact ID grammar
+    return f"lr_{measurement_id[:11]}{measurement_id[11:13]}.nc"
 
 
 def write_scc_lidar_ratio_ancillary(
@@ -127,6 +136,26 @@ def write_scc_lidar_ratio_ancillary(
     start = pd.to_datetime(measurement_rows["start_time_utc"], utc=True).min()
     measurement_id = scc_measurement_id(start, str(context["station_id"]))
     output_path = scc_path.with_name(scc_lr_file_name(measurement_id))
+    # This two-digit SCC ancillary namespace is smaller than Measurement_ID.
+    # Never allow another pending measurement to claim the same ancillary
+    # filename, even when its climatological data happen to be identical.
+    from milgrau.level0.scc_staging import manifest_raw_name, validate_pending_scc_package
+
+    for other in scc_path.parent.parent.glob("*"):
+        if other == scc_path.parent or not other.is_dir() or other.is_symlink():
+            continue
+        if other.name[:11] != measurement_id[:11]:
+            continue
+        old_manifest = validate_pending_scc_package(other)
+        if old_manifest["measurement_id"] == measurement_id:
+            continue
+        old_raw_name = manifest_raw_name(old_manifest)
+        lr_names = set(old_manifest["files"]) - {old_raw_name}
+        if output_path.name in lr_names:
+            raise ValueError(
+                f"SCC ancillary collision: {output_path.name} is already used "
+                f"by {other.name}. Assign a different SCC LR sequence before export."
+            )
     channels = [str(name) for name in lidar_data["channels"]]
     metadata = lidar_data.get("channel_metadata", {})
     bin_widths = [
