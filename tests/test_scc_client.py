@@ -128,7 +128,7 @@ class FakeSession:
         if url.endswith("/data_processing/measurements/quick/"):
             assert kwargs["headers"]["X-CSRFToken"] == "upload-token"
             assert kwargs["data"]["system"] == "1047"
-            assert kwargs["files"]["data"][0] == "raw.nc"
+            assert kwargs["files"]["data"][0] == f"{IDENTITY}.nc"
             assert kwargs["files"]["lidar_ratio_file"][0] == f"lr_{IDENTITY}.nc"
             assert kwargs["files"]["data"][1].read(4)
             if self.fail_post:
