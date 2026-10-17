@@ -41,6 +41,53 @@
         <div class="control"><label for="statistic">Display reduction</label>
           <select id="statistic"><option value="mean">Cell mean</option><option value="max">Cell maximum</option></select></div>
       </div>
+
+      <details class="plot-settings" id="plot-settings">
+        <summary>Plot settings <span class="settings-hint">Color scale, robust limits, log10</span></summary>
+        <div class="settings-grid">
+          <div class="setting">
+            <label for="color-mode">Color limits</label>
+            <select id="color-mode">
+              <option value="robust" selected>Robust (percentiles)</option>
+              <option value="auto">Auto (full range)</option>
+              <option value="manual">Manual (min / max)</option>
+            </select>
+          </div>
+          <div class="setting">
+            <label for="percentile-min">Lower percentile (%)</label>
+            <input type="number" id="percentile-min" min="0" max="100" step="0.5" value="2">
+          </div>
+          <div class="setting">
+            <label for="percentile-max">Upper percentile (%)</label>
+            <input type="number" id="percentile-max" min="0" max="100" step="0.5" value="98">
+          </div>
+          <div class="setting">
+            <label for="color-min">Manual color minimum</label>
+            <input type="text" inputmode="decimal" id="color-min" placeholder="e.g. 1e4" disabled>
+          </div>
+          <div class="setting">
+            <label for="color-max">Manual color maximum</label>
+            <input type="text" inputmode="decimal" id="color-max" placeholder="e.g. 1e7" disabled>
+          </div>
+          <div class="setting">
+            <label for="colorscale">Colormap</label>
+            <select id="colorscale">
+              <option value="Jet">Jet</option>
+              <option value="Turbo">Turbo</option>
+              <option value="Viridis">Viridis</option>
+              <option value="Cividis">Cividis</option>
+              <option value="Plasma">Plasma</option>
+              <option value="Greys">Greys</option>
+            </select>
+          </div>
+          <div class="setting setting-toggle">
+            <label for="log10"><input type="checkbox" id="log10"> Log10 heatmap</label>
+          </div>
+        </div>
+        <p class="scale-status" id="scale-status" role="status" aria-live="polite">
+          Robust P2–P98 of finite displayed cells. No changes to NetCDF data.
+        </p>
+      </details>
       <div id="message" class="message" role="status" aria-live="polite"></div>
       <div class="figure" id="figure">
         <div class="figure-heading">
