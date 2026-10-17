@@ -93,6 +93,12 @@ def _finalize_one(
         manifest = validate_pending_scc_package(path)
         if manifest.get("sounding_stage") != "awaiting_lipancora":
             return f"{identity}: already finalized"
+        catalog_path = config.get("_scc_config_path")
+        if (catalog_path and manifest.get("scc_config_sha256") != file_sha256(catalog_path)):
+            raise ValueError(
+                f"SCC {identity}: scc.yaml changed between LIBIDS and LIPANCORA; "
+                "the pending package cannot be silently rebound to a new configuration."
+            )
         if backup.exists() or backup.is_symlink():
             raise ValueError(
                 f"Interrupted SCC sounding transaction for {identity}: "
