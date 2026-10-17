@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from milgrau.scc.backup import (
-    archive_remote_measurement, remote_fingerprint, verify_archive,
+    archive_remote_measurement, compare_staged_to_archive, remote_fingerprint,
+    verify_archive,
 )
 from milgrau.scc.client import SCCAlreadyExists, SCCRemoteError
 from milgrau.scc.packages import validate_upload_package
