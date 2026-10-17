@@ -118,12 +118,27 @@ def submit(
                 error=f"{type(exc).__name__}: {exc}",
             )
             raise
+        # Read the new authoritative record so the journal cannot retain
+        # the pre-replacement creation timestamp as if it were the new one.
+        try:
+            confirmed = client.measurement(identity)
+            if confirmed is None:
+                raise SCCRemoteError(
+                    "New SCC measurement disappeared after upload confirmation."
+                )
+        except Exception as exc:
+            store.transition(
+                identity, "uncertain", action="post_upload_recheck_failed",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            raise
         store.transition(
             identity, "accepted", action="upload_verified",
-            remote_creation_date=None,
+            remote_creation_date=confirmed.get("creation_date"),
             detail={
                 "remote_page": str(result["remote_page"]),
                 "replacement": replace_existing,
+                "remote_fingerprint": remote_fingerprint(confirmed),
             },
         )
         return result
