@@ -11,7 +11,11 @@ import pytest
 import xarray as xr
 
 from milgrau.io.contracts import validate_level0_contract
-from milgrau.level0.netcdf import build_level0_netcdf, validate_lidar_tensors
+from milgrau.level0.netcdf import (
+    build_level0_netcdf,
+    scc_measurement_id,
+    validate_lidar_tensors,
+)
 
 SESSION_ID = "spu_20240101-0000Z_20240101-0010Z"
 
@@ -94,6 +98,30 @@ def _lidar_data() -> dict:
     }
 
 
+def test_scc_measurement_id_uses_utc_start_and_station_code() -> None:
+    assert scc_measurement_id(
+        pd.Timestamp("2024-09-13T15:49:32Z"), "spu"
+    ) == "20240913spu1549"
+    assert scc_measurement_id(
+        pd.Timestamp("2024-09-13T12:49:32-03:00"), "SPU"
+    ) == "20240913spu1549"
+    with pytest.raises(ValueError, match="three-character"):
+        scc_measurement_id(pd.Timestamp("2024-09-13T15:49:32Z"), "spu-raman")
+    with pytest.raises(ValueError, match="timezone-aware"):
+        scc_measurement_id(pd.Timestamp("2024-09-13T15:49:32"), "spu")
+
+
+def test_primary_level0_never_receives_scc_measurement_id(tmp_path: Path) -> None:
+    output_path = tmp_path / "primary_L0.nc"
+    build_level0_netcdf(
+        str(output_path), SESSION_ID, _lidar_data(), _group_df(tmp_path, False),
+        _weather_data(), _config(), logging.getLogger("test.primary"),
+    )
+    with xr.open_dataset(output_path) as ds:
+        assert ds.attrs["Session_ID"] == SESSION_ID
+        assert "Measurement_ID" not in ds.attrs
+
+
 def test_validate_lidar_tensors_rejects_shape_mismatch() -> None:
     with pytest.raises(ValueError):
         validate_lidar_tensors({"532.AN": np.ones((2, 4)), "532.PC": np.ones((3, 4))}, ["532.AN", "532.PC"])
@@ -103,7 +131,8 @@ def test_build_level0_netcdf_writes_resolved_station_and_scc_metadata(tmp_path: 
     output_path = tmp_path / "level0_scc.nc"
     build_level0_netcdf(
         str(output_path), SESSION_ID, _lidar_data(), _group_df(tmp_path, False),
-        _weather_data(), _config(), logging.getLogger("test")
+        _weather_data(), _config(), logging.getLogger("test"),
+        scc_export=True,
     )
     with xr.open_dataset(output_path) as ds:
         validate_level0_contract(ds)
@@ -116,6 +145,7 @@ def test_build_level0_netcdf_writes_resolved_station_and_scc_metadata(tmp_path: 
         assert ds.attrs["System"] == "SPU-Lidar"
         assert ds.attrs["Station_Profile"] == "spu-test"
         assert ds.attrs["Session_ID"] == SESSION_ID
+        assert ds.attrs["Measurement_ID"] == "20240101spu0000"
         assert ds.attrs["measurement_start_time"] == "2024-01-01T00:00:00Z"
         assert ds.attrs["measurement_end_time"] == "2024-01-01T00:10:00Z"
         assert ds.attrs["session_duration_seconds"] == pytest.approx(600.0)
@@ -164,10 +194,12 @@ def test_grouped_scc_records_source_segments_and_gap_state(tmp_path: Path) -> No
         _weather_data(),
         config,
         logging.getLogger("test.grouped_scc"),
+        scc_export=True,
     )
 
     with xr.open_dataset(output_path) as ds:
         assert ds.attrs["Solar_Regime"] == "day"
+        assert ds.attrs["Measurement_ID"] == "20240101spu0000"
         assert ds.attrs["Source_Segments"] == "seg00,seg02"
         assert int(ds.attrs["Source_Segment_Count"]) == 2
         assert int(ds.attrs["Contains_Time_Gaps"]) == 1
