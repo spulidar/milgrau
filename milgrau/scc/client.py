@@ -297,6 +297,14 @@ class SCCClient:
         """
         manifest = validate_upload_package(path)
         identity = manifest["measurement_id"]
+        from milgrau.level0.scc_staging import scc_raw_filename
+
+        raw_name = scc_raw_filename(identity)
+        if raw_name not in manifest["files"]:
+            raise SCCRemoteError(
+                "SCC pending packet still uses legacy raw.nc. "
+                "Run milgrau-scc upload --migrate-cache before any live upload."
+            )
         if self.measurement(identity) is not None:
             raise SCCAlreadyExists(
                 f"SCC already contains measurement {identity}; remote replacement is disabled."
@@ -307,14 +315,8 @@ class SCCClient:
             raise SCCRemoteError("SCC Quick upload page is unavailable or login expired.")
         token = self._csrf(page)
         with ExitStack() as stack:
-            raw = stack.enter_context(open(path / "raw.nc", "rb"))
-            # Keep raw.nc as the canonical disposable staging filename,
-            # but SCC requires the multipart filename to be Measurement_ID.nc.
-            # The server-side form validates the uploaded *filename* as well as
-            # the NetCDF Measurement_ID attribute.
-            uploads = {
-                "data": (f"{identity}.nc", raw, "application/x-netcdf"),
-            }
+            raw = stack.enter_context(open(path / raw_name, "rb"))
+            uploads = {"data": (raw_name, raw, "application/x-netcdf")}
             lr_name = f"lr_{identity}.nc"
             if lr_name in manifest["files"]:
                 lr_handle = stack.enter_context(open(path / lr_name, "rb"))
@@ -363,7 +365,7 @@ class SCCClient:
                 raise SCCRemoteError(
                     f"SCC Quick upload for {identity} returned to its original "
                     "form rather than the measurement detail page. This commonly "
-                    "means validation rejected raw.nc or LR, but the remote "
+                    "means validation rejected the ID-named NetCDF or LR, but the remote "
                     "outcome is still unconfirmed. Inspect SCC portal/form "
                     "messages; do not retry the POST."
                 )
