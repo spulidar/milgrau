@@ -3,6 +3,10 @@
 # remain in station.yaml. Channel IDs are not product IDs.
 station_id: "spu"
 
+# Public SCC endpoint, never credential values. Authentication comes from env.
+server:
+  base_url: "https://scc.imaa.cnr.it/"
+
 scc_policy:
   lr_input:
     # External LR is applied only to eligible elastic_backscatter products.
