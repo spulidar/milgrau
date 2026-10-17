@@ -26,9 +26,9 @@ relative to the processing configuration. The separate SCC catalog's
 station/profile IDs must match those in `station.yaml`; SCC channel and
 configuration IDs are not scientific identifiers.
 
-Phase 12.1 preserves SCC derivative placement as an interim step.
-Phase 12.3 will move staging to `.cache/scc/` and provide independent
-publication-state tracking.
+Phase 12.3 stages upload packages under `.cache/scc/pending/` rather
+than the scientific session directories. The SCC service client, durable
+submission state, remote download and cleanup will follow in phases 12.4–12.6.
 
 ## Supported channel identity
 
@@ -62,29 +62,69 @@ Optional dark-current data may be supplied through `Background_Profile` plus SCC
 
 A file satisfying an SCC submission schema is therefore not automatically guaranteed to satisfy every MILGRAU scientific prerequisite. LIPANCORA reports missing required acquisition or station-calibration information rather than inventing it.
 
-## MILGRAU `_scc.nc`
+## MILGRAU SCC temporary export (Phase 12.3)
 
-LIBIDS writes `*_scc.nc` with the same Level 0 writer used for the full-channel MILGRAU Level 0, restricted to the SCC channel subset and augmented with SCC identifiers. It is therefore a valid explicit LIPANCORA input.
+The canonical continuous `SESSION_L0.nc` is the scientific Level 0 product.
+SCC upload NetCDFs are **disposable submission derivatives**, only generated
+when `config.yaml` sets `scc.enabled: true`. Each SCC packet is partitioned by
+solar regime **and UTC month**, but the scientific session/segments stay intact.
 
-MILGRAU's primary Level 0 remains the complete continuous scientific session.
-LIBIDS writes at most one SCC interoperability derivative for each solar regime
-present in the session:
+Example (one scientific session with distinct SCC publication pieces):
 
 ```text
-spu_20251107-0900Z_20251107-1500Z_L0.nc
-spu_20251107-0900Z_20251107-1500Z_day_L0_scc.nc
-spu_20251107-0900Z_20251107-1500Z_night_L0_scc.nc
+02-processed_data/spu/2025/09/SESSION/SESSION_L0.nc
+
+.cache/scc/pending/
+  20250930spu2300/
+    raw.nc
+    lr_20250930spu2300.nc
+    manifest.json
+  20251001spu0010/
+    raw.nc
+    lr_20251001spu0010.nc
+    manifest.json
 ```
 
-Contiguous `segXX` identities remain scientific metadata. If a long session is
-`day -> night -> day`, both day segments are written into the same
-`SESSION_day_L0_scc.nc`; their original timestamps and `segment_id(time)`
-values are preserved, so the intervening gap is not filled or presented as
-continuous acquisition. The derivative records `Solar_Regime`,
-`Source_Segments`, `Source_Segment_Count`, and `Contains_Time_Gaps`.
+`raw.nc` includes the SCC global `Measurement_ID`, station/channel
+identifiers, the original `Session_ID`, solar regime, source segment IDs,
+and the applicable reference to `LR_File_Name`. The JSON manifest records
+scientific session, SCC configuration/product IDs, original segment identities,
+UTC dates, source canonical L0 path, the `scc.yaml` SHA-256 and checksums
+of upload bytes. The manifest is **local staging state**, not proof the remote
+SCC received anything.
 
-The day/night SCC configuration is selected from `scc.yaml` using the
-stored solar regime, not a fixed 06/18 clock rule.
+Packages are written in sibling temporary directories and moved atomically
+to `pending/<Measurement_ID>/` only after the raw/ancillary NetCDFs and manifest
+exist. Duplicate `Measurement_ID` values are rejected; existing pending
+packages are **never silently overwritten**. If a raw measurement profile
+*itself* straddles a UTC month boundary, staging fails explicitly rather than
+guessing which monthly LR applies. Distinct profiles across the month boundary
+are partitioned into month-specific SCC submissions.
+
+The scientific L0 incremental validity check does **not** depend on SCC
+staged files. Deleting `.cache/scc/` never forces canonical L0 reprocessing,
+and normal incremental runs do not recreate deleted SCC packages for a
+current scientific session. To explicitly regenerate SCC export packages
+from archived raw data **without rewriting canonical L0**, use:
+
+```bash
+# Requires config.yaml scc.enabled: true, archived raw files and a valid L0.
+milgrau-libids -i spu_20250930-2300Z_20251001-0300Z --scc-reexport
+```
+
+An existing pending package with the same Measurement_ID must be reconciled
+or removed manually before a re-export. CLI `--force` instead explicitly
+reprocesses the canonical scientific L0 and cannot be combined with
+`--scc-reexport`.
+
+Older `*_day_L0_scc.nc` / `*_night_L0_scc.nc` files already saved inside
+`02-processed_data` remain untouched as historical evidence. The new LIBIDS
+does **not** generate, migrate or delete them. Do not delete them as part of
+this refactor without an independently verified retention/migration decision.
+
+A staged packet is **not yet an uploaded packet**. Automatic upload, durable
+submission state and safe cache cleanup are future phases. At present,
+`scc.upload.automatic` does not initiate network communication.
 
 ### SCC upload measurement identity
 
@@ -95,12 +135,11 @@ profile of that SCC solar-regime derivative (UTC), followed by the three-charact
 alphanumeric SCC station code (currently `spu`) and UTC hour/minute. For example,
 a regime starting at 2024-09-13 15:49:32Z is `20240913spu1549`.
 
-The canonical `SESSION_L0.nc` does not acquire `Measurement_ID`. SCC derivatives
-continue to use MILGRAU's descriptive `SESSION_day_L0_scc.nc` and
-`SESSION_night_L0_scc.nc` filenames: current SCC versions do not require a
-specific raw-data filename, though `<Measurement_ID>.nc` is recommended.
-When incremental processing encounters an existing SCC derivative without the
-correct `Measurement_ID`, that derivative is considered stale and regenerated.
+The canonical `SESSION_L0.nc` does not acquire `Measurement_ID`.
+The SCC raw file is named `raw.nc` inside a directory named by its
+`Measurement_ID`. The manifest binds that directory to the scientific
+session and packet contents. Missing or deleted cache files never invalidate
+scientific L0.
 
 For other stations, the SCC station code must be exactly three alphanumeric
 characters; an incompatible station identifier must be mapped explicitly, not
@@ -173,12 +212,11 @@ product IDs cause a clear failure; there is **no** fallback to fabricated
 channel IDs or silent use of fixed SCC_DB values.
 
 A single constant climatology profile cannot represent two UTC calendar months:
-the SCC-only export intentionally fails with an actionable diagnostic when a
-day/night derivative straddles a month boundary; the scientific continuous
-session is unaffected. SCC submissions for that rare case must be split into
-month-specific upload measurements separately. Incremental SCC validation checks
-both the referenced ancillary file and its expected product IDs, month and
-climatology values, so stale or missing ancillary files invalidate the SCC export.
+the SCC-only export partitions the **profile rows** by month and solar regime.
+If an individual raw profile crosses a UTC calendar month, it fails with an
+explicit diagnostic; a profile cannot silently receive the wrong month of
+climatology. Every finalized cached packet has SHA-256 validated upload bytes;
+a missing cache does not make scientific L0 stale.
 
 Upload the raw SCC NetCDF and its matching `lr_<Measurement_ID>.nc` together
 using **Quick upload**, or submit the LR file separately using
@@ -190,20 +228,11 @@ Official specification:
 https://docs.scc.imaa.cnr.it/en/latest/_downloads/f3353a4bea47d541e7cb97788490cac6/NetCDF_input_file_v3_6.pdf
 (Table 4).
 
-Automatic LIPANCORA discovery deliberately processes only the canonical
-`SESSION_L0.nc`. SCC derivatives remain interoperability products and do not
-create competing canonical Level 1 products. They may still be supplied
-explicitly when an SCC-specific regression/interoperability check is required:
-
-```bash
-milgrau-lipancora -i /path/to/spu_20251107-0900Z_20251107-1500Z_night_L0_scc.nc --force
-```
-
-For an explicitly supplied canonical SCC derivative, the resulting
-`SESSION_night_L1_scc.nc` or `SESSION_day_L1_scc.nc` is written in the same
-session directory. For an
-external SCC filename, Level 1 is written beside the source file instead of
-inventing a MILGRAU session hierarchy.
+Automatic LIPANCORA discovery processes the canonical scientific
+`SESSION_L0.nc` only. Cached SCC `raw.nc` files are not scientific inputs.
+Explicit third-party NetCDF processing remains a separate LIPANCORA
+interoperability workflow and must be validated with the appropriate
+station instrument metadata.
 
 ### Real-data regression evidence
 
@@ -216,7 +245,7 @@ This is end-to-end behavioral/regression evidence for the MILGRAU-generated SCC 
 A new station should not require modifications to the generic correction code merely because its SCC channel IDs differ. The station package must instead provide a validated `station.yaml` containing at least:
 
 - site and instrument profile validity periods;
-- SCC channel-ID mappings for the applicable configurations;
+- canonical physical channel names, with SCC channel-ID mappings separately in `scc.yaml`;
 - canonical channel identities;
 - dead-time, bin-shift, background-offset, and saturation-characterization state for each productive channel;
 - any station-owned atmospheric/geometry metadata needed by later stages.
