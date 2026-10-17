@@ -1,0 +1,110 @@
+# SCC-specific integration catalog. Only loaded if config.yaml scc.enabled is true.
+# Scientific instrument parameters and observational lidar-ratio climatology
+# remain in station.yaml. Channel IDs are not product IDs.
+station_id: "spu"
+
+scc_policy:
+  lr_input:
+    # SCC upload LR policy: scc_db (current) or climatology_ancillary.
+    # Enable climatology_ancillary only after the TRUE optical product_IDs
+    # are supplied under profiles[*].scc.{day,night}.elastic_product_ids.
+    # Existing configuration_id and channels are NOT product IDs.
+    source: scc_db
+    fixed_value: 1
+    raman_companions_nm:
+      "355": [387, 408]
+      "532": [530, 607]
+      "1064": []
+
+profiles:
+  spu-apel-2017:
+    day:
+      configuration_id: 248
+      name: "apel config - Day"
+      channels:
+        "532.PC": 716
+        "532.AN": 722
+        "355.PC": 736
+        "355.AN": 737
+        "607.AN": 739
+        "607.PC": 741
+        "387.PC": 748
+        "387.AN": 749
+        "1064.AN": 934
+        "1064.PC": 935
+        "408.AN": 1446
+        "408.PC": 1447
+    night:
+      configuration_id: 294
+      name: "apel config - Night"
+      channels:
+        "532.PC": 716
+        "532.AN": 722
+        "355.PC": 736
+        "355.AN": 737
+        "607.AN": 739
+        "607.PC": 741
+        "387.PC": 748
+        "387.AN": 749
+        "1064.AN": 934
+        "1064.PC": 935
+        "408.AN": 1446
+        "408.PC": 1447
+  spu-raman-2018:
+    day:
+      configuration_id: 565
+      name: "Sao Paolo Lidar - Daytime-19March2018"
+      channels:
+        "1064.AN": 934
+        "532.AN": 1593
+        "355.AN": 1594
+        "530.AN": 1595
+        "387.AN": 1596
+    night:
+      configuration_id: 484
+      name: "SPU-Lidar - Nigthtime19March2018"
+      channels:
+        "532.PC": 716
+        "532.AN": 722
+        "355.PC": 736
+        "355.AN": 737
+        "387.PC": 748
+        "387.AN": 749
+        "1064.AN": 934
+        "1064.PC": 935
+        "408.AN": 1446
+        "408.PC": 1447
+        "530.PC": 1557
+        "530.AN": 1558
+  spu-merionc-2024:
+    day:
+      configuration_id: 1047
+      name: "Sao Paolo Lidar - Daytime-10September2024"
+      channels:
+        "532.AN": 4069
+        "532.PC": 4070
+        "1064.AN": 4071
+        "355.PC": 4072
+        "355.AN": 4073
+    night:
+      configuration_id: 1046
+      name: "SPU-Lidar - Nigthtime-10September2024"
+      channels:
+        "532.AN": 4069
+        "532.PC": 4070
+        "1064.AN": 4071
+        "355.PC": 4072
+        "355.AN": 4073
+        "530.PC": 4074
+        "530.AN": 4075
+        "387.AN": 4076
+        "387.PC": 4077
+
+raman_channel_overrides:
+  spu-merionc-2024:
+    "387":
+        scc_night_channel_ids: {AN: 4076, PC: 4077}
+    "408":
+        scc_mapping_status: "published_current_identity_not_exposed_in_scc_1046"
+    "530":
+        scc_night_channel_ids: {AN: 4075, PC: 4074}
