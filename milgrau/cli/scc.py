@@ -22,6 +22,10 @@ def _parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
     upload = sub.add_parser("upload", help="Validate or explicitly submit an SCC packet.")
     upload.add_argument("--id", dest="identity", help="Exact 15-character SCC Measurement_ID.")
+    upload.add_argument(
+        "--replace-existing", action="store_true",
+        help="Destructively replace existing SCC record under same ID after VERIFIED remote backup.",
+    )
     action = upload.add_mutually_exclusive_group(required=True)
     action.add_argument(
         "--dry-run", action="store_true",
@@ -64,6 +68,10 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
     if not packages:
         print("No SCC packages are staged in .cache/scc/pending/.")
         return 0 if args.dry_run else 1
+    if args.replace_existing and (args.dry_run or not args.confirm or not args.identity):
+        raise ValueError(
+            "--replace-existing requires --id ID --confirm; it cannot run in dry-run."
+        )
     if args.confirm and (not args.identity or len(packages) != 1):
         raise ValueError(
             "Actual upload requires --id MEASUREMENT_ID --confirm "
@@ -88,12 +96,16 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
     # Validate full package before touching any network resources.
     path = Path(packages[0])
     validate_upload_package(path)
+    from milgrau.scc.workflow import submit
+
     client = _client(config)
-    result = client.upload_package(path)
+    result = submit(
+        config, path, client, replace_existing=args.replace_existing,
+    )
     print(
         f"SCC API confirmed {result['measurement_id']}: {result['remote_page']}. "
-        "Files remain pending locally; durable status tracking/cleanup "
-        "will be added in Phases 12.5–12.6."
+        "Submission is journalled in .state/scc; cached files remain "
+        "until safe cleanup is available in Phase 12.6."
     )
     return 0
 
@@ -117,12 +129,41 @@ def _status(config: dict[str, Any], args: argparse.Namespace) -> int:
             return 1
     if not packages:
         print("No matching local SCC pending packets.")
-    if args.remote:
-        record = _client(config).measurement(args.identity)
-        print(
-            f"remote {args.identity}: "
-            + ("NOT FOUND" if record is None else str(record))
+    from milgrau.scc.state import SubmissionStore, state_root
+    from milgrau.scc.workflow import reconcile_status
+
+    with SubmissionStore(state_root(config)) as store:
+        recorded = (
+            [row] if args.identity and (row := store.get(args.identity)) is not None
+            else ([] if args.identity else store.list())
         )
+        for row in recorded:
+            print(
+                f"journal {row['measurement_id']}: state={row['state']}; "
+                f"session={row['scientific_session_id']}; "
+                f"archive={row['archive_path'] or '-'}"
+            )
+        if args.remote:
+            record = _client(config).measurement(args.identity)
+            reconcile_status(store, args.identity, record)
+            if record is None:
+                print(f"remote {args.identity}: NOT FOUND")
+            else:
+                system = record.get("system")
+                config_id = system.get("id") if isinstance(system, dict) else None
+                print(
+                    f"remote {args.identity}: present; configuration={config_id}; "
+                    f"start={record.get('start')}; stop={record.get('stop')}; "
+                    f"queued={record.get('is_queued')}; "
+                    f"running={record.get('is_being_processed')}; "
+                    f"ELPP={record.get('elpp')}; ELDA={record.get('elda')}"
+                )
+                row = store.get(args.identity)
+                if row is not None and row['state'] == 'uncertain':
+                    print(
+                        "ATTENTION: journal remains uncertain; no automatic "
+                        "retry or replacement is permitted."
+                    )
     return 0
 
 
