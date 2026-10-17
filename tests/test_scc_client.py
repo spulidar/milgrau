@@ -109,7 +109,13 @@ class FakeSession:
             return FakeResponse(
                 200 if self.duplicate or self.uploaded else 404,
                 url,
-                data={"id": IDENTITY} if self.duplicate or self.uploaded else None,
+                data={
+                    "id": IDENTITY,
+                    "system": {"id": 1047},
+                    "creation_date": "2026-10-17T14:29:53",
+                    "start": "2024-09-13T15:49:32",
+                    "stop": "2024-09-13T17:50:42",
+                } if self.duplicate or self.uploaded else None,
             )
         raise AssertionError(f"Unexpected GET {url}")
 
