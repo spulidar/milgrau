@@ -147,7 +147,7 @@ Products are grouped by the UTC month in which the session starts:
 ```
 
 SCC integration is disabled by default (`config.yaml: scc.enabled: false`).
-When enabled, LIBIDS can stage an upload-ready `raw.nc`, optional
+When enabled, LIBIDS can stage an upload-ready `<Measurement_ID>.nc`, optional
 `lr_<Measurement_ID>.nc` and checksum `manifest.json` in
 `.cache/scc/pending/<Measurement_ID>/`:
 
@@ -166,6 +166,7 @@ historic scc_access package). Install and validate existing packets offline:
 
 ```bash
 python -m pip install -e ".[scc]"
+milgrau-scc upload --migrate-cache  # local-only migration of existing pending raw.nc
 milgrau-scc upload --dry-run
 milgrau-scc status
 ```
