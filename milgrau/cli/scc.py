@@ -41,6 +41,11 @@ def _parser() -> argparse.ArgumentParser:
         help="Migrate staged raw.nc to Measurement_ID.nc for one or all IDs; offline only.",
     )
     action.add_argument(
+        "--repair-lr-cache", action="store_true",
+        help="Offline: fix rejected LR filename and raw LR_File_Name; retain original "
+             "cache bytes and audit journal hashes, no SCC POST.",
+    )
+    action.add_argument(
         "--confirm", action="store_true",
         help="Authorize SCC upload: one --id, or all local pending IDs sequentially if --id omitted.",
     )
@@ -96,7 +101,7 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
     packages = discover_pending(config, args.identity)
     if not packages:
         print("No SCC packages are staged in .cache/scc/pending/.")
-        return 0 if args.dry_run or args.migrate_cache else 1
+        return 0 if args.dry_run or args.migrate_cache or args.repair_lr_cache else 1
     if args.resume_after_delete and (
         not args.confirm or not args.identity
         or args.replace_existing or args.retry_after_upload
@@ -125,6 +130,22 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
             changed += int(migrated)
         print(f"Local cache: {changed} migrated, {len(packages)-changed} already current; "
               "no SCC network requests, raw bytes or LR modified.")
+        return 0
+    if args.repair_lr_cache:
+        if args.replace_existing or args.resume_after_delete or args.retry_after_upload:
+            raise ValueError("Local LR cache repair cannot authorize any SCC operation.")
+        from milgrau.scc.lr_repair import repair_lr_cache
+
+        changed = 0
+        for path in packages:
+            _, repaired = repair_lr_cache(config, path.name)
+            print(f"{'REPAIRED' if repaired else 'ALREADY CURRENT'} LR {path.name}")
+            changed += int(repaired)
+        print(
+            f"Local LR repair: {changed} repaired, "
+            f"{len(packages) - changed} already current; "
+            "SCC not contacted, original cache saved."
+        )
         return 0
     if args.replace_existing and args.dry_run:
         raise ValueError(
