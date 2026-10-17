@@ -17,7 +17,9 @@ scc:
     timeout_seconds: 60
     retries: 2
   cleanup:
-    policy: "after_download"
+    # Retain pending SCC input packets after verified result downloads.
+    # Clean only with an explicit milgrau-scc cleanup command.
+    policy: "manual"
 
 project:
   name: "MILGRAU"
