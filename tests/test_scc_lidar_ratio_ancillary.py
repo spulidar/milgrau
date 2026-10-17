@@ -98,6 +98,10 @@ def test_scc_monthly_climatology_writes_exact_ancillary_schema(tmp_path: Path) -
     assert scc_lr_ancillary_matches(output, attrs, context, config["_station_catalog"])
     attrs["LR_File_Name"] = "lr_wrong.nc"
     assert not scc_lr_ancillary_matches(output, attrs, context, config["_station_catalog"])
+    attrs["LR_File_Name"] = path.name
+    with nc.Dataset(path, "a") as ds:
+        ds["product_ID"][0] = 999999
+    assert not scc_lr_ancillary_matches(output, attrs, context, config["_station_catalog"])
 
 
 def test_night_raman_wavelengths_are_not_overwritten(tmp_path: Path) -> None:
@@ -109,6 +113,18 @@ def test_night_raman_wavelengths_are_not_overwritten(tmp_path: Path) -> None:
         np.testing.assert_array_equal(ds.variables["product_ID"][:], [3683])
         np.testing.assert_allclose(ds.variables["Lidar_Ratio"][:, :], 33.44)
         assert ds.dimensions["products"].size == 1
+
+
+def test_ancillary_altitude_covers_longest_detector_range(tmp_path: Path) -> None:
+    config, context, group, lidar, output = _setup(tmp_path)
+    lidar["tensors"]["532.PC"] = np.ones((2, 40))
+    lidar["channel_metadata"]["532.PC"]["bin_width_m"] = 30.0
+    path = write_scc_lidar_ratio_ancillary(output, group, lidar, config, context)
+    assert path is not None
+    with nc.Dataset(path) as ds:
+        altitude = np.asarray(ds["Altitude"][:])
+        assert altitude[-1] > 40 * 30.0
+        np.testing.assert_allclose(np.diff(altitude), 7.5)
 
 
 def test_missing_real_product_id_fails_before_creating_file(tmp_path: Path) -> None:
