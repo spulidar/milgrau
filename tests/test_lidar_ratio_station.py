@@ -37,6 +37,8 @@ def test_explicit_config_lidar_ratio_remains_compatibility_fallback_without_stat
     base["inversion"]["lidar_ratios_sr"] = {"532": {f"{month:02d}": 61.0 for month in range(1, 13)}}
     base["inversion"]["lidar_ratio_std_sr"] = {"532": 7.0}
     base["station_config"] = "station.yaml"
+    # This is a scientific fallback test, without SCC climatology integration.
+    base["scc"]["enabled"] = False
 
     config_path = tmp_path / "config.yaml"
     station_path = tmp_path / "station.yaml"
