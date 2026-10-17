@@ -177,7 +177,15 @@ backup of the original SCC raw measurement, LR (when present) and downloadable
 processed products. A durable journal under `.state/scc/` records status,
 checksums, backups and interrupted attempts independently of the disposable
 `.cache/scc/` staging area. Uploads are never automatically initiated by
-LIBIDS. Remote download/cleanup remain gated until Phase 12.6.
+LIBIDS. Phase 12.6 adds verified read-only SCC result downloads into each
+scientific session's separate `scc-results/<Measurement_ID>/generations/`
+archive, and conservative cache-only cleanup after confirmed MILGRAU uploads.
+Use `milgrau-scc download --id ID --session SESSION_ID --keep-cache` for
+a previously existing SCC record; this does **not** authorize cleanup of its
+pending local package. For a MILGRAU-journal-confirmed upload, a successful
+`download --id ID` automatically cleans only its verified staging cache
+when `scc.cleanup.policy: after_download`. Use `--keep-cache` to prevent
+automatic deletion or `milgrau-scc cleanup --id ID --dry-run` to preview.
 See [SCC client usage, recovery and security](docs/scc_native_client.md).
 
 The primary CLIs accept a session ID, a station-local civil date, or an
