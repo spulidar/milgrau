@@ -10,9 +10,9 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from plotly.offline import get_plotlyjs
 
-from milgrau.web.catalog import Catalog
-from milgrau.web.rcs import options, rcs_map
-from milgrau.web.views import (
+from milgrau.explorer.catalog import Catalog
+from milgrau.explorer.rcs import options, rcs_map
+from milgrau.explorer.views import (
     metadata_view, profile_options, profile_view, qa_options, qa_series, session_overview,
 )
 

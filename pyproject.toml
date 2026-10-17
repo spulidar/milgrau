@@ -59,7 +59,7 @@ version = {attr = "milgrau.version.__version__"}
 include = ["milgrau*"]
 
 [tool.setuptools.package-data]
-"milgrau.web" = ["static/*.html", "static/css/*.css", "static/js/*.js"]
+"milgrau.explorer" = ["static/*.html", "static/css/*.css", "static/js/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

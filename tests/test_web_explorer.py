@@ -9,9 +9,9 @@ import xarray as xr
 import yaml
 from fastapi.testclient import TestClient
 
-from milgrau.web.app import create_app
-from milgrau.web.catalog import Catalog
-from milgrau.web.rcs import rcs_map
+from milgrau.explorer.app import create_app
+from milgrau.explorer.catalog import Catalog
+from milgrau.explorer.rcs import rcs_map
 
 SESSION = "spu_20240620-2103Z_20240621-0848Z"
 

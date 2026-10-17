@@ -7,10 +7,10 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const code = fs.readFileSync(
-  path.join(__dirname, "../milgrau/web/static/js/app.js"), "utf8"
+  path.join(__dirname, "../milgrau/explorer/static/js/app.js"), "utf8"
 );
 const html = fs.readFileSync(
-  path.join(__dirname, "../milgrau/web/static/index.html"), "utf8"
+  path.join(__dirname, "../milgrau/explorer/static/index.html"), "utf8"
 );
 for (const id of ["session", "plot-editor", "edit-plot", "editor-colors",
                    "editor-axes", "color-mode", "percentile-min", "percentile-max",
@@ -97,7 +97,7 @@ async function run() {
   }
   assert(html.includes('src="/static/js/views.js"'), "Missing supplementary view renderer");
   assert(html.includes('id="detail-panel"'), "Missing view panel");
-  const views = fs.readFileSync(path.join(__dirname, "../milgrau/web/static/js/views.js"), "utf8");
+  const views = fs.readFileSync(path.join(__dirname, "../milgrau/explorer/static/js/views.js"), "utf8");
   for (const endpoint of ["/overview", "/metadata", "/profiles/", "/qa/options", "/qa"]) {
     assert(views.includes(endpoint), "Missing endpoint for real saved view: " + endpoint);
   }

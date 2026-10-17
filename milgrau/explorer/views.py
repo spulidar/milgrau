@@ -15,7 +15,7 @@ import xarray as xr
 
 from milgrau.cli.inspect import _session_summary
 from milgrau.io.paths import session_id_parts
-from milgrau.web.catalog import Catalog
+from milgrau.explorer.catalog import Catalog
 
 ATMOSPHERE = {
     "Atmospheric_Temperature_K": "Atmospheric temperature",

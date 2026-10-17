@@ -5,7 +5,7 @@ import argparse
 
 import uvicorn
 
-from milgrau.web.app import create_app
+from milgrau.explorer.app import create_app
 
 
 def main() -> int:

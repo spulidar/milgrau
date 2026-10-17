@@ -8,7 +8,7 @@ import yaml
 from fastapi.testclient import TestClient
 from pathlib import Path
 
-from milgrau.web.app import create_app
+from milgrau.explorer.app import create_app
 
 SESSION = "spu_20240620-2103Z_20240621-0848Z"
 

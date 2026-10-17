@@ -86,13 +86,13 @@ build is required: Plotly.js is served from the installed Python package.
 
 ## Internal responsibilities
 
-- `milgrau/web/catalog.py`: filename-only session discovery, UTC sorting and product IDs.
-- `milgrau/web/rcs.py`: L1-only channel selection and bounded display reads.
-- `milgrau/web/views.py`: inspect-compatible session summary and bounded
+- `milgrau/explorer/catalog.py`: filename-only session discovery, UTC sorting and product IDs.
+- `milgrau/explorer/rcs.py`: L1-only channel selection and bounded display reads.
+- `milgrau/explorer/views.py`: inspect-compatible session summary and bounded
   metadata, atmospheric, optical and QA read-only endpoints.
-- `milgrau/web/static/js/views.js`: tab-specific UI and interactive Plotly profiles.
-- `milgrau/web/app.py`: FastAPI endpoints and local bundled frontend.
-- `milgrau/web/static/`: independent HTML/CSS/JavaScript visual interface.
+- `milgrau/explorer/static/js/views.js`: tab-specific UI and interactive Plotly profiles.
+- `milgrau/explorer/app.py`: FastAPI endpoints and local bundled frontend.
+- `milgrau/explorer/static/`: independent HTML/CSS/JavaScript visual interface.
 - `milgrau/cli/explorer.py`: main CLI entrypoint.
 
 The backend accepts registered session/product identifiers, never arbitrary
