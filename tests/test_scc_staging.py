@@ -32,7 +32,7 @@ def _config(tmp_path: Path) -> dict:
 
 def _stage(config: dict, identity: str = "20251001spu0000") -> Path:
     with atomic_scc_package(config, identity) as work:
-        (work / "raw.nc").write_bytes(b"staged netcdf content")
+        (work / f"{identity}.nc").write_bytes(b"staged netcdf content")
         write_scc_manifest(
             work,
             measurement_id=identity,
@@ -58,9 +58,9 @@ def test_complete_pending_package_and_manifest_checksum(tmp_path: Path) -> None:
     assert target == scc_staging_root(config) / "pending" / "20251001spu0000"
     assert manifest["scc_product_ids"] == [3683]
     assert manifest["scientific_session_id"] == "spu_20251001-0000Z_20251001-0400Z"
-    assert manifest["files"]["raw.nc"]["size_bytes"] > 0
+    assert manifest["files"]["20251001spu0000.nc"]["size_bytes"] > 0
     assert not list(target.parent.glob(".*"))
-    (target / "raw.nc").write_bytes(b"tampered")
+    (target / "20251001spu0000.nc").write_bytes(b"tampered")
     with pytest.raises(ValueError, match="checksum"):
         validate_pending_scc_package(target)
 
@@ -69,7 +69,7 @@ def test_staging_failures_leave_no_visible_or_partial_packages(tmp_path: Path) -
     config = _config(tmp_path)
     with pytest.raises(RuntimeError, match="simulated"):
         with atomic_scc_package(config, "20251001spu0000") as work:
-            (work / "raw.nc").write_bytes(b"partial")
+            (work / "20251001spu0000.nc").write_bytes(b"partial")
             raise RuntimeError("simulated failure")
     assert not pending_scc_package(config, "20251001spu0000").exists()
     assert not list((scc_staging_root(config) / "pending").glob(".*"))
@@ -78,11 +78,11 @@ def test_staging_failures_leave_no_visible_or_partial_packages(tmp_path: Path) -
 def test_pending_identity_collision_must_not_replace_original_bytes(tmp_path: Path) -> None:
     config = _config(tmp_path)
     target = _stage(config)
-    digest = validate_pending_scc_package(target)["files"]["raw.nc"]["sha256"]
+    digest = validate_pending_scc_package(target)["files"]["20251001spu0000.nc"]["sha256"]
     with pytest.raises(FileExistsError, match="already staged"):
         with atomic_scc_package(config, "20251001spu0000"):
             pass
-    assert validate_pending_scc_package(target)["files"]["raw.nc"]["sha256"] == digest
+    assert validate_pending_scc_package(target)["files"]["20251001spu0000.nc"]["sha256"] == digest
     with pytest.raises(ValueError, match="Unsafe SCC Measurement_ID"):
         pending_scc_package(config, "../20251001spu0000")
 
