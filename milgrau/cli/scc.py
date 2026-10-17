@@ -31,6 +31,11 @@ def _parser() -> argparse.ArgumentParser:
         help="One explicit same-ID upload-only retry after recovery_upload_uncertain; "
              "requires --id ID --confirm, never deletes or runs in batch.",
     )
+    upload.add_argument(
+        "--retry-after-lr-fix", action="store_true",
+        help="One explicitly confirmed same-ID POST after journalled LR filename repair; "
+             "never deletes, never retries automatically or runs in batch.",
+    )
     action = upload.add_mutually_exclusive_group(required=True)
     action.add_argument(
         "--dry-run", action="store_true",
@@ -105,6 +110,7 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
     if args.resume_after_delete and (
         not args.confirm or not args.identity
         or args.replace_existing or args.retry_after_upload
+        or args.retry_after_lr_fix
     ):
         raise ValueError(
             "--resume-after-delete requires exactly --id ID --confirm; "
@@ -113,13 +119,24 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
     if args.retry_after_upload and (
         not args.confirm or not args.identity
         or args.replace_existing or args.resume_after_delete
+        or args.retry_after_lr_fix
     ):
         raise ValueError(
             "--retry-after-upload requires exactly --id ID --confirm; "
             "never use it with batch, --replace-existing or --resume-after-delete."
         )
+    if args.retry_after_lr_fix and (
+        not args.confirm or not args.identity
+        or args.replace_existing or args.resume_after_delete
+        or args.retry_after_upload
+    ):
+        raise ValueError(
+            "--retry-after-lr-fix requires --id ID --confirm, "
+            "never batch/replace/another retry mode."
+        )
     if args.migrate_cache:
-        if args.replace_existing or args.resume_after_delete or args.retry_after_upload:
+        if (args.replace_existing or args.resume_after_delete
+                or args.retry_after_upload or args.retry_after_lr_fix):
             raise ValueError("Cache migration never combines with remote upload options.")
         from milgrau.scc.migrate import migrate_pending
 
@@ -204,6 +221,10 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
         result = resume_after_uncertain_delete(config, path, client)
     elif args.retry_after_upload:
         result = retry_rejected_recovery_upload(config, path, client)
+    elif args.retry_after_lr_fix:
+        result = retry_rejected_recovery_upload(
+            config, path, client, after_lr_fix=True,
+        )
     else:
         result = submit(
             config, path, client, replace_existing=args.replace_existing,
