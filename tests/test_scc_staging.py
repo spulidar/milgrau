@@ -11,6 +11,7 @@ import pandas as pd
 import pytest
 
 from milgrau.level0 import libids, processing
+from milgrau.operations import ExecutionStatus
 from milgrau.level0.scc_staging import (
     atomic_scc_package,
     pending_scc_package,
@@ -221,7 +222,7 @@ def test_scc_only_reexport_never_writes_canonical_level0(
     result = processing.process_session_group(
         session, group, config, logging.getLogger("test.scc.only"), scc_only=True,
     )
-    assert result.ok
+    assert result.status is ExecutionStatus.OK
     assert result.metadata["scc_export_count"] == 1
     assert original.read_bytes() == b"untouched scientific L0"
 
