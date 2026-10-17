@@ -205,13 +205,23 @@ def test_ambiguous_post_is_never_retried(tmp_path: Path) -> None:
     assert len([url for url, _ in fake.posts if url.endswith("/quick/")]) == 1
 
 
-def test_real_cli_send_requires_exact_id_and_confirm(
+def test_real_cli_send_batch_without_id_and_keep_single_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
+) -> None:
+    _stage(tmp_path)
+    monkeypatch.setattr(cli, "load_config", lambda: _config(tmp_path))
+    monkeypatch.setattr(cli, "_client", lambda _: _client(FakeSession()))
+    assert cli.main(["upload", "--confirm"]) == 0
+    assert "Batch summary: total=1; submitted=1" in capsys.readouterr().out
+    assert pending_scc_package(_config(tmp_path), IDENTITY).is_dir()
+
+
+def test_explicit_single_id_still_uploads(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _stage(tmp_path)
     monkeypatch.setattr(cli, "load_config", lambda: _config(tmp_path))
     monkeypatch.setattr(cli, "_client", lambda _: _client(FakeSession()))
-    assert cli.main(["upload", "--confirm"]) == 1
     assert cli.main(["upload", "--id", IDENTITY, "--confirm"]) == 0
 
 
