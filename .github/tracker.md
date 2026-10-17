@@ -115,7 +115,8 @@ validate dark-current availability for affected sessions before live upload.
 
 - [x] Add `.[scc]` extra and `milgrau-scc` CLI with only `upload`, `status`, `download`, `cleanup`.
 - [x] Implement protocol based on SCC's public documented authenticated Quick upload form, optical ancillary field and measurement API, including HTTPS/TLS, CSRF protection, timeouts, safe bounded GET retries, duplicate rejection and no automatic POST retries.
-- [ ] **Live-server protocol/authentication validation** with the SPU operator and actual SCC deployment; code/mock testing does not establish real upload acceptance.
+- [x] **Live read-only SCC authentication + API validation:** operator successfully authenticated and queried an existing SCC measurement (20240913spu1549, configuration 1047).
+- [ ] **Live multipart upload validation:** not performed; do not attempt the above Measurement_ID because it already exists on SCC.
 - [x] Keep credentials out of repository and configuration files (website and optional HTTP Basic credentials only from environment).
 - [x] Validate pending submission and support `upload --dry-run` entirely offline, without credentials.
 - [x] Submit raw and optional climatological LR together; verify remote Measurement_ID before reporting success; test all network interactions with mocks.
@@ -137,17 +138,26 @@ a real SPU SCC login/upload is still required before declaring live compatibilit
 
 **Real local CLI validation (2026-10-17):** Operator installed `.[scc]` after updating the branch and ran `milgrau-scc upload --dry-run` and `milgrau-scc status` successfully on **19/19** pending uploads (**9** SCC day configuration 1047, **10** SCC night configuration 1046); each package includes `raw.nc` plus a climatological `lr_<Measurement_ID>.nc`. No network request was made or required. **Next:** read-only SCC login/measurement-status check with environment-only credentials; actual remote Quick upload is still unverified.
 
-**Live read-only authentication test (2026-10-17):** local
-`milgrau-scc status --id 20240913spu1549 --remote` confirmed staged
-package integrity but returned **HTTP 401 on the initial GET to
-`/accounts/login/`**, before posting SCC website credentials. The
-SCC reference client documents a separate HTTP Basic gateway credential
-pair; this pair was not yet confirmed in the operator's environment.
-The native client now emits a specific pre-website 401 diagnosis and tests
-that no login POST or measurement upload occurs. **Open blocker:**
-verify the SCC HTTPS origin and provide the operator's existing Basic
-credentials (or request them from the SCC administrator); repeat read-only
-authentication before any remote upload. No real upload occurred.
+**Live read-only authentication test (2026-10-17):** An initial
+`status --id 20240913spu1549 --remote` received HTTP 401 at the
+pre-website login layer. After configuring access, the same read-only command
+**succeeded** and returned the full SCC JSON for existing measurement
+`20240913spu1549` (SPU, configuration 1047, start
+2024-09-13T15:49:32, stop 2024-09-13T17:50:42). The record reports
+`is_being_processed: false`, `is_queued: false` and successful
+`exit_code: 0` for ELPP, ELDA, Cloudmask, ELIC, ELQUICK and HiRELPP;
+ELDEC has no results. The remote measurement record was created
+2026-10-17T14:29:53. The remote system's `products` also includes
+product 3687 of type 'High Resolution pre-processed data', which is
+**not** an additional elastic optical backscatter product and therefore
+is outside the 30-product optical registry as currently scoped.
+
+**Evidence limits:** successful read-only authentication and remote processing
+of an **existing** measurement do not establish that the MILGRAU native
+multipart uploader was used or that its LR ancillary was accepted; do not
+re-upload this ID. The next live-test candidate must first be verified absent
+on the remote SCC, with operator approval. The 19 locally staged files remain
+untouched. No remote upload was performed by this development session.
 
 **Gate 12.4:** Offline client and authentication mocks pass; real upload remains
 explicitly opt-in. Live integration validation is tracked separately in 12.7.
