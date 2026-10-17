@@ -201,13 +201,17 @@ def resume_after_uncertain_delete(
 
         files = manifest["files"]
         raw_name = manifest_raw_name(manifest)
-        lr_name = next((name for name in files if name != raw_name), None)
+        lr_name = next((name for name in files if name.startswith("lr_")), None)
         if (
             row["scientific_session_id"] != manifest["scientific_session_id"]
             or row["configuration_id"] != manifest["scc_configuration_id"]
             or row["raw_sha256"] != files[raw_name]["sha256"]
             or row["lr_sha256"] != (
                 files[lr_name]["sha256"] if lr_name else None
+            )
+            or row["sounding_sha256"] != next(
+                (v["sha256"] for name, v in files.items()
+                 if name.startswith("rs_")), None,
             )
             or row["start_utc"] != manifest["measurement_start_utc"]
             or row["stop_utc"] != manifest["measurement_stop_utc"]
@@ -350,13 +354,17 @@ def retry_rejected_recovery_upload(
         if not required.issubset({event["action"] for event in events}):
             raise SCCRemoteError("Incomplete original SCC recovery audit trail.")
         files = manifest["files"]
-        lr_name = next((name for name in files if name != raw_name), None)
+        lr_name = next((name for name in files if name.startswith("lr_")), None)
         if (
             row["scientific_session_id"] != manifest["scientific_session_id"]
             or row["configuration_id"] != manifest["scc_configuration_id"]
             or row["raw_sha256"] != files[raw_name]["sha256"]
             or row["lr_sha256"] != (
                 files[lr_name]["sha256"] if lr_name else None
+            )
+            or row["sounding_sha256"] != next(
+                (v["sha256"] for name, v in files.items()
+                 if name.startswith("rs_")), None,
             )
             or row["start_utc"] != manifest["measurement_start_utc"]
             or row["stop_utc"] != manifest["measurement_stop_utc"]
