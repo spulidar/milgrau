@@ -164,7 +164,9 @@ def validate_pending_scc_package(path: Path) -> dict[str, Any]:
         raise ValueError("SCC package has no files mapping.")
     raw_name = manifest_raw_name(manifest)
     for name, entry in files.items():
-        if Path(name).name != name or name not in {raw_name, f"lr_{path.name}.nc"}:
+        if Path(name).name != name or name not in {
+            raw_name, f"lr_{path.name}.nc", f"lr_{path.name[:13]}.nc",
+        }:
             raise ValueError(f"Unsafe/unexpected SCC staged filename: {name!r}.")
         file_path = path / name
         if not file_path.is_file() or file_sha256(file_path) != entry["sha256"]:
