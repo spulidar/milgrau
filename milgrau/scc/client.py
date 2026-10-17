@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import time
 from contextlib import ExitStack
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping
 from urllib.parse import urljoin, urlsplit
 
@@ -28,9 +28,9 @@ class SCCAlreadyExists(SCCRemoteError):
 @dataclass(frozen=True)
 class SCCCredentials:
     website_username: str
-    website_password: str
+    website_password: str = field(repr=False)
     basic_username: str | None = None
-    basic_password: str | None = None
+    basic_password: str | None = field(default=None, repr=False)
 
     @classmethod
     def from_environment(cls) -> "SCCCredentials":
