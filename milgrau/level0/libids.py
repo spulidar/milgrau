@@ -19,6 +19,7 @@ from milgrau.io.selection import parse_input_selection, select_available_session
 from milgrau.level0.common import incremental_enabled
 from milgrau.level0.config import resolve_level0_config, validate_level0_config
 from milgrau.level0.inventory import build_session_inventory
+from milgrau.level0.netcdf import scc_measurement_id
 from milgrau.level0.processing import process_session_group
 from milgrau.level0.quality import filter_laser_shots
 from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary
@@ -95,6 +96,16 @@ def _scc_output_satisfies_context(path: Path, context: Mapping) -> bool:
     try:
         with xr.open_dataset(path, mask_and_scale=False) as ds:
             if "channel_ID" not in ds:
+                return False
+            # Older SCC derivatives without Measurement_ID must be regenerated
+            # even when the canonical scientific Level 0 is still current.
+            start_utc = pd.to_datetime(
+                f"{ds.attrs['RawData_Start_Date']}{ds.attrs['RawData_Start_Time_UT']}",
+                format="%Y%m%d%H%M%S",
+                utc=True,
+            )
+            expected_id = scc_measurement_id(start_utc, str(context["station_id"]))
+            if ds.attrs.get("Measurement_ID") != expected_id:
                 return False
             if str(ds.attrs.get("Solar_Regime", "")).lower() != str(
                 context.get("solar_regime", "")
