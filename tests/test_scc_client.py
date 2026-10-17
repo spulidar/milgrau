@@ -356,6 +356,21 @@ def test_retry_after_upload_cli_routes_once_without_delete(
     assert calls == [(IDENTITY, fake)]
 
 
+def test_retry_after_lr_fix_requires_one_explicit_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stage(tmp_path)
+    monkeypatch.setattr(cli, "load_config", lambda: _config(tmp_path))
+    assert cli.main(["upload", "--retry-after-lr-fix", "--confirm"]) == 1
+    assert cli.main([
+        "upload", "--id", IDENTITY, "--retry-after-lr-fix", "--dry-run",
+    ]) == 1
+    assert cli.main([
+        "upload", "--id", IDENTITY, "--retry-after-lr-fix",
+        "--replace-existing", "--confirm",
+    ]) == 1
+
+
 def test_remote_status_can_outlive_deleted_local_cache(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
 ) -> None:
