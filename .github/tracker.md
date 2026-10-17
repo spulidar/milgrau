@@ -200,7 +200,11 @@ POST outcomes always block further automatic attempts. `milgrau-scc status`
 now displays durable state even after deleting the disposable cache.
 New `tests/test_scc_state.py`, `tests/test_scc_backup.py`,
 `tests/test_scc_workflow.py` and expanded `tests/test_scc_client.py`
-exercise the non-destructive and simulated replacement cases.
+exercise the non-destructive and simulated replacement cases. A separate
+read-only `milgrau-scc status --id ID --remote --backup` command can verify
+actual downloadable SCC archives **without deleting or uploading any
+measurement**, to expose remote format/ancillary limitations before a first
+live replacement.
 
 **Remaining gates:** Simulated rollback/recovery after every destructive failure,
 especially when the SCC's original LR or raw archive schema differs, requires
