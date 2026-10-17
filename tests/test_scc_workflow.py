@@ -511,7 +511,7 @@ def test_second_upload_failure_refuses_any_further_attempts(
     with SubmissionStore(state_root(config)) as store:
         assert store.get(ID)["state"] == "uncertain"
         assert store.events(ID)[-1]["action"] == "manual_corrected_upload_uncertain"
-    with pytest.raises(SCCRemoteError, match="Only one operator-confirmed"):
+    with pytest.raises(SCCRemoteError, match="latest journal event"):
         workflow.retry_rejected_recovery_upload(config, staged, client)
     assert client.upload_calls == 1
 
