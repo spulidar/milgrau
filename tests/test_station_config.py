@@ -4,16 +4,29 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
+from pathlib import Path
+
+import yaml
 
 import numpy as np
 import pytest
 
-from milgrau.config.loader import load_config
+from milgrau.config.loader import load_config as _load_config
+from milgrau.config.scc import validate_scc_config
 from milgrau.config.station import (
     resolve_station_context,
     select_lidar_channels,
     validate_station_config,
 )
+
+
+def load_config(path: str) -> dict:
+    """Load SCC explicitly for tests whose purpose is SCC channel resolution."""
+    config = _load_config(path)
+    catalog = yaml.safe_load(Path("scc.yaml").read_text(encoding="utf-8"))
+    validate_scc_config(catalog, config["_station_catalog"])
+    config["_scc_catalog"] = catalog
+    return config
 
 
 def _context(config: dict, when: str, channels: list[str], *, mode: str = "day") -> dict:
