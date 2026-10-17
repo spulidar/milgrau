@@ -128,14 +128,14 @@ def test_scc_level0_references_only_matching_lr_ancillary(tmp_path: Path) -> Non
     output_path = tmp_path / "test_day_L0_scc.nc"
     config = _config()
     config["_resolved_station"]["lr_input"] = {"532.AN": 0}
-    config["_scc_lr_file_name"] = "lr_20240101spu0000.nc"
+    config["_scc_lr_file_name"] = "lr_20240101spu00.nc"
     build_level0_netcdf(
         str(output_path), SESSION_ID, _lidar_data(), _group_df(tmp_path, False),
         _weather_data(), config, logging.getLogger("test.scc_lr"),
         scc_export=True,
     )
     with xr.open_dataset(output_path) as ds:
-        assert ds.attrs["LR_File_Name"] == "lr_20240101spu0000.nc"
+        assert ds.attrs["LR_File_Name"] == "lr_20240101spu00.nc"
         assert int(ds["LR_Input"].values[0]) == 0
 
     primary = tmp_path / "test_L0.nc"
