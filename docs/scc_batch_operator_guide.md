@@ -188,6 +188,46 @@ initial message:** new code surfaces only its transport exception class
 for *future* failed deletion attempts; it cannot retroactively diagnose
 this already completed request.
 
+## Follow-up: recovery upload returned HTTP 200 but SCC API did not confirm
+
+**Observed 2026-10-17:** The operator authorized a single
+`upload --id 20240913spu1549 --resume-after-delete --confirm`, and
+the resulting live multipart upload returned
+`Upload response ... was not confirmed by the SCC API; remote state is
+uncertain. Do not repeat the POST.` This indicates the client executed
+the upload request, but **does not confirm SCC accepted raw.nc or the
+LR auxiliary**. The journal now blocks another automatic recovery
+(`recovery_upload_uncertain`).
+
+Check **read-only** `milgrau-scc status --id 20240913spu1549 --remote`
+and the actual SCC portal, without any new upload or delete. In the
+event the API still reports 404, also inspect the server's ancillary
+LR registry with a read-only API GET for
+`lr_20240913spu1549.nc`; the authoritative `scc_access` client
+looks up already registered ancillary files before attaching them,
+whereas the current MILGRAU client always includes the locally staged
+LR. A duplicate LR record or SCC NetCDF validation rejection could
+explain the failed submission, but has **not** been proven here. Avoid
+silently using an already-registered LR based on filename alone.
+
+The official `scc_access` source distinguishes a submission that
+remains on the Quick upload form (potential validation rejection)
+from a redirect to measurement details and documents that the API
+may show temporary 404 immediately after acceptance. MILGRAU now
+does up to three **read-only** API lookups after a single POST and
+separately identifies a Quick-form response. This only improves
+future diagnostics; the HTML form response from this already
+completed attempt is not recorded and cannot be recreated
+without another upload.
+
+**Never reset the journal, delete the archive, or run either batch**
+until the previous attempt is resolved. If the remote ID is present,
+verify the new generation, upload timestamp, configuration and
+external LR before formally reconciling journal ownership. If absent,
+investigate SCC upload form validation and server logs in cooperation
+with its administrators before considering another manually
+authorized upload.
+
 ## Only after the single-ID trial passes
 
 ```bash
