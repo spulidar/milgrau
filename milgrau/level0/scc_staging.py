@@ -7,7 +7,6 @@ Durable submission state and upload/cleanup commands belong to later phases.
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 import tempfile
