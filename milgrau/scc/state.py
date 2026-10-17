@@ -94,6 +94,9 @@ class SubmissionStore:
                 configuration_id INTEGER NOT NULL,
                 raw_sha256 TEXT NOT NULL,
                 lr_sha256 TEXT,
+                product_ids_json TEXT NOT NULL,
+                source_segments_json TEXT NOT NULL,
+                scc_config_sha256 TEXT,
                 start_utc TEXT NOT NULL,
                 stop_utc TEXT NOT NULL,
                 state TEXT NOT NULL,
@@ -152,6 +155,13 @@ class SubmissionStore:
             "lr_sha256": next(
                 (str(v["sha256"]) for k, v in files.items() if k != "raw.nc"), None,
             ),
+            "product_ids_json": json.dumps(
+                [int(x) for x in manifest["scc_product_ids"]], separators=(",", ":"),
+            ),
+            "source_segments_json": json.dumps(
+                manifest.get("source_segments", []), separators=(",", ":"),
+            ),
+            "scc_config_sha256": manifest.get("scc_config_sha256"),
             "start_utc": str(manifest["measurement_start_utc"]),
             "stop_utc": str(manifest["measurement_stop_utc"]),
         }
@@ -175,8 +185,10 @@ class SubmissionStore:
                 """
                 INSERT INTO submissions(
                     measurement_id, scientific_session_id, configuration_id,
-                    raw_sha256, lr_sha256, start_utc, stop_utc, state, updated_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+                    raw_sha256, lr_sha256, product_ids_json,
+                    source_segments_json, scc_config_sha256,
+                    start_utc, stop_utc, state, updated_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
                 """,
                 (identity, *expected.values(), _utcnow()),
             )
