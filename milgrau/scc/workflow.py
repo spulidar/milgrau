@@ -160,6 +160,133 @@ def submit(
         return result
 
 
+
+def resume_after_uncertain_delete(
+    config: Mapping[str, Any], package: Path, client: Any,
+) -> dict[str, Any]:
+    """Operator-confirmed repair of a DELETE-POST uncertainty, never a retry.
+
+    Only a prior *specific* delete_result_uncertain journal event qualifies.
+    The server must now prove the ID absent and the original remote archive
+    must still verify. This submits the already-approved staged replacement
+    under the SAME Measurement_ID; it does not send any further DELETE.
+    Failures are never automatically retried, and all evidence stays intact.
+    """
+    from milgrau.level0.scc_staging import pending_scc_package
+
+    manifest = validate_upload_package(package)
+    identity = str(manifest["measurement_id"])
+    expected_path = pending_scc_package(config, identity)
+    if package.resolve() != expected_path.resolve() or package.is_symlink():
+        raise SCCRemoteError("Recovery requires the original pending SCC package.")
+
+    root = state_root(config)
+    with operation_lock(root, identity), SubmissionStore(root) as store:
+        row = store.get(identity)
+        if row is None or row["state"] != "uncertain":
+            raise SCCRemoteError(
+                "This ID is not in an uncertain state; recovery is not applicable."
+            )
+        events = store.events(identity)
+        if not events or events[-1]["action"] != "delete_result_uncertain":
+            raise SCCRemoteError(
+                "Recovery is limited to a verified, interrupted DELETE POST. "
+                "Do not use it for uncertain uploads or other states."
+            )
+        required_events = {"backup_verified", "delete_requested"}
+        if not required_events.issubset({event["action"] for event in events}):
+            raise SCCRemoteError("Replacement backup/delete audit trail incomplete.")
+
+        files = manifest["files"]
+        lr_name = next((name for name in files if name != "raw.nc"), None)
+        if (
+            row["scientific_session_id"] != manifest["scientific_session_id"]
+            or row["configuration_id"] != manifest["scc_configuration_id"]
+            or row["raw_sha256"] != files["raw.nc"]["sha256"]
+            or row["lr_sha256"] != (
+                files[lr_name]["sha256"] if lr_name else None
+            )
+            or row["start_utc"] != manifest["measurement_start_utc"]
+            or row["stop_utc"] != manifest["measurement_stop_utc"]
+        ):
+            raise SCCRemoteError(
+                "Local SCC staged data/period diverges from the immutable "
+                "submission journal. Recovery blocked."
+            )
+        if not row["archive_path"] or not row["archive_manifest_sha256"]:
+            raise SCCRemoteError("Original remote backup is missing from journal.")
+        archive = Path(row["archive_path"])
+        archive_base = (root / "archives" / identity).resolve()
+        if (
+            archive.is_symlink()
+            or archive.resolve().parent != archive_base
+            or not archive.is_dir()
+        ):
+            raise SCCRemoteError("Original SCC backup location is unsafe or missing.")
+        snapshot = verify_archive(archive, row["archive_manifest_sha256"])
+        if snapshot["measurement_id"] != identity:
+            raise SCCRemoteError("Original SCC archive has the wrong Measurement_ID.")
+        if snapshot["remote_snapshot"]["configuration_id"] != row["configuration_id"]:
+            raise SCCRemoteError("Original SCC backup configuration has changed.")
+
+        # No destructive operation here. Require a fresh explicit 404 from
+        # the actual SCC API *before* moving out of the blocked journal state.
+        if client.measurement(identity) is not None:
+            raise SCCRemoteError(
+                "SCC ID is present again; DO NOT upload over another record. "
+                "Investigate with the operator."
+            )
+        refreshed = validate_upload_package(package)
+        if refreshed["files"] != manifest["files"]:
+            raise SCCRemoteError("Local SCC input changed during recovery preflight.")
+
+        store.transition(
+            identity, "remote_deleted",
+            action="operator_confirmed_remote_absence_after_uncertain_delete",
+            detail={
+                "archive_path": str(archive),
+                "archive_manifest_sha256": row["archive_manifest_sha256"],
+                "prior_event": events[-1]["action"],
+            },
+        )
+        store.transition(identity, "uploading", action="recovery_upload_requested")
+        try:
+            # The client performs a second read-only API absence check,
+            # validates NetCDF/LR, and sends exactly ONE new-upload POST.
+            result = client.upload_package(package)
+            confirmed = client.measurement(identity)
+            if confirmed is None:
+                raise SCCRemoteError("Recovery upload has no SCC API confirmation.")
+            system = confirmed.get("system", {})
+            if not isinstance(system, Mapping) or (
+                system.get("id") != manifest["scc_configuration_id"]
+            ):
+                raise SCCRemoteError(
+                    "Recovered SCC record has unexpected configuration."
+                )
+            if not confirmed.get("creation_date"):
+                raise SCCRemoteError(
+                    "Recovered SCC record has no authoritative creation timestamp."
+                )
+        except Exception as exc:
+            store.transition(
+                identity, "uncertain", action="recovery_upload_uncertain",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            raise
+        store.transition(
+            identity, "accepted", action="recovery_upload_verified",
+            remote_creation_date=str(confirmed["creation_date"]),
+            detail={
+                "remote_page": str(result["remote_page"]),
+                "remote_fingerprint": remote_fingerprint(confirmed),
+                "archive_path": str(archive),
+                "same_measurement_id": True,
+            },
+        )
+        return result
+
+
 def reconcile_status(
     store: SubmissionStore,
     identity: str,
