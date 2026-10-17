@@ -362,6 +362,7 @@ def _write_scc_exports(
     from milgrau.level0.scc_staging import (
         atomic_scc_package,
         pending_scc_package,
+        scc_raw_filename,
         validate_pending_scc_package,
         write_scc_manifest,
     )
@@ -448,7 +449,7 @@ def _write_scc_exports(
             weather_data, regime_measurements,
         )
         with atomic_scc_package(config, measurement_id) as staging:
-            scc_path = staging / "raw.nc"
+            scc_path = staging / scc_raw_filename(measurement_id)
             lr_path = write_scc_lidar_ratio_ancillary(
                 scc_path, regime_measurements, scc_lidar, regime_config, context,
             )
