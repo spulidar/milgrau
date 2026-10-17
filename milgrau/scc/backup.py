@@ -271,7 +271,10 @@ def compare_staged_to_archive(
     from milgrau.level0.scc_staging import manifest_raw_name
 
     raw_name = manifest_raw_name(manifest)
-    staged_lr = next((name for name in manifest["files"] if name != raw_name), None)
+    staged_lr = next(
+        (name for name in manifest["files"] if name.startswith("lr_")), None,
+    )
+    staged_sounding = any(name.startswith("rs_") for name in manifest["files"])
     remote_lr = snapshot.get("remote_original_lr_file_name")
     path = Path(snapshot["_archive_path"])
     source_hash = _single_netcdf_digest(
@@ -297,7 +300,10 @@ def compare_staged_to_archive(
         "period_differs": period_differs,
         "raw_identical": raw_equal,
         "lr_identical": lr_equal,
-        "identical": not period_differs and raw_equal and lr_equal,
+        "identical": (
+            not period_differs and raw_equal and lr_equal
+            and not staged_sounding
+        ),
     }
 
 
