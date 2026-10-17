@@ -310,6 +310,78 @@ and `milgrau-scc download --id 20240913spu1549 --keep-cache`.
 Do not run the 19-ID bulk upload until this trial proves the actual
 SCC server accepts the raw and LR inputs.
 
+## Actual root cause found in the SCC Quick Upload form (2026-10-17)
+
+An **operator-run manual upload** reproduced the SCC validation message:
+
+> Submit a lidar ratio file with filename format lr_YYYYMMDDcccNN.nc
+
+The earlier MILGRAU artifact `lr_20240913spu1549.nc` includes HHMM
+(four digits) rather than SCC's requested two-digit `NN` suffix.
+That is a confirmed **upload-form validation failure for this deployment**;
+other NetCDF validation failures cannot be ruled out until the LR name
+passes. The generic SCC input-document examples use `lr_<Measurement_ID>.nc`,
+so the stricter two-digit filename rule is **deployment-specific** and
+comes directly from the form being used.
+
+MILGRAU now assigns the two-digit `NN` from the measurement's UTC
+starting hour (stable for a given SCC Measurement_ID). For example:
+
+```text
+.cache/scc/pending/20240913spu1549/
+    20240913spu1549.nc
+    lr_20240913spu15.nc
+    manifest.json
+```
+
+The name must also match the **`LR_File_Name` global attribute**
+inside the raw NetCDF, so the raw NetCDF's SHA-256 changes even though
+the lidar signal, temporal bins and LR numeric content do not. Another
+measurement starting in the same hour on the same day at the same
+station is rejected at staging rather than reusing an auxiliary filename.
+
+**Required offline repair** (no SCC GET, POST or DELETE):
+
+```bash
+milgrau-scc upload --repair-lr-cache
+milgrau-scc upload --dry-run
+```
+
+The repair validates old hashes, copies the original package to
+`.cache/scc/legacy-lr/<Measurement_ID>/`, updates only
+`LR_File_Name` inside a separate raw NetCDF, renames the LR file
+without modifying its bytes, and publishes the repaired manifest.
+For the old journal in `uncertain`, it keeps the original SCC backup,
+failure state and all events, recording a new
+`local_lr_filename_repair` event containing before/after raw
+checksums. **Neither archive nor original cache evidence is deleted.**
+This is an explicit file revision, unlike the earlier raw *basename-only*
+migration whose hashes stayed unchanged.
+
+After 19/19 offline validations succeed, confirm the ID is absent
+on SCC's **website and API** and verify whether
+`lr_20240913spu15.nc` is already registered as an ancillary on the
+site. Do **not** overwrite or duplicate an already-OK ancillary.
+The new **one-time upload-only** retry can then be explicitly
+authorized for the single affected ID, never for a batch:
+
+```bash
+milgrau-scc upload --id 20240913spu1549 --retry-after-lr-fix --confirm
+```
+
+It requires the exact `local_lr_filename_repair` journal event,
+matching fixed hashes/period/configuration and old remote archive,
+then reconfirms the remote ID is missing. It does not send DELETE.
+Any failure or ambiguous result becomes
+`manual_lr_fixed_upload_uncertain`, blocking another retry. If SCC
+accepts the corrected files, inspect ELPP/ELDA processing and confirm
+that the external climatological LR is used. Download only when
+completed, with `--keep-cache`. The previous official SCC results
+generation and original remote backup remain retained locally.
+
+Do not start the bulk 19-ID upload before this single-ID test
+is verified end to end.
+
 ## Only after the single-ID trial passes
 
 ```bash
