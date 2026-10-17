@@ -171,10 +171,14 @@ milgrau-scc status
 ```
 
 Only an explicit `milgrau-scc upload --id MEASUREMENT_ID --confirm` can attempt
-a real authenticated upload. Remote uploads are **not** automatically initiated
-by LIBIDS, and `download`/`cleanup` are gated until safe durable submission
-tracking exists (Phases 12.5–12.6).
-See [SCC client usage and security](docs/scc_native_client.md).
+a real authenticated upload. SCC Phase 12.5 also supports an opt-in **same-ID
+replacement** with `--replace-existing --confirm`, but only after verifiable
+backup of the original SCC raw measurement, LR (when present) and downloadable
+processed products. A durable journal under `.state/scc/` records status,
+checksums, backups and interrupted attempts independently of the disposable
+`.cache/scc/` staging area. Uploads are never automatically initiated by
+LIBIDS. Remote download/cleanup remain gated until Phase 12.6.
+See [SCC client usage, recovery and security](docs/scc_native_client.md).
 
 The primary CLIs accept a session ID, a station-local civil date, or an
 explicit file/directory path. A date selects sessions that intersect that local day.
