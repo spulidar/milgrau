@@ -142,10 +142,10 @@ def test_explicit_replacement_preserves_id_and_verified_archive(
         row = journal.get(ID)
         assert row["state"] == "accepted"
         assert row["archive_manifest_sha256"] == "b" * 64
-        assert [x["state"] for x in journal.events(ID)][-4:] == [
-            "backed_up", "deleting", "remote_deleted", "uploading",
-        ][-4:] or row["state"] == "accepted"
-        assert journal.events(ID)[-1]["state"] == "accepted"
+        states = [entry["state"] for entry in journal.events(ID)]
+        assert states[-5:] == [
+            "backed_up", "deleting", "remote_deleted", "uploading", "accepted",
+        ]
 
 
 @pytest.mark.parametrize("failure", ["archive", "different_record"])
