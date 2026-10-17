@@ -74,7 +74,10 @@ def validate_upload_package(
                 str(raw.getncattr("Sounding_File_Name"))
                 if "Sounding_File_Name" in raw.ncattrs() else None
             )
-            molecular_calc = int(raw.variables["Molecular_Calc"].getValue())
+            molecular_calc = (
+                int(raw.variables["Molecular_Calc"].getValue())
+                if "Molecular_Calc" in raw.variables else None
+            )
         expected_lr = scc_lr_file_name(identity)
         if allow_legacy_lr and lr_name == f"lr_{identity}.nc":
             expected_lr = lr_name
