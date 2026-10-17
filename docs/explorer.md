@@ -11,41 +11,43 @@ python -m pip install -e ".[explorer]"
 milgrau-explorer
 ```
 
-Supply the absolute or project-relative `config.yaml` and the processed-data
-directory in the sidebar. Sessions are identified from
-`processed_data/station/YYYY/MM/session_id/`. Variant products
-(`day/night`, SCC, derived segment/UTC selections) are listed under the same
-continuous source session and can be selected independently.
+Run \`milgrau-explorer\` from the project directory containing \`config.yaml\`.
+The Explorer **automatically resolves** its read-only source from
+\`directories.processed_data\` in that configuration and the referenced
+station catalog (\`station.yaml\`). There is no sidebar or folder picker.
 
-## Interface — Hybrid Scientific
+## Interface — measurements-inspired layout
 
-The Explorer uses a fixed, local **Hybrid Scientific** design: a navy sidebar
-and a light scientific workspace. Styles are injected only by
-`milgrau/explorer/theme.py`, so no `.streamlit/config.toml` or global
-Streamlit configuration is required.
+The Explorer has a compact station header with a **UTC date selector**,
+a horizontal navigation bar (\`RCS Maps\`, \`Atmospheric Profiles\`,
+\`L2 Products\`, \`QA\`, \`Metadata\`), and a full-width interactive plotting area.
+Only one view is rendered per request. The selected UTC date lists every
+continuous scientific session that intersects that calendar day: a session
+crossing midnight appears on both days **without** being split or merged.
+Where several sessions intersect, an explicit session selector is shown.
 
-Only the active page opens a scientific dataset. A single discovered session
-is selected automatically; search and year/month/level filters appear only
-when several sessions are available. Source paths are in the collapsed
-`Fontes de dados` panel. The overview summarizes scientific availability,
-and technical identifiers and product listings remain available in expanders.
+The RCS channel selectbox includes every channel present in the selected
+NetCDF, including analog/photon-counting and Raman channels when present.
+The \`Atmospheric Profiles\` tab reads the saved L1 pressure and temperature
+fields. No altitude-range widgets are shown; Plotly zoom/pan is used for
+exploration of the full saved vertical span, with plot-only decimation for
+large arrays. Product variants and Monte Carlo/quality selectors remain
+specific to their respective views.
 
-The `Modo foco` control hides the sidebar for wide scientific plots.
-Level 2 keeps plot mode, optical property, wavelength and altitude prominent,
-with solar-regime, segment and time-range controls grouped in an expander.
+The fixed theme is implemented within \`theme.py\`; no
+\`.streamlit/config.toml\` is needed. The application remains read-only.
+The refresh button simply invalidates the short-lived file inventory cache.
 
 ## Pages and performance
 
-- **Visão geral**: fast filename-only session inventory, products and figures.
-  Segment table metadata is read only for the selected session.
-- **Level 0 / Level 1**: sampled time-height heatmaps and chunked mean profiles.
-- **Level 2 Produtos ópticos**: interactive nominal/MC aerosol backscatter and
+- **RCS Maps**: sampled L0 or L1 interactive time-height heatmaps; the saved L1 figure includes its mean profile.
+- **Atmospheric Profiles**: saved time-resolved L1 thermodynamics, reduced only for visual inspection.
+- **L2 Products**: interactive nominal/MC aerosol backscatter and
   extinction maps, individual block profiles with MC quantiles, wavelength
   comparison, and fixed-height time series.
-- **Level 2 QA científico**: existing gluing, Rayleigh, scattering-ratio and
+- **QA**: existing gluing, Rayleigh, scattering-ratio and
   KFS diagnostics, shown only when explicitly selected.
-- **Metadados / QA Indicadores**: on-demand inspection of one file.
-- **Galeria de figuras**: reuse existing L1/L2 image files without loading NetCDF.
+- **Metadata**: on-demand single-file NetCDF metadata, session inventory, and a gallery of already rendered L1/L2 figures.
 
 Only the active page opens its dataset; file handles are closed upon rendering.
 Display reductions select wavelength, regime, segment, and altitude before
@@ -75,7 +77,8 @@ estimate aerosol lidar ratios, certify atmospheric quality, or publish data.
 - `science.py`: lightweight scientific L2 array selectors and support masks
 - `l2_products.py`: four L2 optical interaction modes
 - `views.py`: on-demand per-level panels, metadata and diagnostics
-- `streamlit_app.py`: sidebar, selected session and active-page orchestration
+- `navigation.py`: strict UTC calendar selection with continuous-session overlap
+- `streamlit_app.py`: top header, horizontal navigation and active-page orchestration
 
 New scientific formulas and product contracts belong to their respective
 processing modules, **not** the Explorer. 
