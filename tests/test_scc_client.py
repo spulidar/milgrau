@@ -189,6 +189,49 @@ def test_native_upload_sends_correct_multipart_only_once(tmp_path: Path) -> None
     assert any("api/v1/measurements" in url for url, _ in fake.gets)
 
 
+def test_optional_sounding_in_multipart_and_checked_raw_reference(
+    tmp_path: Path,
+) -> None:
+    import json
+    from milgrau.provenance import file_sha256
+
+    folder = _stage(tmp_path)
+    sounding_name = f"rs_{IDENTITY}.nc"
+    with nc.Dataset(folder / sounding_name, "w", format="NETCDF4_CLASSIC") as ds:
+        ds.createDimension("points", 4)
+        for name, values in (
+            ("Altitude", [0, 1000, 5000, 10000]),
+            ("Temperature", [20, 10, -10, -55]),
+            ("Pressure", [931, 840, 540, 260]),
+        ):
+            ds.createVariable(name, "f8", ("points",))[:] = values
+        ds.setncatts({
+            "Latitude_degrees_north": -23.5167,
+            "Longitude_degrees_east": -46.6333,
+            "Altitude_meter_asl": 722.0,
+            "Sounding_Start_Date": "20240913",
+            "Sounding_Start_Time_UT": "120000",
+        })
+    raw_file = folder / f"{IDENTITY}.nc"
+    with nc.Dataset(raw_file, "r+") as ds:
+        ds.setncattr("Sounding_File_Name", sounding_name)
+        ds.createVariable("Molecular_Calc", "i4").assignValue(1)
+    manifest_file = folder / "manifest.json"
+    manifest = json.loads(manifest_file.read_text())
+    for name in (sounding_name, f"{IDENTITY}.nc"):
+        file = folder / name
+        manifest["files"][name] = {
+            "sha256": file_sha256(file), "size_bytes": file.stat().st_size,
+        }
+    manifest_file.write_text(json.dumps(manifest))
+    assert validate_upload_package(folder)["files"][sounding_name]
+    fake = FakeSession()
+    assert _client(fake).upload_package(folder)["measurement_id"] == IDENTITY
+    sent = next(kwargs["files"] for url, kwargs in fake.posts if url.endswith("/quick/"))
+    assert set(sent) == {"data", "lidar_ratio_file", "sounding_file"}
+    assert sent["sounding_file"][0] == sounding_name
+
+
 def test_upload_eventual_api_visibility_never_repeats_post(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
