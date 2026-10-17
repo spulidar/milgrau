@@ -103,13 +103,14 @@ def write_scc_manifest(
     source_canonical_l0: Path,
     config: Mapping[str, Any],
     ancillary_name: str | None,
+    sounding_name: str | None = None,
     source_profile_indices: list[int] | None = None,
     source_measurement_files: list[str] | None = None,
 ) -> dict[str, Any]:
     """Write a local handoff manifest with checksums of the actual upload bytes."""
     names = [scc_raw_filename(measurement_id)] + (
         [] if ancillary_name is None else [ancillary_name]
-    )
+    ) + ([] if sounding_name is None else [sounding_name])
     checksums = {}
     for name in names:
         path = staging / name
@@ -166,6 +167,7 @@ def validate_pending_scc_package(path: Path) -> dict[str, Any]:
     for name, entry in files.items():
         if Path(name).name != name or name not in {
             raw_name, f"lr_{path.name}.nc", f"lr_{path.name[:13]}.nc",
+            f"rs_{path.name}.nc",
         }:
             raise ValueError(f"Unsafe/unexpected SCC staged filename: {name!r}.")
         file_path = path / name
