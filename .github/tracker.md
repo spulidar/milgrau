@@ -491,4 +491,17 @@ preflight before choosing to authorize the single-ID corrected
 upload on their local machine. Explicit cache retention:
 `scc.cleanup.policy: manual` and `download --keep-cache`.
 
+**Phase 12.7 local-ID stage migration and guarded retry — CI green:** All six
+jobs in [GitHub Actions run 39075402576](https://github.com/spulidar/milgrau/actions/runs/39075402576)
+passed on `8710ac28797b4a523b575c429223f235947d0b6d`
+(Ubuntu/Windows Python 3.12/3.14, Ruff, Explorer). The
+subsequent commits updated only documentation and tracker.
+Tests cover offline migration of **19** legacy packages, byte-for-byte
+raw/LR preservation, journal/event unchanged, collision/tampering/crash
+recovery, current NetCDF file naming, upload-only recovery success,
+missing/archive/remote-present refusal, and no second POST after
+subsequent uncertainty. This is code/fixture validation **only**;
+the operator has not yet run local cache migration or the newly
+corrected live SCC upload on their Arch Linux machine.
+
 **Gate 12.7:** End-to-end SCC interoperability confirmed with real responses.
