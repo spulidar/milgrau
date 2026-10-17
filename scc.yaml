@@ -8,10 +8,11 @@ server:
   base_url: "https://scc.imaa.cnr.it/"
 
 scc_policy:
-  # Opt in only after validating the available observed Wyoming cache.
-  # No modelled or synthetic profile is substituted for missing observations.
+  # SCC-enabled LIBIDS packets await LIPANCORA, which can attach only
+  # validated observed radiosonde cache. No ERA5/USSA76 is substituted.
+  # Set enabled: false to use immediate raw+LR uploads without LIPANCORA.
   sounding:
-    enabled: false
+    enabled: true
     source: cached_wyoming
     missing_policy: skip
   lr_input:
