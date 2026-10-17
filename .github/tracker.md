@@ -604,4 +604,41 @@ journal migration. All **6/6** cross-platform checks passed in
 documentation/tracker only. **No live SCC sounding upload has been tested**.
 The current production incident must first be resolved without sounding.
 
+**New 12.7.1 — LIBIDS → LIPANCORA SCC radiosounding handoff (2026-10-17):**
+Confirmed the user's LR-corrected `20240913spu1549` upload was
+accepted by the remote SCC API (`configuration=1047`) and its
+products were downloaded/verified. The local
+`after_download` cleanup automatically removed that pending packet;
+persistent downloaded products and journal remain. No live
+re-submission or remote deletion was performed by the changes below.
+
+- [x] LIBIDS stages raw SCC `<ID>.nc` and valid two-digit LR filename,
+  with `sounding_stage=awaiting_lipancora` **only when**
+  `scc_policy.sounding.enabled=true`; default example now enabled
+  for new SCC-enabled packets.
+- [x] SCC `upload --dry-run` refuses `awaiting_lipancora` stages
+  before an L1 run. Unchanged SCC-disabled flows and previous pending
+  stages retain their existing behavior.
+- [x] LIPANCORA completes the pending SCC sounding step after successfully
+  writing a new scientific L1 **or verifying an incremental L1**,
+  reusing only the same selected, provenance-traceable observed Wyoming
+  sounding from cache. An absent or mismatched sounding is handled
+  according to explicit `skip`/`fail` policy; no ERA5/USSA76
+  data are labelled as radiosonde observations.
+- [x] Atomic staged directory revision: preserve original raw/LR
+  provenance, attach validated `rs_<ID>.nc`, update raw
+  `Molecular_Calc` and `Sounding_File_Name`, recompute manifest
+  SHA-256. Refuse changes whenever an SCC submission journal row
+  already exists, or if `scc.yaml` changed after LIBIDS.
+- [x] Guarded validation, durable optional sounding hash, and
+  cache-cleanup protection from previous steps remain unchanged.
+- [x] New tests exercise awaiting state, valid observed sounding,
+  no-sounding permissive/strict policy, idempotence and journal refusal.
+- [x] Example `config.yaml scc.cleanup.policy` changed to `manual`
+  to retain pending inputs after a successful download, matching
+  the operator's requested cache retention.
+- [ ] Validate one **new** SCC sounding upload against the actual
+  server. Keep the already accepted `20240913spu1549` untouched.
+- [ ] Cross-platform CI on final documentation/implementation commit.
+
 **Gate 12.7:** End-to-end SCC interoperability confirmed with real responses.
