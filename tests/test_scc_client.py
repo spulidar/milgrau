@@ -312,6 +312,73 @@ def test_client_follows_same_origin_redirect_as_get_after_login() -> None:
     assert client.measurement(IDENTITY) is None
 
 
+def test_admin_delete_uses_exact_id_csrf_and_does_not_delete_related() -> None:
+    from milgrau.scc.backup import remote_fingerprint
+
+    fake = FakeSession()
+    record = {
+        "id": IDENTITY, "system": {"id": 1047},
+        "creation_date": "2026-10-17T14:29:53",
+        "start": "2024-09-13T15:49:32",
+        "stop": "2024-09-13T17:50:42",
+        "is_queued": False, "is_being_processed": False,
+    }
+    fake.remote = dict(record)
+    original_get = fake.get
+    original_post = fake.post
+
+    def fetch(url, **kwargs):
+        if "/api/v1/measurements/" in url:
+            return FakeResponse(
+                200 if fake.remote is not None else 404,
+                url, data=fake.remote,
+            )
+        if url.endswith(f"/admin/database/measurements/{IDENTITY}/delete/"):
+            return FakeResponse(200, url, csrf="delete-token")
+        return original_get(url, **kwargs)
+
+    def submit(url, **kwargs):
+        if url.endswith(f"/admin/database/measurements/{IDENTITY}/delete/"):
+            assert kwargs["data"] == {
+                "post": "yes",
+                "select_delete_related_measurements": "not_delete_related",
+            }
+            assert kwargs["headers"]["X-CSRFToken"] == "delete-token"
+            assert kwargs["allow_redirects"] is False
+            fake.remote = None
+            return FakeResponse(200, url)
+        return original_post(url, **kwargs)
+
+    fake.get = fetch
+    fake.post = submit
+    _client(fake).delete_measurement(
+        IDENTITY, expected_fingerprint=remote_fingerprint(record),
+    )
+    assert fake.remote is None
+
+
+def test_admin_delete_rejects_stale_remote_snapshot_before_post() -> None:
+    from milgrau.scc.backup import remote_fingerprint
+
+    fake = FakeSession()
+    record = {"id": IDENTITY, "system": {"id": 1047}}
+    orig_get = fake.get
+
+    def fetch(url, **kwargs):
+        if "/api/v1/measurements/" in url:
+            return FakeResponse(200, url, data={
+                **record, "last_processing_end": "changed",
+            })
+        return orig_get(url, **kwargs)
+
+    fake.get = fetch
+    with pytest.raises(SCCRemoteError, match="changed since"):
+        _client(fake).delete_measurement(
+            IDENTITY, expected_fingerprint=remote_fingerprint(record),
+        )
+    assert all(not url.endswith("/delete/") for url, _ in fake.posts)
+
+
 def test_https_origin_and_environment_credentials_are_strict(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
