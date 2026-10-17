@@ -1,7 +1,7 @@
-# MILGRAU tracker — session-refactor
+# MILGRAU scientific-engineering tracker
 
 This tracker is the single roadmap for the current MILGRAU architecture on
-`session-refactor`. It keeps accepted scientific decisions, implemented work,
+`milgraumaxxing`. It keeps accepted scientific decisions, implemented work,
 remaining refactor tasks, validation gates and release work in one place.
 
 Superseded implementations are recoverable from Git history and are not
@@ -53,7 +53,7 @@ The governing rule is:
 - **Phase 7 — retire LIRACOS as an independent pipeline:** complete; Level 1
   figure ownership belongs to LIPANCORA and reusable renderers remain in
   `viz/quicklooks.py`.
-- **Phase 8 — `spulidar/measurements` publication refactor:** not started here.
+- **Phase 8 — `spulidar/measurements` publication refactor:** local-only `publication-v2` staging implemented; cloud/site cutover deliberately pending.
 - **Phase 9 — Explorer / inspect:** session-aware human summaries, local-time
   display, highest level, regimes/segments and figures are implemented.
 - **Phase 10 — unified `figures/` convention:** canonical Level 1 and Level 2
@@ -560,39 +560,36 @@ Figure failures must remain non-fatal to valid scientific NetCDF products.
 
 # Phase 8 — spulidar/measurements and website publication
 
-This work belongs primarily in `spulidar/measurements`, not the MILGRAU
-scientific identity layer.
+MILGRAU supplies scientific session IDs, station/configuration APIs,
+canonical L1/L2 and generic plotting. The separate `measurements` publisher
+owns public views only. Development is isolated on `publication-v2`, while
+`measurements/main` and production R2 stay frozen.
 
-- [ ] Make `measurements` the sole owner of local publication windows:
-  `00–06`, `06–12`, `12–18`, `18–24`.
-- [ ] Treat those IDs explicitly as `publication_window_id`, not session IDs.
-- [ ] Read MILGRAU L1/L2 directly.
-- [ ] Find every scientific session intersecting each publication window.
-- [ ] Select only the relevant time span for each website plot.
-- [ ] Allow several sessions to contribute to one publication visualization.
-- [ ] Concatenate only for visualization and preserve real gaps as missing data.
-- [ ] Never scientifically merge distinct sessions.
-- [ ] Reuse MILGRAU generic renderers instead of duplicating plotting/scientific
-  logic.
-- [ ] Keep current public/R2 naming where practical to avoid unnecessary
-  historical migration.
-- [ ] Keep publication state compatible with historical data.
-- [ ] Separate public staging from scientific products; preferred target:
-  `03-site-products/`.
-- [ ] Stop recursively treating arbitrary MILGRAU scientific WEBPs as website
-  publication assets.
+- [x] Four station-local, half-open windows `00/06/12/18`, identified as
+  `publication_window_id`, never scientific `session_id`.
+- [x] Discover canonical L1, map exact profile timestamps and associate L2.
+- [x] Allow multiple source sessions in a window for **visualization only**;
+  preserve source IDs/gaps; reject duplicate timestamps, overlapping
+  intervals and incompatible altitude/channel grids.
+- [x] Reuse MILGRAU quicklook renderers without recomputing scientific L2.
+- [x] Isolate WEBPs and mandatory SHA-256-attested sidecars under
+  `03-site-products/station/YYYY/MM/YYYYMMDD/`.
+- [x] Fingerprint renderer/style/configuration code, station recipe, logos
+  and scientific input source metadata.
+- [x] Share `milgrau[web]` environment; publication v2 consumes official
+  MILGRAU config/station/paths without a second YAML.
+- [x] Prepare local schema-v2 `publication_windows` state and future
+  station-prefixed R2 keys, without uploading.
+- [x] Stage-only CLI with no reachable upload/delete/Git-push mode.
+- [ ] Validate complete historical coverage by year, with real source files
+  and station-local daylight-saving boundary cases.
+- [ ] Build and review the schema-v2 site/manifest in isolated staging.
+- [ ] Perform the separately authorized production cutover, validate it,
+  and only afterward retire legacy R2 keys and compatibility code.
 
-Canonical example:
-
-- scientific acquisition local time:
-  `10/05 21:12 -> 11/05 04:37`
-- one MILGRAU session:
-  `spu_20250511-0012Z_20250511-0737Z`
-- website publication views:
-  `20250510_spu_18` uses 21:12–24:00 local,
-  `20250511_spu_00` uses 00:00–04:37 local.
-
-No scientific NetCDF is split because of website layout.
+Canonical example: one continuous scientific
+`spu_20250511-0012Z_20250511-0737Z` session contributes to
+`20250510_spu_18` and `20250511_spu_00` with no split NetCDF.
 
 ---
 
