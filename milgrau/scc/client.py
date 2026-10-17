@@ -274,7 +274,12 @@ class SCCClient:
                 f"Deletion POST for {identity} has an UNKNOWN outcome; "
                 "check remote state, do not automatically retry."
             ) from exc
-        self._complete_post(response, url)
+        response = self._complete_post(response, url)
+        if response.status_code != 200:
+            raise SCCRemoteError(
+                f"SCC delete confirmation returned HTTP {response.status_code}; "
+                "the result is ambiguous and must be reconciled."
+            )
         # Deletion is successful only if the authoritative API now returns 404.
         # Any error/unchanged record must stop the replacement.
         if self.measurement(identity) is not None:
