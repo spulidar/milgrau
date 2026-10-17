@@ -8,7 +8,6 @@ reference must also be retrievable, not silently forgotten.
 from __future__ import annotations
 
 import hashlib
-import io
 import json
 import shutil
 import tempfile
@@ -91,6 +90,8 @@ def _download(client: Any, url: str, path: Path) -> dict[str, Any]:
                 members = zipped.infolist()
                 if not members or len(members) > 10000:
                     raise SCCRemoteError("SCC archive ZIP has invalid member count.")
+                if sum(member.file_size for member in members) > MAX_BACKUP_BYTES:
+                    raise SCCRemoteError("SCC archive ZIP expands beyond safe backup size.")
                 for member in members:
                     if member.file_size > MAX_BACKUP_BYTES:
                         raise SCCRemoteError("SCC ZIP member is unexpectedly large.")
