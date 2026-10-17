@@ -78,7 +78,8 @@ def validate_results(directory: Path) -> dict[str, Any]:
         manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
         if (
             manifest["schema_version"] != 1
-            or manifest["measurement_id"] != directory.name
+            or manifest["measurement_id"] != directory.parent.parent.name
+            or not manifest.get("remote_creation_date")
             or not set(REQUIRED_TYPES).issubset(manifest["files"])
         ):
             raise SCCRemoteError("SCC results manifest has invalid identity/types.")
@@ -122,10 +123,12 @@ def download_results(
         session_id = source_session or row["scientific_session_id"]
         if row and source_session and source_session != row["scientific_session_id"]:
             raise SCCRemoteError("Session does not match the existing durable SCC journal.")
-        target = result_location(config, session_id, identity)
         remote = client.measurement(identity)
         if remote is None or remote.get("id") != identity:
             raise SCCRemoteError(f"SCC record {identity} is absent or inconsistent.")
+        target = result_location(
+            config, session_id, identity, str(remote.get("creation_date") or ""),
+        )
         system = remote.get("system", {})
         configuration_id = system.get("id") if isinstance(system, Mapping) else None
         if row is not None and configuration_id != row["configuration_id"]:
