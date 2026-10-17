@@ -12,6 +12,11 @@ station:
   radiosonde:
     station_id: "83779"
     station_name: "SBMT Marte Civ"
+    # WMO 83779 / SBMT Campo de Marte (Meteostat station listing).
+    # Coordinates are the radiosonde launch site, NOT the lidar station.
+    latitude: -23.5167
+    longitude: -46.6333
+    station_altitude_m: 722.0
 
   lidar_ratio_climatology:
     provenance:
