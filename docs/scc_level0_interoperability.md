@@ -69,6 +69,27 @@ continuous acquisition. The derivative records `Solar_Regime`,
 The day/night SCC configuration is selected from `station.yaml` using the
 stored solar regime, not a fixed 06/18 clock rule.
 
+### SCC upload measurement identity
+
+SCC submission files contain the mandatory global attribute `Measurement_ID`.
+This is **not** the MILGRAU scientific `Session_ID`. MILGRAU derives the
+15-character SCC ID as `YYYYMMDDsssHHMM`, using the first **measurement**
+profile of that SCC solar-regime derivative (UTC), followed by the three-character
+alphanumeric SCC station code (currently `spu`) and UTC hour/minute. For example,
+a regime starting at 2024-09-13 15:49:32Z is `20240913spu1549`.
+
+The canonical `SESSION_L0.nc` does not acquire `Measurement_ID`. SCC derivatives
+continue to use MILGRAU's descriptive `SESSION_day_L0_scc.nc` and
+`SESSION_night_L0_scc.nc` filenames: current SCC versions do not require a
+specific raw-data filename, though `<Measurement_ID>.nc` is recommended.
+When incremental processing encounters an existing SCC derivative without the
+correct `Measurement_ID`, that derivative is considered stale and regenerated.
+
+For other stations, the SCC station code must be exactly three alphanumeric
+characters; an incompatible station identifier must be mapped explicitly, not
+truncated or fabricated. SCC database uniqueness also requires that an ID has
+not already been used by another uploaded measurement.
+
 Automatic LIPANCORA discovery deliberately processes only the canonical
 `SESSION_L0.nc`. SCC derivatives remain interoperability products and do not
 create competing canonical Level 1 products. They may still be supplied
