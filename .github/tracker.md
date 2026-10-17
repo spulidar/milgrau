@@ -1,7 +1,7 @@
 # Phase 12 — Optional SCC integration and publication workflow
 
 **Branch:** `scc-integration-refactor` (base: `milgraumaxxing`)  
-**Status:** In progress — phase 12.1  
+**Status:** Phase 12.1 implemented — cross-platform CI validation in progress  
 **Scope:** SCC configuration, optional export, staging, native upload/status/download/cleanup client.
 This branch's tracker intentionally contains **only Phase 12**. The earlier scientific tracker remains on the base branch.
 
@@ -21,17 +21,19 @@ This branch's tracker intentionally contains **only Phase 12**. The earlier scie
 ## 12.1 — Configuration ownership and migration
 
 - [x] Create the dedicated refactor branch and Phase-12-only tracker.
-- [ ] Define/validate the strict `config.yaml` / `station.yaml` / `scc.yaml` ownership contract.
-- [ ] Retain physical instrument metadata, calibration, observational climatology, overlap and scientific Raman characterization in `station.yaml`.
-- [ ] Migrate SCC policy, configuration/channel mappings and SCC-only Raman mapping metadata into `scc.yaml`.
-- [ ] Move processing and feature-switch policies to `config.yaml`, without copying observational values.
-- [ ] Require `scc.yaml` only when `scc.enabled: true`; disabled mode must neither load nor validate SCC content.
-- [ ] Preserve all historical station profile/date and solar day/night mappings.
-- [ ] Provide strict station/SCC consistency checks, with no fabricated identifiers or silent aliases.
-- [ ] Remove SCC export from the disabled LIBIDS path and decouple disabled scientific incremental validation from SCC derivatives.
-- [ ] Update unit/contract tests and confirm no SCC extras are required for scientific processing.
-- [ ] Document the new configuration ownership and migration.
-- [ ] Run all applicable CI tests and review failures before marking 12.1 complete.
+- [x] Define/validate the strict `config.yaml` / `station.yaml` / `scc.yaml` ownership contract.
+- [x] Retain physical instrument metadata, calibration, observational climatology, overlap and scientific Raman characterization in `station.yaml`.
+- [x] Migrate SCC policy, configuration/channel mappings and SCC-only Raman mapping metadata into `scc.yaml`.
+- [x] Move processing and feature-switch policies to `config.yaml`, without copying observational values.
+- [x] Require `scc.yaml` only when `scc.enabled: true`; disabled mode must neither load nor validate SCC content.
+- [x] Preserve all historical station profile/date and solar day/night mappings.
+- [x] Provide strict station/SCC consistency checks, with no fabricated identifiers or silent aliases.
+- [x] Remove SCC export from the disabled LIBIDS path and decouple disabled scientific incremental validation from SCC derivatives.
+- [x] Update unit/contract tests and confirm no SCC extras are required for scientific processing.
+- [x] Document the new configuration ownership and migration.
+- [~] Run all applicable CI tests and review failures before marking 12.1 complete (Ruff and Ubuntu Python 3.12/3.14 green; Windows jobs running).
+
+**Phase 12.1 implementation evidence:** `milgrau/config/scc.py`, `milgrau/config/loader.py`, `scc.yaml`, `milgrau/config/station.py`, `milgrau/level0/libids.py`, `milgrau/level0/processing.py`, `milgrau/level1/ingestion.py`, dedicated `tests/test_scc_configuration_split.py`, and updated SCC/Raman regression tests. Branch CI includes `scc-integration-refactor`.
 
 **Gate 12.1:** Fresh install without SCC extras can process L0/L1/L2 with `scc.enabled: false` and without `scc.yaml`; enabled mode preserves historical mapping.
 
