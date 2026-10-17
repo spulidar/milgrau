@@ -57,7 +57,6 @@
               <button type="button" id="editor-axes-tab" class="editor-tab" aria-pressed="false">Axes</button>
             </div>
         <div class="editor-colors" id="editor-colors">
-        <summary>Plot settings <span class="settings-hint" id="settings-hint">Robust P2–P98 active · click to adjust</span></summary>
         <div class="settings-grid">
           <div class="setting">
             <label for="color-mode">Color limits</label>
@@ -114,6 +113,7 @@
                 <div class="setting"><label for="axis-ymax">Altitude maximum (km)</label>
                   <input id="axis-ymax" type="number" step="any"></div>
               </div>
+              <p id="axis-status" class="scale-status" role="status" aria-live="polite"></p>
               <div class="editor-actions">
                 <button type="button" id="axes-reset" class="secondary-button">Reset zoom</button>
                 <button type="button" id="axes-apply" class="primary-button">Apply range</button>
