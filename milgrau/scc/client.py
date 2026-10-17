@@ -227,6 +227,53 @@ class SCCClient:
             )
         return result
 
+    def delete_measurement(self, identity: str) -> None:
+        """Delete exactly one SCC record via its documented Django admin form.
+
+        Called only by the durable guarded replacement orchestration after a
+        verified archive and a fresh API fingerprint match. Never auto-retry
+        DELETE POST or silently delete related/calibration measurements.
+        """
+        record = self.measurement(identity)
+        if record is None:
+            raise SCCRemoteError(
+                f"SCC record {identity} disappeared before deletion; state uncertain."
+            )
+        if record.get("is_queued") or record.get("is_being_processed"):
+            raise SCCRemoteError("Cannot delete queued or running SCC measurement.")
+        relative = f"admin/database/measurements/{identity}/delete/"
+        url = self._url(relative)
+        form = self._read(relative)
+        if form.status_code != 200:
+            raise SCCRemoteError(
+                f"SCC deletion confirmation page returned HTTP {form.status_code}."
+            )
+        token = self._csrf(form)
+        try:
+            response = self.session.post(
+                url,
+                data={
+                    "post": "yes",
+                    "select_delete_related_measurements": "not_delete_related",
+                },
+                headers={"X-CSRFToken": token, "Referer": url},
+                timeout=self.timeout,
+                allow_redirects=False,
+            )
+        except Exception as exc:
+            raise SCCRemoteError(
+                f"Deletion POST for {identity} has an UNKNOWN outcome; "
+                "check remote state, do not automatically retry."
+            ) from exc
+        self._complete_post(response, url)
+        # Deletion is successful only if the authoritative API now returns 404.
+        # Any error/unchanged record must stop the replacement.
+        if self.measurement(identity) is not None:
+            raise SCCRemoteError(
+                f"SCC measurement {identity} still exists after delete POST; "
+                "replacement aborted."
+            )
+
     def upload_package(self, path: Any) -> dict[str, Any]:
         """Upload one validated package, never overwrite or blindly retry a POST.
 
