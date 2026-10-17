@@ -41,6 +41,10 @@ def _parser() -> argparse.ArgumentParser:
     status.add_argument(
         "--remote", action="store_true", help="Also query remote SCC (requires --id and credentials).",
     )
+    status.add_argument(
+        "--backup", action="store_true",
+        help="Read-only download and verification of existing SCC remote inputs/results; requires --remote --id.",
+    )
     sub.add_parser("download", help="Reserved for Phase 12.6; never silently downloads.")
     sub.add_parser("cleanup", help="Reserved for Phase 12.6; never silently deletes.")
     return parser
@@ -113,6 +117,8 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
 def _status(config: dict[str, Any], args: argparse.Namespace) -> int:
     if args.remote and not args.identity:
         raise ValueError("Remote status requires --id MEASUREMENT_ID.")
+    if args.backup and not args.remote:
+        raise ValueError("Remote archive --backup requires --id ID --remote.")
     # Remote measurements may outlive the disposable local staging cache.
     packages = discover_pending(config)
     if args.identity is not None:
@@ -144,8 +150,26 @@ def _status(config: dict[str, Any], args: argparse.Namespace) -> int:
                 f"archive={row['archive_path'] or '-'}"
             )
         if args.remote:
-            record = _client(config).measurement(args.identity)
+            client = _client(config)
+            record = client.measurement(args.identity)
             reconcile_status(store, args.identity, record)
+            if args.backup:
+                if record is None:
+                    raise ValueError(
+                        "Cannot back up absent remote SCC measurement."
+                    )
+                from milgrau.scc.backup import (
+                    archive_remote_measurement, verify_archive,
+                )
+
+                archive, digest = archive_remote_measurement(
+                    client, record, state_root(config),
+                )
+                verify_archive(archive, digest)
+                print(
+                    f"Remote SCC archive VERIFIED: {archive}; sha256={digest}; "
+                    "no remote upload or deletion occurred."
+                )
             if record is None:
                 print(f"remote {args.identity}: NOT FOUND")
             else:
