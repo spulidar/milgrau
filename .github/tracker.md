@@ -1,7 +1,7 @@
 # Phase 12 — Optional SCC integration and publication workflow
 
 **Branch:** `scc-integration-refactor` (base: `milgraumaxxing`)  
-**Status:** Phases 12.1–12.5 CI validated; Phase 12.6 implemented, final cross-platform CI in progress; live remote download and replacement remain pending  
+**Status:** Phases 12.1–12.6 implemented and cross-platform CI validated; live SCC processed-results download and replacement still pending; Phase 12.7 not started  
 **Scope:** SCC configuration, optional export, staging, native upload/status/download/cleanup client.
 This branch's tracker intentionally contains **only Phase 12**. The earlier scientific tracker remains on the base branch.
 
@@ -270,9 +270,15 @@ policy automatically invokes this safe cleanup for journal-confirmed uploads;
 downloaded with `--session` but not uploaded by MILGRAU is never
 cleanup-eligible. Interrupted and uncertain submissions are excluded.
 
-**Validation:** Ruff / Ubuntu / Windows CI is running after the final
-generation-aware tests. Remote SCC download must be checked read-only before
-claiming end-to-end deployment compatibility. No SCC live POST occurred.
+**Validation:** All six jobs passed in
+[GitHub Actions run 39069033200](https://github.com/spulidar/milgrau/actions/runs/39069033200)
+on commit `447e9fb7fe4b01e34fd8099f5df2041534dc2925`
+(Ubuntu/Windows; Python 3.12/3.14; Ruff; Explorer).
+The subsequent commits changed only README, SCC documentation and tracker.
+The SCC processed-results workflow is covered by mocked downloads,
+corruption tests, interrupted transfers, journal migration and safe cleanup;
+**live remote SCC result download is still an explicit open gate**.
+No real SCC upload, deletion or replacement POST occurred.
 
 **Gate 12.6:** SCC submissions and external scientific results remain
 traceable after cache cleanup; uncertain states and original scientific
