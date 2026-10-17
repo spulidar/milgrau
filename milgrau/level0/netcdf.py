@@ -81,6 +81,24 @@ def _scc_ready(config: Mapping[str, Any]) -> bool:
     return bool(_resolved_station(config).get("scc_available", False))
 
 
+def scc_measurement_id(start_time_utc: pd.Timestamp, station_code: str) -> str:
+    """Build the SCC 15-character ID (UTC date + 3-character station + UTC HHMM).
+
+    This is an upload identity, distinct from MILGRAU's continuous Session_ID.
+    """
+    code = str(station_code).strip().lower()
+    if len(code) != 3 or not code.isascii() or not code.isalnum():
+        raise ValueError(
+            "SCC Measurement_ID requires a three-character alphanumeric "
+            f"station code; received {station_code!r}."
+        )
+    start = pd.Timestamp(start_time_utc)
+    if pd.isna(start) or start.tzinfo is None:
+        raise ValueError("SCC Measurement_ID requires a timezone-aware measurement start.")
+    start = start.tz_convert("UTC")
+    return f"{start:%Y%m%d}{code}{start:%H%M}"
+
+
 def _hardware_map(config: Mapping[str, Any]) -> Mapping[str, Any]:
     channel_ids = _resolved_station(config).get("channel_ids")
     if not isinstance(channel_ids, Mapping):
@@ -550,6 +568,8 @@ def build_level0_global_attributes(
     group_df: pd.DataFrame,
     weather_data: dict,
     config: dict,
+    *,
+    scc_export: bool = False,
 ) -> dict:
     measurement_rows = _measurement_rows(group_df)
     timing_rows = measurement_rows if not measurement_rows.empty else group_df
@@ -605,6 +625,12 @@ def build_level0_global_attributes(
             1 if bool(resolved.get("contains_time_gaps", False)) else 0
         )
     attrs["Station_Profile"] = str(resolved["profile_id"])
+    if scc_export:
+        if not ready:
+            raise ValueError("SCC export requires an available SCC station configuration.")
+        attrs["Measurement_ID"] = scc_measurement_id(
+            min_start_utc, str(resolved["station_id"])
+        )
     if ready:
         attrs["SCC_Configuration_ID"] = int(resolved["scc_configuration_id"])
         attrs["SCC_Configuration_Name"] = str(resolved["scc_configuration_name"])
@@ -753,6 +779,8 @@ def build_level0_netcdf(
     weather_data: dict,
     config: dict,
     logger: logging.Logger,
+    *,
+    scc_export: bool = False,
 ) -> None:
     """Generate a Level-0 NetCDF from parsed Licel tensors, with optional SCC mapping."""
     try:
@@ -778,7 +806,12 @@ def build_level0_netcdf(
         temperature_c = _surface_representative_value(weather_data, "temperature_c")
         laser_shots = _laser_shot_matrix(lidar_data, num_times, num_channels)
         with nc.Dataset(netcdf_path, "w", format="NETCDF4") as ds:
-            ds.setncatts(build_level0_global_attributes(session_id, lidar_data, group_df, weather_data, config))
+            ds.setncatts(
+                build_level0_global_attributes(
+                    session_id, lidar_data, group_df, weather_data, config,
+                    scc_export=scc_export,
+                )
+            )
             if normalization_attrs:
                 ds.setncatts(normalization_attrs)
                 normalized_stop_time = reference_time + pd.to_timedelta(int(np.max(stop_offsets)), unit="s")
