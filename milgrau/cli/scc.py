@@ -26,10 +26,19 @@ def _parser() -> argparse.ArgumentParser:
         "--resume-after-delete", action="store_true",
         help="Exact-ID recovery ONLY after uncertain DELETE, verified old archive and SCC 404; sends one upload, no deletion.",
     )
+    upload.add_argument(
+        "--retry-after-upload", action="store_true",
+        help="One explicit same-ID upload-only retry after recovery_upload_uncertain; "
+             "requires --id ID --confirm, never deletes or runs in batch.",
+    )
     action = upload.add_mutually_exclusive_group(required=True)
     action.add_argument(
         "--dry-run", action="store_true",
         help="Validate pending packages locally; never connect to the SCC.",
+    )
+    action.add_argument(
+        "--migrate-cache", action="store_true",
+        help="Migrate staged raw.nc to Measurement_ID.nc for one or all IDs; offline only.",
     )
     action.add_argument(
         "--confirm", action="store_true",
@@ -87,14 +96,36 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
     packages = discover_pending(config, args.identity)
     if not packages:
         print("No SCC packages are staged in .cache/scc/pending/.")
-        return 0 if args.dry_run else 1
+        return 0 if args.dry_run or args.migrate_cache else 1
     if args.resume_after_delete and (
-        not args.confirm or args.dry_run or not args.identity or args.replace_existing
+        not args.confirm or not args.identity
+        or args.replace_existing or args.retry_after_upload
     ):
         raise ValueError(
             "--resume-after-delete requires exactly --id ID --confirm; "
             "never combine it with batch mode or --replace-existing."
         )
+    if args.retry_after_upload and (
+        not args.confirm or not args.identity
+        or args.replace_existing or args.resume_after_delete
+    ):
+        raise ValueError(
+            "--retry-after-upload requires exactly --id ID --confirm; "
+            "never use it with batch, --replace-existing or --resume-after-delete."
+        )
+    if args.migrate_cache:
+        if args.replace_existing or args.resume_after_delete or args.retry_after_upload:
+            raise ValueError("Cache migration never combines with remote upload options.")
+        from milgrau.scc.migrate import migrate_pending
+
+        changed = 0
+        for path in packages:
+            destination, migrated = migrate_pending(config, path.name)
+            print(f"{'MIGRATED' if migrated else 'ALREADY CURRENT'} {destination.name}")
+            changed += int(migrated)
+        print(f"Local cache: {changed} migrated, {len(packages)-changed} already current; "
+              "no SCC network requests, raw bytes or LR modified.")
+        return 0
     if args.replace_existing and args.dry_run:
         raise ValueError(
             "--replace-existing must be used with --confirm; "
@@ -143,11 +174,15 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
     # Single-ID operation uses the same guarded workflow as before.
     path = Path(packages[0])
     validate_upload_package(path)
-    from milgrau.scc.workflow import resume_after_uncertain_delete, submit
+    from milgrau.scc.workflow import (
+        resume_after_uncertain_delete, retry_rejected_recovery_upload, submit,
+    )
 
     client = _client(config)
     if args.resume_after_delete:
         result = resume_after_uncertain_delete(config, path, client)
+    elif args.retry_after_upload:
+        result = retry_rejected_recovery_upload(config, path, client)
     else:
         result = submit(
             config, path, client, replace_existing=args.replace_existing,
