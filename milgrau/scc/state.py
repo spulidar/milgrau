@@ -160,13 +160,16 @@ class SubmissionStore:
     ) -> dict[str, Any]:
         """Insert once; prevent changed cached bytes from silently resetting state."""
         identity = _id(str(manifest["measurement_id"]))
+        from milgrau.level0.scc_staging import manifest_raw_name
+
         files = manifest["files"]
+        raw_name = manifest_raw_name(manifest)
         expected = {
             "scientific_session_id": str(manifest["scientific_session_id"]),
             "configuration_id": int(manifest["scc_configuration_id"]),
-            "raw_sha256": str(files["raw.nc"]["sha256"]),
+            "raw_sha256": str(files[raw_name]["sha256"]),
             "lr_sha256": next(
-                (str(v["sha256"]) for k, v in files.items() if k != "raw.nc"), None,
+                (str(v["sha256"]) for k, v in files.items() if k != raw_name), None,
             ),
             "product_ids_json": json.dumps(
                 [int(x) for x in manifest["scc_product_ids"]], separators=(",", ":"),
