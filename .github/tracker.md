@@ -455,4 +455,40 @@ the journal remains `recovery_upload_uncertain`, and no further
 POST has been made. Never interpret passing CI as live acceptance
 or automatic permission to resend.
 
+**SCC upload identity-name migration and second recovery attempt (2026-10-17):**
+The operator reconfirmed the remote `20240913spu1549` is absent
+in **both** authenticated API and the SCC website. The full local
+19-packet inventory and scientific journal remain preserved; this
+conversation has not issued any live SCC API POST.
+
+The on-disk stage format now uses `<Measurement_ID>.nc` rather
+than `raw.nc` for new SCC raw exports, matching the required
+multipart upload filename. The companion
+`lr_<Measurement_ID>.nc` and manifest are unchanged except that
+`manifest.files` names the ID-based raw file. An offline
+`milgrau-scc upload --migrate-cache` command migrates **existing**
+pending packages without regenerating scientific or NetCDF payloads:
+it checks SHA-256 hashes, copies the old file to the new name,
+atomically publishes the revised manifest, verifies the new package,
+then removes only the now-redundant `raw.nc`. It preserves the
+existing journal, uncertainty events, original SCC backups, LR
+and results, and can resume safely if interrupted.
+
+A separate `milgrau-scc upload --id 20240913spu1549
+--retry-after-upload --confirm` is now available **only** for the
+exact prior `recovery_upload_uncertain` last journal event. It
+requires unchanged local raw/LR hashes, matching session/period,
+product IDs, segments, SCC catalog hash, a verified original SCC
+backup and a fresh 404 before attempting **one upload-only** POST
+of `20240913spu1549.nc`. It never deletes the remote record or
+resumes the 19-ID batch. A subsequent ambiguous result records
+`manual_corrected_upload_uncertain`, which blocks further
+automatic attempts.
+
+**Real SCC acceptance remains unverified.** The final cross-platform
+CI must pass and the operator must run the offline migration/19-of-19
+preflight before choosing to authorize the single-ID corrected
+upload on their local machine. Explicit cache retention:
+`scc.cleanup.policy: manual` and `download --keep-cache`.
+
 **Gate 12.7:** End-to-end SCC interoperability confirmed with real responses.
