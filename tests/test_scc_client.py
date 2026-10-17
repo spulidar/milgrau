@@ -317,6 +317,45 @@ def test_resume_after_delete_cli_routes_once_without_deleting(
     assert calls == [(IDENTITY, fake)]
 
 
+def test_retry_after_upload_cli_is_single_id_confirm_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stage(tmp_path)
+    monkeypatch.setattr(cli, "load_config", lambda: _config(tmp_path))
+    assert cli.main(["upload", "--retry-after-upload", "--confirm"]) == 1
+    assert cli.main([
+        "upload", "--id", IDENTITY, "--retry-after-upload", "--dry-run",
+    ]) == 1
+    assert cli.main([
+        "upload", "--id", IDENTITY, "--retry-after-upload",
+        "--replace-existing", "--confirm",
+    ]) == 1
+
+
+def test_retry_after_upload_cli_routes_once_without_delete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stage(tmp_path)
+    monkeypatch.setattr(cli, "load_config", lambda: _config(tmp_path))
+    import milgrau.scc.workflow as workflow
+
+    calls = []
+    def replacement(config, path, client):
+        calls.append((path.name, client))
+        return {
+            "measurement_id": IDENTITY,
+            "remote_page": "https://scc.example.test/record/",
+        }
+
+    monkeypatch.setattr(workflow, "retry_rejected_recovery_upload", replacement)
+    fake = object()
+    monkeypatch.setattr(cli, "_client", lambda _: fake)
+    assert cli.main([
+        "upload", "--id", IDENTITY, "--retry-after-upload", "--confirm",
+    ]) == 0
+    assert calls == [(IDENTITY, fake)]
+
+
 def test_remote_status_can_outlive_deleted_local_cache(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
 ) -> None:
