@@ -1,7 +1,7 @@
 # Phase 12 — Optional SCC integration and publication workflow
 
 **Branch:** `scc-integration-refactor` (base: `milgraumaxxing`)  
-**Status:** Phases 12.1–12.6 implemented and cross-platform CI validated; live SCC processed-results download and replacement still pending; Phase 12.7 not started  
+**Status:** Phases 12.1–12.6 implemented and CI validated; Phase 12.7 sequential batch-upload implementation under final cross-platform CI; live upload and same-ID replacement pending operator verification  
 **Scope:** SCC configuration, optional export, staging, native upload/status/download/cleanup client.
 This branch's tracker intentionally contains **only Phase 12**. The earlier scientific tracker remains on the base branch.
 
@@ -300,6 +300,27 @@ cross-comparison of SCC outputs. These remain Phase 12.7 gates.
 **Gate 12.6:** SCC submissions and external scientific results remain
 traceable after cache cleanup; uncertain states and original scientific
 products are never deleted by SCC cleanup.
+
+### Phase 12.7 milestone — sequential batch SCC upload (operator requested)
+
+- [x] Enable `milgrau-scc upload --confirm` without `--id` to process every locally pending Measurement_ID in deterministic order, one SCC API session at a time.
+- [x] Default to **skip remote-existing** IDs without remote mutation or inventing MILGRAU upload ownership.
+- [x] Provide the intentionally destructive opt-in `milgrau-scc upload --confirm --replace-existing` for remote-existing IDs, applying the same per-ID validated archive → compare → delete → reupload under the stable Measurement_ID, while uploading missing IDs normally.
+- [x] Prevalidate **all** staged packages offline before any network request or POST. Print per-ID progress plus summary counts submitted/replaced/identical/skipped_existing/failed/unprocessed.
+- [x] Stop on first failure, stale/uncertain journal, mismatched remote state or ambiguous HTTP operation; do not blindly continue or repeat POSTs/DELETEs. Retain cache and earlier journal/archives.
+- [x] Preserve `upload --id ID --confirm` and `--id ID --replace-existing --confirm` for a single-ID staged live trial.
+- [x] Add simulated batch tests including an inventory of 19 staged ID names, default skip, explicit replacement, network interruption and no-partial-send preflight rejection.
+- [x] Document the single-ID backup/destructive trial and safe launch sequence in `docs/scc_batch_operator_guide.md`.
+- [ ] **Live controlled single-ID upload and replacement** with explicit operator authorization, including proof that climatological LR was received and ELPP/ELDA completed. This is NOT implied by earlier live read-only SCC downloads.
+- [ ] **Live full 19-packet batch** after controlled upload/replacement validation; retain cache with `cleanup.policy: manual` and `download --keep-cache`.
+
+**CI evidence:** The six-job cross-platform matrix is running on the
+latest batch test commit (Ruff, Explorer, Ubuntu/Windows and Python
+3.12/3.14). Never mark the whole SCC integration released merely because
+mocked integration tests pass. Batch replacement deletes real SCC records and
+has no server-side atomic rollback. Do not execute it until one approved
+single-ID replacement is independently validated, and archives have been
+retained.
 
 ## 12.7 — Validation and release
 
