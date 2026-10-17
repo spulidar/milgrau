@@ -97,39 +97,6 @@ def _figure_gallery(row: dict[str, Any]) -> None:
         st.image(str(image_path), caption=choice, use_container_width=True)
 
 
-def _source_banner(source: dict[str, Any], date_utc: Any) -> None:
-    """Station data comes from station.yaml through the configured loader."""
-    left, date_col, right = st.columns([2.5, 1.1, 2.4], gap="medium")
-    with left:
-        st.markdown(
-            '<div class="mg-site-brand">'
-            f'{escape(source["station"])}'
-            '<span class="mg-site-divider">|</span>'
-            '<span class="mg-site-subbrand">MILGRAU Explorer</span></div>',
-            unsafe_allow_html=True,
-        )
-    with date_col:
-        st.caption("DATA UTC")
-        st.markdown(
-            f'<div class="mg-site-date">{escape(date_utc.strftime("%d %b %Y"))}</div>',
-            unsafe_allow_html=True,
-        )
-    with right:
-        location = []
-        for key, label in (("latitude", "LAT"), ("longitude", "LON")):
-            value = source.get(key)
-            if value is not None:
-                location.append(f"{label}: {float(value):.3f}°")
-        elevation = source.get("elevation_m")
-        if elevation is not None:
-            location.append(f"ELEV: {float(elevation):g} m")
-        location.append(f"MILGRAU {escape(__version__)}")
-        st.markdown(
-            '<div class="mg-site-location">' + " &nbsp; ".join(location) + "</div>",
-            unsafe_allow_html=True,
-        )
-
-
 def _session_summary(row: dict[str, Any], total: int) -> None:
     levels = " · ".join(
         label for label, key in LEVEL_TO_PATH.items() if row.get(key)
@@ -252,8 +219,6 @@ def main() -> None:
             "Execute o Explorer na pasta do projeto que contém o config.yaml."
         )
         st.stop()
-    if st.button("↻ Atualizar catálogo", key="mg_refresh"):
-        cached_inventory.clear()
     inv = cached_inventory(str(source["root"]), source["timezone"])
     if inv.empty:
         st.warning(
@@ -293,6 +258,9 @@ def main() -> None:
             '<div class="mg-site-location">' + " &nbsp; ".join(coords) + "</div>",
             unsafe_allow_html=True,
         )
+        if st.button("↻ Atualizar", key="mg_refresh"):
+            cached_inventory.clear()
+            st.rerun()
     row = _selected_session(inv, selected_date)
     st.radio(
         "Seções", PAGES, horizontal=True,
