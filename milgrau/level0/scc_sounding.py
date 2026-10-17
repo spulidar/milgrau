@@ -75,6 +75,7 @@ def validate_sounding(path: Path, *, identity: str) -> dict[str, Any]:
 def stage_cached_sounding(
     staging: Path, identity: str, measurement_start_utc: Any,
     config: Mapping[str, Any],
+    *, observed_target_utc: str | None = None,
 ) -> Path | None:
     """Stage an SCC rs_ID.nc from existing observation cache, if opted in.
 
@@ -107,9 +108,20 @@ def stage_cached_sounding(
         selection=settings["selection"],
         max_time_delta_hours=float(settings["max_time_delta_hours"]),
     )
+    if target is not None and observed_target_utc is not None:
+        # Only accept the same observed launch already selected and verified
+        # by LIPANCORA. No silently different nearby sounding may be staged.
+        observed_time = pd.Timestamp(observed_target_utc)
+        if observed_time.tzinfo is None:
+            raise ValueError("LIPANCORA sounding target must be timezone-aware UTC.")
+        if observed_time.tz_convert("UTC") != pd.Timestamp(target):
+            target = None
     if target is None:
         if missing == "fail":
-            raise ValueError("No eligible synoptic sounding within configured time tolerance.")
+            raise ValueError(
+                "No matching LIPANCORA-verified synoptic sounding within "
+                "configured SCC time tolerance."
+            )
         return None
     root = resolve_project_path(settings["cache_dir"])
     cache = (
