@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 
-from milgrau.cli import explorer as explorer_cli
 from milgrau.cli import lebear as lebear_cli
 from milgrau.cli import libids as libids_cli
 from milgrau.cli import lipancora as lipancora_cli
@@ -122,18 +121,3 @@ def test_lebear_selected_batch_continues_and_aggregates_mixed_results(tmp_path: 
     assert int(summary.exit_code) == 1
 
 
-@pytest.mark.parametrize(("source_code", "expected_code"), [(0, 0), (9, 2)])
-def test_explorer_cli_normalizes_streamlit_exit_codes(monkeypatch, source_code: int, expected_code: int) -> None:
-    class FakeStreamlitCLI:
-        @staticmethod
-        def main() -> None:
-            raise SystemExit(source_code)
-
-    streamlit_module = types.ModuleType("streamlit")
-    web_module = types.ModuleType("streamlit.web")
-    web_module.cli = FakeStreamlitCLI
-    streamlit_module.web = web_module
-    monkeypatch.setitem(sys.modules, "streamlit", streamlit_module)
-    monkeypatch.setitem(sys.modules, "streamlit.web", web_module)
-
-    assert explorer_cli.main() == expected_code

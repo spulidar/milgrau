@@ -27,6 +27,9 @@ dependencies = [
   "cdsapi>=0.7.7",
   "tenacity>=8.2.0",
   "PyYAML>=6.0",
+  "fastapi>=0.115,<1.0",
+  "uvicorn>=0.30,<1.0",
+  "plotly>=5.20,<7.0",
 ]
 
 [project.optional-dependencies]
@@ -34,12 +37,8 @@ dev = [
   "pytest>=7.0.0",
   "pytest-cov>=7.0.0",
   "ruff>=0.8.0",
+  "httpx>=0.27.0",
 ]
-explorer = [
-  "streamlit>=1.35.0",
-  "plotly>=5.20.0",
-]
-
 [project.scripts]
 milgrau-libids = "milgrau.cli.libids:main"
 milgrau-lipancora = "milgrau.cli.lipancora:main"
@@ -52,6 +51,9 @@ version = {attr = "milgrau.version.__version__"}
 
 [tool.setuptools.packages.find]
 include = ["milgrau*"]
+
+[tool.setuptools.package-data]
+"milgrau.web" = ["static/*.html", "static/css/*.css", "static/js/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

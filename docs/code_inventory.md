@@ -11,7 +11,7 @@ only through Git history.
 | `milgrau-libids` | `milgrau.cli.libids` | `milgrau.level0.processing` |
 | `milgrau-lipancora` | `milgrau.cli.lipancora` | `milgrau.level1.lipancora` |
 | `milgrau-lebear` | `milgrau.cli.lebear` | `milgrau.level2.lebear` |
-| `milgrau-explorer` | `milgrau.cli.explorer` | `milgrau.explorer.streamlit_app` |
+| `milgrau-explorer` | `milgrau.cli.explorer` | `milgrau.web.app` (FastAPI, read-only) |
 
 ## Shared infrastructure
 

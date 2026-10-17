@@ -28,7 +28,7 @@ flowchart TD
 | Level 1 | `milgrau-lipancora` | corrected signal/RCS, uncertainty and canonical atmosphere |
 | Level 1 figures | `milgrau-lipancora` | RCS quicklooks, MeanRCS and atmospheric comparison |
 | Level 2 | `milgrau-lebear` | selected/glued signal, molecular fields and elastic aerosol optical products |
-| Explorer | `milgrau-explorer` | interactive product inspection |
+| Web Explorer | `milgrau-explorer` | local read-only Level 1 signal inspection (Phase 1) |
 
 See [`docs/processing_levels.md`](docs/processing_levels.md) for the stable contract of each stage.
 
@@ -53,7 +53,7 @@ MILGRAU requires **Python 3.12 or newer**.
 ```bash
 git clone https://github.com/spulidar/milgrau.git
 cd milgrau
-git checkout session-refactor
+git checkout milgraumaxxing
 python -m venv .venv
 ```
 
@@ -74,15 +74,11 @@ Level 1 atmospheric backbone. Credentials are not stored in MILGRAU YAML or
 NetCDF provenance; use the normal provider-supported `cdsapi` credential
 mechanism.
 
-Optional extras:
-
-```bash
-# Interactive Streamlit explorer
-pip install -e ".[explorer]"
-
-# Complete local development environment
-pip install -e ".[dev,explorer]"
-```
+The Web Explorer is included in the **core installation**, with FastAPI,
+Uvicorn and Plotly; Streamlit and an optional explorer extra are no longer used.
+Start the read-only local browser interface with `milgrau-explorer` from the
+project directory containing `config.yaml`, then open http://127.0.0.1:8765.
+See [`docs/explorer.md`](docs/explorer.md) for scope and API details.
 
 ## Quick start
 
@@ -227,6 +223,7 @@ Published NetCDF provenance embeds the exact processing/station YAML snapshots. 
 - [`docs/configuration_ownership.md`](docs/configuration_ownership.md) — `config.yaml` vs `station.yaml` vs Python ownership.
 - [`docs/code_inventory.md`](docs/code_inventory.md) — canonical module/API ownership.
 - [`docs/atmospheric_profiles.md`](docs/atmospheric_profiles.md) — radiosonde/ERA5/USSA76 atmosphere handling.
+- [`docs/explorer.md`](docs/explorer.md) — local, read-only Web Explorer architecture and usage.
 - [`docs/level2_schema.md`](docs/level2_schema.md) — current Level 2 NetCDF schema, support, uncertainty and provenance semantics.
 - [`docs/scientific_traceability.md`](docs/scientific_traceability.md) — scientific traceability matrix and verified bibliography.
 - [`.github/tracker.md`](.github/tracker.md) — scientific engineering roadmap and acceptance gates.

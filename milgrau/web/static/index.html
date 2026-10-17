@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>MILGRAU · Scientific Web Explorer</title>
+  <link rel="stylesheet" href="/static/css/explorer.css">
+  <script defer src="/static/plotly.min.js"></script>
+  <script defer src="/static/js/app.js"></script>
+</head>
+<body>
+  <header class="masthead">
+    <div class="mast-content">
+      <div class="brand"><span class="brand-station" id="station-name">MILGRAU</span>
+        <span class="brand-slash">/</span><span class="brand-detail">Scientific Explorer</span></div>
+      <div class="site-location" id="site-location">Local scientific data · UTC</div>
+      <div class="date-control"><label for="utc-date">UTC date</label>
+        <select id="utc-date" aria-label="UTC date"></select></div>
+    </div>
+    <nav class="tabs" aria-label="Scientific views">
+      <button class="tab active" type="button" data-tab="rcs" aria-current="page">RCS Maps</button>
+      <button class="tab" type="button" data-tab="atmosphere">Atmospheric Profiles</button>
+      <button class="tab" type="button" data-tab="l2">L2 Products</button>
+      <button class="tab" type="button" data-tab="qa">Scientific QA</button>
+      <button class="tab" type="button" data-tab="metadata">Metadata</button>
+    </nav>
+  </header>
+  <main class="content">
+    <section class="overview">
+      <div><p class="eyebrow">CONTINUOUS SCIENTIFIC SESSION</p>
+        <h1 id="session-title">Loading sessions…</h1>
+        <p class="subtext" id="session-subtitle">Read-only visualization of saved NetCDF products</p></div>
+      <div class="session-choice"><label for="session">Session (UTC)</label><select id="session"></select></div>
+    </section>
+    <section id="rcs-panel">
+      <div class="toolbar">
+        <div class="control"><label for="product">L1 product</label><select id="product"></select></div>
+        <div class="control"><label for="channel">Channel</label><select id="channel"></select></div>
+        <div class="control"><label for="variable">Variable</label><select id="variable"></select></div>
+        <div class="control"><label for="statistic">Display reduction</label>
+          <select id="statistic"><option value="mean">Cell mean</option><option value="max">Cell maximum</option></select></div>
+      </div>
+      <div id="message" class="message" role="status" aria-live="polite"></div>
+      <div class="figure" id="figure">
+        <div class="figure-heading">
+          <div><p class="eyebrow">LEVEL 1 · RANGE-CORRECTED SIGNAL</p><h2 id="plot-title">Time–altitude RCS</h2></div>
+          <p id="plot-info">Plotly.js · zoom, pan and export</p>
+        </div>
+        <div class="plots">
+          <div id="rcs-chart" aria-label="RCS time-altitude heatmap"></div>
+          <div id="profile-chart" aria-label="Mean vertical signal profile"></div>
+        </div>
+        <p class="figure-note" id="reduction-note">The plot is a display-only reduction; original NetCDF values remain unchanged.</p>
+      </div>
+    </section>
+    <section id="future-panel" class="future-panel" hidden>
+      <h2 id="future-title"></h2><p>This view will be implemented in a subsequent phase. No scientific calculations are performed here.</p>
+    </section>
+    <footer>MILGRAU · Local read-only Web Explorer · All timestamps UTC unless noted</footer>
+  </main>
+</body>
+</html>

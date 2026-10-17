@@ -155,7 +155,7 @@ A wavelength belongs to the scientific Level 2 wavelength coordinate only when i
 LIPANCORA owns Level 1 figures and LEBEAR owns Level 2 figures. Figure generation
 is non-fatal to an already valid scientific NetCDF product. Reusable plotting
 functions describe products; they do not choose productive retrieval science.
-A plotting or Streamlit change must not alter source selection, Rayleigh QA,
+A plotting or Web Explorer change must not alter source selection, Rayleigh QA,
 KFS acceptance or uncertainty semantics. Explorer remains inspection-only.
 
 ## Provenance across levels
