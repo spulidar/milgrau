@@ -1,7 +1,7 @@
 # Phase 12 — Optional SCC integration and publication workflow
 
 **Branch:** `scc-integration-refactor` (base: `milgraumaxxing`)  
-**Status:** Phase 12.1 validated; Phase 12.2 implemented — final CI validation in progress  
+**Status:** Phases 12.1 and 12.2 implemented and validated; Phase 12.3 pending  
 **Scope:** SCC configuration, optional export, staging, native upload/status/download/cleanup client.
 This branch's tracker intentionally contains **only Phase 12**. The earlier scientific tracker remains on the base branch.
 
@@ -59,9 +59,12 @@ receive LR_Input=0. New `tests/test_scc_product_registry.py` and extended
 `tests/test_scc_lidar_ratio_ancillary.py` cover current and historical modes,
 shared IDs, bad IDs, Raman guards, monthly values and NetCDF schema.
 
-**Validation:** Local implementation/tests complete; final branch CI is running.
-This phase does **not** claim successful live SCC upload. That is a separate
-gate in Phase 12.7.
+**Validation:** All six checks passed in GitHub Actions run
+[39047834262](https://github.com/spulidar/milgrau/actions/runs/39047834262)
+on implementation commit `6e21d7cad504f5d0ec267dd582b982a13e3d6670`
+(Ubuntu + Windows, Python 3.12/3.14, Ruff and Explorer). Subsequent edits
+are documentation/tracker-only. This phase does **not** claim a successful
+live SCC upload; that is a separate gate in Phase 12.7.
 
 **Gate 12.2:** Every SCC product and LR ancillary is traceable to real SCC product IDs.
 
