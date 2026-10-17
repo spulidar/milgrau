@@ -67,7 +67,7 @@ def test_scc_monthly_climatology_writes_exact_ancillary_schema(tmp_path: Path) -
 
     path = write_scc_lidar_ratio_ancillary(output, group, lidar, config, context)
     assert path is not None
-    assert path.name == "lr_20250913spu1549.nc"
+    assert path.name == "lr_20250913spu15.nc"
 
     with nc.Dataset(path) as ds:
         assert ds.file_format == "NETCDF4_CLASSIC"
