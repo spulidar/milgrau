@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
+from milgrau.level0.scc_staging import manifest_raw_name
 from milgrau.scc.backup import (
     archive_remote_measurement, compare_staged_to_archive, remote_fingerprint,
     verify_archive,
@@ -199,11 +200,12 @@ def resume_after_uncertain_delete(
             raise SCCRemoteError("Replacement backup/delete audit trail incomplete.")
 
         files = manifest["files"]
-        lr_name = next((name for name in files if name != "raw.nc"), None)
+        raw_name = manifest_raw_name(manifest)
+        lr_name = next((name for name in files if name != raw_name), None)
         if (
             row["scientific_session_id"] != manifest["scientific_session_id"]
             or row["configuration_id"] != manifest["scc_configuration_id"]
-            or row["raw_sha256"] != files["raw.nc"]["sha256"]
+            or row["raw_sha256"] != files[raw_name]["sha256"]
             or row["lr_sha256"] != (
                 files[lr_name]["sha256"] if lr_name else None
             )
