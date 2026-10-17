@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>MILGRAU · Scientific Web Explorer</title>
+  <title>MILGRAU · Explorer</title>
   <link rel="stylesheet" href="/static/css/explorer.css">
   <script defer src="/static/plotly.min.js"></script>
   <script defer src="/static/js/app.js"></script>
@@ -13,10 +13,10 @@
   <header class="masthead">
     <div class="mast-content">
       <div class="brand"><span class="brand-station" id="station-name">MILGRAU</span>
-        <span class="brand-slash">/</span><span class="brand-detail">Scientific Explorer</span></div>
+        <span class="brand-slash">/</span><span class="brand-detail">Explorer</span></div>
       <div class="site-location" id="site-location">Local scientific data · UTC</div>
-      <div class="date-control"><label for="utc-date">UTC date</label>
-        <select id="utc-date" aria-label="UTC date"></select></div>
+      <div class="date-control"><label for="session">Session (UTC)</label>
+        <select id="session" aria-label="Scientific session"></select></div>
     </div>
     <nav class="tabs" aria-label="Scientific views">
       <button class="tab active" type="button" data-tab="rcs" aria-current="page">RCS Maps</button>
@@ -27,12 +27,6 @@
     </nav>
   </header>
   <main class="content">
-    <section class="overview">
-      <div><p class="eyebrow">CONTINUOUS SCIENTIFIC SESSION</p>
-        <h1 id="session-title">Loading sessions…</h1>
-        <p class="subtext" id="session-subtitle">Read-only visualization of saved NetCDF products</p></div>
-      <div class="session-choice"><label for="session">Session (UTC)</label><select id="session"></select></div>
-    </section>
     <section id="rcs-panel">
       <div class="toolbar">
         <div class="control"><label for="product">L1 product</label><select id="product"></select></div>
@@ -42,7 +36,27 @@
           <select id="statistic"><option value="mean">Cell mean</option><option value="max">Cell maximum</option></select></div>
       </div>
 
-      <details class="plot-settings" id="plot-settings">
+
+      <div id="message" class="message" role="status" aria-live="polite"></div>
+      <div class="figure" id="figure">
+        <div class="figure-heading">
+          <div><p class="eyebrow">LEVEL 1 · RANGE-CORRECTED SIGNAL</p><h2 id="plot-title">Time–altitude RCS</h2></div>
+          <p id="plot-info">Click a colorbar or axis label to edit · Plotly.js</p>
+        </div>
+        <div class="plots">
+          <div class="plot-shell">
+            <div id="rcs-chart" aria-label="RCS time-altitude heatmap"></div>
+            <button type="button" id="edit-plot" class="edit-plot-button" aria-expanded="false" aria-controls="plot-editor">✎ Edit plot</button>
+          <div class="floating-editor" id="plot-editor" hidden role="dialog" aria-label="Plot appearance editor">
+            <div class="editor-heading">
+              <span>Edit plot</span>
+              <button type="button" id="close-editor" class="icon-button" aria-label="Close plot editor">×</button>
+            </div>
+            <div class="editor-tabs">
+              <button type="button" id="editor-colors-tab" class="editor-tab active" aria-pressed="true">Colors</button>
+              <button type="button" id="editor-axes-tab" class="editor-tab" aria-pressed="false">Axes</button>
+            </div>
+        <div class="editor-colors" id="editor-colors">
         <summary>Plot settings <span class="settings-hint" id="settings-hint">Robust P2–P98 active · click to adjust</span></summary>
         <div class="settings-grid">
           <div class="setting">
@@ -87,15 +101,26 @@
         <p class="scale-status" id="scale-status" role="status" aria-live="polite">
           Robust P2–P98 of finite displayed cells. No changes to NetCDF data.
         </p>
-      </details>
-      <div id="message" class="message" role="status" aria-live="polite"></div>
-      <div class="figure" id="figure">
-        <div class="figure-heading">
-          <div><p class="eyebrow">LEVEL 1 · RANGE-CORRECTED SIGNAL</p><h2 id="plot-title">Time–altitude RCS</h2></div>
-          <p id="plot-info">Plotly.js · zoom, pan and export</p>
         </div>
-        <div class="plots">
-          <div id="rcs-chart" aria-label="RCS time-altitude heatmap"></div>
+            <div id="editor-axes" hidden class="editor-axes">
+              <p class="editor-help">Current view (UTC). Change axis limits or reset zoom.</p>
+              <div class="settings-grid">
+                <div class="setting"><label for="axis-tmin">Time start (UTC)</label>
+                  <input id="axis-tmin" type="datetime-local" step="60"></div>
+                <div class="setting"><label for="axis-tmax">Time end (UTC)</label>
+                  <input id="axis-tmax" type="datetime-local" step="60"></div>
+                <div class="setting"><label for="axis-ymin">Altitude minimum (km)</label>
+                  <input id="axis-ymin" type="number" step="any"></div>
+                <div class="setting"><label for="axis-ymax">Altitude maximum (km)</label>
+                  <input id="axis-ymax" type="number" step="any"></div>
+              </div>
+              <div class="editor-actions">
+                <button type="button" id="axes-reset" class="secondary-button">Reset zoom</button>
+                <button type="button" id="axes-apply" class="primary-button">Apply range</button>
+              </div>
+            </div>
+          </div>
+          </div>
           <div id="profile-chart" aria-label="Mean vertical signal profile"></div>
         </div>
         <p class="figure-note" id="reduction-note">The plot is a display-only reduction; original NetCDF values remain unchanged.</p>
@@ -104,7 +129,10 @@
     <section id="future-panel" class="future-panel" hidden>
       <h2 id="future-title"></h2><p>This view will be implemented in a subsequent phase. No scientific calculations are performed here.</p>
     </section>
-    <footer>MILGRAU · Local read-only Web Explorer · All timestamps UTC unless noted</footer>
+    <footer class="explorer-footer">
+      <span>MILGRAU · Local read-only Explorer · All timestamps UTC unless noted</span>
+      <div id="footer-logos" class="footer-logos" aria-label="Institutional and license logos"></div>
+    </footer>
   </main>
 </body>
 </html>
