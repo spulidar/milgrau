@@ -504,4 +504,49 @@ subsequent uncertainty. This is code/fixture validation **only**;
 the operator has not yet run local cache migration or the newly
 corrected live SCC upload on their Arch Linux machine.
 
+**SCC deployment LR Quick Upload form rejection (2026-10-17):**
+The operator manually selected system 1047, uploaded
+`20240913spu1549.nc` and `lr_20240913spu1549.nc`, and the
+**actual SCC form rendered a red validation error requiring**
+`lr_YYYYMMDDcccNN.nc` (exactly **two** digits in NN). This
+explains the form-level rejection observed in the previous
+`manual_corrected_upload_uncertain` attempt, independently
+of raw NetCDF filename. The 20240913 raw file's NetCDF
+`LR_File_Name` was also confirmed to reference the incompatible
+long auxiliary. NetCDF4 and LR NETCDF4_CLASSIC files, their sizes
+and variables were inspected locally; no full successful SCC raw/LR
+validation has occurred yet. Generic SCC documentation's
+`lr_<Measurement_ID>.nc` examples differ from the enforced
+two-digit suffix in this deployment, so the **live form wins**.
+
+**Offline correction implemented:** New raw exports reference
+`lr_YYYYMMDDcccHH.nc` where HH is the first measurement's
+UTC starting hour, a stable two-digit NN. For this case it is
+`lr_20240913spu15.nc`. Same-day/same-hour local collisions
+are blocked rather than silently reusing LR.
+`milgrau-scc upload --repair-lr-cache` copies each original
+pending packet into retained `.cache/scc/legacy-lr/<ID>/`,
+updates the original NetCDF's `LR_File_Name` in a separate
+copied raw NetCDF, renames only the LR file without modifying
+its contents, regenerates SHA-256 manifest metadata and verifies
+the corrected package before publishing. It is offline; the
+canonical science NetCDF, original remote SCC archive,
+old results generation, and local journal are preserved.
+For the existing `uncertain` journal, an auditable
+`local_lr_filename_repair` event stores old/new raw hashes,
+unchanged LR hash and preceding failed action without
+resetting the unknown remote upload status.
+
+A guarded exact-ID `--retry-after-lr-fix --confirm` operation
+accepts only this specific journal repair event, original
+backup, unchanged scientific identity/configuration, newly
+corrected checksums, and remote SCC 404. No remote deletion,
+no automatic retry, no batch; failure moves journal to
+`manual_lr_fixed_upload_uncertain` which blocks further POSTs.
+Before a live attempt, verify the corrected ancillary name is
+not already registered with status OK in the SCC portal.
+**Actual upload after repair remains untested**; do not run
+the full 19-packet batch until a single-ID corrected upload
+and processed LR use have been demonstrated.
+
 **Gate 12.7:** End-to-end SCC interoperability confirmed with real responses.
