@@ -5,21 +5,59 @@ station_id: "spu"
 
 scc_policy:
   lr_input:
-    # SCC upload LR policy: scc_db (current) or climatology_ancillary.
-    # Enable climatology_ancillary only after the TRUE optical product_IDs
-    # are supplied under profiles.<profile-id>.{day,night}.elastic_product_ids.
-    # Existing configuration_id and channels are NOT product IDs.
-    source: scc_db
+    # External LR is applied only to eligible elastic_backscatter products.
+    # The source values remain exclusively in station.yaml.
+    # SCC Raman / lidar-ratio-and-extinction products are never overwritten.
+    source: climatology_ancillary
     fixed_value: 1
     raman_companions_nm:
       "355": [387, 408]
       "532": [530, 607]
       "1064": []
 
+# SCC optical product catalog transcribed from SCC Products screenshots
+# (systems 248, 294, 484, 565, 1046, 1047; 30 unique products).
+# "usecase" and "channel_count" are SCC-listed metadata, not scientific defaults.
+# Product IDs are database identifiers, NOT SCC configuration/channel IDs.
+# parent_product_id records the SCC parent relationship, which may reference
+# a product that is not explicitly listed under the same system.
+products:
+  626: {type: raman_backscatter, wavelength_nm: 355, usecase: 5, channel_count: 4, parent_product_id: 819}
+  634: {type: elastic_backscatter, wavelength_nm: 532, usecase: 1, channel_count: 2}
+  698: {type: elastic_backscatter, wavelength_nm: 355, usecase: 1, channel_count: 2}
+  701: {type: raman_backscatter, wavelength_nm: 532, usecase: 5, channel_count: 4, parent_product_id: 820}
+  702: {type: extinction_only, wavelength_nm: 355, usecase: 1, channel_count: 2, parent_product_id: 819}
+  746: {type: elastic_backscatter, wavelength_nm: 1064, usecase: 0, channel_count: 1}
+  754: {type: extinction_only, wavelength_nm: 532, usecase: 1, channel_count: 2, parent_product_id: 820}
+  819: {type: lidar_ratio_extinction, wavelength_nm: 355, usecase: 5, channel_count: 4}
+  820: {type: lidar_ratio_extinction, wavelength_nm: 532, usecase: 5, channel_count: 4}
+  1419: {type: lidar_ratio_extinction, wavelength_nm: 532, usecase: 5, channel_count: 4}
+  1420: {type: raman_backscatter, wavelength_nm: 532, usecase: 5, channel_count: 4, parent_product_id: 1419}
+  1601: {type: extinction_only, wavelength_nm: 532, usecase: 1, channel_count: 2, parent_product_id: 1419}
+  1709: {type: elastic_backscatter, wavelength_nm: 532, usecase: 0, channel_count: 1}
+  1710: {type: elastic_backscatter, wavelength_nm: 1064, usecase: 0, channel_count: 1}
+  1711: {type: elastic_backscatter, wavelength_nm: 355, usecase: 0, channel_count: 1}
+  1712: {type: extinction_only, wavelength_nm: 532, usecase: 0, channel_count: 1, parent_product_id: 1714}
+  1713: {type: raman_backscatter, wavelength_nm: 532, usecase: 0, channel_count: 2, parent_product_id: 1714}
+  1714: {type: lidar_ratio_extinction, wavelength_nm: 532, usecase: 0, channel_count: 2}
+  1715: {type: extinction_only, wavelength_nm: 355, usecase: 0, channel_count: 1, parent_product_id: 1717}
+  1716: {type: raman_backscatter, wavelength_nm: 355, usecase: 0, channel_count: 2, parent_product_id: 1717}
+  1717: {type: lidar_ratio_extinction, wavelength_nm: 355, usecase: 0, channel_count: 2}
+  3683: {type: elastic_backscatter, wavelength_nm: 1064, usecase: 0, channel_count: 1}
+  3684: {type: elastic_backscatter, wavelength_nm: 532, usecase: 1, channel_count: 2}
+  3685: {type: elastic_backscatter, wavelength_nm: 355, usecase: 1, channel_count: 2}
+  3688: {type: raman_backscatter, wavelength_nm: 532, usecase: 5, channel_count: 4, parent_product_id: 3693}
+  3689: {type: raman_backscatter, wavelength_nm: 355, usecase: 5, channel_count: 4, parent_product_id: 3692}
+  3690: {type: extinction_only, wavelength_nm: 532, usecase: 1, channel_count: 2, parent_product_id: 3693}
+  3691: {type: extinction_only, wavelength_nm: 355, usecase: 1, channel_count: 2, parent_product_id: 3692}
+  3692: {type: lidar_ratio_extinction, wavelength_nm: 355, usecase: 5, channel_count: 4}
+  3693: {type: lidar_ratio_extinction, wavelength_nm: 532, usecase: 5, channel_count: 4}
+
 profiles:
   spu-apel-2017:
     day:
       configuration_id: 248
+      product_ids: [626, 634, 698, 701, 746, 754, 3683]
       name: "apel config - Day"
       channels:
         "532.PC": 716
@@ -36,6 +74,7 @@ profiles:
         "408.PC": 1447
     night:
       configuration_id: 294
+      product_ids: [626, 634, 698, 701, 702, 746, 754, 819, 820, 3683]
       name: "apel config - Night"
       channels:
         "532.PC": 716
@@ -53,6 +92,7 @@ profiles:
   spu-raman-2018:
     day:
       configuration_id: 565
+      product_ids: [1709, 1710, 1711, 1712, 1713, 1714, 1715, 1716, 1717]
       name: "Sao Paolo Lidar - Daytime-19March2018"
       channels:
         "1064.AN": 934
@@ -62,6 +102,7 @@ profiles:
         "387.AN": 1596
     night:
       configuration_id: 484
+      product_ids: [626, 634, 698, 702, 746, 819, 1419, 1420, 1601]
       name: "SPU-Lidar - Nigthtime19March2018"
       channels:
         "532.PC": 716
@@ -79,6 +120,7 @@ profiles:
   spu-merionc-2024:
     day:
       configuration_id: 1047
+      product_ids: [3683, 3684, 3685]
       name: "Sao Paolo Lidar - Daytime-10September2024"
       channels:
         "532.AN": 4069
@@ -88,6 +130,7 @@ profiles:
         "355.AN": 4073
     night:
       configuration_id: 1046
+      product_ids: [3683, 3688, 3689, 3690, 3691, 3692, 3693]
       name: "SPU-Lidar - Nigthtime-10September2024"
       channels:
         "532.AN": 4069
@@ -100,6 +143,7 @@ profiles:
         "387.AN": 4076
         "387.PC": 4077
 
+# SCC-only Raman channel exposure notes, not optical product IDs.
 raman_channel_overrides:
   spu-merionc-2024:
     "387":
