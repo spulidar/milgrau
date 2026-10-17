@@ -10,6 +10,8 @@ scc:
   enabled: false
   config_file: "scc.yaml"
   staging_dir: ".cache/scc"
+  # Persistent SCC submission journal and pre-replacement archive (never cache).
+  state_dir: ".state/scc"
   upload:
     automatic: false
     timeout_seconds: 60
