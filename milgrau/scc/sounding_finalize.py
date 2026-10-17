@@ -66,9 +66,18 @@ def finalize_session_soundings(
     for path in sorted(packets.iterdir()):
         if not path.is_dir() or path.is_symlink() or path.name.startswith("."):
             continue
-        manifest = validate_pending_scc_package(path)
-        if Path(str(manifest["canonical_level0_path"])).resolve() != level0_path.resolve():
+        # Read only the small manifest to filter other sessions; hashing the
+        # raw SCC NetCDFs of every unrelated historical packet for each L1
+        # session would be prohibitively expensive.
+        manifest_path = path / "manifest.json"
+        if manifest_path.is_symlink():
+            raise ValueError("Symlinked SCC manifest is unsafe.")
+        if not manifest_path.is_file():
             continue
+        manifest_header = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if Path(str(manifest_header["canonical_level0_path"])).resolve() != level0_path.resolve():
+            continue
+        manifest = validate_pending_scc_package(path)
         if l1_session and l1_session != manifest["scientific_session_id"]:
             raise ValueError(f"SCC {path.name}: L1 Session_ID does not match SCC scientific source.")
         if manifest.get("sounding_stage") != "awaiting_lipancora":
