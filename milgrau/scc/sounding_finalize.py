@@ -55,6 +55,13 @@ def finalize_session_soundings(
     packets = scc_staging_root(config) / "pending"
     if not packets.is_dir():
         return []
+    orphaned_backups = sorted(p.name for p in packets.iterdir()
+                            if p.name.endswith(".before-sounding"))
+    if orphaned_backups:
+        raise ValueError(
+            "Interrupted SCC sounding transaction backups need manual recovery: "
+            + ", ".join(orphaned_backups)
+        )
     results: list[str] = []
     for path in sorted(packets.iterdir()):
         if not path.is_dir() or path.is_symlink() or path.name.startswith("."):
