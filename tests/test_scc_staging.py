@@ -169,6 +169,10 @@ def test_month_splitting_and_repeated_segments_keep_one_scientific_session(
     assert {m["climatology_month_utc"] for m in manifests} == {"202509", "202510"}
     assert sum(m["solar_regime"] == "day" for m in manifests) == 2
     assert all(m["scientific_session_id"] == session for m in manifests)
+    assert {tuple(m["source_profile_indices"]) for m in manifests} == {
+        (0,), (1,), (2, 3),
+    }
+    assert all(m["source_measurement_files"] for m in manifests)
     assert sorted(m["measurement_id"] for m in manifests) == [
         "20250930spu2300", "20250930spu2320", "20251001spu0010",
     ]
