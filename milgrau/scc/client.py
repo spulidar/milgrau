@@ -205,8 +205,10 @@ class SCCClient:
             result = response.json()
         except (TypeError, ValueError) as exc:
             raise SCCRemoteError("SCC measurement API did not return valid JSON.") from exc
-        if not isinstance(result, dict):
-            raise SCCRemoteError("SCC measurement API returned an unexpected structure.")
+        if not isinstance(result, dict) or str(result.get("id", "")) != identity:
+            raise SCCRemoteError(
+                "SCC measurement API returned a record without the requested Measurement_ID."
+            )
         return result
 
     def upload_package(self, path: Any) -> dict[str, Any]:
