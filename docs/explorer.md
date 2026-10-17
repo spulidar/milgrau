@@ -23,18 +23,21 @@ build is required: Plotly.js is served from the installed Python package.
 
 ## Phase 1: RCS Maps
 
-- One compact session selector in the header, listing all scientifically continuous
-  acquisitions in newest-first UTC order (no separate date selector or duplicated
-  session header), followed by the available L1 product and channel selectors.
-  Canonical and SCC-derived variants remain separate saved products.
+- One compact session selector in the black header, listing continuous
+  scientific acquisitions newest-first in UTC. A white navigation toolbar
+  displays the view tabs, wavelength/channel menu and the signal selector
+  only when more than one signal is available. There is no product dropdown.
+  The RCS view opens the canonical `SESSION_L1.nc` automatically, and shows a
+  clear missing-L1 message rather than silently picking a derivative if no
+  canonical L1 is available.
 - All channels in the selected L1 product, not a fixed hard-coded channel list.
 - `range_corrected_signal`, `corrected_signal` and
   `signal_pre_background` when present as saved `(time, channel, altitude)`
   variables.
 - Time–altitude heatmap and accompanying time-mean vertical profile.
 - Hover inspection, interactive Plotly zoom, pan and PNG export.
-- Excel-like **in-plot editor**: click the heatmap colorbar (or the small
-  “Edit plot” button) to change robust percentiles (default P2–P98), auto/full
+- Excel-like **in-plot editor**: click the heatmap colorbar (or the compact
+  “Plot options” button in the figure header) to change robust percentiles (default P2–P98), auto/full
   color limits, manual min/max (scientific notation), palette and log10. Click
   a time/altitude axis label or the “Axes” tab to edit view ranges and reset
   zoom. Plotly also supports native on-plot editable text and interactive
@@ -46,16 +49,18 @@ build is required: Plotly.js is served from the installed Python package.
   Log10 excludes zero/negative cells from the heatmap (without altering data)
   and manual limits in that mode are log10 units; the time-mean profile remains
   in the original linear signal units.
-- Explicit visual aggregation (`mean` or `maximum`) to limit browser
-  resolution. These displayed aggregate values are **not** original native
-  RCS samples or new scientific retrievals.
+- Display cells use fixed mean aggregation to bound browser memory. There is
+  no user-facing “Display reduction” selection, because it is an implementation
+  detail and not a scientific processing algorithm. Displayed aggregated cells
+  are **not** original native RCS samples or new scientific retrievals.
 - Large time gaps are represented by missing heatmap columns; NaNs are kept
   as missing values. The original file is never modified.
-- The interface says “Explorer” rather than “Scientific Explorer”, omits
-  redundant session explanations, and shows existing configured figure logos
-  at the bottom when the referenced image files exist. Logos are resolved
-  once from `visualization.logos` and served through an allowlisted route;
-  the browser cannot request arbitrary local file paths.
+- The header and white toolbar are visually modeled on the Measurements
+  index page, without copying the public website's publication-window
+  semantics or static-image rendering. The interface says “Explorer”, removes
+  the redundant session banner and does not show footer logos.
+- Figure titles and explicit axes (UTC, altitude, RCS, mean profile) are
+  visible and editable; plot controls no longer overlay the heatmap.
 - Other tabs are intentionally placeholders until later phases.
 
 ## Internal responsibilities
