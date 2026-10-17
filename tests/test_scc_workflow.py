@@ -249,6 +249,127 @@ def test_upload_ambiguous_keeps_original_archive_and_blocks_repeat(
         workflow.submit(_config(tmp_path), tmp_path, client, replace_existing=True)
 
 
+def _interrupted_delete_journal(tmp_path: Path, *, action="delete_result_uncertain"):
+    config = _config(tmp_path)
+    root = state_root(config)
+    backup = root / "archives" / ID / "20261017T2130"
+    backup.mkdir(parents=True, exist_ok=True)
+    with SubmissionStore(root) as store:
+        store.begin(_manifest())
+        store.transition(
+            ID, "backed_up", action="backup_verified",
+            archive_path=str(backup), archive_manifest_sha256="f" * 64,
+        )
+        store.transition(ID, "deleting", action="delete_requested")
+        store.transition(ID, "uncertain", action=action)
+    return config, backup
+
+
+def test_recover_after_delete_unknown_but_remote_absent_sends_only_upload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch(monkeypatch)
+    config, archive = _interrupted_delete_journal(tmp_path)
+    from milgrau.scc import workflow as module
+
+    monkeypatch.setattr(
+        module, "verify_archive",
+        lambda path, digest: {
+            "measurement_id": ID,
+            "remote_snapshot": {"configuration_id": 1047},
+        },
+    )
+    client = FakeClient(exists=False)
+    result = workflow.resume_after_uncertain_delete(config, tmp_path, client)
+    assert result["measurement_id"] == ID
+    assert client.delete_calls == 0
+    assert client.upload_calls == 1
+    with SubmissionStore(state_root(config)) as store:
+        row = store.get(ID)
+        assert row["state"] == "accepted"
+        assert row["archive_path"] == str(archive)
+        assert row["archive_manifest_sha256"] == "f" * 64
+        actions = [entry["action"] for entry in store.events(ID)]
+        assert actions[-3:] == [
+            "operator_confirmed_remote_absence_after_uncertain_delete",
+            "recovery_upload_requested", "recovery_upload_verified",
+        ]
+
+
+def test_recovery_does_not_upload_if_id_reappeared(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch(monkeypatch)
+    config, _ = _interrupted_delete_journal(tmp_path)
+    monkeypatch.setattr(
+        workflow, "verify_archive",
+        lambda *_: {
+            "measurement_id": ID,
+            "remote_snapshot": {"configuration_id": 1047},
+        },
+    )
+    client = FakeClient(exists=True)
+    with pytest.raises(SCCRemoteError, match="present again"):
+        workflow.resume_after_uncertain_delete(config, tmp_path, client)
+    assert client.upload_calls == client.delete_calls == 0
+    with SubmissionStore(state_root(config)) as store:
+        assert store.get(ID)["state"] == "uncertain"
+
+
+def test_recovery_rejects_other_uncertain_causes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch(monkeypatch)
+    config, _ = _interrupted_delete_journal(
+        tmp_path, action="upload_result_uncertain",
+    )
+    client = FakeClient(exists=False)
+    with pytest.raises(SCCRemoteError, match="limited to"):
+        workflow.resume_after_uncertain_delete(config, tmp_path, client)
+    assert client.upload_calls == client.delete_calls == 0
+
+
+def test_recovery_fails_closed_if_archive_verification_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch(monkeypatch)
+    config, _ = _interrupted_delete_journal(tmp_path)
+    monkeypatch.setattr(
+        workflow, "verify_archive",
+        lambda *_: (_ for _ in ()).throw(SCCRemoteError("backup corrupted")),
+    )
+    client = FakeClient(exists=False)
+    with pytest.raises(SCCRemoteError, match="backup corrupted"):
+        workflow.resume_after_uncertain_delete(config, tmp_path, client)
+    assert client.upload_calls == client.delete_calls == 0
+    with SubmissionStore(state_root(config)) as store:
+        assert store.get(ID)["state"] == "uncertain"
+
+
+def test_recovery_upload_unknown_fails_closed_and_is_not_repeatable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch(monkeypatch)
+    config, _ = _interrupted_delete_journal(tmp_path)
+    monkeypatch.setattr(
+        workflow, "verify_archive",
+        lambda *_: {
+            "measurement_id": ID,
+            "remote_snapshot": {"configuration_id": 1047},
+        },
+    )
+    client = FakeClient(exists=False, fail_upload=True)
+    with pytest.raises(SCCRemoteError, match="upload response"):
+        workflow.resume_after_uncertain_delete(config, tmp_path, client)
+    assert client.delete_calls == 0 and client.upload_calls == 1
+    with SubmissionStore(state_root(config)) as store:
+        assert store.get(ID)["state"] == "uncertain"
+        assert store.events(ID)[-1]["action"] == "recovery_upload_uncertain"
+    with pytest.raises(SCCRemoteError, match="limited to"):
+        workflow.resume_after_uncertain_delete(config, tmp_path, client)
+    assert client.upload_calls == 1
+
+
 def test_replacement_rejects_missing_remote_target(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
