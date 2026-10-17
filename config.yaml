@@ -7,7 +7,7 @@ station_config: "station.yaml"
 
 # Optional external SCC interoperability; no scc.yaml dependency when disabled.
 scc:
-  enabled: false
+  enabled: true
   config_file: "scc.yaml"
   staging_dir: ".cache/scc"
   # Persistent SCC submission journal and pre-replacement archive (never cache).
