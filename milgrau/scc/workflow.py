@@ -83,6 +83,22 @@ def submit(
                 identity, "backed_up", action="replacement_difference_verified",
                 detail=comparison,
             )
+            # The remote archive and staged upload bytes must still match
+            # the approved preflight immediately before deleting anything.
+            verify_archive(archive, archive_hash)
+            refreshed = validate_upload_package(package)
+            if refreshed["files"] != manifest["files"] or (
+                refreshed["scc_configuration_id"] != manifest["scc_configuration_id"]
+                or refreshed["measurement_id"] != identity
+            ):
+                store.transition(
+                    identity, "failed", action="local_source_changed_before_delete",
+                    error="Pending SCC raw/LR changed after preflight; no deletion attempted.",
+                )
+                raise SCCRemoteError(
+                    "Pending SCC upload package changed during remote backup; "
+                    "the prior SCC measurement was not deleted."
+                )
             # This is the point of no automatic retry: deletion POST is not
             # atomic with the later upload. Even a timeout can mean deletion.
             store.transition(identity, "deleting", action="delete_requested")
