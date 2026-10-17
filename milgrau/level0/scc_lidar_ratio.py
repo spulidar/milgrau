@@ -21,7 +21,7 @@ from milgrau.level0.netcdf import scc_measurement_id
 
 
 def climatology_ancillary_enabled(config: Mapping[str, Any]) -> bool:
-    catalog = config.get("_station_catalog", {})
+    catalog = config.get("_scc_catalog", {})
     policy = catalog.get("scc_policy", {}) if isinstance(catalog, Mapping) else {}
     lr_input = policy.get("lr_input", {}) if isinstance(policy, Mapping) else {}
     return (
