@@ -140,6 +140,23 @@ def test_product_registry_rejects_unverified_or_corrupt_mappings(bad: str) -> No
         validate_scc_config(catalog, config["_station_catalog"])
 
 
+def test_explicit_external_lr_cannot_override_raman_retrieval() -> None:
+    config = _setup()
+    catalog = deepcopy(config["_scc_catalog"])
+    catalog["profiles"]["spu-merionc-2024"]["night"]["lr_input"] = {"355.AN": 0}
+    with pytest.raises(ValueError, match="cannot override Raman"):
+        validate_scc_config(catalog, config["_station_catalog"])
+
+
+def test_lr_input_zero_is_invalid_without_external_ancillary_policy() -> None:
+    config = _setup()
+    catalog = deepcopy(config["_scc_catalog"])
+    catalog["scc_policy"]["lr_input"]["source"] = "scc_db"
+    catalog["profiles"]["spu-merionc-2024"]["day"]["lr_input"] = {"1064.AN": 0}
+    with pytest.raises(ValueError, match="requires climatology_ancillary"):
+        validate_scc_config(catalog, config["_station_catalog"])
+
+
 def test_product_parent_may_be_shared_outside_its_system_membership() -> None:
     config = _setup()
     system = config["_scc_catalog"]["profiles"]["spu-apel-2017"]["day"]
