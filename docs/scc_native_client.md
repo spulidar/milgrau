@@ -39,6 +39,39 @@ If the site also requires HTTP Basic authentication, additionally use:
 - `MILGRAU_SCC_BASIC_USERNAME`
 - `MILGRAU_SCC_BASIC_PASSWORD`
 
+### HTTP 401 before SCC website login
+
+The SCC access tool's public documentation distinguishes **two independent
+credential pairs**: `basic_credentials` for the HTTP access gate and
+`website_credentials` for the Django login. A 401 response **when GETting
+`/accounts/login/`** happens before website credentials are submitted;
+it is not evidence that the Django username/password are wrong.
+
+For a safe shell session in zsh, after entering website credentials, request
+HTTP Basic values separately from the operator/system administrator:
+
+```bash
+read -r "MILGRAU_SCC_BASIC_USERNAME?SCC HTTP Basic user: "
+read -rs "MILGRAU_SCC_BASIC_PASSWORD?SCC HTTP Basic password: "
+echo
+export MILGRAU_SCC_BASIC_USERNAME MILGRAU_SCC_BASIC_PASSWORD
+
+# Read-only login + measurement query: NO UPLOAD.
+milgrau-scc status --id 20240913spu1549 --remote
+
+# Clear both pairs after the test.
+unset MILGRAU_SCC_USERNAME MILGRAU_SCC_PASSWORD
+unset MILGRAU_SCC_BASIC_USERNAME MILGRAU_SCC_BASIC_PASSWORD
+```
+
+If the user has no separate HTTP Basic account, first confirm the correct SCC
+HTTPS address and ask its administrator for the HTTP-layer credentials. Do
+**not** assume the website username/password are interchangeable with Basic.
+Never disable HTTPS certificate validation, share passwords in logs/screenshots
+or place secrets in committed YAML. A 401 without a Basic
+`WWW-Authenticate` challenge can also be an upstream proxy/WAF policy
+or wrong endpoint, so verify rather than guessing.
+
 Never put these values in `scc.yaml`, `config.yaml`, GitHub, a NetCDF,
 an issue, a screenshot, or a copied command containing literal secrets.
 Use a restricted SCC upload-only user where possible. TLS certificate
