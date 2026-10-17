@@ -228,6 +228,28 @@ investigate SCC upload form validation and server logs in cooperation
 with its administrators before considering another manually
 authorized upload.
 
+## Read-only finding: uploaded raw NetCDF name was wrong
+
+The official SCC input format requires the **uploaded filename**
+`<Measurement_ID>.nc`, while the original MILGRAU native client
+submitted the disposable internal filename `raw.nc`. The native
+client has now been fixed to send the same staged NetCDF bytes using
+`20240913spu1549.nc` as the multipart filename, without renaming or
+changing any cached bytes. The previous POST response HTML was not
+retained; this may explain server-side form rejection, but cannot prove
+the historic failure. SCC `LR_Input=0` for supplied external LR was
+also checked against the exporter policy.
+
+**Do not repeat the prior `--resume-after-delete` command:** the
+journal now has `recovery_upload_uncertain`, and the command is
+intentionally limited to a different prior event. An eventual second
+POST must be designed as a separately authorized **single-ID**
+reconciliation of the failed upload, contingent on confirming remote
+absence through API **and portal**, original archive integrity, and
+the identity/configuration/source checks. No automatic retry, reset of
+`.state/scc/submissions.sqlite`, additional deletion or 19-ID batch
+is allowed.
+
 ## Only after the single-ID trial passes
 
 ```bash
