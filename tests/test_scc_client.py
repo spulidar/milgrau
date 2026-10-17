@@ -225,6 +225,42 @@ def test_explicit_single_id_still_uploads(
     assert cli.main(["upload", "--id", IDENTITY, "--confirm"]) == 0
 
 
+def test_resume_after_delete_cli_requires_one_id_confirm_and_never_batch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stage(tmp_path)
+    monkeypatch.setattr(cli, "load_config", lambda: _config(tmp_path))
+    assert cli.main(["upload", "--resume-after-delete", "--confirm"]) == 1
+    assert cli.main([
+        "upload", "--id", IDENTITY, "--resume-after-delete", "--dry-run",
+    ]) == 1
+    assert cli.main([
+        "upload", "--id", IDENTITY, "--resume-after-delete",
+        "--replace-existing", "--confirm",
+    ]) == 1
+
+
+def test_resume_after_delete_cli_routes_once_without_deleting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stage(tmp_path)
+    monkeypatch.setattr(cli, "load_config", lambda: _config(tmp_path))
+    import milgrau.scc.workflow as workflow
+
+    calls = []
+    def fake_recovery(config, path, client):
+        calls.append((path.name, client))
+        return {"measurement_id": IDENTITY, "remote_page": "https://scc.example.test/record/"}
+
+    monkeypatch.setattr(workflow, "resume_after_uncertain_delete", fake_recovery)
+    fake = object()
+    monkeypatch.setattr(cli, "_client", lambda _: fake)
+    assert cli.main([
+        "upload", "--id", IDENTITY, "--resume-after-delete", "--confirm",
+    ]) == 0
+    assert calls == [(IDENTITY, fake)]
+
+
 def test_remote_status_can_outlive_deleted_local_cache(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
 ) -> None:
