@@ -208,6 +208,17 @@ def test_real_cli_send_requires_exact_id_and_confirm(
     assert cli.main(["upload", "--id", IDENTITY, "--confirm"]) == 0
 
 
+def test_remote_status_can_outlive_deleted_local_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
+) -> None:
+    monkeypatch.setattr(cli, "load_config", lambda: _config(tmp_path))
+    monkeypatch.setattr(cli, "_client", lambda _: _client(FakeSession(duplicate=True)))
+    assert cli.main(["status", "--id", IDENTITY, "--remote"]) == 0
+    text = capsys.readouterr().out
+    assert "No matching local" in text
+    assert f"remote {IDENTITY}" in text
+
+
 def test_download_and_cleanup_are_nondestructive_until_later_phase(
     tmp_path: Path,
 ) -> None:
