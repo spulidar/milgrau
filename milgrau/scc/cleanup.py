@@ -69,11 +69,18 @@ def verify_cleanup(config: Mapping[str, Any], identity: str) -> dict[str, Any]:
         ):
             raise SCCRemoteError("SCC pending packet changed from the confirmed upload.")
         lr_sha = next(
-            (item["sha256"] for name, item in pending["files"].items() if name != manifest_raw_name(pending)),
+            (item["sha256"] for name, item in pending["files"].items() if name.startswith("lr_")),
             None,
         )
         if lr_sha != row["lr_sha256"]:
             raise SCCRemoteError("SCC pending LR differs from confirmed upload.")
+        sounding_sha = next(
+            (item["sha256"] for name, item in pending["files"].items()
+             if name.startswith("rs_")),
+            None,
+        )
+        if sounding_sha != row["sounding_sha256"]:
+            raise SCCRemoteError("SCC pending sounding differs from confirmed upload.")
         return {"identity": identity, "staged": staged, "already_cleaned": False}
 
 
