@@ -66,6 +66,23 @@ def submit(
                 archive_path=str(archive), archive_manifest_sha256=archive_hash,
                 detail={"archive_path": str(archive), "archive_sha256": archive_hash},
             )
+            comparison = compare_staged_to_archive(manifest, copy)
+            if comparison["identical"]:
+                store.transition(
+                    identity, "remote_exists", action="identical_noop",
+                    detail=comparison,
+                )
+                return {
+                    "measurement_id": identity,
+                    "remote_page": client._url(
+                        f"data_processing/measurements/{identity}/"
+                    ),
+                    "status": "already_identical",
+                }
+            store.transition(
+                identity, "backed_up", action="replacement_difference_verified",
+                detail=comparison,
+            )
             # This is the point of no automatic retry: deletion POST is not
             # atomic with the later upload. Even a timeout can mean deletion.
             store.transition(identity, "deleting", action="delete_requested")
