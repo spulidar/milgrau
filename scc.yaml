@@ -8,6 +8,12 @@ server:
   base_url: "https://scc.imaa.cnr.it/"
 
 scc_policy:
+  # Opt in only after validating the available observed Wyoming cache.
+  # No modelled or synthetic profile is substituted for missing observations.
+  sounding:
+    enabled: false
+    source: cached_wyoming
+    missing_policy: skip
   lr_input:
     # External LR is applied only to eligible elastic_backscatter products.
     # The source values remain exclusively in station.yaml.
