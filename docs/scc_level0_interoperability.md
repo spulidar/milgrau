@@ -77,11 +77,11 @@ Example (one scientific session with distinct SCC publication pieces):
 .cache/scc/pending/
   20250930spu2300/
     20250930spu2300.nc
-    lr_20250930spu2300.nc
+    lr_20250930spu23.nc
     manifest.json
   20251001spu0010/
     20251001spu0010.nc
-    lr_20251001spu0010.nc
+    lr_20251001spu00.nc
     manifest.json
 ```
 
@@ -92,6 +92,19 @@ scientific session, SCC configuration/product IDs, original segment identities,
 UTC dates, source canonical L0 path, the `scc.yaml` SHA-256 and checksums
 of upload bytes. The manifest is **local staging state**, not proof the remote
 SCC received anything.
+
+SCC sounding integration is **opt-in** through
+`scc.yaml scc_policy.sounding.enabled` and only for new exports.
+It uses an existing observed Wyoming radiosonde cache for station 83779,
+with the sounding launch-site metadata, not the lidar station location.
+If available and validated, the packet also contains
+`rs_<Measurement_ID>.nc`, referenced by `Sounding_File_Name` with
+`Molecular_Calc=1`. When disabled/missing under `missing_policy: skip`,
+it retains `Molecular_Calc=0` and no sounding file.
+No ERA5/USSA76 profile is labelled as observed sounding.
+SCC ancillary LR names instead use the deployed Quick Upload
+`lr_YYYYMMDDcccNN.nc` form; archived four-digit legacy LR names
+must be repaired offline before any upload.
 
 Packages are written in sibling temporary directories and moved atomically
 to `pending/<Measurement_ID>/` only after the raw/ancillary NetCDFs and manifest
