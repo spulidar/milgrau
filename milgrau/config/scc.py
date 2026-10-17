@@ -144,6 +144,17 @@ def _validate_scc(
         for channel, flag in flags.items():
             if isinstance(flag, bool) or not isinstance(flag, Integral) or flag not in {0, 1}:
                 raise ValueError(f"Invalid SCC LR_Input flag for {channel}: {flag!r}.")
+            if flag == 0:
+                if policy["lr_input"].get("source", "scc_db") != "climatology_ancillary":
+                    raise ValueError("SCC LR_Input=0 requires climatology_ancillary source.")
+                wavelength = _channel_wavelength_nm(channel)
+                companions = policy["lr_input"]["raman_companions_nm"].get(str(wavelength), [])
+                channel_wavelengths = {_channel_wavelength_nm(c) for c in channels}
+                if set(int(value) for value in companions) & channel_wavelengths:
+                    raise ValueError(
+                        f"SCC {profile_id}/{mode} cannot override Raman "
+                        f"retrieval at {wavelength} nm with external LR."
+                    )
 
         # System membership references actual optical products in the registry.
         linked = config["product_ids"]
