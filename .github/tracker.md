@@ -1,7 +1,7 @@
 # Phase 12 — Optional SCC integration and publication workflow
 
 **Branch:** `scc-integration-refactor` (base: `milgraumaxxing`)  
-**Status:** Phases 12.1 and 12.2 implemented and validated; Phase 12.3 pending  
+**Status:** Phases 12.1–12.2 validated; Phase 12.3 implemented — final CI validation pending  
 **Scope:** SCC configuration, optional export, staging, native upload/status/download/cleanup client.
 This branch's tracker intentionally contains **only Phase 12**. The earlier scientific tracker remains on the base branch.
 
@@ -70,12 +70,31 @@ live SCC upload; that is a separate gate in Phase 12.7.
 
 ## 12.3 — LIBIDS staging separation
 
-- [ ] Separate canonical L0 incrementality from SCC export validity.
-- [ ] Stage SCC-only L0, optional LR and manifest under `.cache/scc/`.
-- [ ] Preserve source session and profile/segment metadata.
-- [ ] Handle month boundaries, regime splits, multiple segments and ID collisions without splitting scientific sessions.
-- [ ] Use atomic writes and SCC-only reexport for historical L0.
-- [ ] Define safe treatment of old `*_L0_scc.nc` under scientific folders.
+- [x] Separate canonical L0 incrementality from SCC export validity.
+- [x] Stage SCC-only L0, optional LR and manifest under `.cache/scc/`.
+- [x] Preserve source session and profile/segment metadata.
+- [x] Handle month boundaries, regime splits, multiple segments and ID collisions without splitting scientific sessions.
+- [x] Use atomic writes and SCC-only reexport for historical L0.
+- [x] Define safe treatment of old `*_L0_scc.nc` under scientific folders.
+
+**Implementation evidence:** `milgrau/level0/scc_staging.py` implements
+`.cache/scc/pending/<Measurement_ID>/`, atomic per-package staging,
+SHA256 manifest verification, explicit identity-collision failures and
+local file source/profile lineage. `milgrau/level0/processing.py` partitions
+SCC-only packets by day/night and UTC month while leaving continuous
+scientific L0 unchanged; individual measurements crossing a month boundary
+are explicitly refused (not silently assigned a climatology).
+`milgrau/level0/libids.py` verifies scientific incrementality independently
+of SCC cache, and `milgrau-libids --scc-reexport -i SESSION_ID` regenerates
+upload packages from archived raw data only for an existing valid canonical L0.
+Legacy SCC files in processed folders are retained, never migrated/deleted.
+Dedicated `tests/test_scc_staging.py` guards atomicity, tampering, collisions,
+regime/month partitioning, source profiles and scientific independence.
+Phase 12.3 does not submit or delete remote measurements: those capabilities
+remain scheduled for Phases 12.4–12.6.
+
+**Validation:** implementation and regression tests added; final branch CI
+pending after latest profile-lineage manifest improvement.
 
 **Gate 12.3:** Removing staging cache never triggers canonical L0 reprocessing.
 
