@@ -189,6 +189,62 @@ def test_native_upload_sends_correct_multipart_only_once(tmp_path: Path) -> None
     assert any("api/v1/measurements" in url for url, _ in fake.gets)
 
 
+def test_upload_eventual_api_visibility_never_repeats_post(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import milgrau.scc.client as client_module
+
+    path = _stage(tmp_path)
+    fake = FakeSession()
+    original_get = fake.get
+    missing_after_submit = {"count": 0}
+
+    def slow_api_get(url, **kwargs):
+        if fake.uploaded and "/api/v1/measurements/" in url:
+            missing_after_submit["count"] += 1
+            if missing_after_submit["count"] <= 2:
+                fake.gets.append((url, kwargs))
+                return FakeResponse(404, url)
+        return original_get(url, **kwargs)
+
+    fake.get = slow_api_get
+    monkeypatch.setattr(client_module.time, "sleep", lambda _: None)
+    result = _client(fake).upload_package(path)
+    assert result["measurement_id"] == IDENTITY
+    assert missing_after_submit["count"] == 3
+    assert len([
+        url for url, _ in fake.posts if url.endswith("/quick/")
+    ]) == 1
+
+
+def test_upload_quick_form_validation_rejection_is_diagnostic_not_resubmitted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import milgrau.scc.client as client_module
+
+    path = _stage(tmp_path)
+    fake = FakeSession()
+    original_post = fake.post
+
+    def reject_form(url, **kwargs):
+        if url.endswith("/data_processing/measurements/quick/"):
+            fake.posts.append((url, kwargs))
+            return FakeResponse(200, url)
+        return original_post(url, **kwargs)
+
+    fake.post = reject_form
+    monkeypatch.setattr(client_module.time, "sleep", lambda _: None)
+    with pytest.raises(SCCRemoteError, match="original form"):
+        _client(fake).upload_package(path)
+    assert fake.uploaded is False
+    assert len([
+        url for url, _ in fake.posts if url.endswith("/quick/")
+    ]) == 1
+    assert len([
+        url for url, _ in fake.gets if "/api/v1/measurements/" in url
+    ]) == 4  # one prior duplicate-check plus three read-only polls
+
+
 def test_remote_duplicate_never_triggers_upload_or_delete(tmp_path: Path) -> None:
     path = _stage(tmp_path)
     fake = FakeSession(duplicate=True)
