@@ -23,6 +23,8 @@ build/
 02-processed_data/
 measurements/
 .cache/
+# SCC durable private submission journal / remote archives (NOT disposable cache).
+.state/
 quarantine/
 campaign-output/
 two_sided_campaign_results/
