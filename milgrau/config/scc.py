@@ -64,6 +64,13 @@ def _validate_scc(profile_id: str, scc: Mapping[str, Any]) -> None:
         if mode not in scc:
             raise ValueError(f"profiles.{profile_id}.scc.{mode} is required when scc is configured.")
         config = _mapping(scc[mode], f"profiles.{profile_id}.scc.{mode}")
+        required = {"configuration_id", "name", "channels"}
+        allowed = required | {"elastic_product_ids", "lr_input"}
+        if set(config) - allowed or required - set(config):
+            raise ValueError(
+                f"SCC profile {profile_id!r}/{mode} requires {sorted(required)}; "
+                f"allowed={sorted(allowed)}."
+            )
         _positive_int(config.get("configuration_id"), f"profiles.{profile_id}.scc.{mode}.configuration_id")
         _text(config.get("name"), f"profiles.{profile_id}.scc.{mode}.name")
         channels = _mapping(config.get("channels"), f"profiles.{profile_id}.scc.{mode}.channels")
@@ -76,6 +83,12 @@ def _validate_scc(profile_id: str, scc: Mapping[str, Any]) -> None:
             if resolved in ids:
                 raise ValueError(f"profiles.{profile_id}.scc.{mode} duplicates SCC channel ID {resolved}.")
             ids.add(resolved)
+        flags = config.get("lr_input", {})
+        if not isinstance(flags, Mapping) or set(flags) - set(channels):
+            raise ValueError(f"SCC {profile_id}/{mode} lr_input must map known channels.")
+        for channel, flag in flags.items():
+            if isinstance(flag, bool) or not isinstance(flag, Integral) or flag not in {0, 1}:
+                raise ValueError(f"Invalid SCC LR_Input flag for {channel}: {flag!r}.")
 
         # Product IDs are not channel IDs or configuration IDs.
         product_map = config.get("elastic_product_ids", {})
