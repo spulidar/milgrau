@@ -233,6 +233,71 @@ def archive_remote_measurement(
         raise
 
 
+def _single_netcdf_digest(path: Path, kind: str, identity: str) -> str | None:
+    """Hash original NetCDF payload if one file matches the SCC identity."""
+    if kind == "netcdf":
+        return file_sha256(path)
+    hashes = []
+    with zipfile.ZipFile(path) as archive:
+        for member in archive.infolist():
+            if not member.filename.lower().endswith(".nc"):
+                continue
+            with archive.open(member) as src:
+                payload = src.read(MAX_BACKUP_BYTES + 1)
+            if len(payload) > MAX_BACKUP_BYTES:
+                return None
+            try:
+                with nc.Dataset("memory", memory=payload) as dataset:
+                    if dataset.getncattr("Measurement_ID") == identity:
+                        hashes.append(hashlib.sha256(payload).hexdigest())
+            except (OSError, RuntimeError, AttributeError):
+                continue
+    return hashes[0] if len(hashes) == 1 else None
+
+
+def compare_staged_to_archive(
+    manifest: Mapping[str, Any], snapshot: Mapping[str, Any],
+) -> dict[str, bool]:
+    """Never claim identical without matching remote time/NetCDF/LR hashes."""
+    def timestamp(value: Any) -> datetime:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return (dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
+
+    remote = snapshot["remote_snapshot"]
+    period_differs = (
+        timestamp(manifest["measurement_start_utc"]) != timestamp(remote["start"])
+        or timestamp(manifest["measurement_stop_utc"]) != timestamp(remote["stop"])
+    )
+    staged_lr = next((name for name in manifest["files"] if name != "raw.nc"), None)
+    remote_lr = snapshot.get("remote_original_lr_file_name")
+    path = Path(snapshot["_archive_path"])
+    source_hash = _single_netcdf_digest(
+        path / "raw.archive", snapshot["files"]["raw.archive"]["format"],
+        str(manifest["measurement_id"]),
+    )
+    raw_equal = (
+        source_hash is not None
+        and source_hash == manifest["files"]["raw.nc"]["sha256"]
+    )
+    if staged_lr is None and remote_lr is None:
+        lr_equal = True
+    elif not staged_lr or not remote_lr:
+        lr_equal = False
+    else:
+        record = snapshot["files"].get("original_lr.archive")
+        lr_equal = (
+            record is not None and record["format"] == "netcdf"
+            and file_sha256(path / "original_lr.archive")
+            == manifest["files"][staged_lr]["sha256"]
+        )
+    return {
+        "period_differs": period_differs,
+        "raw_identical": raw_equal,
+        "lr_identical": lr_equal,
+        "identical": not period_differs and raw_equal and lr_equal,
+    }
+
+
 def verify_archive(directory: Path, manifest_hash: str) -> dict[str, Any]:
     """Check every archived artifact byte against its own SHA-256 before delete."""
     snapshot = directory / "archive.json"
@@ -247,4 +312,5 @@ def verify_archive(directory: Path, manifest_hash: str) -> dict[str, Any]:
             raise SCCRemoteError(f"Remote archive checksum failed for {name}.")
         if path.stat().st_size != record["bytes"]:
             raise SCCRemoteError(f"Remote archive size failed for {name}.")
+    data["_archive_path"] = str(directory)
     return data
