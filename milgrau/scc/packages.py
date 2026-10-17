@@ -17,6 +17,7 @@ from milgrau.level0.scc_staging import (
     validate_pending_scc_package,
 )
 from milgrau.level0.scc_lidar_ratio import scc_lr_file_name
+from milgrau.level0.scc_sounding import scc_sounding_name, validate_sounding
 
 
 class SCCPackageError(ValueError):
@@ -69,15 +70,33 @@ def validate_upload_package(
                 str(raw.getncattr("LR_File_Name"))
                 if "LR_File_Name" in raw.ncattrs() else None
             )
+            sounding_name = (
+                str(raw.getncattr("Sounding_File_Name"))
+                if "Sounding_File_Name" in raw.ncattrs() else None
+            )
+            molecular_calc = int(raw.variables["Molecular_Calc"].getValue())
         expected_lr = scc_lr_file_name(identity)
         if allow_legacy_lr and lr_name == f"lr_{identity}.nc":
             expected_lr = lr_name
-        if lr_name is None:
-            if file_names != {raw_name}:
-                raise SCCPackageError("Unreferenced lidar-ratio ancillary is staged.")
-        else:
-            if lr_name != expected_lr or file_names != {raw_name, expected_lr}:
+        expected_files = {raw_name}
+        if lr_name is not None:
+            if lr_name != expected_lr:
                 raise SCCPackageError("LR_File_Name does not match staged auxiliary.")
+            expected_files.add(expected_lr)
+        if sounding_name is not None:
+            if sounding_name != scc_sounding_name(identity) or molecular_calc != 1:
+                raise SCCPackageError(
+                    "Sounding_File_Name requires rs_ID.nc and Molecular_Calc=1."
+                )
+            expected_files.add(sounding_name)
+            validate_sounding(path / sounding_name, identity=identity)
+        elif molecular_calc == 1:
+            raise SCCPackageError(
+                "Molecular_Calc=1 requires a referenced observed SCC sounding."
+            )
+        if file_names != expected_files:
+            raise SCCPackageError("SCC staged auxiliary filenames do not match raw references.")
+        if lr_name is not None:
             lr_file = path / expected_lr
             if lr_file.is_symlink():
                 raise SCCPackageError("Symlinked SCC lidar-ratio file is forbidden.")
