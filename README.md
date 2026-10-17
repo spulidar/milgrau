@@ -170,11 +170,16 @@ milgrau-scc upload --dry-run
 milgrau-scc status
 ```
 
-Only an explicit `milgrau-scc upload --id MEASUREMENT_ID --confirm` can attempt
-a real authenticated upload. SCC Phase 12.5 also supports an opt-in **same-ID
-replacement** with `--replace-existing --confirm`, but only after verifiable
-backup of the original SCC raw measurement, LR (when present) and downloadable
-processed products. A durable journal under `.state/scc/` records status,
+Remote SCC submissions are always explicitly operator-authorized:
+`milgrau-scc upload --confirm` now processes **all** locally staged packets
+sequentially, skipping any Measurement_ID already present on the server.
+`milgrau-scc upload --confirm --replace-existing` additionally allows
+**same-ID replacement** for remote-existing packets only after verifiable
+backup of the old raw measurement, LR (when present) and finished outputs.
+Use `--id MEASUREMENT_ID` for one targeted upload or replacement, and
+**validate a single real destructive replacement before any bulk replace**.
+Both modes are stop-on-uncertainty, with a per-run summary and no automatic
+POST retry. See the [operator batch and single-replacement guide](docs/scc_batch_operator_guide.md). A durable journal under `.state/scc/` records status,
 checksums, backups and interrupted attempts independently of the disposable
 `.cache/scc/` staging area. Uploads are never automatically initiated by
 LIBIDS. Phase 12.6 adds verified read-only SCC result downloads into each
