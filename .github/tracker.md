@@ -444,4 +444,15 @@ determine whether the failed upload was rejected; only then design a
 single exact-ID, explicit reconciliation/retry procedure with no remote
 deletion or automatic batch resumption.
 
+**Filename compatibility fix validation:** All six cross-platform jobs
+passed in [GitHub Actions run 39073865678](https://github.com/spulidar/milgrau/actions/runs/39073865678)
+on commit `0401f560b7d9f70cbb3ce7df4f2f7e005f427581`.
+The native client now transmits the staged raw bytes as
+`<Measurement_ID>.nc`, conforming to the SCC input-file filename
+specification, while retaining `raw.nc` and all checksum/provenance
+data unchanged locally. The previous real upload is still unresolved,
+the journal remains `recovery_upload_uncertain`, and no further
+POST has been made. Never interpret passing CI as live acceptance
+or automatic permission to resend.
+
 **Gate 12.7:** End-to-end SCC interoperability confirmed with real responses.
