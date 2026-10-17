@@ -251,7 +251,7 @@ explicit manual reconciliation are the safe recovery foundation.
 - [x] Provide `milgrau-scc download --id ID [--session SESSION_ID] [--keep-cache]` and `cleanup --id ID --dry-run|--confirm` under the existing four-subcommand CLI.
 - [x] Migrate old SQLite 12.5 journals non-destructively to record results path/checksum and downloaded/cleaned states.
 - [x] Add regression tests for interrupted/partial downloads, duplicate/stale remote generations, other people's existing SCC uploads, failed/incomplete ELPP/ELDA, changed checksums and cache idempotence.
-- [ ] **Live read-only SCC processed-result download** with the SPU operator; no live SCC uploads, replacements or deletions during development.
+- [x] **Live read-only SCC processed-result download** validated with SPU operator for one existing measurement; no live SCC uploads, replacements or deletions during development.
 
 **Implementation evidence:** `milgrau/scc/results.py` atomically stages
 verified SCC archives into
@@ -277,8 +277,25 @@ on commit `447e9fb7fe4b01e34fd8099f5df2041534dc2925`
 The subsequent commits changed only README, SCC documentation and tracker.
 The SCC processed-results workflow is covered by mocked downloads,
 corruption tests, interrupted transfers, journal migration and safe cleanup;
-**live remote SCC result download is still an explicit open gate**.
+**live remote SCC result download has subsequently been validated for one pre-existing measurement**.
 No real SCC upload, deletion or replacement POST occurred.
+
+**Real SCC download validation (operator, 2026-10-17):** The operator
+ran the Phase 12.6 `milgrau-scc download` workflow against existing remote
+Measurement_ID `20240913spu1549`, linked to scientific Session_ID
+`spu_20240913-1549Z_20240913-1750Z`. The CLI confirmed:
+`SCC downloads VERIFIED` with archived remote product groups
+`cloudmask, elda, elic, elpp, elquick, hirelpp` (six groups).
+Immutable remote generation
+`scc-results/20240913spu1549/generations/remote-a5beca97ee50b9df37ff/`
+was saved under the canonical scientific session. Crucially,
+`upload_owned=False`: this historic SCC record was not submitted by
+the MILGRAU native client and is **not eligible for cache cleanup**;
+staged scientific raw/LR inputs must remain untouched. This validates
+read-only live downloading and local verification for this specific
+measurement, **not** a new live upload, same-ID replacement,
+automatic cleanup after a verified MILGRAU-owned upload, or numerical
+cross-comparison of SCC outputs. These remain Phase 12.7 gates.
 
 **Gate 12.6:** SCC submissions and external scientific results remain
 traceable after cache cleanup; uncertain states and original scientific
