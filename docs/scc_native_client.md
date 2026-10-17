@@ -252,6 +252,63 @@ Phase 12.6 implements verified read-only download and cache-only cleanup.
 Old SCC backups and journal entries are persistent evidence and are never
 removed by cache cleanup.
 
+## Optional radiosonde sounding (observed cache, default OFF)
+
+SCC's `sounding_file` Quick Upload field accepts an observed profile in
+`rs_<Measurement_ID>.nc` format. The [official SCC input format v3.6,
+table 2](https://docs.scc.imaa.cnr.it/en/latest/_downloads/f3353a4bea47d541e7cb97788490cac6/NetCDF_input_file_v3_6.pdf)
+requires the sounding's altitude **above the radiosonde launch station**,
+temperature in °C, pressure in hPa, observation launch location/altitude
+and synoptic date/time.
+
+This is deliberately **opt-in**, so repairing the existing 19 SCC packets
+does not alter the raw atmosphere mode or the currently uncertain submission.
+To prepare future **new** LIBIDS exports with a real cached sounding, set
+in `scc.yaml`:
+
+```yaml
+scc_policy:
+  sounding:
+    enabled: true
+    source: cached_wyoming
+    missing_policy: fail   # or skip
+```
+
+The rest of `scc_policy`, especially `lr_input`, remains unchanged.
+`cached_wyoming` reads only the existing observational
+`.cache/radiosonde/YYYY/MM/radiosonde_<WMO>_YYYYMMDD_HHZ.csv` and
+its JSON provenance from the existing Level 1 Wyoming/Siphon mechanism;
+no network request occurs during LIBIDS, and **no ERA5/USSA76/synthetic
+data are ever disguised as an observed sounding**. The nearest synoptic
+launch must satisfy `level1.atmosphere.radiosonde.max_time_delta_hours`.
+The radiosonde's launch latitude/longitude/altitude, separately from the
+lidar instrument's location, are recorded in `station.yaml`.
+
+When a valid observed profile is available, a fresh SCC stage contains:
+
+```text
+.cache/scc/pending/<Measurement_ID>/
+  <Measurement_ID>.nc    # Molecular_Calc = 1, Sounding_File_Name = rs_<ID>.nc
+  lr_<date><station><NN>.nc
+  rs_<Measurement_ID>.nc # observed T/pressure/altitude + provenance
+  manifest.json          # hashes all three files
+```
+
+The native client attaches the `rs_...` NetCDF under multipart field
+`sounding_file` automatically, in addition to raw `data` and
+`lidar_ratio_file`, after offline checksum and NetCDF schema checks.
+The SQLite submission journal also includes the optional sounding hash,
+with non-destructive schema migration for earlier records.
+If no sounding is found and `missing_policy: skip`, no sounding is
+staged and `Molecular_Calc` remains 0; `fail` instead stops that new
+export rather than inventing an observation.
+
+**Do not enable sounding and re-export the current `20240913spu1549`
+incident.** Its earlier upload is unresolved and its journal/backup hashes
+must remain traceable. First finish the LR-only recovery and confirm
+remote acceptance. Optional sounding is intended for subsequent newly
+staged observations and needs a separate live SCC validation.
+
 ## Phase 12.6 — Verified results and disposable cache cleanup
 
 SCC results are explicitly **external scientific outputs**, not replacements
