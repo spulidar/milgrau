@@ -206,6 +206,22 @@ actual downloadable SCC archives **without deleting or uploading any
 measurement**, to expose remote format/ancillary limitations before a first
 live replacement.
 
+**Operator live read-only backup validation (2026-10-17):** The operator ran
+`milgrau-scc status --id 20240913spu1549 --remote --backup` successfully.
+Local pending integrity passed; the client downloaded and verified a remote
+archive under `.state/scc/archives/20240913spu1549/20261017T204440914284Z`.
+The verified archive-manifest SHA-256 was
+`5faba8977f1c3687fea369616cbd6c939d73d9ff4b7347d9f842a2b851c40c52`.
+SCC confirmed system 1047, start `2024-09-13T15:49:32`, stop
+`2024-09-13T17:50:42`, `is_queued=false`,
+`is_being_processed=false`, ELPP=127 and ELDA=127. This establishes
+**real-server read-only archival compatibility for this measurement**, not
+safe live delete/reupload or broad archival compatibility for all systems.
+No remote POST, replacement, cleanup or deletion occurred. Before any live
+replacement, inspect the retained archive and compare archived raw/LR
+with staged inputs, ensure a recoverable restoration path, and explicitly
+authorize the risk of losing the previously processed SCC results.
+
 **Remaining gates:** Simulated rollback/recovery after every destructive failure,
 especially when the SCC's original LR or raw archive schema differs, requires
 additional integration evidence. The SCC has no atomic compare-and-swap
