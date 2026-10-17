@@ -15,20 +15,30 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="milgrau-libids", description="Run MILGRAU Level 0 processing.")
     add_input_argument(parser, source="Raw measurement selection")
     parser.add_argument("--force", action="store_true", help="Reprocess selected data even when incremental outputs are current.")
+    parser.add_argument(
+        "--scc-reexport", action="store_true",
+        help="Re-stage SCC upload packages for selected sessions using raw data, without rewriting canonical L0 (requires enabled SCC).",
+    )
     parser.add_argument("--version", action="version", version=f"MILGRAU {__version__}")
     return parser
 
 
 def main() -> int:
     """Run LIBIDS from the command line."""
-    args = _build_parser().parse_args()
+    parser = _build_parser()
+    args = parser.parse_args()
+    if args.force and args.scc_reexport:
+        parser.error("--force and --scc-reexport cannot be used together.")
     config = load_config()
     logger = bind_log_context(setup_logger("LIBIDS", config=config), pipeline="L0")
     bind_log_context(logger, stage="start").info("LIBIDS Level 0")
     summary = run_guarded(
         "cli.libids",
         logger,
-        lambda: process_level_0(config, logger, inputs=args.inputs, force=args.force),
+        lambda: process_level_0(
+            config, logger, inputs=args.inputs, force=args.force,
+            scc_reexport=args.scc_reexport,
+        ),
     )
     return finish_cli("LIBIDS", summary, logger)
 
