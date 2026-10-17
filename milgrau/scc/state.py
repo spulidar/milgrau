@@ -94,6 +94,7 @@ class SubmissionStore:
                 configuration_id INTEGER NOT NULL,
                 raw_sha256 TEXT NOT NULL,
                 lr_sha256 TEXT,
+                sounding_sha256 TEXT,
                 product_ids_json TEXT NOT NULL,
                 source_segments_json TEXT NOT NULL,
                 scc_config_sha256 TEXT,
@@ -122,7 +123,7 @@ class SubmissionStore:
         existing = {
             str(row[1]) for row in self._conn.execute("PRAGMA table_info(submissions)")
         }
-        for column in ("results_path", "results_manifest_sha256"):
+        for column in ("results_path", "results_manifest_sha256", "sounding_sha256"):
             if column not in existing:
                 self._conn.execute(
                     f"ALTER TABLE submissions ADD COLUMN {column} TEXT"
@@ -169,7 +170,10 @@ class SubmissionStore:
             "configuration_id": int(manifest["scc_configuration_id"]),
             "raw_sha256": str(files[raw_name]["sha256"]),
             "lr_sha256": next(
-                (str(v["sha256"]) for k, v in files.items() if k != raw_name), None,
+                (str(v["sha256"]) for k, v in files.items() if k.startswith("lr_")), None,
+            ),
+            "sounding_sha256": next(
+                (str(v["sha256"]) for k, v in files.items() if k.startswith("rs_")), None,
             ),
             "product_ids_json": json.dumps(
                 [int(x) for x in manifest["scc_product_ids"]], separators=(",", ":"),
@@ -207,7 +211,7 @@ class SubmissionStore:
                         """
                         UPDATE submissions SET
                             scientific_session_id=?, configuration_id=?,
-                            raw_sha256=?, lr_sha256=?, product_ids_json=?,
+                            raw_sha256=?, lr_sha256=?, sounding_sha256=?, product_ids_json=?,
                             source_segments_json=?, scc_config_sha256=?,
                             start_utc=?, stop_utc=?, state='pending',
                             archive_path=NULL, archive_manifest_sha256=NULL,
@@ -232,10 +236,10 @@ class SubmissionStore:
                 """
                 INSERT INTO submissions(
                     measurement_id, scientific_session_id, configuration_id,
-                    raw_sha256, lr_sha256, product_ids_json,
+                    raw_sha256, lr_sha256, sounding_sha256, product_ids_json,
                     source_segments_json, scc_config_sha256,
                     start_utc, stop_utc, state, updated_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
                 """,
                 (identity, *expected.values(), _utcnow()),
             )
