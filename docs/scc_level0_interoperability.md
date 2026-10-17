@@ -109,30 +109,49 @@ not already been used by another uploaded measurement.
 
 ### Optional station-climatology ancillary for SCC elastic products
 
-SCC raw exports can use a **monthly, station-owned lidar-ratio profile** rather
-than the fixed value stored in the SCC database, without modifying scientific
-MILGRAU L0/L1/L2 files. The current repository default is explicitly
-`scc_policy.lr_input.source: scc_db` to preserve existing SCC uploads until the
-real optical `product_ID` values have been confirmed.
+SCC raw exports can use a **monthly, station-owned lidar-ratio profile**
+rather than the fixed value stored in the SCC database, without modifying
+scientific MILGRAU L0/L1/L2 files. In Phase 12.2 the default **inside optional
+`scc.yaml`** is `scc_policy.lr_input.source: climatology_ancillary`. Normal
+MILGRAU `config.yaml` still has `scc.enabled: false`; enabling SCC does **not**
+send files over the network (the native client is a separate later phase).
 
-To enable it **after configuring product IDs**, set
-`scc_policy.lr_input.source: climatology_ancillary` in `scc.yaml`, and add
-`elastic_product_ids` to each applicable profile's
-`day`/`night` mapping in `scc.yaml`, keyed by the *elastic product* wavelength.
-One wavelength can map to either one integer ID or a list of distinct IDs.
-They must be genuine optical **product IDs**, NOT the SCC configuration ID or
-any channel ID from `channels`. Example shape (illustrative placeholders):
+The SCC product catalogue contains **30 distinct database product IDs**
+transcribed from the six SCC product-list screenshots (systems 248, 294, 484,
+565, 1046 and 1047). A product entry contains its type
+(`elastic_backscatter`, `raman_backscatter`, `extinction_only` or
+`lidar_ratio_extinction`), emitted wavelength, SCC `usecase`, number of
+channels, and optional original parent product ID. Each historical SCC system
+references these entries in its own `product_ids` list, so product IDs may
+legitimately belong to more than one system. No channel or configuration ID
+is ever substituted for a missing product ID.
+
+Example using **verified current SCC IDs**:
 
 ```yaml
+products:
+  3683: {type: elastic_backscatter, wavelength_nm: 1064, usecase: 0, channel_count: 1}
+  3684: {type: elastic_backscatter, wavelength_nm: 532, usecase: 1, channel_count: 2}
+  3685: {type: elastic_backscatter, wavelength_nm: 355, usecase: 1, channel_count: 2}
 profiles:
-  some-hardware-profile:
+  spu-merionc-2024:
     day:
-      configuration_id: 1234
-      name: "Example SCC day configuration"
-      channels: {"1064.AN": 9999}
-      elastic_product_ids:
-        "1064": [REPLACE_WITH_REAL_SCC_PRODUCT_ID]
+      configuration_id: 1047
+      name: "Sao Paolo Lidar - Daytime-10September2024"
+      channels: {"532.AN": 4069, "532.PC": 4070, "1064.AN": 4071, "355.PC": 4072, "355.AN": 4073}
+      product_ids: [3683, 3684, 3685]
 ```
+
+The export resolver derives `elastic_product_ids` **in memory** from typed
+product entries, never as a second manually maintained YAML list. Products
+with Raman companions retain the Raman processing path and are not assigned
+an elastic climatological LR. For the current daytime system 1047 this selects
+355, 532 and 1064 nm; for nighttime 1046 this selects **only 3683** at
+1064 nm. The historical systems 248 and 294 genuinely list **both 746 and
+3683** as 1064-nm elastic-backscatter products with usecase 0; the resolver
+keeps both distinct IDs (rather than arbitrarily preferring one). Exact
+historical SCC processing behavior still requires end-to-end validation with
+the remote server.
 
 The exporter selects the UTC calendar month of the actual SCC measurement
 profiles, reads `station.lidar_ratio_climatology.monthly_sr` and `std_sr`,
