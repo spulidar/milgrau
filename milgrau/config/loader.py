@@ -134,10 +134,23 @@ def _scc_settings(config: Mapping[str, Any]) -> Mapping[str, Any]:
         if name in raw and (not isinstance(raw[name], str) or not raw[name].strip()):
             raise ValueError(f"config.scc.{name} must be a non-empty path.")
     upload = raw.get("upload", {})
-    if not isinstance(upload, Mapping) or set(upload) - {"automatic"}:
-        raise ValueError("config.scc.upload must contain only automatic.")
+    if not isinstance(upload, Mapping) or set(upload) - {"automatic", "timeout_seconds", "retries"}:
+        raise ValueError("config.scc.upload allows only automatic, timeout_seconds, retries.")
     if "automatic" in upload and not isinstance(upload["automatic"], bool):
         raise ValueError("config.scc.upload.automatic must be a boolean.")
+    if "timeout_seconds" in upload and (
+        isinstance(upload["timeout_seconds"], bool)
+        or not isinstance(upload["timeout_seconds"], (float, int))
+        or not math.isfinite(upload["timeout_seconds"])
+        or upload["timeout_seconds"] <= 0
+    ):
+        raise ValueError("config.scc.upload.timeout_seconds must be finite and positive.")
+    if "retries" in upload and (
+        isinstance(upload["retries"], bool)
+        or not isinstance(upload["retries"], int)
+        or not 0 <= upload["retries"] <= 5
+    ):
+        raise ValueError("config.scc.upload.retries must be an integer 0..5.")
     cleanup = raw.get("cleanup", {})
     if not isinstance(cleanup, Mapping) or set(cleanup) - {"policy"}:
         raise ValueError("config.scc.cleanup must contain only policy.")
