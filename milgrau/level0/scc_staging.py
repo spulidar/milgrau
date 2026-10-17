@@ -140,6 +140,11 @@ def write_scc_manifest(
         "scc_config_sha256": catalog_hash,
         "staged_at_utc": datetime.now(timezone.utc).isoformat(),
         "state": "pending",  # local file state only; not an assertion of SCC acceptance
+        "sounding_stage": (
+            "awaiting_lipancora" if config.get("_scc_catalog", {})
+            .get("scc_policy", {}).get("sounding", {}).get("enabled", False)
+            else "not_requested"
+        ),
         "files": checksums,
     }
     (staging / "manifest.json").write_text(
