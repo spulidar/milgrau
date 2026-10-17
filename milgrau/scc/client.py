@@ -317,7 +317,9 @@ class SCCClient:
         with ExitStack() as stack:
             raw = stack.enter_context(open(path / raw_name, "rb"))
             uploads = {"data": (raw_name, raw, "application/x-netcdf")}
-            lr_name = f"lr_{identity}.nc"
+            from milgrau.level0.scc_lidar_ratio import scc_lr_file_name
+
+            lr_name = scc_lr_file_name(identity)
             if lr_name in manifest["files"]:
                 lr_handle = stack.enter_context(open(path / lr_name, "rb"))
                 uploads["lidar_ratio_file"] = (lr_name, lr_handle, "application/x-netcdf")
