@@ -87,11 +87,6 @@ station:
     provenance:
       source: "SPU"
 
-# SCC policy is station/instrument metadata, not a processing fallback.
-# fixed_value=1 tells ELPP to use the fixed lidar ratio stored in the SCC database.
-# When a Raman companion wavelength is present, LR_Input is left undefined for
-# the elastic wavelength. A concrete day/night SCC configuration may still
-# provide its own explicit lr_input mapping.
 calibrations:
   spu-channel-corrections-v1:
     provenance:
