@@ -409,4 +409,14 @@ response body was not recorded, so its form-validation reason cannot be
 retroactively determined. A new live POST is **not** warranted without
 remote diagnosis and explicit manual reconciliation.
 
+**Diagnostic CI:** All six jobs passed in
+[GitHub Actions 39072914060](https://github.com/spulidar/milgrau/actions/runs/39072914060)
+on `1e2d8c674fc833e607737f0c81eb41639a9c561e`, covering safe
+GET-only confirmation after single multipart POST and detection of
+possible Quick upload form rejection; subsequent commits updated
+documentation and tracker only. This does **not** establish that the
+real SCC upload was accepted. The operator should provide only
+read-only API status, journal events and ancillary LR registry
+information before a further change is attempted.
+
 **Gate 12.7:** End-to-end SCC interoperability confirmed with real responses.
