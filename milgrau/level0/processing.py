@@ -19,6 +19,7 @@ from milgrau.io.paths import level0_output_path, level0_scc_output_path
 from milgrau.io.weather import fetch_surface_weather
 from milgrau.level0.config import resolve_level0_config, station_coordinates
 from milgrau.level0.netcdf import build_level0_netcdf
+from milgrau.level0.scc_lidar_ratio import write_scc_lidar_ratio_ancillary
 from milgrau.physics.solar import (
     SOLAR_POSITION_ALGORITHM,
     build_solar_segments,
@@ -422,6 +423,14 @@ def _write_scc_exports(
             solar_regime=regime,
         )
         ensure_directories(scc_path.parent)
+        lr_path = write_scc_lidar_ratio_ancillary(
+            scc_path, regime_measurements, scc_lidar, regime_config, context,
+        )
+        if lr_path is not None:
+            regime_config["_scc_lr_file_name"] = lr_path.name
+            scc_logger.info(
+                "%s | SCC climatology LR auxiliary: %s", regime, lr_path.name,
+            )
         build_level0_netcdf(
             netcdf_path=str(scc_path),
             session_id=session_id,
