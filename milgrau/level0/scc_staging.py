@@ -86,6 +86,8 @@ def write_scc_manifest(
     source_canonical_l0: Path,
     config: Mapping[str, Any],
     ancillary_name: str | None,
+    source_profile_indices: list[int] | None = None,
+    source_measurement_files: list[str] | None = None,
 ) -> dict[str, Any]:
     """Write a local handoff manifest with checksums of the actual upload bytes."""
     names = ["raw.nc"] + ([] if ancillary_name is None else [ancillary_name])
@@ -106,6 +108,12 @@ def write_scc_manifest(
         "scc_configuration_id": int(config_id),
         "scc_product_ids": [int(value) for value in product_ids],
         "source_segments": source_segments,
+        "source_profile_indices": [] if source_profile_indices is None else [
+            int(index) for index in source_profile_indices
+        ],
+        "source_measurement_files": [] if source_measurement_files is None else [
+            Path(name).name for name in source_measurement_files
+        ],
         "measurement_start_utc": profile_start_utc,
         "measurement_stop_utc": profile_stop_utc,
         "canonical_level0_path": str(source_canonical_l0),
