@@ -9,7 +9,7 @@ import shutil
 from pathlib import Path
 from typing import Any, Mapping
 
-from milgrau.level0.scc_staging import pending_scc_package
+from milgrau.level0.scc_staging import manifest_raw_name, pending_scc_package
 from milgrau.provenance import file_sha256
 from milgrau.scc.client import SCCRemoteError
 from milgrau.scc.packages import validate_upload_package
@@ -65,11 +65,11 @@ def verify_cleanup(config: Mapping[str, Any], identity: str) -> dict[str, Any]:
         if (
             pending["scientific_session_id"] != row["scientific_session_id"]
             or pending["scc_configuration_id"] != row["configuration_id"]
-            or pending["files"]["raw.nc"]["sha256"] != row["raw_sha256"]
+            or pending["files"][manifest_raw_name(pending)]["sha256"] != row["raw_sha256"]
         ):
             raise SCCRemoteError("SCC pending packet changed from the confirmed upload.")
         lr_sha = next(
-            (item["sha256"] for name, item in pending["files"].items() if name != "raw.nc"),
+            (item["sha256"] for name, item in pending["files"].items() if name != manifest_raw_name(pending)),
             None,
         )
         if lr_sha != row["lr_sha256"]:
