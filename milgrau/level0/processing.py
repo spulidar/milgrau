@@ -15,7 +15,7 @@ from milgrau.config.station import resolve_station_context, select_lidar_channel
 from milgrau.io.filesystem import ensure_directories
 from milgrau.io.licel import parse_licel_group
 from milgrau.io.logging_utils import bind_log_context
-from milgrau.io.paths import level0_output_path, level0_scc_output_path
+from milgrau.io.paths import level0_output_path
 from milgrau.io.weather import fetch_surface_weather
 from milgrau.level0.config import resolve_level0_config, station_coordinates
 from milgrau.level0.netcdf import build_level0_netcdf
@@ -242,6 +242,7 @@ def _select_lidar_profiles(
 def _regime_group_df(
     group_df: pd.DataFrame,
     regime: str,
+    month_utc: str | None = None,
 ) -> tuple[pd.DataFrame, np.ndarray, tuple[str, ...]]:
     """Return all measurement profiles from one solar regime plus shared dark rows."""
     regime_value = str(regime).strip().lower()
@@ -252,6 +253,11 @@ def _regime_group_df(
         (group_df["meas_type"] == "measurements")
         & (group_df["solar_regime"].astype(str).str.lower() == regime_value)
     ].copy()
+    if month_utc is not None:
+        starts = pd.to_datetime(measurement_rows["start_time_utc"], utc=True)
+        measurement_rows = measurement_rows.loc[
+            starts.dt.strftime("%Y%m") == month_utc
+        ].copy()
     if measurement_rows.empty:
         raise ValueError(f"Solar regime {regime_value!r} has no measurement rows.")
 
@@ -343,156 +349,172 @@ def _write_scc_exports(
     config: Mapping[str, Any],
     logger: logging.Logger,
 ) -> list[Path]:
-    """Write at most one SCC-compatible Level 0 derivative per day/night regime."""
+    """Stage SCC-only day/night × UTC-month submissions atomically in cache.
+
+    A SCIENTIFIC session always remains continuous. One SCC Measurement_ID
+    identifies precisely one staged submission, never a canonical output.
+    """
     if not isinstance(config.get("_scc_catalog"), Mapping):
         return []
 
+    from milgrau.level0.netcdf import scc_measurement_id
     from milgrau.level0.scc_lidar_ratio import write_scc_lidar_ratio_ancillary
+    from milgrau.level0.scc_staging import (
+        atomic_scc_package,
+        pending_scc_package,
+        validate_pending_scc_package,
+        write_scc_manifest,
+    )
 
     measurement_rows = group_df[group_df["meas_type"] == "measurements"].copy()
     if measurement_rows.empty:
         return []
-
-    channels = [str(channel) for channel in lidar_data.get("channels", [])]
-    present_regimes = tuple(
-        dict.fromkeys(
-            measurement_rows["solar_regime"].dropna().astype(str).str.lower().tolist()
+    starts = pd.to_datetime(measurement_rows["start_time_utc"], utc=True)
+    ends = pd.to_datetime(measurement_rows["stop_time"], utc=True)
+    if (ends <= starts).any():
+        raise ValueError("SCC export requires positive profile durations.")
+    # A profile itself crossing a month cannot be associated with a single
+    # constant monthly LR. Do not silently assign it to one month.
+    if (
+        starts.dt.strftime("%Y%m")
+        != (ends - pd.Timedelta(nanoseconds=1)).dt.strftime("%Y%m")
+    ).any():
+        raise ValueError(
+            "One raw SCC measurement profile crosses a UTC month boundary; "
+            "split that raw measurement before SCC staging."
         )
-    )
+    measurement_rows["scc_month_utc"] = starts.dt.strftime("%Y%m")
+    regime_values = measurement_rows["solar_regime"].astype(str).str.lower()
+    partitions = sorted({
+        (str(regime), str(month))
+        for regime, month in zip(
+            regime_values, measurement_rows["scc_month_utc"], strict=True,
+        )
+    })
     outputs: list[Path] = []
+    used_ids: set[str] = set()
+    channels = [str(channel) for channel in lidar_data.get("channels", [])]
+    canonical = level0_output_path(session_id, config)
 
-    for regime in ("day", "night"):
-        if regime not in present_regimes:
-            continue
-
+    for regime, month in partitions:
+        if regime not in {"day", "night"}:
+            raise ValueError(f"Unsupported SCC solar regime: {regime!r}.")
         regime_df, profile_indices, source_segments = _regime_group_df(
-            group_df,
-            regime,
+            group_df, regime, month,
         )
         regime_measurements = regime_df[
             regime_df["meas_type"] == "measurements"
         ].copy()
-        first_time = pd.to_datetime(
-            regime_measurements["start_time_utc"], utc=True
-        ).min()
+        first = pd.to_datetime(regime_measurements["start_time_utc"], utc=True).min()
+        last = pd.to_datetime(regime_measurements["stop_time"], utc=True).max()
 
-        context = deepcopy(
-            dict(
-                resolve_station_context(
-                    config,
-                    measurement_time=first_time.to_pydatetime(),
-                    available_channels=channels,
-                    mode=regime,
-                )
-            )
-        )
+        context = deepcopy(dict(resolve_station_context(
+            config, measurement_time=first.to_pydatetime(),
+            available_channels=channels, mode=regime,
+        )))
         context["solar_regime"] = regime
         context["source_segments"] = ",".join(source_segments)
-        context["source_segment_count"] = int(len(source_segments))
-        context["contains_time_gaps"] = bool(len(source_segments) > 1)
+        context["source_segment_count"] = len(source_segments)
+        context["contains_time_gaps"] = len(source_segments) > 1
         context["solar_day_night_threshold_deg"] = float(
             resolve_level0_config(config).solar_regime.day_night_threshold_deg
         )
-
-        scc_logger = bind_log_context(logger, stage=f"scc.{regime}")
+        scc_logger = bind_log_context(logger, stage=f"scc.{regime}.{month}")
         if not context.get("scc_available", False):
-            scc_logger.info("%s | no SCC mapping for station profile", regime)
+            scc_logger.info("no SCC mapping for station profile")
             continue
         if not context.get("scc_export_ready", False):
             scc_logger.warning(
-                "%s | SCC export skipped | missing=%s",
-                regime,
+                "SCC export skipped, missing channels: %s",
                 ",".join(context.get("missing_scc_channels", [])) or "unknown",
             )
             continue
-
-        regime_config = deepcopy(dict(config))
-        regime_config["_resolved_station"] = context
-        scc_channels = [
-            str(channel) for channel in context.get("scc_channels", [])
-        ]
+        scc_channels = list(context.get("scc_channels", []))
         if not scc_channels:
-            scc_logger.warning("%s | no SCC channels present", regime)
             continue
 
+        measurement_id = scc_measurement_id(first, str(context["station_id"]))
+        if measurement_id in used_ids:
+            raise ValueError(
+                f"SCC Measurement_ID {measurement_id} collision across "
+                "regime/month partitions of one scientific session."
+            )
+        used_ids.add(measurement_id)
+        regime_config = deepcopy(dict(config))
+        regime_config["_resolved_station"] = context
         regime_lidar = _select_lidar_profiles(lidar_data, profile_indices)
         scc_lidar = select_lidar_channels(regime_lidar, scc_channels)
         regime_weather = _weather_for_measurement_rows(
-            weather_data,
-            regime_measurements,
+            weather_data, regime_measurements,
         )
-        scc_path = level0_scc_output_path(
-            session_id,
-            regime_config,
-            solar_regime=regime,
-        )
-        ensure_directories(scc_path.parent)
-        lr_path = write_scc_lidar_ratio_ancillary(
-            scc_path, regime_measurements, scc_lidar, regime_config, context,
-        )
-        if lr_path is not None:
-            regime_config["_scc_lr_file_name"] = lr_path.name
-            scc_logger.info(
-                "%s | SCC climatology LR auxiliary: %s", regime, lr_path.name,
+        with atomic_scc_package(config, measurement_id) as staging:
+            scc_path = staging / "raw.nc"
+            lr_path = write_scc_lidar_ratio_ancillary(
+                scc_path, regime_measurements, scc_lidar, regime_config, context,
             )
-        build_level0_netcdf(
-            netcdf_path=str(scc_path),
-            session_id=session_id,
-            lidar_data=scc_lidar,
-            group_df=regime_df,
-            weather_data=regime_weather,
-            config=regime_config,
-            logger=scc_logger,
-            scc_export=True,
-        )
-        write_netcdf_provenance(scc_path, regime_config)
-        outputs.append(scc_path)
+            if lr_path is not None:
+                regime_config["_scc_lr_file_name"] = lr_path.name
+            build_level0_netcdf(
+                netcdf_path=str(scc_path),
+                session_id=session_id,
+                lidar_data=scc_lidar,
+                group_df=regime_df,
+                weather_data=regime_weather,
+                config=regime_config,
+                logger=scc_logger,
+                scc_export=True,
+            )
+            write_netcdf_provenance(scc_path, regime_config)
+            write_scc_manifest(
+                staging,
+                measurement_id=measurement_id,
+                session_id=session_id,
+                regime=regime,
+                month_utc=month,
+                config_id=context["scc_configuration_id"],
+                product_ids=context["scc_product_ids"],
+                source_segments=list(source_segments),
+                profile_start_utc=first.isoformat(),
+                profile_stop_utc=last.isoformat(),
+                source_canonical_l0=canonical,
+                config=config,
+                ancillary_name=None if lr_path is None else lr_path.name,
+            )
+        package = pending_scc_package(config, measurement_id)
+        validate_pending_scc_package(package)
+        outputs.append(package)
         scc_logger.info(
-            "%s | %s | segments=%s | %d/%d channels | config %s",
-            regime,
-            scc_path.name,
+            "staged | %s | %d channels | config %s | segments %s",
+            package, len(scc_channels), context["scc_configuration_id"],
             ",".join(source_segments),
-            len(scc_channels),
-            len(channels),
-            context["scc_configuration_id"],
         )
-
-    if outputs:
-        session_folder = level0_output_path(session_id, config).parent
-        for stale_path in session_folder.glob(
-            f"{session_id}_seg*_L0_scc.nc"
-        ):
-            if stale_path in outputs:
-                continue
-            try:
-                stale_path.unlink()
-                bind_log_context(logger, stage="scc.cleanup").info(
-                    "removed obsolete segment-named SCC derivative | %s",
-                    stale_path.name,
-                )
-            except OSError as exc:
-                bind_log_context(logger, stage="scc.cleanup").warning(
-                    "could not remove obsolete SCC derivative %s | %s",
-                    stale_path.name,
-                    exc,
-                )
-
     return outputs
-
 
 def process_session_group(
     session_id: str,
     group_df: pd.DataFrame,
     config: Mapping[str, Any],
     logger: logging.Logger,
+    *,
+    scc_only: bool = False,
 ) -> ExecutionResult:
-    """Process one continuous session into full-channel and optional SCC Level 0 products."""
+    """Write a canonical scientific session, or re-export only its SCC upload bytes."""
     started_at = time.perf_counter()
     netcdf_path = level0_output_path(session_id, config)
     out_dir = netcdf_path.parent
     stage = "level0.measurements"
     files_meas: list[str] = []
     try:
+        if scc_only:
+            from milgrau.level0.libids import _primary_output_satisfies_contract
+
+            if not isinstance(config.get("_scc_catalog"), Mapping):
+                raise ValueError("SCC-only re-export requires scc.enabled: true.")
+            if not _primary_output_satisfies_contract(netcdf_path):
+                raise ValueError(
+                    "Cannot SCC-only re-export: no valid canonical L0 exists "
+                    f"at {netcdf_path}."
+                )
         df_meas = group_df[group_df["meas_type"] == "measurements"]
         if not df_meas.empty:
             df_meas = df_meas.sort_values("start_time_utc")
@@ -526,42 +548,55 @@ def process_session_group(
         )
         stage = "level0.weather"
         weather_data = fetch_group_weather(group_df, effective_config, logger)
-        stage = "level0.write"
-        ensure_directories(out_dir)
-        primary_config = _internal_level0_config(effective_config)
-        build_level0_netcdf(
-            netcdf_path=str(netcdf_path),
-            session_id=session_id,
-            lidar_data=lidar_data_tensors,
-            group_df=group_df,
-            weather_data=weather_data,
-            config=primary_config,
-            logger=bind_log_context(logger, stage="write"),
-        )
-        provenance_attrs = write_netcdf_provenance(netcdf_path, primary_config)
-        bind_log_context(logger, stage="provenance").debug(
-            "MILGRAU=%s | config=%s | station=%s | profile=%s | calibration=%s",
-            provenance_attrs.get("software_version", "-"),
-            provenance_attrs.get("processing_configuration_file", "-"),
-            provenance_attrs.get("station_configuration_file", "-"),
-            provenance_attrs.get("station_profile_id", "-"),
-            provenance_attrs.get("instrument_calibration_id", "-"),
-        )
+        if not scc_only:
+            stage = "level0.write"
+            ensure_directories(out_dir)
+            primary_config = _internal_level0_config(effective_config)
+            build_level0_netcdf(
+                netcdf_path=str(netcdf_path),
+                session_id=session_id,
+                lidar_data=lidar_data_tensors,
+                group_df=group_df,
+                weather_data=weather_data,
+                config=primary_config,
+                logger=bind_log_context(logger, stage="write"),
+            )
+            provenance_attrs = write_netcdf_provenance(netcdf_path, primary_config)
+            bind_log_context(logger, stage="provenance").debug(
+                "MILGRAU=%s | config=%s | station=%s | profile=%s | calibration=%s",
+                provenance_attrs.get("software_version", "-"),
+                provenance_attrs.get("processing_configuration_file", "-"),
+                provenance_attrs.get("station_configuration_file", "-"),
+                provenance_attrs.get("station_profile_id", "-"),
+                provenance_attrs.get("instrument_calibration_id", "-"),
+            )
         stage = "level0.scc_export"
-        scc_paths = _write_scc_exports(
-            session_id=session_id,
-            lidar_data=lidar_data_tensors,
-            group_df=group_df,
-            weather_data=weather_data,
-            config=config,
-            logger=logger,
-        )
+        scc_error = None
+        try:
+            scc_paths = _write_scc_exports(
+                session_id=session_id,
+                lidar_data=lidar_data_tensors,
+                group_df=group_df,
+                weather_data=weather_data,
+                config=config,
+                logger=logger,
+            )
+        except Exception as exc:
+            if scc_only:
+                raise
+            scc_paths = []
+            scc_error = str(exc)
+            bind_log_context(logger, stage="scc.error").error(
+                "canonical L0 saved, SCC staging failed: %s", exc,
+            )
         result_metadata = {
             "pipeline": "L0",
             "session_id": session_id,
             "file_count": len(files_meas),
             "level0_channel_count": len(lidar_data_tensors.get("channels", [])),
         }
+        if scc_error is not None:
+            result_metadata["scc_staging_error"] = scc_error
         resolved_station = effective_config.get("_resolved_station")
         if isinstance(resolved_station, Mapping):
             result_metadata["station_profile"] = resolved_station["profile_id"]
@@ -580,8 +615,8 @@ def process_session_group(
                     str(path) for path in scc_paths
                 )
         return ExecutionResult.success(
-            "level0.complete",
-            "Level 0 NetCDF generated",
+            "level0.scc_reexport" if scc_only else "level0.complete",
+            "SCC-only packages staged" if scc_only else "Level 0 NetCDF generated",
             input_path=files_meas[0],
             output_path=netcdf_path,
             duration_seconds=time.perf_counter() - started_at,
