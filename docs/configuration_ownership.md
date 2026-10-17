@@ -8,6 +8,7 @@ unambiguous.
 | --- | --- |
 | `config.yaml` | processing choices for one run |
 | `station.yaml` | dated station, instrument and calibration facts |
+| `scc.yaml` | SCC database mapping and interoperability policy (optional) |
 | Python | equations, constants, validation and implementation mechanics |
 | external source | radiosonde/ERA5 content |
 | NetCDF provenance | resolved record of the run, inputs and source code |
@@ -27,7 +28,8 @@ The processing recipe owns:
 - two-sided KFS and Monte Carlo settings;
 - residual-aerosol boundary scenarios;
 - cloud-screening enablement;
-- visualization and QA settings.
+- visualization and QA settings;
+- `scc.enabled`, optional SCC config path and staging/upload/cleanup policy.
 
 Scientific readers are strict: a missing required setting fails rather than
 creating a silent default.
@@ -40,12 +42,38 @@ The station catalogue owns:
 - dated hardware/acquisition profiles;
 - laser and channel definitions;
 - dead time, bin shift and characterized saturation properties;
-- calibration identity and SCC channel mapping;
+- station profile and calibration identity (not SCC database identifiers);
 - station lidar-ratio climatology and its declared uncertainty;
 - overlap geometry and the status of provisional estimates.
 
 The dated station profile is resolved before processing. Downstream code uses
 that resolved state and does not independently rediscover instrument history.
+
+## `scc.yaml` — optional external integration
+
+SCC database identity and configuration live outside the scientific station catalog:
+- station identity cross-check (`station_id`);
+- `scc_policy.lr_input` (fixed SCC database LR or optional external climatology);
+- per-instrument-profile day/night configuration IDs and SCC numeric channel IDs;
+- SCC-only Raman mapping references and optional optical product IDs.
+
+The existing dated `station.yaml` profiles still own historical validity and
+instrument calibrations. `scc.yaml` selects the matching profile **by ID**, and
+validation rejects unknown profile IDs or mismatched stations. Scientific Raman
+channel characterization, overlap geometry and observational station climatology
+remain in `station.yaml`.
+
+`config.yaml` has `scc.enabled: false` by default. In this mode MILGRAU does
+not read, validate, or require `scc.yaml`; the L0/L1/L2 scientific pipeline
+does not require SCC extras. Enabling requires a valid `scc.config_file`
+relative to the config file and loads a separate `_scc_catalog` runtime view.
+Do not copy database IDs back into the station catalog. Configurations from the
+six known historical SCC systems are migrated without changing their IDs.
+
+Phase 12.1 preserves the existing SCC-only derivative placement until Phase
+12.3 moves them into the temporary staging queue and decouples publication
+identity from scientific session identity. Disabled canonical L0 incrementality
+already ignores SCC derivatives.
 
 ## Python
 
