@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from types import SimpleNamespace
@@ -172,6 +171,59 @@ def test_month_splitting_and_repeated_segments_keep_one_scientific_session(
     assert sorted(m["measurement_id"] for m in manifests) == [
         "20250930spu2300", "20250930spu2320", "20251001spu0010",
     ]
+
+
+def test_legacy_scientific_scc_derivative_is_left_untouched(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    scientific = tmp_path / "processed" / "old-session"
+    scientific.mkdir(parents=True)
+    original = scientific / "old-session_day_L0_scc.nc"
+    original.write_bytes(b"historic SCC derivative - intentionally retained")
+    _stage(config)
+    assert original.read_bytes() == b"historic SCC derivative - intentionally retained"
+
+
+def test_scc_only_reexport_never_writes_canonical_level0(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _config(tmp_path)
+    session = "spu_20251001-0000Z_20251001-0400Z"
+    from milgrau.io.paths import level0_output_path
+    original = level0_output_path(session, config)
+    original.parent.mkdir(parents=True, exist_ok=True)
+    original.write_bytes(b"untouched scientific L0")
+    monkeypatch.setattr(libids, "_primary_output_satisfies_contract", lambda _: True)
+    monkeypatch.setattr(processing, "parse_licel_group", lambda *_: {
+        "channels": ["532.AN"], "tensors": {"532.AN": np.ones((1, 8))},
+    })
+    monkeypatch.setattr(
+        processing, "_annotate_solar_context", lambda group, _: group,
+    )
+    context = {"profile_id": "test", "calibration_id": "test-calibration",
+               "solar_regimes_present": ["day"], "solar_segments_present": ["seg00"]}
+    monkeypatch.setattr(
+        processing, "_resolve_group_station_config",
+        lambda group, data, cfg, logger: ({**cfg, "_resolved_station": context}, data, context),
+    )
+    monkeypatch.setattr(processing, "fetch_group_weather", lambda *_: {})
+    monkeypatch.setattr(
+        processing, "build_level0_netcdf",
+        lambda **_: pytest.fail("SCC-only re-export must not write canonical L0"),
+    )
+    monkeypatch.setattr(
+        processing, "_write_scc_exports", lambda **_: [_stage(config)],
+    )
+    group = pd.DataFrame({
+        "meas_type": ["measurements"],
+        "filepath": ["raw-measurement"],
+        "start_time_utc": [pd.Timestamp("2025-10-01T00:00:00Z")],
+    })
+    result = processing.process_session_group(
+        session, group, config, logging.getLogger("test.scc.only"), scc_only=True,
+    )
+    assert result.ok
+    assert result.metadata["scc_export_count"] == 1
+    assert original.read_bytes() == b"untouched scientific L0"
 
 
 def test_profile_crossing_month_is_refused_without_touching_scientific_l0(
