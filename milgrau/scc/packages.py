@@ -13,6 +13,7 @@ import numpy as np
 
 from milgrau.level0.scc_staging import (
     scc_staging_root,
+    manifest_raw_name,
     validate_pending_scc_package,
 )
 
@@ -43,7 +44,8 @@ def validate_upload_package(path: Path) -> dict[str, Any]:
     """Verify checksums, raw SCC ID/config and climatological LR content."""
     try:
         manifest = validate_pending_scc_package(path)
-        if path.is_symlink() or (path / "raw.nc").is_symlink():
+        raw_name = manifest_raw_name(manifest)
+        if path.is_symlink() or (path / raw_name).is_symlink():
             raise SCCPackageError("Symlinks are forbidden in SCC upload packages.")
         identity = str(manifest["measurement_id"])
         config_id = int(manifest["scc_configuration_id"])
@@ -53,7 +55,7 @@ def validate_upload_package(path: Path) -> dict[str, Any]:
         if len(product_ids) != len(set(product_ids)) or not product_ids:
             raise SCCPackageError("Invalid or duplicate SCC optical product IDs.")
         file_names = set(manifest["files"])
-        with nc.Dataset(path / "raw.nc") as raw:
+        with nc.Dataset(path / raw_name) as raw:
             if str(raw.getncattr("Measurement_ID")) != identity:
                 raise SCCPackageError("Raw NetCDF Measurement_ID disagrees with manifest.")
             if int(raw.getncattr("SCC_Configuration_ID")) != config_id:
@@ -66,10 +68,10 @@ def validate_upload_package(path: Path) -> dict[str, Any]:
             )
         expected_lr = f"lr_{identity}.nc"
         if lr_name is None:
-            if file_names != {"raw.nc"}:
+            if file_names != {raw_name}:
                 raise SCCPackageError("Unreferenced lidar-ratio ancillary is staged.")
         else:
-            if lr_name != expected_lr or file_names != {"raw.nc", expected_lr}:
+            if lr_name != expected_lr or file_names != {raw_name, expected_lr}:
                 raise SCCPackageError("LR_File_Name does not match staged auxiliary.")
             lr_file = path / expected_lr
             if lr_file.is_symlink():
