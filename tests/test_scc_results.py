@@ -84,7 +84,7 @@ def _stage(config: dict) -> dict:
     scientific.parent.mkdir(parents=True, exist_ok=True)
     scientific.write_bytes(b"canonical scientific Level 0 is NEVER modified")
     with atomic_scc_package(config, ID) as directory:
-        with nc.Dataset(directory / "raw.nc", "w") as raw:
+        with nc.Dataset(directory / f"{ID}.nc", "w") as raw:
             raw.setncattr("Measurement_ID", ID)
             raw.setncattr("SCC_Configuration_ID", 1047)
             raw.setncattr("LR_File_Name", f"lr_{ID}.nc")
