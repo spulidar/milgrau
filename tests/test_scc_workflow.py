@@ -119,6 +119,7 @@ def test_new_measurement_is_journalled_and_accepted(
     assert result["measurement_id"] == ID
     with SubmissionStore(state_root(_config(tmp_path))) as journal:
         assert journal.get(ID)["state"] == "accepted"
+        assert journal.get(ID)["remote_creation_date"] == "2026-10-17T14:29:53"
         assert journal.events(ID)[-1]["action"] == "upload_verified"
     assert client.delete_calls == 0 and client.upload_calls == 1
 
