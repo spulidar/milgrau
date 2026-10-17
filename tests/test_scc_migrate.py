@@ -70,7 +70,7 @@ def _stage_old(config: dict, identity: str = ID) -> Path:
         },
     }
     (path / "manifest.json").write_text(json.dumps(manifest) + "\n")
-    assert validate_upload_package(path)["measurement_id"] == identity
+    assert validate_upload_package(path, allow_legacy_lr=True)["measurement_id"] == identity
     return path
 
 
@@ -97,7 +97,7 @@ def test_legacy_19_packages_migrate_without_changing_raw_bytes_or_lr(
         assert (path / f"lr_{identity}.nc").read_bytes() == originals[identity][
             f"lr_{identity}.nc"
         ]
-        assert set(validate_upload_package(path)["files"]) == {
+        assert set(validate_upload_package(path, allow_legacy_lr=True)["files"]) == {
             f"{identity}.nc", f"lr_{identity}.nc",
         }
     assert cli.main(["upload", "--migrate-cache"]) == 0
@@ -134,7 +134,7 @@ def test_crash_recovery_uses_preexisting_matching_copy(
     _, changed = migrate_pending(config, ID)
     assert changed
     assert not (path / "raw.nc").exists()
-    assert validate_upload_package(path)["files"][f"{ID}.nc"]["sha256"]
+    assert validate_upload_package(path, allow_legacy_lr=True)["files"][f"{ID}.nc"]["sha256"]
 
 
 def test_preexisting_different_id_named_file_is_never_overwritten(
