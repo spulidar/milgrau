@@ -39,7 +39,7 @@ def _config(tmp_path: Path) -> dict:
 def _stage(tmp_path: Path, *, lr: bool = True) -> Path:
     config = _config(tmp_path)
     with atomic_scc_package(config, IDENTITY) as directory:
-        raw = directory / "raw.nc"
+        raw = directory / f"{IDENTITY}.nc"
         with nc.Dataset(raw, "w") as ds:
             ds.setncattr("Measurement_ID", IDENTITY)
             ds.setncattr("SCC_Configuration_ID", 1047)
@@ -169,7 +169,7 @@ def test_dry_run_rejects_checksum_tampering(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     path = _stage(tmp_path)
-    (path / "raw.nc").write_bytes(b"tampered")
+    (path / f"{IDENTITY}.nc").write_bytes(b"tampered")
     with pytest.raises(SCCPackageError, match="checksum"):
         validate_upload_package(path)
     monkeypatch.setattr(cli, "load_config", lambda: _config(tmp_path))
