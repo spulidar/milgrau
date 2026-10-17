@@ -97,6 +97,39 @@ def test_session_success_keeps_only_level0_file_effect(tmp_path: Path, monkeypat
 
 
 
+def test_failed_scc_staging_does_not_invalidate_written_scientific_l0(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    group = pd.DataFrame({
+        "meas_type": ["measurements"], "filepath": ["raw.lidar"],
+        "start_time_utc": [pd.Timestamp("2024-01-01T12:00:00Z")],
+    })
+    lidar = {"tensors": {"532.AN": [[1.0]]}, "channels": ["532.AN"]}
+    monkeypatch.setattr(processing, "parse_licel_group", lambda *_: lidar)
+    monkeypatch.setattr(processing, "_annotate_solar_context", lambda frame, _: frame)
+    monkeypatch.setattr(
+        processing, "_resolve_group_station_config",
+        lambda _, data, cfg, logger: (dict(cfg), data, {}),
+    )
+    monkeypatch.setattr(processing, "fetch_group_weather", lambda *_: {})
+    monkeypatch.setattr(
+        processing, "build_level0_netcdf",
+        lambda **kwargs: Path(kwargs["netcdf_path"]).write_bytes(b"canonical"),
+    )
+    monkeypatch.setattr(processing, "write_netcdf_provenance", lambda *_: {})
+    def broken_staging(**kwargs):
+        raise ValueError("artificial packet collision")
+    monkeypatch.setattr(processing, "_write_scc_exports", broken_staging)
+
+    result = processing.process_session_group(
+        SESSION_ID, group, _config(tmp_path), _logger(),
+    )
+    assert result.status is ExecutionStatus.OK
+    assert result.stage == "level0.complete"
+    assert "artificial packet collision" in result.metadata["scc_staging_error"]
+    assert result.output_path.read_bytes() == b"canonical"
+
+
 def test_session_success_execution_metadata_remains_json_scalar(
     tmp_path: Path,
     monkeypatch,
