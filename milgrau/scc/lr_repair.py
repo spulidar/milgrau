@@ -54,11 +54,11 @@ def repair_lr_cache(config: Mapping[str, Any], identity: str) -> tuple[Path, boo
         if (stage / new_lr).is_file() and not (stage / old_lr).exists():
             current = validate_upload_package(stage)
             if archive.is_dir():
-                original = validate_upload_package(archive)
+                original = validate_upload_package(archive, allow_legacy_lr=True)
                 _reconcile_journal(root, identity, original, current)
             return stage, False
 
-        original = validate_upload_package(stage)
+        original = validate_upload_package(stage, allow_legacy_lr=True)
         if old_lr not in original["files"] or new_lr in original["files"]:
             raise ValueError(
                 f"SCC LR repair expected original {old_lr} and no {new_lr}."
