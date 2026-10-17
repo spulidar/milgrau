@@ -549,4 +549,15 @@ not already registered with status OK in the SCC portal.
 the full 19-packet batch until a single-ID corrected upload
 and processed LR use have been demonstrated.
 
+**Local LR fix regression CI:** All six jobs passed on code/test
+commit `e78d0956f99b94157f947feb54a6831d40725c6e`:
+[GitHub Actions 39077750685](https://github.com/spulidar/milgrau/actions/runs/39077750685).
+Ubuntu/Windows 3.12/3.14, Ruff and Explorer all green. This
+validates mock/offline cache repair, digest/journal safeguards and
+single-ID upload-only gating, **not real SCC acceptance**. The
+operator must first run the offline `--repair-lr-cache`, check
+19/19 `--dry-run`, confirm SCC ID and corrected ancillary name
+are absent, and perform an expressly authorized one-ID trial
+before proceeding to a bulk upload.
+
 **Gate 12.7:** End-to-end SCC interoperability confirmed with real responses.
