@@ -76,16 +76,16 @@ Example (one scientific session with distinct SCC publication pieces):
 
 .cache/scc/pending/
   20250930spu2300/
-    raw.nc
+    20250930spu2300.nc
     lr_20250930spu2300.nc
     manifest.json
   20251001spu0010/
-    raw.nc
+    20251001spu0010.nc
     lr_20251001spu0010.nc
     manifest.json
 ```
 
-`raw.nc` includes the SCC global `Measurement_ID`, station/channel
+`<Measurement_ID>.nc` includes the SCC global `Measurement_ID`, station/channel
 identifiers, the original `Session_ID`, solar regime, source segment IDs,
 and the applicable reference to `LR_File_Name`. The JSON manifest records
 scientific session, SCC configuration/product IDs, original segment identities,
@@ -136,7 +136,7 @@ alphanumeric SCC station code (currently `spu`) and UTC hour/minute. For example
 a regime starting at 2024-09-13 15:49:32Z is `20240913spu1549`.
 
 The canonical `SESSION_L0.nc` does not acquire `Measurement_ID`.
-The SCC raw file is named `raw.nc` inside a directory named by its
+The SCC raw file is named `<Measurement_ID>.nc` inside a directory named by its
 `Measurement_ID`. The manifest binds that directory to the scientific
 session and packet contents. Missing or deleted cache files never invalidate
 scientific L0.
@@ -229,7 +229,7 @@ https://docs.scc.imaa.cnr.it/en/latest/_downloads/f3353a4bea47d541e7cb97788490ca
 (Table 4).
 
 Automatic LIPANCORA discovery processes the canonical scientific
-`SESSION_L0.nc` only. Cached SCC `raw.nc` files are not scientific inputs.
+`SESSION_L0.nc` only. Cached SCC `<Measurement_ID>.nc` files are not scientific inputs.
 Explicit third-party NetCDF processing remains a separate LIPANCORA
 interoperability workflow and must be validated with the appropriate
 station instrument metadata.
