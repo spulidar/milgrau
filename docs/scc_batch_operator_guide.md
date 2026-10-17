@@ -114,6 +114,80 @@ local pending inventory instead.
    `.cache/scc/pending/ID/raw.nc` and the original LR auxiliary are present.
    Confirm the new remote result and LR are scientifically correct.
 
+## Incident recovery: DELETE returned unknown, SCC ID now absent
+
+**Observed on the real SCC (2026-10-17):** Single-ID replacement of
+`20240913spu1549` returned `Deletion POST ... UNKNOWN outcome`. The
+subsequent authenticated `status --remote` reported `NOT FOUND`.
+The local journal retained `state=uncertain` and a verified original
+archive at
+`.state/scc/archives/20240913spu1549/20261017T212943822169Z`.
+All 19 staged packets continued passing the offline dry run.
+**The original SCC record appears to have been deleted, but the new
+raw/LR was never sent by the interrupted replacement workflow.**
+The precise network/transport root cause is not yet established.
+
+Do **not** repeat `--replace-existing --confirm`, do **not** submit the
+19-packet batch, and do not manually edit the SQLite journal. Backup of a
+now-absent remote measurement naturally fails; that is not a failure of
+the already stored local archive. First verify the original archive locally
+(and independently retain a copy):
+
+```bash
+python - <<'PY'
+from pathlib import Path
+from milgrau.config.loader import load_config
+from milgrau.scc.backup import verify_archive
+from milgrau.scc.state import SubmissionStore, state_root
+
+with SubmissionStore(state_root(load_config())) as store:
+    record = store.get("20240913spu1549")
+    assert record and record["state"] == "uncertain", record
+    saved = verify_archive(
+        Path(record["archive_path"]),
+        record["archive_manifest_sha256"],
+    )
+    print("ARCHIVE VERIFIED:", record["archive_path"])
+    print("Original files:", sorted(saved["files"]))
+    print("History:", [(event["action"], event["state"])
+                       for event in store.events("20240913spu1549")[-5:]])
+PY
+```
+
+Then use `milgrau-scc status --id 20240913spu1549 --remote` again
+(read-only) to confirm the remote ID is **still absent**. The SCC
+operator should verify the deleted record is not merely transiently
+invisible or being restored through the portal.
+
+Only if you decide to **finish the intended replacement** (rather
+than restore the archived original), the exact-ID, explicit recovery
+operation is:
+
+```bash
+milgrau-scc upload --id 20240913spu1549 --resume-after-delete --confirm
+```
+
+This command works **only** for an `uncertain` journal whose most recent
+event is `delete_result_uncertain`, with matching immutable local
+raw/LR checksums, verified old remote archive and a fresh SCC 404.
+It never deletes anything. It requests **one** new raw/LR upload to
+the currently absent ID, then requires API confirmation. It cannot
+run in a batch, with `--replace-existing`, or without both `--id`
+and `--confirm`. A failed/unknown recovery upload records
+`recovery_upload_uncertain` and **cannot be automatically retried**;
+inspect the portal and coordinate with the SCC operator.
+
+After an accepted response, wait for ELPP/ELDA=127 and run
+`milgrau-scc download --id 20240913spu1549 --keep-cache`.
+Verify `upload_owned=True` and climatological LR acceptance on SCC.
+The original remote archives and previous six-product results remain
+locally preserved.
+
+**Do not infer the delete POST's underlying exception type from the
+initial message:** new code surfaces only its transport exception class
+for *future* failed deletion attempts; it cannot retroactively diagnose
+this already completed request.
+
 ## Only after the single-ID trial passes
 
 ```bash
