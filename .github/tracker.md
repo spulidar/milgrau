@@ -1,7 +1,7 @@
 # Phase 12 — Optional SCC integration and publication workflow
 
 **Branch:** `scc-integration-refactor` (base: `milgraumaxxing`)  
-**Status:** Phases 12.1–12.4 implemented/CI validated (12.4 live API GET verified); Phase 12.5 implemented — final CI pending; live replacement NOT tested  
+**Status:** Phases 12.1–12.5 implemented and cross-platform CI validated; Phase 12.5 live backup/replacement still pending; Phase 12.6 not started  
 **Scope:** SCC configuration, optional export, staging, native upload/status/download/cleanup client.
 This branch's tracker intentionally contains **only Phase 12**. The earlier scientific tracker remains on the base branch.
 
@@ -214,8 +214,15 @@ cannot be eliminated client-side; the operator must coordinate a maintenance
 window. **No live remote DELETE or replacement POST occurred.** Phase 12.6
 is still responsible for final download and cleanup.
 
-**Validation:** New unit and mock-network tests are running on CI;
-mark full cross-platform validation only after all jobs pass.
+**Validation:** All six checks passed in GitHub Actions run
+[39057561308](https://github.com/spulidar/milgrau/actions/runs/39057561308)
+on implementation commit `78b388b180b44150e031ba86bcbb1b5e6d0fdd90`
+(Ubuntu and Windows, Python 3.12/3.14, Ruff, Explorer). This is **offline
+and mocked-server** validation only. A read-only `status --remote --backup`
+against the live SCC is the next prerequisite before considering any real
+delete-and-reupload. Automatic rollback after unknown destructive outcomes
+is intentionally unavailable; the verified archive, durable journal and
+explicit manual reconciliation are the safe recovery foundation.
 
 **Gate 12.5:** No prior SCC measurement can be deleted without a locally verified archive of available remote inputs/results, explicit exact-ID operator authorization, and durable recoverability tracking. Interrupted replacement must never be reported as successful without API confirmation.
 
