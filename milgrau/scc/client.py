@@ -308,7 +308,13 @@ class SCCClient:
         token = self._csrf(page)
         with ExitStack() as stack:
             raw = stack.enter_context(open(path / "raw.nc", "rb"))
-            uploads = {"data": ("raw.nc", raw, "application/x-netcdf")}
+            # Keep raw.nc as the canonical disposable staging filename,
+            # but SCC requires the multipart filename to be Measurement_ID.nc.
+            # The server-side form validates the uploaded *filename* as well as
+            # the NetCDF Measurement_ID attribute.
+            uploads = {
+                "data": (f"{identity}.nc", raw, "application/x-netcdf"),
+            }
             lr_name = f"lr_{identity}.nc"
             if lr_name in manifest["files"]:
                 lr_handle = stack.enter_context(open(path / lr_name, "rb"))
