@@ -218,7 +218,7 @@ def validate_scc_config(catalog: Mapping[str, Any], station_catalog: Mapping[str
     if not isinstance(catalog, Mapping):
         raise ValueError("SCC configuration must be a mapping.")
     required = {"station_id", "scc_policy", "profiles", "products"}
-    allowed = required | {"raman_channel_overrides"}
+    allowed = required | {"raman_channel_overrides", "server"}
     if set(catalog) - allowed or required - set(catalog):
         raise ValueError(f"SCC configuration requires {sorted(required)}; allowed={sorted(allowed)}.")
     station_id = _text(catalog["station_id"], "scc.station_id")
@@ -227,6 +227,16 @@ def validate_scc_config(catalog: Mapping[str, Any], station_catalog: Mapping[str
             f"SCC station_id {station_id!r} does not match station.yaml "
             f"station.id {station_catalog['station']['id']!r}."
         )
+    server = catalog.get("server", {})
+    if not isinstance(server, Mapping) or set(server) - {"base_url"}:
+        raise ValueError("scc.server permits only base_url.")
+    if "base_url" in server:
+        from urllib.parse import urlsplit
+
+        url = urlsplit(_text(server["base_url"], "scc.server.base_url"))
+        if (url.scheme != "https" or not url.hostname or url.username or url.password
+                or url.query or url.fragment or url.path not in {"", "/"}):
+            raise ValueError("scc.server.base_url must be an HTTPS origin with no credentials.")
     _validate_scc_policy(catalog, station_catalog)
     registry = _validate_product_registry(_mapping(catalog["products"], "scc.products"))
     profiles = _mapping(catalog["profiles"], "scc.profiles")
