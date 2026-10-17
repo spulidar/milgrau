@@ -140,6 +140,19 @@ transitions and timestamps, remote identity, archive location, and
 the last error. An exclusive per-ID lock prevents concurrent local uploads.
 A stale lock after a crash **must be investigated before manual removal**.
 
+A safe read-only preflight exists **before** any destructive replacement.
+It authenticates and downloads/verifies the remote raw and available products
+into persistent state, but never modifies the server:
+
+```bash
+milgrau-scc status --id 20240913spu1549 --remote --backup
+```
+
+If this fails because an original auxiliary LR is unavailable, do not use
+`--replace-existing` until a reliable SCC LR retrieval method has been
+established. The backup operation can be run repeatedly and does not
+change scientific L0/L1/L2. The archived data is retained outside cache.
+
 A replacement is never automatic. It requires precisely:
 
 ```bash
