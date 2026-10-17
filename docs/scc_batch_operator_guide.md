@@ -250,6 +250,66 @@ the identity/configuration/source checks. No automatic retry, reset of
 `.state/scc/submissions.sqlite`, additional deletion or 19-ID batch
 is allowed.
 
+## October 17 controlled retry — switch ALL local staged raw files to ID.nc
+
+The operator confirmed in the SCC **website as well as the API**
+that `20240913spu1549` remains absent after a
+`recovery_upload_uncertain` event. The original network upload
+returned HTTP 200 but was not indexed by SCC. The client previously
+transmitted the correct multipart *name* without storing the same
+name locally. The new rule is **consistent on disk and in transit**:
+`.cache/scc/pending/<Measurement_ID>/<Measurement_ID>.nc`, alongside
+`lr_<Measurement_ID>.nc` and `manifest.json`. Existing scientific
+sessions and old remote backup archives are unchanged.
+
+**Required local migration before any further POST:**
+
+```bash
+milgrau-scc upload --migrate-cache
+milgrau-scc upload --dry-run
+```
+
+Migration is fully offline and operates on all existing pending
+packages; it first verifies the old raw/LR NetCDF and manifest hashes,
+copies the raw bytes to the ID-named file, atomically updates the
+existing manifest's file mapping and only then removes the old
+`raw.nc` duplicate. It leaves original NetCDF bytes, LR inputs,
+scientific L0/L1/L2, old remote archives and the durable
+`.state/scc` SQLite journal untouched. The command can be
+repeated safely if interrupted; conflicts or tampering fail closed.
+A single package can also be migrated using
+`milgrau-scc upload --id ID --migrate-cache`.
+**The cache is retained** under the same `pending/ID` directory.
+
+After `19/19` local preflight succeeds and the operator confirms
+the remote ID is *still* absent from both portal and API, a **single**
+explicit upload-only retry is available for precisely the old
+`recovery_upload_uncertain` event:
+
+```bash
+milgrau-scc upload --id 20240913spu1549 --retry-after-upload --confirm
+```
+
+Unlike the prior `--resume-after-delete` and
+`--replace-existing` commands, `--retry-after-upload` cannot
+delete anything. It performs a fresh API 404, original backup archive
+verification, per-file SHA-256, scientific period, configuration, LR
+and journal history check **before requesting one upload POST**.
+A successful new SCC record must be confirmed by the authoritative
+API to register `accepted`. If the operation fails or becomes
+uncertain, the last journal action changes to
+`manual_corrected_upload_uncertain` and the command refuses
+to run again. No automatic retries, batch mode or further deletion
+are permitted. If the remote measurement reappears, the command
+stops before uploading.
+
+Continue only after a successful single-ID trial with
+`milgrau-scc status --id 20240913spu1549 --remote`,
+wait for ELPP=127 and ELDA=127, verify SCC's accepted LR
+and `milgrau-scc download --id 20240913spu1549 --keep-cache`.
+Do not run the 19-ID bulk upload until this trial proves the actual
+SCC server accepts the raw and LR inputs.
+
 ## Only after the single-ID trial passes
 
 ```bash
