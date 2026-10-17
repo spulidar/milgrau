@@ -54,8 +54,11 @@ that resolved state and does not independently rediscover instrument history.
 SCC database identity and configuration live outside the scientific station catalog:
 - station identity cross-check (`station_id`);
 - `scc_policy.lr_input` (fixed SCC database LR or optional external climatology);
-- per-instrument-profile day/night configuration IDs and SCC numeric channel IDs;
-- SCC-only Raman mapping references and optional optical product IDs.
+- per-instrument-profile day/night configuration IDs, numeric SCC channel IDs and optical product memberships;
+- a shared 30-product SCC optical catalogue (real product IDs, type, wavelength,
+  SCC usecase, channel count and parent associations), allowing reuse across systems;
+- SCC-only Raman mapping references. Elastic LR targets are derived from this
+  catalogue and are never manually duplicated as a second ID list.
 
 The existing dated `station.yaml` profiles still own historical validity and
 instrument calibrations. `scc.yaml` selects the matching profile **by ID**, and
