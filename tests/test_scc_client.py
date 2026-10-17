@@ -29,6 +29,7 @@ def _config(tmp_path: Path) -> dict:
     return {
         "scc": {
             "enabled": True, "staging_dir": str(tmp_path / ".cache/scc"),
+            "state_dir": str(tmp_path / ".state/scc"),
             "upload": {"retries": 0, "timeout_seconds": 30},
         },
         "_scc_catalog": {"server": {"base_url": "https://scc.example.test/"}},
