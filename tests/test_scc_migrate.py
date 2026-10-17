@@ -159,3 +159,111 @@ def test_tampered_original_refuses_migration_without_remote_request(
     with pytest.raises(ValueError, match="Invalid SCC package"):
         migrate_pending(config, ID)
     assert not (path / f"{ID}.nc").exists()
+
+def test_lr_repair_changes_only_reference_and_keeps_original_snapshot(
+    tmp_path: Path,
+) -> None:
+    from milgrau.scc.lr_repair import repair_lr_cache
+
+    config = _config(tmp_path)
+    path = _stage_old(config)
+    migrate_pending(config, ID)
+    old_manifest = validate_upload_package(path, allow_legacy_lr=True)
+    old_raw = (path / f"{ID}.nc").read_bytes()
+    old_lr = (path / f"lr_{ID}.nc").read_bytes()
+    corrected, changed = repair_lr_cache(config, ID)
+    assert changed and corrected == path
+    fixed = validate_upload_package(path)
+    new_lr = f"lr_{ID[:13]}.nc"
+    assert set(fixed["files"]) == {f"{ID}.nc", new_lr}
+    with nc.Dataset(path / f"{ID}.nc") as ds:
+        assert ds.getncattr("LR_File_Name") == new_lr
+        assert ds.getncattr("Measurement_ID") == ID
+    assert (path / new_lr).read_bytes() == old_lr
+    assert fixed["files"][new_lr]["sha256"] == old_manifest["files"][
+        f"lr_{ID}.nc"
+    ]["sha256"]
+    assert fixed["files"][f"{ID}.nc"]["sha256"] != old_manifest[
+        "files"
+    ][f"{ID}.nc"]["sha256"]
+    legacy = path.parent.parent / "legacy-lr" / ID
+    assert (legacy / f"{ID}.nc").read_bytes() == old_raw
+    assert (legacy / f"lr_{ID}.nc").read_bytes() == old_lr
+    assert repair_lr_cache(config, ID)[1] is False
+
+
+def test_lr_repair_audits_uncertain_journal_without_resetting_upload_state(
+    tmp_path: Path,
+) -> None:
+    from milgrau.scc.lr_repair import repair_lr_cache
+
+    config = _config(tmp_path)
+    path = _stage_old(config)
+    migrate_pending(config, ID)
+    before = validate_upload_package(path, allow_legacy_lr=True)
+    with SubmissionStore(state_root(config)) as store:
+        store.begin(before)
+        store.transition(
+            ID, "uncertain", action="manual_corrected_upload_uncertain",
+            error="SCC Quick upload form rejection",
+        )
+        old = store.get(ID)
+    repair_lr_cache(config, ID)
+    with SubmissionStore(state_root(config)) as store:
+        new = store.get(ID)
+        assert new["state"] == "uncertain"
+        assert new["archive_path"] == old["archive_path"]
+        assert new["last_error"] == old["last_error"]
+        assert new["raw_sha256"] != old["raw_sha256"]
+        assert new["lr_sha256"] == old["lr_sha256"]
+        assert store.events(ID)[-1]["action"] == "local_lr_filename_repair"
+
+
+def test_lr_repair_cli_is_offline_and_keeps_pending_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
+) -> None:
+    config = _config(tmp_path)
+    path = _stage_old(config)
+    migrate_pending(config, ID)
+    monkeypatch.setattr(cli, "load_config", lambda: config)
+    monkeypatch.setattr(cli, "_client", lambda _: pytest.fail("Network forbidden!"))
+    assert cli.main(["upload", "--id", ID, "--repair-lr-cache"]) == 0
+    assert "1 repaired" in capsys.readouterr().out
+    assert path.exists()
+    assert cli.main(["upload", "--dry-run"]) == 0
+
+
+def test_lr_repair_blocks_same_hour_ancillary_collisions(
+    tmp_path: Path,
+) -> None:
+    from milgrau.scc.lr_repair import repair_lr_cache
+
+    config = _config(tmp_path)
+    first = _stage_old(config, ID)
+    second_id = "20240913spu1515"
+    second = _stage_old(config, second_id)
+    migrate_pending(config, ID)
+    migrate_pending(config, second_id)
+    with pytest.raises(ValueError, match="collide"):
+        repair_lr_cache(config, ID)
+    assert (first / f"lr_{ID}.nc").is_file()
+    assert (second / f"lr_{second_id}.nc").is_file()
+
+
+def test_lr_repair_refuses_revision_of_unrecognized_uncertain_upload(
+    tmp_path: Path,
+) -> None:
+    from milgrau.scc.lr_repair import repair_lr_cache
+
+    config = _config(tmp_path)
+    path = _stage_old(config)
+    migrate_pending(config, ID)
+    manifest = validate_upload_package(path, allow_legacy_lr=True)
+    with SubmissionStore(state_root(config)) as store:
+        store.begin(manifest)
+        store.transition(ID, "uncertain", action="unknown_destruction")
+    with pytest.raises(ValueError, match="unrecognized"):
+        repair_lr_cache(config, ID)
+    assert validate_upload_package(path, allow_legacy_lr=True)
+
+
