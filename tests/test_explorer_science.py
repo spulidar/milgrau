@@ -82,3 +82,21 @@ def test_science_accessor_preserves_missing_values_and_limits_display() -> None:
     mask = support_mask(ds, "Retroespalhamento", 355)
     assert not bool(mask.isel(block_time=2, altitude=15).item())
     assert bool(mask.isel(block_time=3, altitude=16).item())
+
+
+def test_utc_calendar_keeps_cross_midnight_session_intact() -> None:
+    from datetime import date
+
+    import pandas as pd
+
+    from milgrau.explorer.navigation import (
+        available_utc_dates, session_utc_dates, sessions_on_utc_date,
+    )
+
+    a = "spu_20240620-2103Z_20240621-0848Z"
+    b = "spu_20240621-1200Z_20240621-1530Z"
+    inv = pd.DataFrame({"session_id": [a, b], "highest_available_level": ["Level 2", "Level 1"]})
+    assert session_utc_dates(a) == (date(2024, 6, 20), date(2024, 6, 21))
+    assert available_utc_dates(inv) == [date(2024, 6, 21), date(2024, 6, 20)]
+    assert sessions_on_utc_date(inv, date(2024, 6, 20))["session_id"].tolist() == [a]
+    assert sessions_on_utc_date(inv, date(2024, 6, 21))["session_id"].tolist() == [a, b]
