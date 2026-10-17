@@ -1,8 +1,4 @@
-"""Four-command operator CLI for optional SCC interoperability.
-
-12.4 enables local dry-run, read-only status and one explicitly confirmed
-upload. Download/cleanup require the durable submission registry in 12.5/12.6.
-"""
+"""Four-command SCC CLI: upload, status, verified download and safe cleanup."""
 
 from __future__ import annotations
 
@@ -45,8 +41,24 @@ def _parser() -> argparse.ArgumentParser:
         "--backup", action="store_true",
         help="Read-only download and verification of existing SCC remote inputs/results; requires --remote --id.",
     )
-    sub.add_parser("download", help="Reserved for Phase 12.6; never silently downloads.")
-    sub.add_parser("cleanup", help="Reserved for Phase 12.6; never silently deletes.")
+    download = sub.add_parser(
+        "download", help="Read-only SCC result download into scientific session/scc-results."
+    )
+    download.add_argument("--id", dest="identity", required=True, help="Exact SCC Measurement_ID.")
+    download.add_argument(
+        "--session", help="Scientific Session_ID for a remote record not uploaded by MILGRAU."
+    )
+    download.add_argument(
+        "--keep-cache", action="store_true",
+        help="Keep eligible staging files even if cleanup.policy is after_download."
+    )
+    cleanup = sub.add_parser(
+        "cleanup", help="Remove only verified pending SCC cache for a journal-confirmed upload."
+    )
+    cleanup.add_argument("--id", dest="identity", required=True)
+    approval = cleanup.add_mutually_exclusive_group(required=True)
+    approval.add_argument("--dry-run", action="store_true")
+    approval.add_argument("--confirm", action="store_true")
     return parser
 
 
@@ -191,18 +203,54 @@ def _status(config: dict[str, Any], args: argparse.Namespace) -> int:
     return 0
 
 
+def _download(config: dict[str, Any], args: argparse.Namespace) -> int:
+    from milgrau.scc.results import download_results
+    from milgrau.scc.cleanup import cleanup_pending
+
+    destination, manifest = download_results(
+        config, args.identity, _client(config), source_session=args.session,
+    )
+    print(
+        f"SCC downloads VERIFIED: {destination} | "
+        f"products={', '.join(manifest['files'])} | "
+        f"upload_owned={manifest['uploaded_by_milgrau']}"
+    )
+    if not args.keep_cache and config["scc"].get("cleanup", {}).get("policy") == "after_download":
+        if manifest["uploaded_by_milgrau"]:
+            result = cleanup_pending(config, args.identity, dry_run=False)
+            print(
+                f"SCC pending cache cleanup: "
+                f"{'already done' if result['already_cleaned'] else 'verified and removed'} "
+                f"for {args.identity}; persistent results and journal preserved."
+            )
+        else:
+            print(
+                "SCC pending cache retained: remote record was not confirmed as "
+                "a MILGRAU upload."
+            )
+    return 0
+
+
+def _cleanup(config: dict[str, Any], args: argparse.Namespace) -> int:
+    from milgrau.scc.cleanup import cleanup_pending
+
+    result = cleanup_pending(config, args.identity, dry_run=not args.confirm)
+    if result["already_cleaned"]:
+        print(f"SCC pending cache already cleaned: {args.identity}")
+    elif args.confirm:
+        print(f"SCC pending cache removed: {args.identity}; results/journal preserved.")
+    else:
+        print(
+            f"DRY RUN: eligible pending SCC package {result['staged']} "
+            "would be removed; nothing was deleted."
+        )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entrypoint; no live network operations unless explicitly requested."""
     parser = _parser()
     args = parser.parse_args(argv)
-    if args.command in {"download", "cleanup"}:
-        print(
-            f"milgrau-scc {args.command} is not enabled yet. "
-            "Requires persistent, verified remote submission state "
-            "(Phases 12.5–12.6); no files were modified.",
-            file=sys.stderr,
-        )
-        return 2
     try:
         config = load_config()
         if not config.get("scc", {}).get("enabled") or "_scc_catalog" not in config:
@@ -213,6 +261,10 @@ def main(argv: list[str] | None = None) -> int:
             return _upload(config, args)
         if args.command == "status":
             return _status(config, args)
+        if args.command == "download":
+            return _download(config, args)
+        if args.command == "cleanup":
+            return _cleanup(config, args)
         parser.error(f"Unexpected SCC subcommand: {args.command}")
     except Exception as exc:
         print(f"SCC operation failed: {exc}", file=sys.stderr)
