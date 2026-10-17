@@ -388,14 +388,15 @@ async function applyAxisLimits() {
   if (!t0 || !t1 || !Number.isFinite(Date.parse(t0 + "Z")) ||
       !Number.isFinite(Date.parse(t1 + "Z")) || t0 >= t1 ||
       !amin || !amax || !Number.isFinite(y0) || !Number.isFinite(y1) || y0 >= y1) {
-    scaleStatus("Invalid axes: start must precede end and altitude minimum must be below maximum.", true);
+    byId("axis-status").textContent =
+      "Invalid axes: start must precede end and altitude minimum must be below maximum.";
     return;
   }
   await Plotly.relayout("rcs-chart", {
     "xaxis.range": [t0 + ":00Z", t1 + ":00Z"],
     "yaxis.range": [y0, y1],
   });
-  scaleStatus("Axis ranges updated for this plot only.");
+  byId("axis-status").textContent = "Axis ranges updated for this plot only.";
 }
 
 function editClick(event) {
