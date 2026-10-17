@@ -55,9 +55,14 @@ def test_interactive_l2_plots_only_use_saved_products() -> None:
     assert len(_time_series(ds, "Extinção", 532, [1.0], 0, 3).data) == 1
 
 
-def test_streamlit_can_select_and_view_saved_l2_product(tmp_path: Path) -> None:
+def test_streamlit_can_select_and_view_saved_l2_product(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The new header selects dates and tabs without any directory picker."""
     import numpy as np
     import xarray as xr
+
+    from milgrau.explorer import catalog
 
     session = "spu_20240620-2103Z_20240621-0848Z"
     folder = tmp_path / "spu" / "2024" / "06" / session
@@ -78,27 +83,39 @@ def test_streamlit_can_select_and_view_saved_l2_product(tmp_path: Path) -> None:
             "Segment_Regime": (("segments",), ["night"]),
         },
         coords={
-            "block_time": np.array(["2024-06-20T21:00", "2024-06-20T21:20"], dtype="datetime64[m]"),
+            "block_time": np.array(
+                ["2024-06-20T21:00", "2024-06-20T21:20"], dtype="datetime64[m]"
+            ),
             "wavelength": [532],
             "altitude": [0.0, 500.0, 1000.0, 1500.0],
         },
         attrs={"product_completeness": "complete"},
     )
     ds.to_netcdf(folder / f"{session}_L2.nc")
-
+    monkeypatch.setattr(
+        catalog, "source_context_from_config",
+        lambda _path="config.yaml": {
+            "root": tmp_path,
+            "timezone": "UTC",
+            "station": "SPU Lidar Station",
+            "latitude": -23.5607,
+            "longitude": -46.7398,
+            "elevation_m": 766.0,
+        },
+    )
     app = AppTest.from_file(str(Path(streamlit_app.__file__)), default_timeout=30).run()
-    root_widget = next(x for x in app.sidebar.text_input if x.label == "processed_data")
-    app = root_widget.set_value(str(tmp_path)).run()
     assert not app.exception, [str(e.message) for e in app.exception]
-    assert not any(w.label == "Ano" for w in app.sidebar.selectbox)
-    assert not any(w.label == "Abrir sessão" for w in app.sidebar.selectbox)
-    nav = next(x for x in app.sidebar.radio if x.label == "Explorar")
-    app = nav.set_value("Level 2 · Produtos ópticos").run()
+    assert len(app.sidebar.radio) == 0
+    assert len(app.sidebar.text_input) == 0
+    assert not any(w.label == "Altitude máxima (km)" for w in app.slider)
+    day_widget = next(w for w in app.selectbox if w.label == "Data UTC")
+    assert len(day_widget.options) == 2  # continuous cross-midnight session
+    nav = next(w for w in app.radio if w.label == "Seções")
+    assert "L2 Products" in nav.options
+    app = nav.set_value("L2 Products").run()
     assert not app.exception, [str(e.message) for e in app.exception]
-    focus = next(w for w in app.button if w.label == "⛶ Modo foco")
-    app = focus.click().run()
-    assert not app.exception, [str(e.message) for e in app.exception]
-    assert any(w.label == "Sair do foco" for w in app.button)
+    assert any(w.label == "Comprimento de onda (nm)" for w in app.selectbox)
+    assert not any(w.label == "Altitude máxima (km)" for w in app.slider)
 
 
 def test_hybrid_theme_is_local_to_explorer() -> None:
@@ -107,3 +124,10 @@ def test_hybrid_theme_is_local_to_explorer() -> None:
     assert '[data-testid="stSidebar"]' in _BASE_CSS
     assert '[data-testid="stMain"]' in _BASE_CSS
     assert "display: none" in _FOCUS_CSS
+
+
+def test_site_style_hides_sidebar_and_shows_calendar() -> None:
+    from milgrau.explorer.theme import _SITE_CSS
+
+    assert "mg-site-brand" in _SITE_CSS
+    assert "stSidebarCollapsedControl" in _SITE_CSS
