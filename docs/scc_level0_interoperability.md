@@ -90,6 +90,71 @@ characters; an incompatible station identifier must be mapped explicitly, not
 truncated or fabricated. SCC database uniqueness also requires that an ID has
 not already been used by another uploaded measurement.
 
+### Optional station-climatology ancillary for SCC elastic products
+
+SCC raw exports can use a **monthly, station-owned lidar-ratio profile** rather
+than the fixed value stored in the SCC database, without modifying scientific
+MILGRAU L0/L1/L2 files. The current repository default is explicitly
+`scc_policy.lr_input.source: scc_db` to preserve existing SCC uploads until the
+real optical `product_ID` values have been confirmed.
+
+To enable it **after configuring product IDs**, set
+`scc_policy.lr_input.source: climatology_ancillary` in `station.yaml`, and add
+`elastic_product_ids` to each applicable station profile's
+`scc.day`/`scc.night` mapping, keyed by the *elastic product* wavelength.
+One wavelength can map to either one integer ID or a list of distinct IDs.
+They must be genuine optical **product IDs**, NOT the SCC configuration ID or
+any channel ID from `channels`. Example shape (illustrative placeholders):
+
+```yaml
+profiles:
+  - id: some-hardware-profile
+    scc:
+      day:
+        configuration_id: 1234
+        name: "Example SCC day configuration"
+        channels: {"1064.AN": 9999}
+        elastic_product_ids:
+          "1064": [REPLACE_WITH_REAL_SCC_PRODUCT_ID]
+```
+
+The exporter selects the UTC calendar month of the actual SCC measurement
+profiles, reads `station.lidar_ratio_climatology.monthly_sr` and `std_sr`,
+and writes `lr_<Measurement_ID>.nc` beside the SCC-only raw derivative.
+The ancillary follows **Table 4** of SCC's NetCDF input-file v3.6:
+`Altitude(points)` in meters above the lidar station,
+`Lidar_Ratio(products,points)`, optional
+`Lidar_Ratio_Error(products,points)`, `product_ID(products)`, and
+the global `Lidar_Station_Name`. A constant-with-altitude profile is
+written per optical product, with the climatological spread reported as
+`Lidar_Ratio_Error`, not as an empirical per-profile retrieval uncertainty.
+A complete ascending altitude grid spans the native lidar range.
+
+For elastic products only, the raw SCC file uses `LR_Input=0` and
+`LR_File_Name="lr_<Measurement_ID>.nc"`. Wavelengths with Raman companions
+remain controlled by the Raman retrieval: their `LR_Input` is left undefined.
+If no elastic-only product exists, no ancillary is written. Missing real
+product IDs cause a clear failure; there is **no** fallback to fabricated
+channel IDs or silent use of fixed SCC_DB values.
+
+A single constant climatology profile cannot represent two UTC calendar months:
+the SCC-only export intentionally fails with an actionable diagnostic when a
+day/night derivative straddles a month boundary; the scientific continuous
+session is unaffected. SCC submissions for that rare case must be split into
+month-specific upload measurements separately. Incremental SCC validation checks
+both the referenced ancillary file and its expected product IDs, month and
+climatology values, so stale or missing ancillary files invalidate the SCC export.
+
+Upload the raw SCC NetCDF and its matching `lr_<Measurement_ID>.nc` together
+using **Quick upload**, or submit the LR file separately using
+**Upload ancillary**. The SCC will not start processing until the referenced
+ancillary exists. Validation of the new upload path against the live SCC portal
+is still required.
+
+Official specification:
+https://docs.scc.imaa.cnr.it/en/latest/_downloads/f3353a4bea47d541e7cb97788490cac6/NetCDF_input_file_v3_6.pdf
+(Table 4).
+
 Automatic LIPANCORA discovery deliberately processes only the canonical
 `SESSION_L0.nc`. SCC derivatives remain interoperability products and do not
 create competing canonical Level 1 products. They may still be supplied
