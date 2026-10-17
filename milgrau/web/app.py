@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from datetime import date
-from mimetypes import guess_type
 from functools import lru_cache
 from pathlib import Path
 
@@ -27,20 +26,6 @@ def create_app(config_path: str = "config.yaml") -> FastAPI:
     catalog = Catalog(config_path)
     app = FastAPI(title="MILGRAU Web Explorer", docs_url="/api/docs", redoc_url=None)
 
-    # Logos already declared in config.yaml for scientific figures. Serve only
-    # this pre-resolved allowlist; the browser never supplies filesystem paths.
-    logo_files: list[Path] = []
-    for item in catalog.config.get("visualization", {}).get("logos", []):
-        if not isinstance(item, dict) or not isinstance(item.get("path"), str):
-            continue
-        declared = Path(item["path"])
-        resolved = (declared if declared.is_absolute() else
-                    catalog.config_path.parent / (
-                        Path("img") / declared if len(declared.parts) == 1 else declared
-                    )).resolve()
-        if resolved.is_file() and resolved.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
-            logo_files.append(resolved)
-
     @app.get("/")
     def homepage() -> FileResponse:
         return FileResponse(STATIC / "index.html")
@@ -54,23 +39,7 @@ def create_app(config_path: str = "config.yaml") -> FastAPI:
 
     @app.get("/api/site")
     def site() -> dict:
-        return {
-            **catalog.site,
-            "logos": [
-                {"url": f"/api/logo/{index}", "alt": logo.stem.replace("_", " ")}
-                for index, logo in enumerate(logo_files)
-            ],
-        }
-
-    @app.get("/api/logo/{index}", include_in_schema=False)
-    def logo(index: int) -> FileResponse:
-        if index < 0 or index >= len(logo_files):
-            raise HTTPException(status_code=404, detail="Unknown configured logo")
-        resolved = logo_files[index]
-        if not resolved.is_file() or resolved.is_symlink():
-            raise HTTPException(status_code=404, detail="Configured logo unavailable")
-        media_type = guess_type(resolved.name)[0] or "image/png"
-        return FileResponse(resolved, media_type=media_type)
+        return catalog.site
 
     @app.get("/api/dates")
     def dates() -> dict:
