@@ -151,7 +151,7 @@ def test_journal_owned_download_auto_cleans_only_pending_cache(
 
     assert cli.main(["download", "--id", ID]) == 0
     assert sorted(calls) == ["elda", "elpp"]
-    target = level0_output_path(SESSION, config).parent / "scc-results" / ID
+    target = results.result_location(config, SESSION, ID, CREATION)
     saved = validate_results(target)
     assert saved["uploaded_by_milgrau"] is True
     assert saved["scientific_session_id"] == SESSION
@@ -200,7 +200,7 @@ def test_preexisting_external_scc_can_download_but_must_keep_pending_cache(
     monkeypatch.setattr(cli, "_client", lambda _: FakeClient())
     assert cli.main(["download", "--id", ID, "--session", SESSION]) == 0
     assert pending_scc_package(config, ID).is_dir()
-    target = level0_output_path(SESSION, config).parent / "scc-results" / ID
+    target = results.result_location(config, SESSION, ID, CREATION)
     assert validate_results(target)["uploaded_by_milgrau"] is False
     with pytest.raises(SCCRemoteError, match="No MILGRAU submission journal"):
         verify_cleanup(config, ID)
@@ -259,7 +259,7 @@ def test_tampered_result_blocks_cleanup_without_touching_pending(
     _owned(config, manifest)
     _mock_stream(monkeypatch)
     download_results(config, ID, FakeClient())
-    target = level0_output_path(SESSION, config).parent / "scc-results" / ID
+    target = results.result_location(config, SESSION, ID, CREATION)
     (target / "elpp.archive").write_bytes(b"tampered")
     with pytest.raises(SCCRemoteError, match="Corrupted"):
         cleanup_pending(config, ID, dry_run=False)
@@ -296,11 +296,14 @@ def test_result_snapshot_is_immutable_across_remote_revision(
     _stage(config)
     _mock_stream(monkeypatch)
     download_results(config, ID, FakeClient(), source_session=SESSION)
-    with pytest.raises(SCCRemoteError, match="differs from the remote"):
-        download_results(
-            config, ID, FakeClient(_record(created="new-generation")),
-            source_session=SESSION,
-        )
+    newer, newer_manifest = download_results(
+        config, ID, FakeClient(_record(created="new-generation")),
+        source_session=SESSION,
+    )
+    previous = results.result_location(config, SESSION, ID, CREATION)
+    assert newer != previous
+    assert previous.is_dir() and newer.is_dir()
+    assert newer_manifest["remote_creation_date"] == "new-generation"
     assert pending_scc_package(config, ID).exists()
 
 
