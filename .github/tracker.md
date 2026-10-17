@@ -560,4 +560,45 @@ operator must first run the offline `--repair-lr-cache`, check
 are absent, and perform an expressly authorized one-ID trial
 before proceeding to a bulk upload.
 
+**Optional SCC radiosounding support (2026-10-17):**
+The SCC input specification v3.6, table 2 permits an observed
+`rs_<Measurement_ID>.nc` sounding with altitude above the sounding
+station, temperature (°C), pressure (hPa), latitude/longitude/altitude,
+and synoptic launch date/time. When supplied, the SCC raw file must set
+`Sounding_File_Name` and `Molecular_Calc=1`. The official
+`scc_access` Quick Upload field is `sounding_file`.
+
+MILGRAU now includes `milgrau/level0/scc_sounding.py` for optional,
+**default-disabled**, observed Wyoming cache-only sounding staging in
+**new** SCC Level 0 exports. It uses the pre-existing scientific
+radiosonde nearest-synoptic policy and its historical cached
+CSV/JSON metadata; it does not issue weather-provider requests,
+substitute ERA5 or USSA76 values or change Level 1's productive
+atmosphere recipe. The observed SBMT launch-site metadata are stored
+separately from the SPU lidar station coordinates.
+When an eligible sounding is present, the SCC-only raw export gains
+`Molecular_Calc=1` and the matching `Sounding_File_Name`, the
+manifest records the sounding SHA-256, package validation verifies
+the sounding NetCDF physical/schema fields, and the client attaches
+the verified file under `sounding_file`. The persistent submission
+journal records a separate nullable `sounding_sha256`, including
+migration of previous SQLite journals, and guarded cleanup checks it.
+If disabled or optional data absent, the legacy `Molecular_Calc=0`
+and no sounding file remain unchanged. With `missing_policy=fail`,
+unavailable observational data stop the SCC export.
+
+**Incident isolation:** Do not re-export or attach sounding to
+`20240913spu1549` while its previous attempted uploads remain
+`uncertain` and historical raw/LR SHA-256 must be reconciled.
+First run the *offline* `upload --repair-lr-cache` and dry-run for all
+19 stages, then verify the upload form accepts the LR of the single
+authorized incident ID. SCC sounding support is not a reason
+to repeat or add another live upload to the unresolved incident.
+
+**Validation:** New regression tests cover exact sounding NetCDF
+types/units/launch time, source cache provenance, refusal to synthesize
+missing data, unphysical profiles, multipart field routing and prior
+journal migration. Cross-platform CI is in progress; **no live SCC
+sounding upload has been tested**.
+
 **Gate 12.7:** End-to-end SCC interoperability confirmed with real responses.
