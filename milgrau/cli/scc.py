@@ -22,6 +22,10 @@ def _parser() -> argparse.ArgumentParser:
         "--replace-existing", action="store_true",
         help="Replace existing SCC IDs only after verified backup; with no --id applies sequentially to the batch.",
     )
+    upload.add_argument(
+        "--resume-after-delete", action="store_true",
+        help="Exact-ID recovery ONLY after uncertain DELETE, verified old archive and SCC 404; sends one upload, no deletion.",
+    )
     action = upload.add_mutually_exclusive_group(required=True)
     action.add_argument(
         "--dry-run", action="store_true",
@@ -84,6 +88,13 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
     if not packages:
         print("No SCC packages are staged in .cache/scc/pending/.")
         return 0 if args.dry_run else 1
+    if args.resume_after_delete and (
+        not args.confirm or args.dry_run or not args.identity or args.replace_existing
+    ):
+        raise ValueError(
+            "--resume-after-delete requires exactly --id ID --confirm; "
+            "never combine it with batch mode or --replace-existing."
+        )
     if args.replace_existing and args.dry_run:
         raise ValueError(
             "--replace-existing must be used with --confirm; "
@@ -132,12 +143,15 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
     # Single-ID operation uses the same guarded workflow as before.
     path = Path(packages[0])
     validate_upload_package(path)
-    from milgrau.scc.workflow import submit
+    from milgrau.scc.workflow import resume_after_uncertain_delete, submit
 
     client = _client(config)
-    result = submit(
-        config, path, client, replace_existing=args.replace_existing,
-    )
+    if args.resume_after_delete:
+        result = resume_after_uncertain_delete(config, path, client)
+    else:
+        result = submit(
+            config, path, client, replace_existing=args.replace_existing,
+        )
     print(
         f"SCC API confirmed {result['measurement_id']}: {result['remote_page']}. "
         "Submission is journalled in .state/scc; cached files remain "
