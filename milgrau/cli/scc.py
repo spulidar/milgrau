@@ -20,7 +20,7 @@ def _parser() -> argparse.ArgumentParser:
     upload.add_argument("--id", dest="identity", help="Exact 15-character SCC Measurement_ID.")
     upload.add_argument(
         "--replace-existing", action="store_true",
-        help="Destructively replace existing SCC record under same ID after VERIFIED remote backup.",
+        help="Replace existing SCC IDs only after verified backup; with no --id applies sequentially to the batch.",
     )
     action = upload.add_mutually_exclusive_group(required=True)
     action.add_argument(
@@ -29,7 +29,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     action.add_argument(
         "--confirm", action="store_true",
-        help="Authorize ONE real upload. Requires --id and SCC environment credentials.",
+        help="Authorize SCC upload: one --id, or all local pending IDs sequentially if --id omitted.",
     )
 
     status = sub.add_parser("status", help="List local pending packets or query remote SCC.")
@@ -84,15 +84,13 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
     if not packages:
         print("No SCC packages are staged in .cache/scc/pending/.")
         return 0 if args.dry_run else 1
-    if args.replace_existing and (args.dry_run or not args.confirm or not args.identity):
+    if args.replace_existing and args.dry_run:
         raise ValueError(
-            "--replace-existing requires --id ID --confirm; it cannot run in dry-run."
+            "--replace-existing must be used with --confirm; "
+            "offline --dry-run does not inspect remote SCC IDs."
         )
-    if args.confirm and (not args.identity or len(packages) != 1):
-        raise ValueError(
-            "Actual upload requires --id MEASUREMENT_ID --confirm "
-            "(one measurement at a time until persistent state is implemented)."
-        )
+    if args.confirm and args.identity and len(packages) != 1:
+        raise ValueError("Single-ID upload requires exactly one local pending package.")
     errors = 0
     if args.dry_run:
         for path in packages:
@@ -109,7 +107,29 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
         print(f"Dry-run: {len(packages)-errors}/{len(packages)} valid; no network request.")
         return 1 if errors else 0
 
-    # Validate full package before touching any network resources.
+    if args.identity is None:
+        from milgrau.scc.batch import submit_batch
+
+        report = submit_batch(
+            config, [Path(path) for path in packages], _client(config),
+            replace_existing=args.replace_existing,
+        )
+        print(
+            "Batch summary: "
+            f"total={report.total}; submitted={report.submitted}; "
+            f"replaced={report.replaced}; identical={report.identical}; "
+            f"skipped_existing={report.skipped_existing}; "
+            f"failed={report.failed}; unprocessed={report.remaining}."
+        )
+        if report.stopped_at:
+            print(
+                f"Batch stopped at {report.stopped_at}. "
+                "Review the SCC status and durable journal; do not blindly restart."
+            )
+        print("No staged cache, scientific data or durable SCC archive was removed.")
+        return 0 if report.successful else 1
+
+    # Single-ID operation uses the same guarded workflow as before.
     path = Path(packages[0])
     validate_upload_package(path)
     from milgrau.scc.workflow import submit
@@ -121,7 +141,7 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
     print(
         f"SCC API confirmed {result['measurement_id']}: {result['remote_page']}. "
         "Submission is journalled in .state/scc; cached files remain "
-        "until safe cleanup is available in Phase 12.6."
+        "unchanged until an explicitly configured cleanup after download."
     )
     return 0
 
