@@ -159,8 +159,22 @@ milgrau-libids -i spu_20250511-0012Z_20250511-0737Z --scc-reexport
 This command requires the archived raw measurements and a valid existing
 canonical L0 but **does not rewrite that L0**. Normal incremental processing
 does not regenerate deleted cache files. Existing `*_L0_scc.nc` files from
-older runs are retained without modification. No SCC network upload or cleanup
-is available until the optional client is implemented (Phases 12.4–12.6).
+older runs are retained without modification.
+
+Phase 12.4 provides an **optional native SCC client** (no dependency on the
+historic scc_access package). Install and validate existing packets offline:
+
+```bash
+python -m pip install -e ".[scc]"
+milgrau-scc upload --dry-run
+milgrau-scc status
+```
+
+Only an explicit `milgrau-scc upload --id MEASUREMENT_ID --confirm` can attempt
+a real authenticated upload. Remote uploads are **not** automatically initiated
+by LIBIDS, and `download`/`cleanup` are gated until safe durable submission
+tracking exists (Phases 12.5–12.6).
+See [SCC client usage and security](docs/scc_native_client.md).
 
 The primary CLIs accept a session ID, a station-local civil date, or an
 explicit file/directory path. A date selects sessions that intersect that local day.
