@@ -5,13 +5,16 @@ from __future__ import annotations
 from copy import deepcopy
 from pathlib import Path
 
+import yaml
+
 import netCDF4 as nc
 import numpy as np
 import pandas as pd
 import pytest
 
 from milgrau.config.loader import load_config
-from milgrau.config.station import resolve_station_context, validate_station_config
+from milgrau.config.scc import validate_scc_config
+from milgrau.config.station import resolve_station_context
 from milgrau.level0.scc_lidar_ratio import (
     climatology_ancillary_enabled,
     scc_lr_ancillary_matches,
@@ -21,14 +24,15 @@ from milgrau.level0.scc_lidar_ratio import (
 
 def _setup(tmp_path: Path, *, regime: str = "day", month: int = 9):
     config = deepcopy(load_config("config.yaml"))
-    catalog = config["_station_catalog"]
+    catalog = yaml.safe_load(Path("scc.yaml").read_text(encoding="utf-8"))
+    config["_scc_catalog"] = catalog
     catalog["scc_policy"]["lr_input"]["source"] = "climatology_ancillary"
-    profile = next(x for x in catalog["profiles"] if x["id"] == "spu-merionc-2024")
-    profile["scc"]["day"]["elastic_product_ids"] = {
+    profile = catalog["profiles"]["spu-merionc-2024"]
+    profile["day"]["elastic_product_ids"] = {
         "355": [10011], "532": [10012, 10013], "1064": [10014],
     }
-    profile["scc"]["night"]["elastic_product_ids"] = {"1064": [10015]}
-    validate_station_config(catalog)
+    profile["night"]["elastic_product_ids"] = {"1064": [10015]}
+    validate_scc_config(catalog, config["_station_catalog"])
     channels = (
         ["532.AN", "532.PC", "1064.AN", "355.PC", "355.AN"]
         if regime == "day"
@@ -130,7 +134,7 @@ def test_month_boundary_is_rejected_not_silently_assigned(tmp_path: Path) -> Non
 
 def test_scc_db_mode_does_not_write_ancillary(tmp_path: Path) -> None:
     config, context, group, lidar, output = _setup(tmp_path)
-    config["_station_catalog"]["scc_policy"]["lr_input"]["source"] = "scc_db"
+    config["_scc_catalog"]["scc_policy"]["lr_input"]["source"] = "scc_db"
     assert not climatology_ancillary_enabled(config)
     assert write_scc_lidar_ratio_ancillary(output, group, lidar, config, context) is None
     assert not list(tmp_path.glob("lr_*.nc"))
