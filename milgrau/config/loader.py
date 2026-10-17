@@ -124,13 +124,13 @@ def _scc_settings(config: Mapping[str, Any]) -> Mapping[str, Any]:
         return {"enabled": False}
     if not isinstance(raw, Mapping):
         raise ValueError("config.scc must be a mapping.")
-    allowed = {"enabled", "config_file", "staging_dir", "upload", "cleanup"}
+    allowed = {"enabled", "config_file", "staging_dir", "state_dir", "upload", "cleanup"}
     if set(raw) - allowed:
         raise ValueError(f"Unknown config.scc keys: {sorted(set(raw) - allowed)}.")
     enabled = raw.get("enabled", False)
     if not isinstance(enabled, bool):
         raise ValueError("config.scc.enabled must be a boolean.")
-    for name in ("config_file", "staging_dir"):
+    for name in ("config_file", "staging_dir", "state_dir"):
         if name in raw and (not isinstance(raw[name], str) or not raw[name].strip()):
             raise ValueError(f"config.scc.{name} must be a non-empty path.")
     upload = raw.get("upload", {})
