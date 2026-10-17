@@ -4,6 +4,151 @@
 const byId = (id) => document.getElementById(id);
 const state = { session: "", product: "", dates: [] };
 let requestVersion = 0;
+let displayedResult = null;
+let colorCache = null;
+
+/** Percentiles are computed on the finite, display-reduced cells (not NetCDF). */
+function percentile(sorted, pct) {
+  if (!sorted.length) return NaN;
+  const position = ((sorted.length - 1) * pct) / 100;
+  const lower = Math.floor(position);
+  const weight = position - lower;
+  return sorted[lower] + (sorted[Math.min(lower + 1, sorted.length - 1)] - sorted[lower]) * weight;
+}
+
+function colorData(useLog) {
+  if (!displayedResult) return null;
+  if (colorCache && colorCache.source === displayedResult && colorCache.useLog === useLog) {
+    return colorCache;
+  }
+  let nonpositive = 0;
+  const matrix = useLog
+    ? displayedResult.rcs.map((row) => row.map((value) => {
+      if (typeof value !== "number" || !Number.isFinite(value)) return null;
+      if (value <= 0) { nonpositive += 1; return null; }
+      return Math.log10(value);
+    }))
+    : displayedResult.rcs;
+  const finite = [];
+  for (const row of matrix) {
+    for (const value of row) {
+      if (typeof value === "number" && Number.isFinite(value)) finite.push(value);
+    }
+  }
+  finite.sort((a, b) => a - b);
+  colorCache = { source: displayedResult, useLog, matrix, finite, nonpositive };
+  return colorCache;
+}
+
+function formatScale(value) {
+  return Number(value.toPrecision(5)).toString();
+}
+
+function scaleStatus(message, error = false) {
+  byId("scale-status").textContent = message;
+  byId("scale-status").classList.toggle("error", error);
+}
+
+function updateSettingAvailability() {
+  const mode = byId("color-mode").value;
+  for (const id of ["percentile-min", "percentile-max"]) {
+    byId(id).disabled = mode !== "robust";
+  }
+  for (const id of ["color-min", "color-max"]) {
+    byId(id).disabled = mode !== "manual";
+  }
+}
+
+/** Recolor the existing Plotly trace without rereading the selected NetCDF. */
+async function updateAppearance() {
+  updateSettingAvailability();
+  if (!displayedResult || !byId("rcs-chart").data) return;
+  const useLog = byId("log10").checked;
+  const values = colorData(useLog);
+  if (!values || !values.finite.length) {
+    scaleStatus("No finite " + (useLog ? "positive " : "") + "signal values to display.", true);
+    return;
+  }
+
+  const mode = byId("color-mode").value;
+  let low, high;
+  let description;
+  if (mode === "robust") {
+    const pmin = Number(byId("percentile-min").value);
+    const pmax = Number(byId("percentile-max").value);
+    if (!Number.isFinite(pmin) || !Number.isFinite(pmax) ||
+        pmin < 0 || pmax > 100 || pmin >= pmax ||
+        byId("percentile-min").value.trim() === "" ||
+        byId("percentile-max").value.trim() === "") {
+      scaleStatus("Enter valid percentile bounds with 0 ≤ lower < upper ≤ 100.", true);
+      return;
+    }
+    low = percentile(values.finite, pmin);
+    high = percentile(values.finite, pmax);
+    description = "Robust P" + pmin + "–P" + pmax;
+  } else if (mode === "manual") {
+    const a = byId("color-min").value.trim();
+    const b = byId("color-max").value.trim();
+    low = Number(a);
+    high = Number(b);
+    if (!a || !b || !Number.isFinite(low) || !Number.isFinite(high) || low >= high) {
+      scaleStatus("Enter finite manual limits with minimum < maximum (e.g. 1e4 and 1e7).", true);
+      return;
+    }
+    description = "Manual";
+  } else {
+    low = values.finite[0];
+    high = values.finite[values.finite.length - 1];
+    description = "Full-range auto";
+  }
+  if (low === high) {
+    const epsilon = Math.max(Math.abs(low) * 0.01, 1e-12);
+    low -= epsilon;
+    high += epsilon;
+    description += " (constant values; padded display range)";
+  }
+
+  const palette = byId("colorscale").value;
+  const axisTitle = useLog ? "log10(" + displayedResult.units + ")" : displayedResult.units;
+  const hoverValue = useLog ? "log10(signal)" : "Signal";
+  const update = {
+    zmin: [low],
+    zmax: [high],
+    zauto: [false],
+    colorscale: [palette],
+    "colorbar.title.text": [axisTitle],
+    hovertemplate: ["%{x}<br>Altitude: %{y:.2f} km<br>" +
+      hoverValue + ": %{z:.5g}<extra></extra>"],
+  };
+  if (!colorCache.applied || colorCache.lastLog !== useLog) {
+    update.z = [values.matrix];
+    colorCache.applied = true;
+    colorCache.lastLog = useLog;
+  }
+  await Plotly.restyle("rcs-chart", update, [0]);
+  scaleStatus(
+    description + " · colors [" + formatScale(low) + ", " + formatScale(high) + "]" +
+    (useLog ? " log10 units" : " " + displayedResult.units) +
+    " · based on finite display-reduced cells. Out-of-range cells are color-saturated, not removed." +
+    (useLog && values.nonpositive ? " " + values.nonpositive + " nonpositive cells hidden in log10." : "")
+  );
+}
+
+async function changeColorMode() {
+  if (byId("color-mode").value === "manual" && displayedResult) {
+    const data = colorData(byId("log10").checked);
+    if (data && data.finite.length) {
+      if (!byId("color-min").value.trim()) {
+        byId("color-min").value = formatScale(percentile(data.finite, 2));
+      }
+      if (!byId("color-max").value.trim()) {
+        byId("color-max").value = formatScale(percentile(data.finite, 98));
+      }
+    }
+  }
+  await updateAppearance();
+}
+
 
 async function api(path, params = {}) {
   const query = new URLSearchParams(params).toString();
@@ -33,6 +178,9 @@ function populate(id, options, selected = "") {
 }
 
 function resetPlots() {
+  requestVersion += 1;
+  displayedResult = null;
+  colorCache = null;
   if (window.Plotly) {
     Plotly.purge("rcs-chart");
     Plotly.purge("profile-chart");
@@ -81,6 +229,9 @@ async function loadProducts() {
 }
 
 async function loadOptions() {
+  requestVersion += 1;
+  displayedResult = null;
+  colorCache = null;
   state.product = byId("product").value;
   if (!state.session || !state.product) return;
   const { channels, variables } = await api(
@@ -152,6 +303,10 @@ async function loadRcs() {
       yaxis: { title: "Altitude (km a.g.l.)", gridcolor: "#e8eff3" },
     }, plotConfig),
   ]);
+  if (version !== requestVersion) return;
+  displayedResult = result;
+  colorCache = null;
+  await updateAppearance();
   byId("plot-info").textContent =
     result.samples.time + " profiles × " + result.samples.altitude + " altitude bins";
   byId("reduction-note").textContent =
@@ -191,6 +346,19 @@ async function initialize() {
   byId("channel").addEventListener("change", safeTask(loadRcs));
   byId("variable").addEventListener("change", safeTask(loadRcs));
   byId("statistic").addEventListener("change", safeTask(loadRcs));
+  byId("color-mode").addEventListener("change", safeTask(changeColorMode));
+  for (const id of ["percentile-min", "percentile-max", "color-min", "color-max"]) {
+    byId(id).addEventListener("change", safeTask(updateAppearance));
+  }
+  byId("colorscale").addEventListener("change", safeTask(updateAppearance));
+  byId("log10").addEventListener("change", safeTask(async () => {
+    // Limits are expressed in the active scale's units; refresh manual bounds.
+    byId("color-min").value = "";
+    byId("color-max").value = "";
+    if (byId("color-mode").value === "manual") await changeColorMode();
+    else await updateAppearance();
+  }));
+  updateSettingAvailability();
   try {
     const [site, available] = await Promise.all([api("/api/site"), api("/api/dates")]);
     byId("station-name").textContent = site.name;
