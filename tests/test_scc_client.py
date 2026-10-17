@@ -219,6 +219,28 @@ def test_remote_status_can_outlive_deleted_local_cache(
     assert f"remote {IDENTITY}" in text
 
 
+def test_read_only_status_backup_does_not_upload_or_delete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
+) -> None:
+    import milgrau.scc.backup as remote_backup
+
+    fake = FakeSession(duplicate=True)
+    monkeypatch.setattr(cli, "load_config", lambda: _config(tmp_path))
+    monkeypatch.setattr(cli, "_client", lambda _: _client(fake))
+    archive = tmp_path / "safe_remote_archive"
+    archive.mkdir()
+    monkeypatch.setattr(
+        remote_backup, "archive_remote_measurement",
+        lambda *args: (archive, "b" * 64),
+    )
+    monkeypatch.setattr(remote_backup, "verify_archive", lambda *args: {})
+    assert cli.main(["status", "--id", IDENTITY, "--remote", "--backup"]) == 0
+    assert "Remote SCC archive VERIFIED:" in capsys.readouterr().out
+    assert len([url for url, _ in fake.posts if url.endswith("/quick/")
+                or url.endswith("/delete/")]) == 0
+    assert cli.main(["status", "--id", IDENTITY, "--backup"]) == 1
+
+
 def test_download_and_cleanup_are_nondestructive_until_later_phase(
     tmp_path: Path,
 ) -> None:
