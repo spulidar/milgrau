@@ -57,3 +57,7 @@ jobs:
         run: python -m pip install -e ".[dev]"
       - name: Validate read-only Web Explorer
         run: pytest -q tests/test_web_explorer.py
+      - name: Verify JS syntax and browser-side color controls
+        run: |
+          node --check milgrau/web/static/js/app.js
+          node tests/web_color_scale.cjs
