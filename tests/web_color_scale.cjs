@@ -15,7 +15,7 @@ const html = fs.readFileSync(
 for (const id of ["session", "plot-editor", "edit-plot", "editor-colors",
                    "editor-axes", "color-mode", "percentile-min", "percentile-max",
                    "color-min", "color-max", "colorscale", "log10", "axis-ymin", "axis-ymax",
-                   "footer-logos"]) {
+                   "plot-title"]) {
   assert(html.includes('id="' + id + '"'), "Missing plot control: " + id);
 }
 const nodes = new Map();
@@ -78,6 +78,15 @@ async function run() {
   await new Promise((resolve) => setImmediate(resolve));
   const readings = Array.from({ length: 100 }, (_, i) => i);
   readings.push(1e9);  // one extreme value that ruins Plotly's auto colors
+  assert(!html.includes('id="product"'), "Do not show a scientific product picker");
+  assert(!html.includes('id="statistic"'), "Do not show a display reduction picker");
+  assert(!html.includes('id="footer-logos"'), "No logos below the plot");
+  assert(!html.includes("Scientific Explorer"), "Use Explorer title only");
+  for (const label of ["Time (UTC)", "Altitude above station (km)",
+                       "Mean RCS profile", "Range-corrected signal (RCS)"]) {
+    assert(code.includes(label), "Plot must restore title or axis label: " + label);
+  }
+  assert(html.includes("Plot options"), "Contextual edit button should have unobtrusive name");
   const source = { rcs: [[-4, 0, ...readings, null]], units: "a.u." };
   context.input = source;
   vm.runInContext("displayedResult = input; colorCache = null;", context);
@@ -88,7 +97,7 @@ async function run() {
   assert.equal(events.at(-1).change.zauto[0], false);
   assert(events.at(-1).change.zmax[0] < 1000, "robust colors suppress single outlier");
   assert(events.at(-1).change.zmin[0] < events.at(-1).change.zmax[0]);
-  assert.match(element("edit-plot").textContent, /Robust P2–P98/);
+  assert.match(element("edit-plot").title, /Robust P2–P98/);
 
   element("color-mode").value = "auto";
   await vm.runInContext("updateAppearance()", context);
@@ -116,7 +125,7 @@ async function run() {
   assert.equal(transformed[0][1], null, "zero is missing in log10");
   assert.equal(transformed[0][3], 0, "log10(1) = 0");
   assert.equal(events.at(-1).change.zmax[0], 9);
-  assert.match(element("edit-plot").textContent, /log10/);
+  assert.match(element("edit-plot").title, /log10/);
   assert.equal(fetchCount, beforeRecolor, "appearance never rereads the NetCDF");
 
   const profileData = vm.runInContext("displayedResult.mean_profile", context);
