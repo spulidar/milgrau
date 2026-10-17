@@ -335,4 +335,43 @@ been retained.
 - [ ] Update README/configuration reference/CLI docs and retire old SCC producer paths.
 - [ ] Require real upload/download evidence before declaring release ready.
 
+**Live same-ID delete incident (operator, 2026-10-17):** On
+`milgrau-scc upload --id 20240913spu1549 --replace-existing --confirm`,
+the SCC admin deletion POST raised an unknown transport outcome. Follow-up
+authenticated API GET returned **NOT FOUND**, and the original workflow
+stopped **before any replacement-upload POST**, with durable state
+`uncertain`. The locally verified original measurement archive remains
+at `.state/scc/archives/20240913spu1549/20261017T212943822169Z`.
+The `--dry-run` still validates all **19/19** staged packages
+(9 day system 1047 and 10 night system 1046). Read-only
+`status --remote --backup` correctly cannot back up an absent remote
+record; it does **not** indicate the earlier local archive was lost.
+
+**Recovery implementation:** `milgrau-scc upload --id
+20240913spu1549 --resume-after-delete --confirm` is an explicitly
+authorized **single-ID-only** recovery operation, not a batch or retry
+of deletion. `workflow.resume_after_uncertain_delete` verifies the
+journal's most recent `delete_result_uncertain` event, prior
+`backup_verified` and `delete_requested` audit events, retained
+original SCC raw/results archive checksums, exact staged source
+hashes/period/configuration and read-only SCC API absence. It then
+attempts exactly one *upload-only* POST under the same ID, storing
+`accepted` if and only if the post-upload API confirms the new remote
+record; any uncertain recovery is blocked again. Never erase or
+manually reset the SQLite journal. The admin-deletion transport
+exception class is now exposed for **future** failures; the original
+cause remains unknown from the recorded message.
+Mocked tests cover successful recovery, absent/present SCC record,
+tampered/missing backup, wrong uncertainty event and uncertain
+recovery-upload failure.
+
+**Open live gate:** Operator must verify retained local backup independently,
+confirm SCC ID remains absent, decide whether to restore original or
+finish replacement, and only then authorize the single-ID
+`--resume-after-delete` command. Neither full batch mode may be used
+before the resulting new SCC upload and LR acceptance are validated.
+An SCC administrator should inspect server access/error logs for the
+unexpected POST transport failure. The new recovery path has no
+confirmed live POST yet.
+
 **Gate 12.7:** End-to-end SCC interoperability confirmed with real responses.
