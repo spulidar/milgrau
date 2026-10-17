@@ -175,10 +175,20 @@ def validate_station_config(catalog: Mapping[str, Any]) -> None:
         raise ValueError("station.lidar_geometry.pointing_angle_deg_from_zenith must be within 0..180 degrees.")
 
     radiosonde = _mapping(station["radiosonde"], "station.radiosonde")
-    if set(radiosonde) != {"station_id", "station_name"}:
-        raise ValueError("station.radiosonde must contain exactly station_id and station_name.")
+    required_radio = {"station_id", "station_name"}
+    optional_radio = {"latitude", "longitude", "station_altitude_m"}
+    if required_radio - set(radiosonde) or set(radiosonde) - (required_radio | optional_radio):
+        raise ValueError("station.radiosonde requires station_id/station_name and allows location metadata.")
     _text(radiosonde["station_id"], "station.radiosonde.station_id")
     _text(radiosonde["station_name"], "station.radiosonde.station_name")
+    if any(key in radiosonde for key in optional_radio):
+        if not optional_radio.issubset(radiosonde):
+            raise ValueError("station.radiosonde coordinates and altitude must be supplied together.")
+        radio_lat = _number(radiosonde["latitude"], "station.radiosonde.latitude")
+        radio_lon = _number(radiosonde["longitude"], "station.radiosonde.longitude")
+        _number(radiosonde["station_altitude_m"], "station.radiosonde.station_altitude_m")
+        if not (-90 <= radio_lat <= 90 and -180 <= radio_lon <= 180):
+            raise ValueError("station.radiosonde coordinates out of bounds.")
 
     validate_overlap_catalog(catalog)
     _validate_calibrations(catalog)
