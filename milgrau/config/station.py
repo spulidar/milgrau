@@ -1,4 +1,4 @@
-"""Station metadata, temporal profile resolution, calibration, and SCC mapping."""
+"""Station metadata, temporal profile resolution, and calibration."""
 
 from __future__ import annotations
 
@@ -131,7 +131,7 @@ def _validate_calibrations(catalog: Mapping[str, Any]) -> None:
 
 
 def validate_station_config(catalog: Mapping[str, Any]) -> None:
-    """Validate station metadata, geometry, calibrations, temporal profiles, and SCC policy."""
+    """Validate station metadata, geometry, calibrations, and temporal profiles."""
     allowed_root = {"station", "calibrations", "profiles"}
     unknown_root = sorted(set(catalog) - allowed_root)
     if unknown_root:
