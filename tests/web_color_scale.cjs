@@ -9,6 +9,13 @@ const vm = require("node:vm");
 const code = fs.readFileSync(
   path.join(__dirname, "../milgrau/web/static/js/app.js"), "utf8"
 );
+const html = fs.readFileSync(
+  path.join(__dirname, "../milgrau/web/static/index.html"), "utf8"
+);
+for (const id of ["color-mode", "percentile-min", "percentile-max",
+                   "color-min", "color-max", "colorscale", "log10"]) {
+  assert(html.includes('id="' + id + '"'), "Missing plot control: " + id);
+}
 const nodes = new Map();
 const events = [];
 function element(id) {
@@ -96,7 +103,7 @@ async function run() {
   const transformed = events.at(-1).change.z[0];
   assert.equal(transformed[0][0], null, "negative values are missing in log10");
   assert.equal(transformed[0][1], null, "zero is missing in log10");
-  assert.equal(transformed[0][4], 0, "log10(1) = 0");
+  assert.equal(transformed[0][3], 0, "log10(1) = 0");
   assert.equal(events.at(-1).change.zmax[0], 9);
   assert.match(element("settings-hint").textContent, /log10/);
   assert.equal(fetchCount, beforeRecolor, "appearance never rereads the NetCDF");
