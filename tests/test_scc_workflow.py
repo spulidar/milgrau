@@ -374,6 +374,85 @@ def test_recovery_upload_unknown_fails_closed_and_is_not_repeatable(
     assert client.upload_calls == 1
 
 
+def _prior_unknown_recovery_upload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    from copy import deepcopy
+
+    config, _, staged = _interrupted_delete_journal(tmp_path)
+    with SubmissionStore(state_root(config)) as store:
+        store.transition(
+            ID, "remote_deleted",
+            action="operator_confirmed_remote_absence_after_uncertain_delete",
+        )
+        store.transition(ID, "uploading", action="recovery_upload_requested")
+        store.transition(ID, "uncertain", action="recovery_upload_uncertain")
+    manifest = deepcopy(_manifest())
+    manifest["files"][f"{ID}.nc"] = manifest["files"].pop("raw.nc")
+    monkeypatch.setattr(workflow, "validate_upload_package", lambda _: manifest)
+    monkeypatch.setattr(
+        workflow, "verify_archive",
+        lambda *_: {
+            "measurement_id": ID,
+            "remote_snapshot": {"configuration_id": 1047},
+        },
+    )
+    return config, staged
+
+
+def test_second_upload_only_after_uncertain_recovery_and_scc_404(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config, staged = _prior_unknown_recovery_upload(tmp_path, monkeypatch)
+    client = FakeClient(exists=False)
+    result = workflow.retry_rejected_recovery_upload(config, staged, client)
+    assert result["measurement_id"] == ID
+    assert client.delete_calls == 0 and client.upload_calls == 1
+    with SubmissionStore(state_root(config)) as store:
+        assert store.get(ID)["state"] == "accepted"
+        assert store.events(ID)[-1]["action"] == "manual_corrected_upload_verified"
+
+
+def test_second_upload_blocks_if_scc_id_reappeared(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config, staged = _prior_unknown_recovery_upload(tmp_path, monkeypatch)
+    client = FakeClient(exists=True)
+    with pytest.raises(SCCRemoteError, match="reappeared"):
+        workflow.retry_rejected_recovery_upload(config, staged, client)
+    assert client.delete_calls == client.upload_calls == 0
+
+
+def test_second_upload_failure_refuses_any_further_attempts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config, staged = _prior_unknown_recovery_upload(tmp_path, monkeypatch)
+    client = FakeClient(exists=False, fail_upload=True)
+    with pytest.raises(SCCRemoteError, match="upload response lost"):
+        workflow.retry_rejected_recovery_upload(config, staged, client)
+    assert client.delete_calls == 0 and client.upload_calls == 1
+    with SubmissionStore(state_root(config)) as store:
+        assert store.get(ID)["state"] == "uncertain"
+        assert store.events(ID)[-1]["action"] == "manual_corrected_upload_uncertain"
+    with pytest.raises(SCCRemoteError, match="Only one operator-confirmed"):
+        workflow.retry_rejected_recovery_upload(config, staged, client)
+    assert client.upload_calls == 1
+
+
+def test_second_upload_requires_original_verified_archive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config, staged = _prior_unknown_recovery_upload(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        workflow, "verify_archive",
+        lambda *_: (_ for _ in ()).throw(SCCRemoteError("original corrupt")),
+    )
+    client = FakeClient(exists=False)
+    with pytest.raises(SCCRemoteError, match="original corrupt"):
+        workflow.retry_rejected_recovery_upload(config, staged, client)
+    assert client.upload_calls == client.delete_calls == 0
+
+
 def test_replacement_rejects_missing_remote_target(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
