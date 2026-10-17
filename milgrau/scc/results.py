@@ -80,6 +80,12 @@ def validate_results(directory: Path) -> dict[str, Any]:
             manifest["schema_version"] != 1
             or manifest["measurement_id"] != directory.parent.parent.name
             or not manifest.get("remote_creation_date")
+            or directory.name != "remote-" + hashlib.sha256(
+                (
+                    str(manifest["measurement_id"]) + "|" +
+                    str(manifest["remote_creation_date"])
+                ).encode("utf-8")
+            ).hexdigest()[:20]
             or not set(REQUIRED_TYPES).issubset(manifest["files"])
         ):
             raise SCCRemoteError("SCC results manifest has invalid identity/types.")
