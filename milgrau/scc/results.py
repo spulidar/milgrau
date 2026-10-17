@@ -7,6 +7,7 @@ remote record nor an existing results directory establishes upload ownership.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import tempfile
@@ -26,7 +27,7 @@ RESULT_TYPES = ("elpp", "elda", "cloudmask", "elic", "elquick", "hirelpp", "elde
 REQUIRED_TYPES = ("elpp", "elda")
 
 
-def result_location(config: Mapping[str, Any], session_id: str, identity: str) -> Path:
+def result_location(config: Mapping[str, Any], session_id: str, identity: str, remote_creation_date: str) -> Path:
     """Return a verified scientific session's *external* SCC results subdirectory."""
     from milgrau.level0.scc_staging import _MEASUREMENT_ID
 
@@ -39,7 +40,12 @@ def result_location(config: Mapping[str, Any], session_id: str, identity: str) -
             f"Canonical Level 0 {level0} is missing; cannot associate SCC results "
             "with an unverified scientific session."
         )
-    return level0.parent / "scc-results" / identity
+    if not isinstance(remote_creation_date, str) or not remote_creation_date:
+        raise SCCRemoteError("SCC remote creation timestamp is required.")
+    digest = hashlib.sha256(
+        (identity + "|" + remote_creation_date).encode("utf-8")
+    ).hexdigest()[:20]
+    return level0.parent / "scc-results" / identity / "generations" / ("remote-" + digest)
 
 
 def _confirmed_outputs(remote: Mapping[str, Any]) -> dict[str, str]:
