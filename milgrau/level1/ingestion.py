@@ -148,10 +148,16 @@ def _channel_names_from_scc_ids(
         raise ValueError("SCC channel-ID mapping requires a non-empty measurement time axis.")
 
     profile = _profile_for_measurement_time(config, pd.Timestamp(time_index[0]))
-    scc = profile.get("scc")
+    scc_catalog = config.get("_scc_catalog")
+    if not isinstance(scc_catalog, Mapping):
+        raise ValueError(
+            "SCC channel_ID mapping requires enabled SCC integration and loaded scc.yaml."
+        )
+    mappings = scc_catalog.get("profiles", {})
+    scc = mappings.get(profile.get("id")) if isinstance(mappings, Mapping) else None
     if not isinstance(scc, Mapping):
         raise ValueError(
-            f"Station profile {profile.get('id', '')!r} has no SCC mapping, so external channel_ID values cannot be canonicalized."
+            f"Station profile {profile.get('id', '')!r} has no SCC mapping in scc.yaml."
         )
 
     mode_hint = _solar_regime_hint(ds)
@@ -224,7 +230,7 @@ def _canonicalize_channel_identity(
             mapped_names, modes, configuration_ids = _channel_names_from_scc_ids(ds, config, time_index)
             if list(names) != mapped_names:
                 raise ValueError(
-                    "Level 0 channel_string disagrees with station.yaml mapping for the stored SCC channel_ID values."
+                    "Level 0 channel_string disagrees with scc.yaml mapping for the stored SCC channel_ID values."
                 )
             result = ds.copy()
             result.attrs["milgrau_channel_identity_source"] = "channel_string_verified_against_station_scc_channel_ID"
@@ -236,13 +242,13 @@ def _canonicalize_channel_identity(
     if config is None:
         raise ValueError(
             "Level 0 input lacks channel_string. Pass the loaded MILGRAU configuration so SCC channel_ID values can be "
-            "resolved through station.yaml."
+            "resolved through scc.yaml."
         )
     names, modes, configuration_ids = _channel_names_from_scc_ids(ds, config, time_index)
     result = ds.copy()
     result["channel_string"] = xr.DataArray(np.asarray(names, dtype=object), dims=("channels",))
     result.attrs["milgrau_level0_input_schema"] = "scc_raw_channel_ID_canonicalized"
-    result.attrs["milgrau_channel_identity_source"] = "station.yaml_scc_channel_ID_mapping"
+    result.attrs["milgrau_channel_identity_source"] = "scc.yaml_channel_ID_mapping"
     result.attrs["milgrau_scc_mapping_modes"] = ",".join(modes)
     result.attrs["milgrau_scc_mapping_configuration_ids"] = ",".join(str(value) for value in configuration_ids)
     return result
