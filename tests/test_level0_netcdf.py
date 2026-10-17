@@ -124,6 +124,30 @@ def test_primary_level0_never_receives_scc_measurement_id(tmp_path: Path) -> Non
         assert "Measurement_ID" not in ds.attrs
 
 
+def test_scc_level0_references_only_matching_lr_ancillary(tmp_path: Path) -> None:
+    output_path = tmp_path / "test_day_L0_scc.nc"
+    config = _config()
+    config["_resolved_station"]["lr_input"] = {"532.AN": 0}
+    config["_scc_lr_file_name"] = "lr_20240101spu0000.nc"
+    build_level0_netcdf(
+        str(output_path), SESSION_ID, _lidar_data(), _group_df(tmp_path, False),
+        _weather_data(), config, logging.getLogger("test.scc_lr"),
+        scc_export=True,
+    )
+    with xr.open_dataset(output_path) as ds:
+        assert ds.attrs["LR_File_Name"] == "lr_20240101spu0000.nc"
+        assert int(ds["LR_Input"].values[0]) == 0
+
+    primary = tmp_path / "test_L0.nc"
+    build_level0_netcdf(
+        str(primary), SESSION_ID, _lidar_data(), _group_df(tmp_path, False),
+        _weather_data(), config, logging.getLogger("test.scc_lr_primary"),
+    )
+    with xr.open_dataset(primary) as ds:
+        assert "LR_File_Name" not in ds.attrs
+        assert "Measurement_ID" not in ds.attrs
+
+
 def test_validate_lidar_tensors_rejects_shape_mismatch() -> None:
     with pytest.raises(ValueError):
         validate_lidar_tensors({"532.AN": np.ones((2, 4)), "532.PC": np.ones((3, 4))}, ["532.AN", "532.PC"])
