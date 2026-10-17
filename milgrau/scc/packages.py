@@ -41,7 +41,9 @@ def discover_pending(config: Mapping[str, Any], identity: str | None = None) -> 
     )
 
 
-def validate_upload_package(path: Path) -> dict[str, Any]:
+def validate_upload_package(
+    path: Path, *, allow_legacy_lr: bool = False,
+) -> dict[str, Any]:
     """Verify checksums, raw SCC ID/config and climatological LR content."""
     try:
         manifest = validate_pending_scc_package(path)
@@ -68,6 +70,8 @@ def validate_upload_package(path: Path) -> dict[str, Any]:
                 if "LR_File_Name" in raw.ncattrs() else None
             )
         expected_lr = scc_lr_file_name(identity)
+        if allow_legacy_lr and lr_name == f"lr_{identity}.nc":
+            expected_lr = lr_name
         if lr_name is None:
             if file_names != {raw_name}:
                 raise SCCPackageError("Unreferenced lidar-ratio ancillary is staged.")
