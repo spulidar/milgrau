@@ -101,6 +101,13 @@ def _patch(monkeypatch: pytest.MonkeyPatch, *, backup_failure=False, changed=Fal
 
     monkeypatch.setattr(workflow, "archive_remote_measurement", archive)
     monkeypatch.setattr(workflow, "verify_archive", verify)
+    monkeypatch.setattr(
+        workflow, "compare_staged_to_archive",
+        lambda *_: {
+            "identical": False, "period_differs": True,
+            "raw_identical": False, "lr_identical": False,
+        },
+    )
 
 
 def test_new_measurement_is_journalled_and_accepted(
@@ -126,6 +133,28 @@ def test_existing_without_replace_never_deletes(
     with SubmissionStore(state_root(_config(tmp_path))) as journal:
         assert journal.get(ID)["state"] == "remote_exists"
     assert client.delete_calls == client.upload_calls == 0
+
+
+def test_identical_old_remote_measurement_is_noop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch(monkeypatch)
+    monkeypatch.setattr(
+        workflow, "compare_staged_to_archive",
+        lambda *_: {
+            "identical": True, "period_differs": False,
+            "raw_identical": True, "lr_identical": True,
+        },
+    )
+    client = FakeClient()
+    client._url = lambda path: "https://scc.example.test/" + path
+    result = workflow.submit(
+        _config(tmp_path), tmp_path, client, replace_existing=True,
+    )
+    assert result["status"] == "already_identical"
+    assert client.delete_calls == client.upload_calls == 0
+    with SubmissionStore(state_root(_config(tmp_path))) as store:
+        assert store.get(ID)["state"] == "remote_exists"
 
 
 def test_explicit_replacement_preserves_id_and_verified_archive(
