@@ -102,7 +102,14 @@ def test_api_serves_ui_catalog_and_selected_l1_data(prepared) -> None:
     config_path, _path, _folder = prepared
     client = TestClient(create_app(str(config_path)))
     assert client.get("/").status_code == 200
-    assert "Plotly.js" in client.get("/").text
+    html = client.get("/").text
+    assert 'src="/static/plotly.min.js"' in html
+    assert 'id="product"' not in html
+    assert 'id="statistic"' not in html
+    assert 'id="footer-logos"' not in html
+    assert 'id="channel"' in html
+    assert 'id="edit-plot"' in html
+    assert "Scientific Explorer" not in html
     assert client.get("/static/js/app.js").status_code == 200
     assert client.get("/api/site").json()["id"] == "spu"
     # New header selects full scientific sessions, not a publication date.
@@ -140,22 +147,12 @@ def test_api_never_accepts_unregistered_product_paths(prepared) -> None:
 
 
 
-def test_site_serves_only_configured_local_logos(prepared) -> None:
+def test_site_has_no_footer_logos_or_logo_endpoints(prepared) -> None:
     config_path, _path, _folder = prepared
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    logo_dir = config_path.parent / "img"
-    logo_dir.mkdir()
-    (logo_dir / "SPU_LOGO.png").write_bytes(b"\\x89PNG\\r\\n\\x1a\\n")
-    config["visualization"]["logos"] = [{"path": "img/SPU_LOGO.png"}]
-    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
-
     client = TestClient(create_app(str(config_path)))
-    logos = client.get("/api/site").json()["logos"]
-    assert len(logos) == 1
-    assert logos[0]["url"] == "/api/logo/0"
-    assert client.get(logos[0]["url"]).status_code == 200
-    assert client.get("/api/logo/1").status_code == 404
-    assert client.get("/api/logo/-1").status_code == 404
+    assert "logos" not in client.get("/api/site").json()
+    assert client.get("/api/logo/0").status_code == 404
+    assert 'id="footer-logos"' not in client.get("/").text
 
 
 def test_all_session_order_is_newest_first(prepared) -> None:
