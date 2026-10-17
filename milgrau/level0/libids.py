@@ -21,7 +21,6 @@ from milgrau.level0.config import resolve_level0_config, validate_level0_config
 from milgrau.level0.inventory import build_session_inventory
 from milgrau.level0.netcdf import scc_measurement_id
 from milgrau.level0.processing import process_session_group
-from milgrau.level0.scc_lidar_ratio import scc_lr_ancillary_matches
 from milgrau.level0.quality import filter_laser_shots
 from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary
 from milgrau.provenance import netcdf_provenance_is_complete
@@ -39,7 +38,7 @@ def _resolve_expected_scc_contexts(
 ) -> list[tuple[str, dict]]:
     """Resolve expected day/night SCC derivatives from the canonical segment table."""
     del session_id, group_df
-    if not isinstance(config.get("_station_catalog"), Mapping):
+    if not isinstance(config.get("_scc_catalog"), Mapping):
         return []
     try:
         with xr.open_dataset(output_path) as ds:
@@ -114,9 +113,11 @@ def _scc_output_satisfies_context(
                 return False
             lr_flags = context.get("lr_input", {})
             if any(int(value) == 0 for value in lr_flags.values()):
-                if catalog is None or not scc_lr_ancillary_matches(
-                    path, ds.attrs, context, catalog,
-                ):
+                if catalog is None:
+                    return False
+                from milgrau.level0.scc_lidar_ratio import scc_lr_ancillary_matches
+
+                if not scc_lr_ancillary_matches(path, ds.attrs, context, catalog):
                     return False
             elif "LR_File_Name" in ds.attrs:
                 return False
@@ -190,6 +191,8 @@ def _level0_is_current(
     )
     if not primary_current:
         return False
+    if not isinstance(config.get("_scc_catalog"), Mapping):
+        return True
 
     contexts = _resolve_expected_scc_contexts(
         session_id, group_df, config, output
