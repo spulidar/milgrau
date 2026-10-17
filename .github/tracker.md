@@ -598,7 +598,10 @@ to repeat or add another live upload to the unresolved incident.
 **Validation:** New regression tests cover exact sounding NetCDF
 types/units/launch time, source cache provenance, refusal to synthesize
 missing data, unphysical profiles, multipart field routing and prior
-journal migration. Cross-platform CI is in progress; **no live SCC
-sounding upload has been tested**.
+journal migration. All **6/6** cross-platform checks passed in
+[GitHub Actions run 39079349685](https://github.com/spulidar/milgrau/actions/runs/39079349685)
+(Ubuntu/Windows Python 3.12/3.14, Ruff and Explorer); later commits changed
+documentation/tracker only. **No live SCC sounding upload has been tested**.
+The current production incident must first be resolved without sounding.
 
 **Gate 12.7:** End-to-end SCC interoperability confirmed with real responses.
