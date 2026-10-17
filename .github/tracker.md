@@ -137,6 +137,18 @@ a real SPU SCC login/upload is still required before declaring live compatibilit
 
 **Real local CLI validation (2026-10-17):** Operator installed `.[scc]` after updating the branch and ran `milgrau-scc upload --dry-run` and `milgrau-scc status` successfully on **19/19** pending uploads (**9** SCC day configuration 1047, **10** SCC night configuration 1046); each package includes `raw.nc` plus a climatological `lr_<Measurement_ID>.nc`. No network request was made or required. **Next:** read-only SCC login/measurement-status check with environment-only credentials; actual remote Quick upload is still unverified.
 
+**Live read-only authentication test (2026-10-17):** local
+`milgrau-scc status --id 20240913spu1549 --remote` confirmed staged
+package integrity but returned **HTTP 401 on the initial GET to
+`/accounts/login/`**, before posting SCC website credentials. The
+SCC reference client documents a separate HTTP Basic gateway credential
+pair; this pair was not yet confirmed in the operator's environment.
+The native client now emits a specific pre-website 401 diagnosis and tests
+that no login POST or measurement upload occurs. **Open blocker:**
+verify the SCC HTTPS origin and provide the operator's existing Basic
+credentials (or request them from the SCC administrator); repeat read-only
+authentication before any remote upload. No real upload occurred.
+
 **Gate 12.4:** Offline client and authentication mocks pass; real upload remains
 explicitly opt-in. Live integration validation is tracked separately in 12.7.
 
