@@ -34,7 +34,10 @@ def verify_cleanup(config: Mapping[str, Any], identity: str) -> dict[str, Any]:
             )
         if not row["results_path"] or not row["results_manifest_sha256"]:
             raise SCCRemoteError("SCC results have no durable verified journal record.")
-        path = result_location(config, row["scientific_session_id"], identity)
+        path = result_location(
+            config, row["scientific_session_id"], identity,
+            row["remote_creation_date"],
+        )
         if path.resolve() != Path(row["results_path"]).resolve():
             raise SCCRemoteError("SCC results path does not match its canonical session.")
         manifest = validate_results(path)
