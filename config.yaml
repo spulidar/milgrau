@@ -5,6 +5,16 @@
 
 station_config: "station.yaml"
 
+# Optional external SCC interoperability; no scc.yaml dependency when disabled.
+scc:
+  enabled: false
+  config_file: "scc.yaml"
+  staging_dir: ".cache/scc"
+  upload:
+    automatic: false
+  cleanup:
+    policy: "after_download"
+
 project:
   name: "MILGRAU"
   full_name: "Multi-Indexed LALINET GeneRAlized and Unified algorithm"
