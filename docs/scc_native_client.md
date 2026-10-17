@@ -359,7 +359,7 @@ in place without deleting entries. The cache-cleanup gate requires:
 - the results manifest's checksum/path matching the durable journal;
 - the original pending raw NetCDF and any LR matching their submitted hashes.
 
-When `config.yaml` sets `scc.cleanup.policy: after_download` (current default),
+When a local `config.yaml` sets `scc.cleanup.policy: after_download` (not the current example default),
 an owned, newly downloaded and verified packet triggers automatic **local-only**
 cleanup of `.cache/scc/pending/<Measurement_ID>/`. Use `download --keep-cache`
 to suppress that automatic cleanup. To exercise the same gate separately,
