@@ -46,17 +46,20 @@ def test_merionc_raman_identity_is_explicit_without_invented_passbands() -> None
 def test_merionc_raman_metadata_matches_current_scc_exposure() -> None:
     profile = _merionc_profile()
     channels = profile["raman_detection"]["channels"]
-    night = profile["scc"]["night"]["channels"]
-    day = profile["scc"]["day"]["channels"]
+    scc = yaml.safe_load(Path("scc.yaml").read_text(encoding="utf-8"))
+    merionc = scc["profiles"]["spu-merionc-2024"]
+    night = merionc["night"]["channels"]
+    day = merionc["day"]["channels"]
+    raman = scc["raman_channel_overrides"]["spu-merionc-2024"]
 
-    assert channels["387"]["scc_night_channel_ids"] == {"AN": 4076, "PC": 4077}
-    assert channels["530"]["scc_night_channel_ids"] == {"AN": 4075, "PC": 4074}
+    assert raman["387"]["scc_night_channel_ids"] == {"AN": 4076, "PC": 4077}
+    assert raman["530"]["scc_night_channel_ids"] == {"AN": 4075, "PC": 4074}
     assert night["387.AN"] == 4076
     assert night["387.PC"] == 4077
     assert night["530.AN"] == 4075
     assert night["530.PC"] == 4074
 
-    assert channels["408"]["scc_mapping_status"] == (
+    assert raman["408"]["scc_mapping_status"] == (
         "published_current_identity_not_exposed_in_scc_1046"
     )
     assert "408.AN" not in night
