@@ -337,12 +337,34 @@ class SCCClient:
                 f"SCC returned HTTP {response.status_code} after uploading {identity}; "
                 "check remote status before retrying."
             )
-        # Some SCC versions redirect to the measurement detail page. In all
-        # cases require authoritative read-only confirmation before success.
-        if self.measurement(identity) is None:
+        # The official scc_access client documents SCC API indexing delays
+        # after a successful Quick upload. Poll using safe GET ONLY: never
+        # repeat the multipart POST. HTTP 200 on the Quick upload form itself
+        # can also mean server-side form validation rejected the input.
+        form_stayed_open = (
+            urlsplit(response.url).path.rstrip("/")
+            == urlsplit(url).path.rstrip("/")
+        )
+        confirmed = None
+        for attempt in range(3):
+            if attempt:
+                time.sleep(2)
+            confirmed = self.measurement(identity)
+            if confirmed is not None:
+                break
+        if confirmed is None:
+            if form_stayed_open:
+                raise SCCRemoteError(
+                    f"SCC Quick upload for {identity} returned to its original "
+                    "form rather than the measurement detail page. This commonly "
+                    "means validation rejected raw.nc or LR, but the remote "
+                    "outcome is still unconfirmed. Inspect SCC portal/form "
+                    "messages; do not retry the POST."
+                )
             raise SCCRemoteError(
-                f"Upload response for {identity} was not confirmed by the SCC API; "
-                "remote state is uncertain. Do not repeat the POST."
+                f"Upload response for {identity} returned HTTP 200 but was "
+                "not confirmed by the SCC API after 3 read-only checks. "
+                "Remote state is uncertain; do not repeat the POST."
             )
         return {
             "measurement_id": identity,
