@@ -419,4 +419,29 @@ real SCC upload was accepted. The operator should provide only
 read-only API status, journal events and ancillary LR registry
 information before a further change is attempted.
 
+**Likely SCC upload validation incompatibility (2026-10-17):**
+The authoritative [SCC 5.2 raw NetCDF input specification](https://docs.scc.imaa.cnr.it/en/latest/file_formats/netcdf_file.html)
+requires the uploaded raw file name to be `<Measurement_ID>.nc`;
+the original native MILGRAU multipart used `raw.nc`, the filename of
+the *disposable local staging file*. SCC returned HTTP 200 without an
+authoritative API measurement after the previously attempted POST.
+A Quick upload form validation rejection is a plausible explanation,
+but its original response HTML was not captured, so causation is **not
+proven**. The multipart filename was corrected to
+`<Measurement_ID>.nc` while the local cache and checksum manifest
+continue to use `raw.nc`; the regression test asserts the exact
+transmitted filename. The official SCC specification also requires
+`LR_Input=0` when using an external LR; the existing
+`scc_policy.lr_input.source=climatology_ancillary` generator resolves
+these external-profile flags to zero for eligible elastic channels.
+The operator's read-only LR endpoint returned HTTP 200 with no objects
+printed for the requested `lr_20240913spu1549.nc`; this suggests no
+file was found by that lookup, *not* LR upload success.
+**Do not re-upload or re-run the batch merely because this client-side
+filename defect was fixed.** The current persistent journal remains
+`recovery_upload_uncertain`. First reconcile the SCC portal/API and
+determine whether the failed upload was rejected; only then design a
+single exact-ID, explicit reconciliation/retry procedure with no remote
+deletion or automatic batch resumption.
+
 **Gate 12.7:** End-to-end SCC interoperability confirmed with real responses.
