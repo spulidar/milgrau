@@ -75,11 +75,12 @@ def _stage(tmp_path: Path, *, lr: bool = True) -> Path:
 
 class FakeResponse:
     def __init__(self, status: int, url: str, *, data: dict | None = None,
-                 csrf: str | None = None):
+                 csrf: str | None = None, location: str | None = None):
         self.status_code = status
         self.url = url
         self._data = data
         self.cookies = {} if csrf is None else {"csrftoken": csrf}
+        self.headers = {} if location is None else {"Location": location}
 
     def json(self):
         return self._data
@@ -215,6 +216,57 @@ def test_download_and_cleanup_are_nondestructive_until_later_phase(
     assert cli.main(["cleanup"]) == 2
     assert path.is_dir()
     assert validate_upload_package(path)["measurement_id"] == IDENTITY
+
+
+def test_client_blocks_cross_origin_redirect_without_sending_credentials() -> None:
+    fake = FakeSession()
+    orig_post = fake.post
+
+    def malicious_login(url, **kwargs):
+        if url.endswith("/accounts/login/"):
+            return FakeResponse(302, url, location="https://attacker.example/steal")
+        return orig_post(url, **kwargs)
+
+    fake.post = malicious_login
+    with pytest.raises(SCCRemoteError, match="outside its HTTPS origin"):
+        _client(fake).login()
+    assert len(fake.posts) == 0
+
+
+def test_client_does_not_follow_http_307_replay() -> None:
+    fake = FakeSession()
+    orig_post = fake.post
+
+    def redirect_login(url, **kwargs):
+        if url.endswith("/accounts/login/"):
+            return FakeResponse(307, url, location="/accounts/login/")
+        return orig_post(url, **kwargs)
+
+    fake.post = redirect_login
+    with pytest.raises(SCCRemoteError, match="refusing unsafe redirect"):
+        _client(fake).login()
+
+
+def test_client_follows_same_origin_redirect_as_get_after_login() -> None:
+    fake = FakeSession()
+    orig_get = fake.get
+    orig_post = fake.post
+
+    def redirected_get(url, **kwargs):
+        if url.endswith("/dashboard/"):
+            return FakeResponse(200, url)
+        return orig_get(url, **kwargs)
+
+    def redirected_login(url, **kwargs):
+        if url.endswith("/accounts/login/"):
+            return FakeResponse(302, url, location="/dashboard/")
+        return orig_post(url, **kwargs)
+
+    fake.get = redirected_get
+    fake.post = redirected_login
+    client = _client(fake)
+    client.login()
+    assert client.measurement(IDENTITY) is None
 
 
 def test_https_origin_and_environment_credentials_are_strict(
