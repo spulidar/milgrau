@@ -97,7 +97,7 @@ def rcs_map(
         profile_count = np.zeros(n_alt, dtype=np.int64)
         columns: list[np.ndarray] = []
         labels: list[str] = []
-        for begin, end in zip(boundaries, boundaries[1:], strict=True):
+        for begin, end in zip(boundaries[:-1], boundaries[1:], strict=True):
             if begin > 0:
                 # Two empty columns make long instrument gaps visible in Plotly.
                 labels.extend([
