@@ -1,7 +1,7 @@
 # Phase 12 — Optional SCC integration and publication workflow
 
 **Branch:** `scc-integration-refactor` (base: `milgraumaxxing`)  
-**Status:** Phases 12.1–12.5 implemented and cross-platform CI validated; Phase 12.5 live backup/replacement still pending; Phase 12.6 not started  
+**Status:** Phases 12.1–12.5 CI validated; Phase 12.6 implemented, final cross-platform CI in progress; live remote download and replacement remain pending  
 **Scope:** SCC configuration, optional export, staging, native upload/status/download/cleanup client.
 This branch's tracker intentionally contains **only Phase 12**. The earlier scientific tracker remains on the base branch.
 
@@ -244,12 +244,39 @@ explicit manual reconciliation are the safe recovery foundation.
 
 ## 12.6 — Download and cleanup
 
-- [ ] Download/verify SCC ELPP/ELDA products to distinct persistent locations.
-- [ ] Persist remote provenance, processing configuration and result links.
-- [ ] Clean only safe staged files after confirmation and download, retaining failures/uncertain uploads.
-- [ ] Never erase raw Licel, scientific NetCDF or durable submission history.
+- [x] Download/verify SCC ELPP/ELDA and any other completed downloadable SCC products to separate persistent `scc-results/` snapshots.
+- [x] Persist remote provenance, processing configuration, source Session_ID, result links, timestamps, immutable generation identity and SHA-256 manifest.
+- [x] Clean only safe staged files after confirmed MILGRAU upload **and** verified completed remote processing **and** download, retaining failed/uncertain and external portal submissions.
+- [x] Never erase raw Licel, scientific L0/L1/L2, old SCC replacement archives or durable SQLite submission history.
+- [x] Provide `milgrau-scc download --id ID [--session SESSION_ID] [--keep-cache]` and `cleanup --id ID --dry-run|--confirm` under the existing four-subcommand CLI.
+- [x] Migrate old SQLite 12.5 journals non-destructively to record results path/checksum and downloaded/cleaned states.
+- [x] Add regression tests for interrupted/partial downloads, duplicate/stale remote generations, other people's existing SCC uploads, failed/incomplete ELPP/ELDA, changed checksums and cache idempotence.
+- [ ] **Live read-only SCC processed-result download** with the SPU operator; no live SCC uploads, replacements or deletions during development.
 
-**Gate 12.6:** Submission and external scientific results remain traceable after cleanup.
+**Implementation evidence:** `milgrau/scc/results.py` atomically stages
+verified SCC archives into
+`<scientific-session>/scc-results/<Measurement_ID>/generations/remote-<hash>/`.
+Each local generation is keyed to remote creation date without changing the
+original SCC Measurement_ID; older results remain preserved after reprocessing.
+Remote URLs, creation timestamp, processor statuses, SCC configuration and
+hashes are retained in `results.json`. `milgrau/scc/state.py` persists
+downloaded results checksums and retains earlier archive/event history.
+`milgrau/scc/cleanup.py` independently checks local and remote provenance,
+staged raw/LR hashes, the journal's accepted upload generation and verified
+ELPP/ELDA results before removing **only**
+`.cache/scc/pending/<Measurement_ID>/`. The configured `after_download`
+policy automatically invokes this safe cleanup for journal-confirmed uploads;
+`--keep-cache` or `manual` preserve the cache. A historical SCC record
+downloaded with `--session` but not uploaded by MILGRAU is never
+cleanup-eligible. Interrupted and uncertain submissions are excluded.
+
+**Validation:** Ruff / Ubuntu / Windows CI is running after the final
+generation-aware tests. Remote SCC download must be checked read-only before
+claiming end-to-end deployment compatibility. No SCC live POST occurred.
+
+**Gate 12.6:** SCC submissions and external scientific results remain
+traceable after cache cleanup; uncertain states and original scientific
+products are never deleted by SCC cleanup.
 
 ## 12.7 — Validation and release
 
