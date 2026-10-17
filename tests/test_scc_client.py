@@ -229,6 +229,38 @@ def test_download_and_cleanup_are_nondestructive_until_later_phase(
     assert validate_upload_package(path)["measurement_id"] == IDENTITY
 
 
+def test_login_page_http_401_basic_challenge_is_diagnosed_before_web_login() -> None:
+    fake = FakeSession()
+    orig_get = fake.get
+
+    def auth_gate_get(url, **kwargs):
+        if url.endswith("/accounts/login/"):
+            response = FakeResponse(401, url)
+            response.headers["WWW-Authenticate"] = 'Basic realm="SCC"'
+            return response
+        return orig_get(url, **kwargs)
+
+    fake.get = auth_gate_get
+    with pytest.raises(SCCRemoteError, match="MILGRAU_SCC_BASIC_USERNAME"):
+        _client(fake).login()
+    assert fake.posts == []
+
+
+def test_login_page_http_401_without_challenge_does_not_guess_credentials() -> None:
+    fake = FakeSession()
+    orig_get = fake.get
+
+    def auth_gate_get(url, **kwargs):
+        if url.endswith("/accounts/login/"):
+            return FakeResponse(401, url)
+        return orig_get(url, **kwargs)
+
+    fake.get = auth_gate_get
+    with pytest.raises(SCCRemoteError, match="before website login"):
+        _client(fake).login()
+    assert fake.posts == []
+
+
 def test_client_blocks_cross_origin_redirect_without_sending_credentials() -> None:
     fake = FakeSession()
     orig_post = fake.post
