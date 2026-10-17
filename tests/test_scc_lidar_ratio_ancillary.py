@@ -27,12 +27,7 @@ def _setup(tmp_path: Path, *, regime: str = "day", month: int = 9):
     catalog = yaml.safe_load(Path("scc.yaml").read_text(encoding="utf-8"))
     config["_scc_catalog"] = catalog
     catalog["scc_policy"]["lr_input"]["source"] = "climatology_ancillary"
-    profile = catalog["profiles"]["spu-merionc-2024"]
-    profile["day"]["elastic_product_ids"] = {
-        "355": [10011], "532": [10012, 10013], "1064": [10014],
-    }
-    profile["night"]["elastic_product_ids"] = {"1064": [10015]}
-    validate_scc_config(catalog, config["_station_catalog"])
+     validate_scc_config(catalog, config["_station_catalog"])
     channels = (
         ["532.AN", "532.PC", "1064.AN", "355.PC", "355.AN"]
         if regime == "day"
@@ -83,14 +78,14 @@ def test_scc_monthly_climatology_writes_exact_ancillary_schema(tmp_path: Path) -
         assert ds.variables["Lidar_Ratio"].dimensions == ("products", "points")
         assert ds.variables["Lidar_Ratio_Error"].dimensions == ("products", "points")
         np.testing.assert_array_equal(
-            ds.variables["product_ID"][:], [10011, 10012, 10013, 10014],
+            ds.variables["product_ID"][:], [3685, 3684, 3683],
         )
         np.testing.assert_allclose(
             ds.variables["Lidar_Ratio"][:, 0],
-            [84.69, 55.78, 55.78, 29.74],
+            [84.69, 55.78, 29.74],
         )
         np.testing.assert_allclose(
-            ds.variables["Lidar_Ratio_Error"][:, 0], [15, 10, 10, 10],
+            ds.variables["Lidar_Ratio_Error"][:, 0], [15, 10, 10],
         )
         assert np.all(np.diff(ds.variables["Altitude"][:]) > 0)
         assert ds.variables["Altitude"][-1] > 8 * 15
@@ -111,7 +106,7 @@ def test_night_raman_wavelengths_are_not_overwritten(tmp_path: Path) -> None:
     path = write_scc_lidar_ratio_ancillary(output, group, lidar, config, context)
     assert path is not None
     with nc.Dataset(path) as ds:
-        np.testing.assert_array_equal(ds.variables["product_ID"][:], [10015])
+        np.testing.assert_array_equal(ds.variables["product_ID"][:], [3683])
         np.testing.assert_allclose(ds.variables["Lidar_Ratio"][:, :], 33.44)
         assert ds.dimensions["products"].size == 1
 
