@@ -46,10 +46,10 @@ def _stage(tmp_path: Path, *, lr: bool = True) -> Path:
             ds.createDimension("channels", 1)
             ds.createVariable("channel_ID", "i4", ("channels",))[:] = [4071]
             if lr:
-                ds.setncattr("LR_File_Name", f"lr_{IDENTITY}.nc")
+                ds.setncattr("LR_File_Name", f"lr_{IDENTITY[:13]}.nc")
         ancillary_name = None
         if lr:
-            ancillary_name = f"lr_{IDENTITY}.nc"
+            ancillary_name = f"lr_{IDENTITY[:13]}.nc"
             with nc.Dataset(directory / ancillary_name, "w") as ds:
                 ds.createDimension("products", 1)
                 ds.createDimension("points", 3)
@@ -129,7 +129,7 @@ class FakeSession:
             assert kwargs["headers"]["X-CSRFToken"] == "upload-token"
             assert kwargs["data"]["system"] == "1047"
             assert kwargs["files"]["data"][0] == f"{IDENTITY}.nc"
-            assert kwargs["files"]["lidar_ratio_file"][0] == f"lr_{IDENTITY}.nc"
+            assert kwargs["files"]["lidar_ratio_file"][0] == f"lr_{IDENTITY[:13]}.nc"
             assert kwargs["files"]["data"][1].read(4)
             if self.fail_post:
                 raise OSError("transmission uncertain")
