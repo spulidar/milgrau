@@ -68,7 +68,7 @@ async function updateAppearance() {
   if (!values || !values.finite.length) {
     const empty = values ? values.matrix : displayedResult.rcs.map((row) => row.map(() => null));
     await Plotly.restyle("rcs-chart", { z: [empty], zauto: [false], zmin: [0], zmax: [1] }, [0]);
-    byId("edit-plot").textContent = "✎ Edit plot";
+    byId("edit-plot").title = "No displayable signal";
     scaleStatus("No finite " + (useLog ? "positive " : "") + "signal values to display.", true);
     return;
   }
@@ -129,8 +129,8 @@ async function updateAppearance() {
     colorCache.lastLog = useLog;
   }
   await Plotly.restyle("rcs-chart", update, [0]);
-  byId("edit-plot").textContent = "✎ " + description +
-    (useLog ? " · log10" : "");
+  byId("edit-plot").title = description +
+    (useLog ? " · log10" : "") + " — plot options";
   scaleStatus(
     description + " · colors [" + formatScale(low) + ", " + formatScale(high) + "]" +
     (useLog ? " log10 units" : " " + displayedResult.units) +
@@ -220,13 +220,16 @@ async function loadProducts() {
   const { products } = await api(
     "/api/sessions/" + encodeURIComponent(state.session) + "/products"
   );
-  const l1 = products.filter((item) => item.level === 1);
-  populate("product", l1.map((p) => ({ value: p.id, label: p.label })), state.product);
-  state.product = byId("product").value;
+  // The scientific Explorer uses the canonical L1 result directly; no website
+  // publication window or extra "product" choice is necessary in the UI.
+  const canonical = products.find((item) =>
+    item.level === 1 && item.id === state.session + "_L1.nc");
+  state.product = canonical ? canonical.id : "";
   if (!state.product) {
     populate("channel", []);
     populate("variable", []);
-    setMessage("This session has no saved L1 product. RCS requires Level 1.", true);
+    byId("variable-control").hidden = true;
+    setMessage("This session has no canonical L1 signal. Process Level 1 first.", true);
     return;
   }
   await loadOptions();
@@ -236,17 +239,19 @@ async function loadOptions() {
   requestVersion += 1;
   displayedResult = null;
   colorCache = null;
-  state.product = byId("product").value;
   if (!state.session || !state.product) return;
   const { channels, variables } = await api(
     "/api/sessions/" + encodeURIComponent(state.session) + "/options",
     { product: state.product }
   );
   const currentChannel = byId("channel").value;
-  populate("channel", channels.map((name) => ({ value: name, label: name })), currentChannel);
+  const preferredChannel = channels.includes(currentChannel)
+    ? currentChannel : (channels.includes("532.AN") ? "532.AN" : channels[0]);
+  populate("channel", channels.map((name) => ({ value: name, label: name })), preferredChannel);
   const currentVariable = byId("variable").value;
   populate("variable", variables.map((name) => ({ value: name, label: name })),
     variables.includes(currentVariable) ? currentVariable : "range_corrected_signal");
+  byId("variable-control").hidden = variables.length <= 1;
   await loadRcs();
 }
 
@@ -264,12 +269,13 @@ async function loadRcs() {
       product: state.product,
       channel: byId("channel").value,
       variable: byId("variable").value,
-      statistic: byId("statistic").value,
+      statistic: "mean",
     }
   );
   if (version !== requestVersion) return;
   if (!window.Plotly) throw new Error("Local Plotly.js bundle is unavailable");
-  byId("plot-title").textContent = result.variable + " · " + result.channel;
+  byId("plot-title").textContent = result.channel + " · " +
+    result.variable.replaceAll("_", " ");
   const plotConfig = {
     responsive: true,
     editable: true,
@@ -279,7 +285,7 @@ async function loadRcs() {
   };
   const axisFont = { family: "Arial, sans-serif", size: 12, color: "#3c5867" };
   const common = { paper_bgcolor: "#fff", plot_bgcolor: "#fff",
-    font: axisFont, margin: { t: 25, b: 68, l: 68, r: 15 } };
+    font: axisFont, hovermode: "closest" };
   const heat = {
     type: "heatmap",
     x: result.time_utc,
@@ -299,13 +305,29 @@ async function loadRcs() {
   await Promise.all([
     Plotly.react("rcs-chart", [heat], {
       ...common,
-      xaxis: { title: "Time (UTC)", type: "date", gridcolor: "#e8eff3" },
-      yaxis: { title: "Altitude (km a.g.l.)", gridcolor: "#e8eff3" },
+      title: { text: "Range-corrected signal (RCS)", font: { size: 15 }, x: 0.47 },
+      margin: { t: 62, b: 88, l: 89, r: 20 },
+      xaxis: {
+        title: { text: "Time (UTC)", standoff: 17 },
+        type: "date", automargin: true, gridcolor: "#e8eff3",
+      },
+      yaxis: {
+        title: { text: "Altitude above station (km)", standoff: 14 },
+        automargin: true, gridcolor: "#e8eff3",
+      },
     }, plotConfig),
     Plotly.react("profile-chart", [profile], {
-      ...common, margin: { t: 25, b: 68, l: 62, r: 15 },
-      xaxis: { title: "Mean signal", gridcolor: "#e8eff3" },
-      yaxis: { title: "Altitude (km a.g.l.)", gridcolor: "#e8eff3" },
+      ...common,
+      title: { text: "Mean RCS profile", font: { size: 14 }, x: 0.48 },
+      margin: { t: 62, b: 88, l: 64, r: 10 },
+      xaxis: {
+        title: { text: "Mean RCS (" + result.units + ")", standoff: 14 },
+        automargin: true, gridcolor: "#e8eff3",
+      },
+      yaxis: {
+        title: { text: "Altitude (km)", standoff: 8 },
+        automargin: true, gridcolor: "#e8eff3",
+      },
     }, plotConfig),
   ]);
   if (version !== requestVersion) return;
@@ -315,9 +337,8 @@ async function loadRcs() {
   byId("plot-info").textContent =
     result.samples.time + " profiles × " + result.samples.altitude + " altitude bins";
   byId("reduction-note").textContent =
-    "Display-only " + (result.statistic === "max" ? "cell maximum" : "cell mean") +
-    " (not native-resolution data). The vertical profile is the time mean. " +
-    "Gaps and missing observations are preserved; original NetCDF is not modified.";
+    "Interactive quicklook; display resolution optimized for browser performance. " +
+    "Real gaps and missing values are preserved; the original NetCDF is unchanged.";
   setMessage("");
 }
 
@@ -329,6 +350,7 @@ async function showTab(event) {
     else button.removeAttribute("aria-current");
   }
   byId("rcs-panel").hidden = tab !== "rcs";
+  byId("view-controls").hidden = tab !== "rcs";
   byId("future-panel").hidden = tab === "rcs";
   if (tab !== "rcs") byId("future-title").textContent = event.currentTarget.textContent;
   else if (window.Plotly) {
@@ -417,10 +439,8 @@ function safeTask(task) {
 async function initialize() {
   for (const tab of document.querySelectorAll(".tab")) tab.addEventListener("click", showTab);
   byId("session").addEventListener("change", safeTask(loadProducts));
-  byId("product").addEventListener("change", safeTask(loadOptions));
   byId("channel").addEventListener("change", safeTask(loadRcs));
   byId("variable").addEventListener("change", safeTask(loadRcs));
-  byId("statistic").addEventListener("change", safeTask(loadRcs));
   byId("color-mode").addEventListener("change", safeTask(changeColorMode));
   for (const id of ["percentile-min", "percentile-max", "color-min", "color-max"]) {
     byId(id).addEventListener("change", safeTask(updateAppearance));
@@ -459,14 +479,6 @@ async function initialize() {
     byId("site-location").textContent =
       "LAT " + site.latitude + "° · LON " + site.longitude +
       "° · ELEV " + site.elevation_m + " m";
-    const logoBox = byId("footer-logos");
-    for (const logo of (site.logos || [])) {
-      const img = document.createElement("img");
-      img.src = logo.url;
-      img.alt = logo.alt;
-      img.loading = "lazy";
-      logoBox.appendChild(img);
-    }
     await loadSessions();
   } catch (error) { setMessage(error.message, true); }
 }
