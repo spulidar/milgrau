@@ -228,11 +228,13 @@ read-only SCC processed result archives under the original scientific session:
     <Session_ID>_L0.nc
     scc-results/
         <Measurement_ID>/
-            elpp.archive
-            elda.archive
-            cloudmask.archive      # only if finished and downloadable
-            ...                    # other completed SCC processors, if available
-            results.json           # remote provenance, URLs, hashes, processing states
+            generations/
+                remote-<creation-hash>/
+                    elpp.archive
+                    elda.archive
+                    cloudmask.archive
+                    ...
+                    results.json
 ```
 
 An upload-specific result folder is created atomically after *all* advertised
