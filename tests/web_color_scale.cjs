@@ -87,6 +87,20 @@ async function run() {
     assert(code.includes(label), "Plot must restore title or axis label: " + label);
   }
   assert(html.includes("Plot options"), "Contextual edit button should have unobtrusive name");
+  const labels = vm.runInContext("SIGNAL_LABELS", context);
+  assert.equal(labels.signal_pre_background.heading, "Signal before background subtraction");
+  assert.equal(labels.signal_pre_background.mean, "Mean pre-background signal");
+  assert.equal(labels.corrected_signal.heading, "Background-corrected signal");
+  assert.equal(labels.range_corrected_signal.heading, "Range-corrected signal (RCS)");
+  for (const tab of ["overview", "atmosphere", "l2", "qa", "metadata"]) {
+    assert(html.includes('data-tab="' + tab + '"'), "Missing functional tab: " + tab);
+  }
+  assert(html.includes('src="/static/js/views.js"'), "Missing supplementary view renderer");
+  assert(html.includes('id="detail-panel"'), "Missing view panel");
+  const views = fs.readFileSync(path.join(__dirname, "../milgrau/web/static/js/views.js"), "utf8");
+  for (const endpoint of ["/overview", "/metadata", "/profiles/", "/qa/options", "/qa"]) {
+    assert(views.includes(endpoint), "Missing endpoint for real saved view: " + endpoint);
+  }
   const source = { rcs: [[-4, 0, ...readings, null]], units: "a.u." };
   context.input = source;
   vm.runInContext("displayedResult = input; colorCache = null;", context);

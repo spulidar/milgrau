@@ -7,6 +7,7 @@
   <title>SPU-Lidar | Explorer</title>
   <link rel="stylesheet" href="/static/css/explorer.css">
   <script defer src="/static/plotly.min.js"></script>
+  <script defer src="/static/js/views.js"></script>
   <script defer src="/static/js/app.js"></script>
 </head>
 <body>
@@ -23,6 +24,7 @@
   <div class="navigation-bar">
     <div class="navigation-content">
       <nav class="tabs" aria-label="Scientific views">
+        <button class="tab" type="button" data-tab="overview">Overview</button>
         <button class="tab active" type="button" data-tab="rcs" aria-current="page">RCS Maps</button>
         <button class="tab" type="button" data-tab="atmosphere">Atmospheric Profiles</button>
         <button class="tab" type="button" data-tab="l2">L2 Products</button>
@@ -43,7 +45,7 @@
       <div id="message" class="message" role="status" aria-live="polite"></div>
       <div class="figure" id="figure">
         <div class="figure-heading">
-          <div class="figure-title-group"><p class="eyebrow">LEVEL 1 · RANGE-CORRECTED SIGNAL</p>
+          <div class="figure-title-group"><p class="eyebrow" id="plot-subtitle">LEVEL 1 · RANGE-CORRECTED SIGNAL</p>
             <h1 id="plot-title">Time–altitude RCS</h1></div>
           <div class="figure-heading-actions">
             <span id="plot-info">Interactive data · UTC</span>
@@ -121,8 +123,18 @@
         <p class="figure-note" id="reduction-note">Display resolution is adapted for speed; source observations remain unchanged.</p>
       </div>
     </section>
-    <section id="future-panel" class="future-panel" hidden>
-      <h2 id="future-title"></h2><p>This view will be implemented in a subsequent phase.</p>
+    <section id="detail-panel" class="detail-panel" hidden>
+      <div class="detail-header">
+        <div>
+          <p class="eyebrow" id="detail-eyebrow">MILGRAU · SCIENTIFIC DATA</p>
+          <h1 id="detail-title">Overview</h1>
+          <p class="detail-caption" id="detail-caption"></p>
+        </div>
+        <div id="detail-controls" class="detail-controls"></div>
+      </div>
+      <div id="detail-status" role="status" aria-live="polite" class="detail-status"></div>
+      <div id="detail-body" class="detail-body"></div>
+      <div id="detail-chart" class="detail-chart" hidden></div>
     </section>
     <footer>MILGRAU · Read-only scientific visualization · UTC</footer>
   </main>

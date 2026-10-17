@@ -12,6 +12,9 @@ from plotly.offline import get_plotlyjs
 
 from milgrau.web.catalog import Catalog
 from milgrau.web.rcs import options, rcs_map
+from milgrau.web.views import (
+    metadata_view, profile_options, profile_view, qa_options, qa_series, session_overview,
+)
 
 STATIC = Path(__file__).parent / "static"
 
@@ -50,6 +53,67 @@ def create_app(config_path: str = "config.yaml") -> FastAPI:
         return {"sessions": (
             catalog.sessions(utc_date) if utc_date is not None else catalog.all_sessions()
         )}
+
+    @app.get("/api/sessions/{session_id}/overview")
+    def overview(session_id: str) -> dict:
+        try:
+            return session_overview(catalog, session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/sessions/{session_id}/metadata")
+    def metadata(session_id: str, level: int = Query(1, ge=0, le=2)) -> dict:
+        try:
+            catalog.products(session_id)
+            return metadata_view(catalog, session_id, level)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/api/sessions/{session_id}/profiles/{kind}/options")
+    def profiles_options(session_id: str, kind: str) -> dict:
+        try:
+            catalog.products(session_id)
+            return profile_options(catalog, session_id, kind)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/api/sessions/{session_id}/profiles/{kind}")
+    def profiles(
+        session_id: str, kind: str, variable: str, index: int = Query(0, ge=0),
+    ) -> dict:
+        try:
+            catalog.products(session_id)
+            return profile_view(catalog, session_id, kind, variable, index)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/api/sessions/{session_id}/qa/options")
+    def diagnostics_options(session_id: str) -> dict:
+        try:
+            catalog.products(session_id)
+            return qa_options(catalog, session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/api/sessions/{session_id}/qa")
+    def diagnostics(
+        session_id: str, level: int, variable: str, index: int = Query(0, ge=0),
+    ) -> dict:
+        try:
+            catalog.products(session_id)
+            return qa_series(catalog, session_id, level, variable, index)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.get("/api/sessions/{session_id}/products")
     def products(session_id: str) -> dict:

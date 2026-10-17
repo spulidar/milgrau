@@ -6,6 +6,23 @@ const state = { session: "", product: "" };
 let requestVersion = 0;
 let displayedResult = null;
 let colorCache = null;
+let activeTab = "rcs";
+
+const SIGNAL_LABELS = {
+  range_corrected_signal: {
+    heading: "Range-corrected signal (RCS)", mean: "Mean RCS profile",
+    axis: "Mean RCS", subtitle: "LEVEL 1 · RANGE-CORRECTED SIGNAL",
+  },
+  corrected_signal: {
+    heading: "Background-corrected signal", mean: "Mean corrected-signal profile",
+    axis: "Mean corrected signal", subtitle: "LEVEL 1 · CORRECTED SIGNAL",
+  },
+  signal_pre_background: {
+    heading: "Signal before background subtraction", mean: "Mean pre-background signal",
+    axis: "Mean signal", subtitle: "LEVEL 1 · SIGNAL BEFORE BACKGROUND SUBTRACTION",
+  },
+};
+
 
 /** Percentiles are computed on the finite, display-reduced cells (not NetCDF). */
 function percentile(sorted, pct) {
@@ -230,10 +247,17 @@ async function loadProducts() {
     populate("channel", []);
     populate("variable", []);
     byId("variable-control").hidden = true;
-    setMessage("This session has no canonical L1 signal. Process Level 1 first.", true);
+    if (activeTab === "rcs") {
+      setMessage("This session has no canonical L1 signal. Process Level 1 first.", true);
+    } else if (window.MilgrauViews) {
+      await window.MilgrauViews.render(activeTab === "l2" ? "optical" : activeTab, state.session);
+    }
     return;
   }
   await loadOptions();
+  if (activeTab !== "rcs" && window.MilgrauViews) {
+    await window.MilgrauViews.render(activeTab === "l2" ? "optical" : activeTab, state.session);
+  }
 }
 
 async function loadOptions() {
@@ -253,7 +277,7 @@ async function loadOptions() {
   populate("variable", variables.map((name) => ({ value: name, label: name })),
     variables.includes(currentVariable) ? currentVariable : "range_corrected_signal");
   byId("variable-control").hidden = variables.length <= 1;
-  await loadRcs();
+  if (activeTab === "rcs") await loadRcs();
 }
 
 async function loadRcs() {
@@ -275,8 +299,12 @@ async function loadRcs() {
   );
   if (version !== requestVersion) return;
   if (!window.Plotly) throw new Error("Local Plotly.js bundle is unavailable");
-  byId("plot-title").textContent = result.channel + " · " +
-    result.variable.replaceAll("_", " ");
+  const description = SIGNAL_LABELS[result.variable] || {
+    heading: result.variable.replaceAll("_", " "), mean: "Mean signal profile",
+    axis: "Mean signal", subtitle: "LEVEL 1 · SAVED SIGNAL",
+  };
+  byId("plot-title").textContent = result.channel + " · " + description.heading;
+  byId("plot-subtitle").textContent = description.subtitle;
   const plotConfig = {
     responsive: true,
     editable: true,
@@ -306,7 +334,7 @@ async function loadRcs() {
   await Promise.all([
     Plotly.react("rcs-chart", [heat], {
       ...common,
-      title: { text: "Range-corrected signal (RCS)", font: { size: 15 }, x: 0.47 },
+      title: { text: description.heading, font: { size: 15 }, x: 0.47 },
       margin: { t: 62, b: 88, l: 89, r: 20 },
       xaxis: {
         title: { text: "Time (UTC)", standoff: 17 },
@@ -319,10 +347,10 @@ async function loadRcs() {
     }, plotConfig),
     Plotly.react("profile-chart", [profile], {
       ...common,
-      title: { text: "Mean RCS profile", font: { size: 14 }, x: 0.48 },
+      title: { text: description.mean, font: { size: 14 }, x: 0.48 },
       margin: { t: 62, b: 88, l: 64, r: 10 },
       xaxis: {
-        title: { text: "Mean RCS (" + result.units + ")", standoff: 14 },
+        title: { text: description.axis + " (" + result.units + ")", standoff: 14 },
         automargin: true, gridcolor: "#e8eff3",
       },
       yaxis: {
@@ -345,6 +373,8 @@ async function loadRcs() {
 
 async function showTab(event) {
   const tab = event.currentTarget.dataset.tab;
+  activeTab = tab;
+  if (tab !== "rcs") requestVersion += 1;
   for (const button of document.querySelectorAll(".tab")) {
     button.classList.toggle("active", button.dataset.tab === tab);
     if (button.dataset.tab === tab) button.setAttribute("aria-current", "page");
@@ -352,11 +382,16 @@ async function showTab(event) {
   }
   byId("rcs-panel").hidden = tab !== "rcs";
   byId("view-controls").hidden = tab !== "rcs";
-  byId("future-panel").hidden = tab === "rcs";
-  if (tab !== "rcs") byId("future-title").textContent = event.currentTarget.textContent;
-  else if (window.Plotly) {
-    Plotly.Plots.resize("rcs-chart");
-    Plotly.Plots.resize("profile-chart");
+  byId("detail-panel").hidden = tab === "rcs";
+  if (tab === "rcs") {
+    if (!displayedResult && state.product) {
+      await loadRcs();
+    } else if (window.Plotly) {
+      Plotly.Plots.resize("rcs-chart");
+      Plotly.Plots.resize("profile-chart");
+    }
+  } else if (window.MilgrauViews) {
+    await window.MilgrauViews.render(tab === "l2" ? "optical" : tab, state.session);
   }
 }
 
