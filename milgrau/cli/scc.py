@@ -101,7 +101,10 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
 def _status(config: dict[str, Any], args: argparse.Namespace) -> int:
     if args.remote and not args.identity:
         raise ValueError("Remote status requires --id MEASUREMENT_ID.")
-    packages = discover_pending(config, args.identity)
+    # Remote measurements may outlive the disposable local staging cache.
+    packages = discover_pending(config)
+    if args.identity is not None:
+        packages = [path for path in packages if path.name == args.identity]
     for path in packages:
         try:
             manifest = validate_upload_package(path)
