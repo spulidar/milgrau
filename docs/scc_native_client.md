@@ -123,6 +123,77 @@ is enabled, HTTP redirects are restricted to the configured origin, unsafe
 307/308 POST repeats are forbidden, and no form credentials are written
 to outputs.
 
+## Phase 12.5 — Durable tracking and same-ID replacement
+
+The SCC `Measurement_ID` **does not change** when a replacement uses
+different source timestamps/profiles or a new climatological LR. The native
+client follows the documented `scc_access --force_upload` semantics:
+**backup original remote data → delete old SCC record → upload new bytes with
+the same ID**. SCC does not offer transactional overwrite, so this flow is
+intrinsically non-atomic.
+
+A private persistent SQLite journal lives in
+`.state/scc/submissions.sqlite`, explicitly **outside** `.cache/scc` and
+excluded by Git. It records scientific session, channel configuration,
+product IDs, source segments and periods, hashes of raw/LR NetCDF,
+transitions and timestamps, remote identity, archive location, and
+the last error. An exclusive per-ID lock prevents concurrent local uploads.
+A stale lock after a crash **must be investigated before manual removal**.
+
+A replacement is never automatic. It requires precisely:
+
+```bash
+milgrau-scc upload --id 20240913spu1549 --replace-existing --confirm
+```
+
+**Do not run that command against live SCC until the backup protocol and
+permissions have been verified on an approved test measurement.** It is a
+destructive replacement operation; `--confirm` authorizes deletion of the
+existing SCC record after all safeguards. No other SCC records or related
+measurements are intentionally deleted.
+
+The replacement workflow:
+1. Validate the complete pending local package and its SHA-256 checksums.
+2. Query SCC and reject queued/active processing or unexpected remote
+   changes. An absent ID is not treated as a replacement.
+3. Download and verify the old raw NetCDF or ZIP, and each available remote
+   result archive (ELPP, ELDA, etc.) into
+   `.state/scc/archives/<Measurement_ID>/<timestamp>/`.
+   If the previous raw file references an external LR, archive it too.
+   If SCC does not expose a verifiable LR download, **refuse deletion**.
+4. Recheck the original SCC record fingerprint; compare the actual old
+   NetCDF data/period/LR to local data. Provably identical content is a
+   **no-op**, without deletion or second upload. Uncertain equivalence is
+   *not* assumed identical.
+5. Only then POST to SCC's administrative
+   `admin/database/measurements/<ID>/delete/` page using the documented
+   `not_delete_related` value. Query API for confirmed disappearance.
+   Upload the new raw NetCDF and optional LR with the **same ID**, then
+   require API confirmation.
+6. Record every transition in SQLite. After a crash, deletion timeout or
+   uncertain upload, the state becomes `uncertain` or is left in an
+   interrupted state. The command must never automatically retry it.
+
+A pre-existing SCC record is **not** considered to have been uploaded by
+MILGRAU merely because remote `status` shows ELPP/ELDA results.
+`milgrau-scc status` shows the local queue and durable journal;
+`status --id ID --remote` shows safe remote metadata and local state
+without exposing the full station object or credentials.
+
+**Limitations requiring live verification:** the official SCC version may
+return raw files or ancillary LR downloads in a different container/schema.
+If the original data cannot be archived and verified locally, the client
+stops before deletion. Upload of a new record and admin-delete endpoints are
+mock-tested, but have not been exercised on the live SCC in this phase.
+The SQLite journal cannot prevent independent SCC portal operators from
+editing the measurement during the narrow interval after its final read;
+there is no server-side atomic compare-and-swap. Use a restricted operator
+maintenance window for destructive replacements.
+
+`download` and `cleanup` remain explicitly **disabled** until Phase 12.6.
+Old SCC backups and journal entries are persistent evidence and must not
+be removed by cache cleanup.
+
 ## What happens when the network fails?
 
 If an upload loses its response, the SCC may have received it even when the
@@ -131,9 +202,9 @@ client sees a timeout. No automatic retry is performed. The operator must use
 outcome before considering another upload. An existing remote ID is never
 deleted/replaced.
 
-**Successful upload does not remove or mark a pending package as completed.**
-Its durable lifecycle, idempotent reconciliation and status registry belong
-to Phase 12.5. Download and cleanup remain blocked until Phase 12.6.
+**Successful upload is recorded as accepted in the durable journal**, but
+still does not remove staged files. Remote processing completion is observed
+through read-only status checks; download and cleanup are Phase 12.6.
 An uploaded `raw.nc` packet must not be assumed processed by ELPP/ELDA.
 
 ## Test evidence and outstanding validation
