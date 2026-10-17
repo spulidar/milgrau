@@ -19,7 +19,7 @@ from milgrau.io.paths import resolve_project_path
 STATES = frozenset({
     "pending", "remote_exists", "preflight", "archiving", "backed_up",
     "deleting", "remote_deleted", "uploading", "accepted", "processing",
-    "completed", "failed", "uncertain",
+    "completed", "downloaded", "cleaned", "failed", "uncertain",
 })
 # If an operation stopped after a destructive/network action, an operator must
 # inspect server and journal before any repeat. Never automatically retry.
@@ -103,6 +103,8 @@ class SubmissionStore:
                 remote_creation_date TEXT,
                 archive_path TEXT,
                 archive_manifest_sha256 TEXT,
+                results_path TEXT,
+                results_manifest_sha256 TEXT,
                 last_error TEXT,
                 updated_utc TEXT NOT NULL
             );
@@ -116,6 +118,15 @@ class SubmissionStore:
             );
             """
         )
+        # Open earlier 12.5 journals in place (no destructive migration).
+        existing = {
+            str(row[1]) for row in self._conn.execute("PRAGMA table_info(submissions)")
+        }
+        for column in ("results_path", "results_manifest_sha256"):
+            if column not in existing:
+                self._conn.execute(
+                    f"ALTER TABLE submissions ADD COLUMN {column} TEXT"
+                )
         self._conn.commit()
         # chmod is best-effort on Windows; POSIX storage must remain private.
         if os.name == "posix":
@@ -174,7 +185,7 @@ class SubmissionStore:
                     f"SCC {identity} recorded as {row['state']}; manual remote "
                     "reconciliation is required before any new operation."
                 )
-            if row["state"] in {"accepted", "processing", "completed"}:
+            if row["state"] in {"accepted", "processing", "completed", "downloaded", "cleaned"}:
                 if not allow_new_revision:
                     raise RuntimeError(
                         f"SCC {identity} was already submitted; use an explicit "
@@ -197,7 +208,8 @@ class SubmissionStore:
                             source_segments_json=?, scc_config_sha256=?,
                             start_utc=?, stop_utc=?, state='pending',
                             archive_path=NULL, archive_manifest_sha256=NULL,
-                            remote_creation_date=NULL, last_error=NULL,
+                            remote_creation_date=NULL, results_path=NULL,
+                            results_manifest_sha256=NULL, last_error=NULL,
                             updated_utc=? WHERE measurement_id=?
                         """,
                         (*expected.values(), _utcnow(), identity),
@@ -206,7 +218,7 @@ class SubmissionStore:
                         "prior": previous, "new": expected,
                     })
                 return self.get(identity) or {}
-            if row["state"] in {"accepted", "processing", "completed"}:
+            if row["state"] in {"accepted", "processing", "completed", "downloaded", "cleaned"}:
                 raise RuntimeError(
                     f"SCC {identity} local content already submitted; "
                     "no duplicate upload without a new revision."
@@ -242,6 +254,8 @@ class SubmissionStore:
         archive_path: str | None = None,
         archive_manifest_sha256: str | None = None,
         remote_creation_date: str | None = None,
+        results_path: str | None = None,
+        results_manifest_sha256: str | None = None,
         error: str | None = None,
     ) -> None:
         identity = _id(identity)
@@ -256,11 +270,14 @@ class SubmissionStore:
                 archive_path = COALESCE(?, archive_path),
                 archive_manifest_sha256 = COALESCE(?, archive_manifest_sha256),
                 remote_creation_date = COALESCE(?, remote_creation_date),
+                results_path = COALESCE(?, results_path),
+                results_manifest_sha256 = COALESCE(?, results_manifest_sha256),
                 last_error = ? WHERE measurement_id = ?
                 """,
                 (
                     state, _utcnow(), archive_path, archive_manifest_sha256,
-                    remote_creation_date, error, identity,
+                    remote_creation_date, results_path, results_manifest_sha256,
+                    error, identity,
                 ),
             )
             self._add_event(identity, action, state, detail or {})
