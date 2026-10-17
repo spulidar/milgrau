@@ -39,6 +39,10 @@ explorer = []
 web = [
   "boto3>=1.34",
 ]
+# Optional native SCC HTTP client (no scc_access dependency).
+scc = [
+  "requests>=2.32,<3",
+]
 dev = [
   "pytest>=7.0.0",
   "pytest-cov>=7.0.0",
@@ -51,6 +55,7 @@ milgrau-lipancora = "milgrau.cli.lipancora:main"
 milgrau-lebear = "milgrau.cli.lebear:main"
 milgrau-explorer = "milgrau.cli.explorer:main"
 milgrau-inspect = "milgrau.cli.inspect:main"
+milgrau-scc = "milgrau.cli.scc:main"
 
 [tool.setuptools.dynamic]
 version = {attr = "milgrau.version.__version__"}
