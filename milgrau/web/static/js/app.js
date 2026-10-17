@@ -66,6 +66,9 @@ async function updateAppearance() {
   const useLog = byId("log10").checked;
   const values = colorData(useLog);
   if (!values || !values.finite.length) {
+    const empty = values ? values.matrix : displayedResult.rcs.map((row) => row.map(() => null));
+    await Plotly.restyle("rcs-chart", { z: [empty], zauto: [false], zmin: [0], zmax: [1] }, [0]);
+    byId("settings-hint").textContent = "No displayable signal";
     scaleStatus("No finite " + (useLog ? "positive " : "") + "signal values to display.", true);
     return;
   }
@@ -126,6 +129,8 @@ async function updateAppearance() {
     colorCache.lastLog = useLog;
   }
   await Plotly.restyle("rcs-chart", update, [0]);
+  byId("settings-hint").textContent = description +
+    (useLog ? " · log10" : "") + " · click to adjust";
   scaleStatus(
     description + " · colors [" + formatScale(low) + ", " + formatScale(high) + "]" +
     (useLog ? " log10 units" : " " + displayedResult.units) +
@@ -138,12 +143,15 @@ async function changeColorMode() {
   if (byId("color-mode").value === "manual" && displayedResult) {
     const data = colorData(byId("log10").checked);
     if (data && data.finite.length) {
-      if (!byId("color-min").value.trim()) {
-        byId("color-min").value = formatScale(percentile(data.finite, 2));
+      let suggestedLow = percentile(data.finite, 2);
+      let suggestedHigh = percentile(data.finite, 98);
+      if (suggestedLow === suggestedHigh) {
+        const delta = Math.max(Math.abs(suggestedLow) * 0.01, 1e-12);
+        suggestedLow -= delta;
+        suggestedHigh += delta;
       }
-      if (!byId("color-max").value.trim()) {
-        byId("color-max").value = formatScale(percentile(data.finite, 98));
-      }
+      if (!byId("color-min").value.trim()) byId("color-min").value = formatScale(suggestedLow);
+      if (!byId("color-max").value.trim()) byId("color-max").value = formatScale(suggestedHigh);
     }
   }
   await updateAppearance();
