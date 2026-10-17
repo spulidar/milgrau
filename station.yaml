@@ -92,19 +92,6 @@ station:
 # When a Raman companion wavelength is present, LR_Input is left undefined for
 # the elastic wavelength. A concrete day/night SCC configuration may still
 # provide its own explicit lr_input mapping.
-scc_policy:
-  lr_input:
-    # SCC upload LR policy: scc_db (current) or climatology_ancillary.
-    # Enable climatology_ancillary only after the TRUE optical product_IDs
-    # are supplied under profiles[*].scc.{day,night}.elastic_product_ids.
-    # Existing configuration_id and channels are NOT product IDs.
-    source: scc_db
-    fixed_value: 1
-    raman_companions_nm:
-      "355": [387, 408]
-      "532": [530, 607]
-      "1064": []
-
 calibrations:
   spu-channel-corrections-v1:
     provenance:
@@ -197,40 +184,6 @@ profiles:
       manufacturer: "Quantel Brillant"
       model: "B -10 Hz"
       repetition_rate_hz: 10
-    scc:
-      day:
-        configuration_id: 248
-        name: "apel config - Day"
-        channels:
-          "532.PC": 716
-          "532.AN": 722
-          "355.PC": 736
-          "355.AN": 737
-          "607.AN": 739
-          "607.PC": 741
-          "387.PC": 748
-          "387.AN": 749
-          "1064.AN": 934
-          "1064.PC": 935
-          "408.AN": 1446
-          "408.PC": 1447
-      night:
-        configuration_id: 294
-        name: "apel config - Night"
-        channels:
-          "532.PC": 716
-          "532.AN": 722
-          "355.PC": 736
-          "355.AN": 737
-          "607.AN": 739
-          "607.PC": 741
-          "387.PC": 748
-          "387.AN": 749
-          "1064.AN": 934
-          "1064.PC": 935
-          "408.AN": 1446
-          "408.PC": 1447
-
   - id: "spu-raman-2018"
     valid_from: "2018-03-19"
     valid_to: "2024-09-09"
@@ -241,33 +194,6 @@ profiles:
       manufacturer: "Quantel Brillant"
       model: "B -10 Hz"
       repetition_rate_hz: 10
-    scc:
-      day:
-        configuration_id: 565
-        name: "Sao Paolo Lidar - Daytime-19March2018"
-        channels:
-          "1064.AN": 934
-          "532.AN": 1593
-          "355.AN": 1594
-          "530.AN": 1595
-          "387.AN": 1596
-      night:
-        configuration_id: 484
-        name: "SPU-Lidar - Nigthtime19March2018"
-        channels:
-          "532.PC": 716
-          "532.AN": 722
-          "355.PC": 736
-          "355.AN": 737
-          "387.PC": 748
-          "387.AN": 749
-          "1064.AN": 934
-          "1064.PC": 935
-          "408.AN": 1446
-          "408.PC": 1447
-          "530.PC": 1557
-          "530.AN": 1558
-
   - id: "spu-merionc-2024"
     valid_from: "2024-09-10"
     valid_to: null
@@ -295,7 +221,6 @@ profiles:
           species: "N2"
           scattering_type: "vibrational_raman"
           nominal_detection_wavelength_nm: 387
-          scc_night_channel_ids: {AN: 4076, PC: 4077}
           current_spectral_response:
             status: "current_instrument_evidence_required"
         "408":
@@ -303,7 +228,6 @@ profiles:
           species: "H2O"
           scattering_type: "vibrational_raman"
           nominal_detection_wavelength_nm: 408
-          scc_mapping_status: "published_current_identity_not_exposed_in_scc_1046"
           current_spectral_response:
             status: "current_instrument_evidence_required"
         "530":
@@ -311,29 +235,5 @@ profiles:
           species: "N2"
           scattering_type: "rotational_raman"
           nominal_detection_wavelength_nm: 530
-          scc_night_channel_ids: {AN: 4075, PC: 4074}
           current_spectral_response:
             status: "current_instrument_evidence_required"
-    scc:
-      day:
-        configuration_id: 1047
-        name: "Sao Paolo Lidar - Daytime-10September2024"
-        channels:
-          "532.AN": 4069
-          "532.PC": 4070
-          "1064.AN": 4071
-          "355.PC": 4072
-          "355.AN": 4073
-      night:
-        configuration_id: 1046
-        name: "SPU-Lidar - Nigthtime-10September2024"
-        channels:
-          "532.AN": 4069
-          "532.PC": 4070
-          "1064.AN": 4071
-          "355.PC": 4072
-          "355.AN": 4073
-          "530.PC": 4074
-          "530.AN": 4075
-          "387.AN": 4076
-          "387.PC": 4077
