@@ -117,6 +117,37 @@ def _apply_station_lidar_ratio_climatology(config: dict[str, Any], catalog: Mapp
     inversion["lidar_ratio_std_sr"] = deepcopy(dict(climatology["std_sr"]))
 
 
+def _scc_settings(config: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Validate the optional SCC feature switch without loading external metadata."""
+    raw = config.get("scc")
+    if raw is None:
+        return {"enabled": False}
+    if not isinstance(raw, Mapping):
+        raise ValueError("config.scc must be a mapping.")
+    allowed = {"enabled", "config_file", "staging_dir", "upload", "cleanup"}
+    if set(raw) - allowed:
+        raise ValueError(f"Unknown config.scc keys: {sorted(set(raw) - allowed)}.")
+    enabled = raw.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise ValueError("config.scc.enabled must be a boolean.")
+    for name in ("config_file", "staging_dir"):
+        if name in raw and (not isinstance(raw[name], str) or not raw[name].strip()):
+            raise ValueError(f"config.scc.{name} must be a non-empty path.")
+    upload = raw.get("upload", {})
+    if not isinstance(upload, Mapping) or set(upload) - {"automatic"}:
+        raise ValueError("config.scc.upload must contain only automatic.")
+    if "automatic" in upload and not isinstance(upload["automatic"], bool):
+        raise ValueError("config.scc.upload.automatic must be a boolean.")
+    cleanup = raw.get("cleanup", {})
+    if not isinstance(cleanup, Mapping) or set(cleanup) - {"policy"}:
+        raise ValueError("config.scc.cleanup must contain only policy.")
+    if "policy" in cleanup and cleanup["policy"] not in {"after_download", "manual"}:
+        raise ValueError("config.scc.cleanup.policy must be after_download or manual.")
+    if enabled and not raw.get("config_file"):
+        raise ValueError("config.scc.config_file is required when SCC is enabled.")
+    return raw
+
+
 def normalize_config(config: dict[str, Any]) -> dict[str, Any]:
     """Return a defensive copy without creating legacy compatibility aliases.
 
@@ -146,6 +177,7 @@ def load_config(
     """
     path = _resolve_config_path(config_path)
     config = _read_yaml_mapping(path, "Configuration")
+    scc_settings = _scc_settings(config)
 
     declared_station_path = config.pop("station_config", None)
     requested_station_path = (
@@ -167,6 +199,21 @@ def load_config(
 
     normalized = normalize_config(config)
     normalized["_config_file"] = str(path)
+    if scc_settings.get("enabled", False):
+        if station_catalog is None:
+            raise ValueError("SCC integration requires a loaded station.yaml.")
+        # No SCC-specific imports, file reads or validation occur when disabled.
+        from milgrau.config.scc import validate_scc_config
+
+        scc_path = _resolve_station_path(str(scc_settings["config_file"]), path)
+        scc_catalog = _read_yaml_mapping(scc_path, "SCC configuration")
+        try:
+            validate_scc_config(scc_catalog, station_catalog)
+        except (TypeError, ValueError) as exc:
+            raise type(exc)(f"{exc} [SCC config: {scc_path}]") from exc
+        normalized["_scc_catalog"] = deepcopy(scc_catalog)
+        normalized["_scc_config_file"] = scc_path.name
+        normalized["_scc_config_path"] = str(scc_path)
     if station_catalog is not None:
         normalized["_station_catalog"] = deepcopy(station_catalog)
         normalized["_station_config_file"] = station_path.name if station_path is not None else "station.yaml"
