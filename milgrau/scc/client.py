@@ -158,6 +158,22 @@ class SCCClient:
     def login(self) -> None:
         url = self._url("accounts/login/")
         page = self._read("accounts/login/")
+        if page.status_code == 401:
+            challenge = str(page.headers.get("WWW-Authenticate", "")).lower()
+            if "basic" in challenge:
+                raise SCCRemoteError(
+                    "SCC login page returned HTTP 401 with an HTTP Basic challenge, "
+                    "before website login. Configure MILGRAU_SCC_BASIC_USERNAME "
+                    "and MILGRAU_SCC_BASIC_PASSWORD separately from your "
+                    "MILGRAU_SCC_USERNAME and MILGRAU_SCC_PASSWORD."
+                )
+            raise SCCRemoteError(
+                "SCC login page returned HTTP 401 before website login. "
+                "The SCC server may require separate HTTP Basic credentials, "
+                "or the HTTPS base URL or access permissions may be incorrect. "
+                "Check scc.yaml server.base_url and the separate "
+                "MILGRAU_SCC_BASIC_USERNAME/MILGRAU_SCC_BASIC_PASSWORD variables."
+            )
         if page.status_code != 200:
             raise SCCRemoteError(f"SCC login page returned HTTP {page.status_code}.")
         token = self._csrf(page)
