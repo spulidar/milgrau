@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Any, Mapping
 
 import netCDF4 as nc
-import pandas as pd
 
 from milgrau.level0.scc_sounding import stage_cached_sounding
 from milgrau.level0.scc_staging import (
