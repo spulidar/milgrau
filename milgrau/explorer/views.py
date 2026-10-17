@@ -18,6 +18,8 @@ from milgrau.explorer.data import (
     numeric_variables,
     wavelength_label,
     reduce_for_heatmap,
+    vertical_values,
+    altitude_km,
 )
 from milgrau.explorer.plots_signals import (
     heatmap_figure,
@@ -84,13 +86,12 @@ def render_level0(row: dict[str, Any]) -> None:
             st.info("Não encontrei variáveis numéricas plottáveis no Level 0.")
             return
         prefix = safe_key(row.get("session_id"), "level0")
-        c1, c2, c3, c4 = st.columns([1.4, 1, 1, 1])
+        c1, c2, c3 = st.columns([1.8, 1, 0.7])
         variable = c1.selectbox("Variável", variables, key=f"{prefix}_var")
         channels = coord_values(ds, channel_name(ds))
         channel = c2.selectbox("Canal", channels, key=f"{prefix}_channel") if channels else None
-        max_bin_default = int(ds.sizes.get("points", ds[variable].shape[-1] if ds[variable].shape else 1)) - 1
-        max_bin = c3.number_input("Bin/ponto máx.", min_value=1, value=min(max_bin_default, 4000), max_value=max(max_bin_default, 1), step=100, key=f"{prefix}_max_bin")
-        log10 = c4.checkbox("log10", value=False, key=f"{prefix}_log")
+        max_bin = max(1, int(ds.sizes.get("points", ds[variable].shape[-1])) - 1)
+        log10 = c3.checkbox("log10", value=False, key=f"{prefix}_log")
         c5, c6, c7 = st.columns([1, 1, 2])
         robust = c5.checkbox("robust color", value=True, key=f"{prefix}_robust")
         percentile_span = c6.slider("percentis", 0.0, 100.0, (2.0, 98.0), step=0.5, key=f"{prefix}_pct")
@@ -128,7 +129,7 @@ def render_level0(row: dict[str, Any]) -> None:
             render_diagnostics(ds)
 
 
-def render_level1(row: dict[str, Any]) -> None:
+def render_level1(row: dict[str, Any], *, mode: str | None = None) -> None:
     path = row.get("level1_path", "")
     if not path or not Path(path).exists():
         st.info("Level 1 não disponível para esta medida.")
@@ -140,8 +141,10 @@ def render_level1(row: dict[str, Any]) -> None:
             st.warning("Não encontrei coordenada de canal no Level 1.")
             return
         prefix = safe_key(row.get("session_id"), "level1")
-        mode = st.radio("Plot", ["Quicklook RCS + perfil", "Global mean RCS", "Genérico"], horizontal=True, key=f"{prefix}_plot_mode")
-        max_alt_km = st.number_input("Altitude máx. (km)", min_value=0.1, value=15.0, step=0.5, key=f"{prefix}_alt")
+        if mode is None:
+            mode = st.radio("Plot", ["Quicklook RCS + perfil", "Global mean RCS", "Genérico"], horizontal=True, key=f"{prefix}_plot_mode")
+        altitudes = altitude_km(ds)
+        max_alt_km = float(np.nanmax(altitudes)) if altitudes.size else 30.0
         smooth_bins = st.slider("Suavização vertical para perfis (bins)", 1, 80, 20, key=f"{prefix}_smooth")
         if mode == "Quicklook RCS + perfil":
             variables = numeric_variables(ds)
@@ -221,7 +224,8 @@ def render_level2(row: dict[str, Any]) -> None:
         elif mode == "QA scattering ratio" and wavelength is not None:
             fig = qa_scattering_ratio_figure(ds_l2, wavelength, smooth_bins)
         elif mode == "QA KFS retrieval" and wavelength is not None:
-            max_alt_km = st.number_input("Altitude máx. (km)", min_value=0.1, value=30.0, step=0.5, key=f"{prefix}_kfs_alt")
+            available_altitude = altitude_km(ds_l2)
+            max_alt_km = float(np.nanmax(available_altitude)) if available_altitude.size else 30.0
             fig = qa_kfs_figure(ds_l2, wavelength, smooth_bins, max_alt_km)
         else:
             fig = None
@@ -257,16 +261,15 @@ def _render_generic_level(
         st.info("Não encontrei variáveis numéricas plottáveis neste nível.")
         return
     prefix = safe_key(row.get("session_id"), level, "generic")
-    c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
+    c1, c2, c3 = st.columns([2, 1, 1])
     variable = c1.selectbox("Variável", variables, key=f"{prefix}_var")
     channels = coord_values(ds, channel_name(ds))
     channel = c2.selectbox("Canal", channels, key=f"{prefix}_channel") if channels else None
     wavelengths = wavelength_values(ds)
     wave_index = wavelengths.index(default_wavelength) if default_wavelength in wavelengths else 0
     wavelength = c3.selectbox("Comprimento de onda", wavelengths, index=wave_index, key=f"{prefix}_wave") if wavelengths else None
-    vertical_label = "Bin/ponto máx." if level == "Level 0" else "Altitude máx. (km)"
-    default_vertical = 4000.0 if level == "Level 0" else (15.0 if level != "Level 2" else 30.0)
-    max_vertical = c4.number_input(vertical_label, min_value=1.0 if level == "Level 0" else 0.1, value=default_vertical, step=100.0 if level == "Level 0" else 0.5, key=f"{prefix}_vertical")
+    vertical = vertical_values(ds, level)
+    max_vertical = float(np.nanmax(vertical)) if vertical.size else (1.0 if level == "Level 0" else 30.0)
     c5, c6, c7, c8 = st.columns([1, 1, 1, 2])
     log10 = c5.checkbox("log10", value="signal" in variable.lower(), key=f"{prefix}_log")
     mode = c6.radio("Modo", ["quicklook", "perfil médio"], horizontal=True, key=f"{prefix}_mode")
@@ -339,3 +342,38 @@ def render_diagnostics(ds: xr.Dataset) -> None:
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
     else:
         st.info("Nenhum diagnóstico escalar/small-array conhecido encontrado.")
+
+
+def render_atmospheric_profiles(row: dict[str, Any]) -> None:
+    """Inspect saved atmospheric state from L1 without recalculating meteorology."""
+    path = row.get("level1_path", "")
+    if not path or not Path(path).is_file():
+        st.info("Não há arquivo L1 com perfis atmosféricos nesta sessão.")
+        return
+    st.caption(f"Fonte L1: {Path(path).name}")
+    with open_dataset(path) as ds:
+        candidates = [
+            name for name in (
+                "Atmospheric_Temperature_K",
+                "Atmospheric_Pressure_hPa",
+                "Atmospheric_Relative_Humidity_percent",
+            )
+            if name in ds and "altitude" in ds[name].dims
+        ]
+        if not candidates:
+            st.info(
+                "Este produto L1 não possui perfis atmosféricos em altitude. "
+                "Verifique as variáveis em Metadata."
+            )
+            return
+        variable = st.selectbox("Variável atmosférica", candidates, key="mg_atmos_var")
+        da = ds[variable]
+        # Mean is a display-only reduction; the time-resolved source is unchanged.
+        fig = profile_figure(da, variable, "Level 1", smooth_bins=1)
+        units = str(da.attrs.get("units", "")).strip()
+        fig.update_xaxes(title_text=f"{variable} ({units})" if units else variable)
+        plot_scientific(fig, use_container_width=True)
+        st.caption(
+            "Perfil médio para visualização dos registros disponíveis. "
+            "O NetCDF mantém todos os horários originais."
+        )
