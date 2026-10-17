@@ -479,6 +479,8 @@ def _write_scc_exports(
                 source_canonical_l0=canonical,
                 config=config,
                 ancillary_name=None if lr_path is None else lr_path.name,
+                source_profile_indices=profile_indices.tolist(),
+                source_measurement_files=regime_measurements["filepath"].astype(str).tolist(),
             )
         package = pending_scc_package(config, measurement_id)
         validate_pending_scc_package(package)
