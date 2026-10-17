@@ -59,13 +59,68 @@ def _validate_scc_policy(
                 )
 
 
-def _validate_scc(profile_id: str, scc: Mapping[str, Any]) -> None:
+PRODUCT_TYPES = frozenset({"elastic_backscatter", "raman_backscatter", "extinction_only", "lidar_ratio_extinction"})
+
+
+def _validate_product_registry(products: Mapping[str | int, Any]) -> dict[int, dict[str, Any]]:
+    """Validate original SCC product identities; cross-system ID reuse is legitimate."""
+    if not products:
+        raise ValueError("SCC product registry must not be empty.")
+    validated: dict[int, dict[str, Any]] = {}
+    for raw_id, value in products.items():
+        pid = _positive_int(raw_id, "SCC product_ID")
+        if pid in validated:
+            raise ValueError(f"Duplicate normalized SCC product_ID {pid}.")
+        spec = _mapping(value, f"SCC products.{pid}")
+        required = {"type", "wavelength_nm", "usecase", "channel_count"}
+        if required - set(spec) or set(spec) - (required | {"parent_product_id"}):
+            raise ValueError(f"Invalid metadata fields for SCC product {pid}.")
+        kind = _text(spec["type"], f"SCC product {pid} type")
+        if kind not in PRODUCT_TYPES:
+            raise ValueError(f"Unknown SCC product type {kind!r} for {pid}.")
+        wl = _positive_int(spec["wavelength_nm"], f"SCC product {pid} wavelength")
+        usecase = spec["usecase"]
+        if isinstance(usecase, bool) or not isinstance(usecase, Integral) or usecase < 0:
+            raise ValueError(f"SCC product {pid} usecase must be a nonnegative integer.")
+        count = _positive_int(spec["channel_count"], f"SCC product {pid} channel_count")
+        record = {"type": kind, "wavelength_nm": wl, "usecase": int(usecase), "channel_count": count}
+        if "parent_product_id" in spec:
+            record["parent_product_id"] = _positive_int(spec["parent_product_id"], f"SCC product {pid} parent")
+        validated[pid] = record
+    for pid, item in validated.items():
+        parent = item.get("parent_product_id")
+        if parent is not None:
+            if parent == pid or parent not in validated:
+                raise ValueError(f"SCC product {pid} has missing/self parent {parent}.")
+            if validated[parent]["wavelength_nm"] != item["wavelength_nm"]:
+                raise ValueError(f"SCC product {pid} parent has a different wavelength.")
+            if validated[parent]["type"] != "lidar_ratio_extinction":
+                raise ValueError(f"SCC product {pid} parent is not a lidar_ratio_extinction product.")
+    return validated
+
+
+def _elastic_products(
+    system: Mapping[str, Any], registry: Mapping[int, Mapping[str, Any]],
+) -> dict[str, list[int]]:
+    """Select all eligible elastic products; preserve distinct IDs at the same wavelength."""
+    groups: dict[str, list[int]] = {}
+    for raw_id in system["product_ids"]:
+        pid = int(raw_id)
+        if registry[pid]["type"] == "elastic_backscatter":
+            groups.setdefault(str(registry[pid]["wavelength_nm"]), []).append(pid)
+    return groups
+
+
+def _validate_scc(
+    profile_id: str, scc: Mapping[str, Any],
+    registry: Mapping[int, Mapping[str, Any]], policy: Mapping[str, Any],
+) -> None:
     for mode in ("day", "night"):
         if mode not in scc:
             raise ValueError(f"profiles.{profile_id}.scc.{mode} is required when scc is configured.")
         config = _mapping(scc[mode], f"profiles.{profile_id}.scc.{mode}")
-        required = {"configuration_id", "name", "channels"}
-        allowed = required | {"elastic_product_ids", "lr_input"}
+        required = {"configuration_id", "name", "channels", "product_ids"}
+        allowed = required | {"lr_input"}
         if set(config) - allowed or required - set(config):
             raise ValueError(
                 f"SCC profile {profile_id!r}/{mode} requires {sorted(required)}; "
@@ -90,31 +145,30 @@ def _validate_scc(profile_id: str, scc: Mapping[str, Any]) -> None:
             if isinstance(flag, bool) or not isinstance(flag, Integral) or flag not in {0, 1}:
                 raise ValueError(f"Invalid SCC LR_Input flag for {channel}: {flag!r}.")
 
-        # Product IDs are not channel IDs or configuration IDs.
-        product_map = config.get("elastic_product_ids", {})
-        if not isinstance(product_map, Mapping):
-            raise ValueError(
-                f"profiles.{profile_id}.scc.{mode}.elastic_product_ids must be a mapping."
-            )
-        known_wavelengths = {_channel_wavelength_nm(name) for name in channels}
-        product_ids: set[int] = set()
-        for raw_wavelength, raw_ids in product_map.items():
-            try:
-                wavelength = int(raw_wavelength)
-            except (TypeError, ValueError) as exc:
-                raise ValueError("SCC elastic product wavelength must be numeric.") from exc
-            if wavelength not in known_wavelengths or wavelength <= 0:
-                raise ValueError(
-                    f"profiles.{profile_id}.scc.{mode} product wavelength {wavelength} has no channel."
-                )
-            values = raw_ids if isinstance(raw_ids, list) else [raw_ids]
-            if not values:
-                raise ValueError("SCC elastic_product_ids must not contain an empty list.")
-            for raw_id in values:
-                product_id = _positive_int(raw_id, "SCC elastic product_ID")
-                if product_id in product_ids:
-                    raise ValueError(f"Duplicate SCC product_ID {product_id}.")
-                product_ids.add(product_id)
+        # System membership references actual optical products in the registry.
+        linked = config["product_ids"]
+        if not isinstance(linked, list) or not linked:
+            raise ValueError(f"SCC {profile_id}/{mode} product_ids must be a nonempty list.")
+        selected: set[int] = set()
+        wavelengths = {_channel_wavelength_nm(name) for name in channels}
+        for raw_id in linked:
+            pid = _positive_int(raw_id, "SCC product_ID")
+            if pid in selected:
+                raise ValueError(f"Repeated SCC product_ID {pid} in {profile_id}/{mode}.")
+            if pid not in registry:
+                raise ValueError(f"Unknown SCC product_ID {pid} in {profile_id}/{mode}.")
+            if registry[pid]["wavelength_nm"] not in wavelengths:
+                raise ValueError(f"SCC product {pid} wavelength absent from {profile_id}/{mode} channels.")
+            selected.add(pid)
+        if policy["lr_input"].get("source", "scc_db") == "climatology_ancillary":
+            elastic = _elastic_products(config, registry)
+            flags = _resolve_lr_input({"scc_policy": policy}, config)
+            for channel, flag in flags.items():
+                if flag == 0 and str(_channel_wavelength_nm(channel)) not in elastic:
+                    raise ValueError(
+                        f"SCC {profile_id}/{mode} requests an external LR for {channel} "
+                        "without a registered elastic_backscatter product."
+                    )
 
 
 def _default_lr_input(catalog: Mapping[str, Any], scc_config: Mapping[str, Any]) -> dict[str, int]:
@@ -152,7 +206,7 @@ def validate_scc_config(catalog: Mapping[str, Any], station_catalog: Mapping[str
     """Validate SCC database references against the independent station catalog."""
     if not isinstance(catalog, Mapping):
         raise ValueError("SCC configuration must be a mapping.")
-    required = {"station_id", "scc_policy", "profiles"}
+    required = {"station_id", "scc_policy", "profiles", "products"}
     allowed = required | {"raman_channel_overrides"}
     if set(catalog) - allowed or required - set(catalog):
         raise ValueError(f"SCC configuration requires {sorted(required)}; allowed={sorted(allowed)}.")
@@ -163,6 +217,7 @@ def validate_scc_config(catalog: Mapping[str, Any], station_catalog: Mapping[str
             f"station.id {station_catalog['station']['id']!r}."
         )
     _validate_scc_policy(catalog, station_catalog)
+    registry = _validate_product_registry(_mapping(catalog["products"], "scc.products"))
     profiles = _mapping(catalog["profiles"], "scc.profiles")
     known = {str(profile["id"]) for profile in station_catalog["profiles"]}
     if not profiles:
@@ -173,7 +228,7 @@ def validate_scc_config(catalog: Mapping[str, Any], station_catalog: Mapping[str
         settings = _mapping(context, f"scc.profiles.{profile_id}")
         if set(settings) != {"day", "night"}:
             raise ValueError(f"SCC profile {profile_id!r} must define day and night.")
-        _validate_scc(str(profile_id), settings)
+        _validate_scc(str(profile_id), settings, registry, catalog["scc_policy"])
     overrides = catalog.get("raman_channel_overrides", {})
     if not isinstance(overrides, Mapping):
         raise ValueError("scc.raman_channel_overrides must be a mapping.")
@@ -233,6 +288,7 @@ def resolve_scc_context(
     if mode not in {"day", "night"}:
         raise ValueError("SCC mode must be 'day' or 'night'.")
     scc = mapping[mode]
+    registry = _validate_product_registry(_mapping(catalog["products"], "scc.products"))
     channel_ids = {str(name): int(value) for name, value in scc["channels"].items()}
     lr_input = _resolve_lr_input(catalog, scc)
     available_set = set(available)
@@ -244,7 +300,9 @@ def resolve_scc_context(
         "scc_configuration_name": str(scc["name"]),
         "channel_ids": channel_ids,
         "lr_input": lr_input,
-        "elastic_product_ids": deepcopy(dict(scc.get("elastic_product_ids", {}))),
+        "elastic_product_ids": _elastic_products(scc, registry),
+        "scc_product_ids": list(scc["product_ids"]),
+        "scc_products": {int(pid): deepcopy(registry[int(pid)]) for pid in scc["product_ids"]},
         "scc_channels": [name for name in channel_ids if name in available_set],
         "missing_scc_channels": missing,
         "extra_channels": [name for name in available if name not in channel_ids],
