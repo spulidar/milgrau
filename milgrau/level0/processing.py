@@ -430,6 +430,7 @@ def _write_scc_exports(
             weather_data=regime_weather,
             config=regime_config,
             logger=scc_logger,
+            scc_export=True,
         )
         write_netcdf_provenance(scc_path, regime_config)
         outputs.append(scc_path)
