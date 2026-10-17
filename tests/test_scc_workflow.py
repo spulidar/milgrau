@@ -262,14 +262,18 @@ def _interrupted_delete_journal(tmp_path: Path, *, action="delete_result_uncerta
         )
         store.transition(ID, "deleting", action="delete_requested")
         store.transition(ID, "uncertain", action=action)
-    return config, backup
+    from milgrau.level0.scc_staging import pending_scc_package
+
+    staged = pending_scc_package(config, ID)
+    staged.mkdir(parents=True)
+    return config, backup, staged
 
 
 def test_recover_after_delete_unknown_but_remote_absent_sends_only_upload(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch(monkeypatch)
-    config, archive = _interrupted_delete_journal(tmp_path)
+    config, archive, staged = _interrupted_delete_journal(tmp_path)
     from milgrau.scc import workflow as module
 
     monkeypatch.setattr(
@@ -280,7 +284,7 @@ def test_recover_after_delete_unknown_but_remote_absent_sends_only_upload(
         },
     )
     client = FakeClient(exists=False)
-    result = workflow.resume_after_uncertain_delete(config, tmp_path, client)
+    result = workflow.resume_after_uncertain_delete(config, staged, client)
     assert result["measurement_id"] == ID
     assert client.delete_calls == 0
     assert client.upload_calls == 1
@@ -300,7 +304,7 @@ def test_recovery_does_not_upload_if_id_reappeared(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch(monkeypatch)
-    config, _ = _interrupted_delete_journal(tmp_path)
+    config, _, staged = _interrupted_delete_journal(tmp_path)
     monkeypatch.setattr(
         workflow, "verify_archive",
         lambda *_: {
@@ -310,7 +314,7 @@ def test_recovery_does_not_upload_if_id_reappeared(
     )
     client = FakeClient(exists=True)
     with pytest.raises(SCCRemoteError, match="present again"):
-        workflow.resume_after_uncertain_delete(config, tmp_path, client)
+        workflow.resume_after_uncertain_delete(config, staged, client)
     assert client.upload_calls == client.delete_calls == 0
     with SubmissionStore(state_root(config)) as store:
         assert store.get(ID)["state"] == "uncertain"
@@ -320,12 +324,12 @@ def test_recovery_rejects_other_uncertain_causes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch(monkeypatch)
-    config, _ = _interrupted_delete_journal(
+    config, _, staged = _interrupted_delete_journal(
         tmp_path, action="upload_result_uncertain",
     )
     client = FakeClient(exists=False)
     with pytest.raises(SCCRemoteError, match="limited to"):
-        workflow.resume_after_uncertain_delete(config, tmp_path, client)
+        workflow.resume_after_uncertain_delete(config, staged, client)
     assert client.upload_calls == client.delete_calls == 0
 
 
@@ -333,14 +337,14 @@ def test_recovery_fails_closed_if_archive_verification_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch(monkeypatch)
-    config, _ = _interrupted_delete_journal(tmp_path)
+    config, _, staged = _interrupted_delete_journal(tmp_path)
     monkeypatch.setattr(
         workflow, "verify_archive",
         lambda *_: (_ for _ in ()).throw(SCCRemoteError("backup corrupted")),
     )
     client = FakeClient(exists=False)
     with pytest.raises(SCCRemoteError, match="backup corrupted"):
-        workflow.resume_after_uncertain_delete(config, tmp_path, client)
+        workflow.resume_after_uncertain_delete(config, staged, client)
     assert client.upload_calls == client.delete_calls == 0
     with SubmissionStore(state_root(config)) as store:
         assert store.get(ID)["state"] == "uncertain"
@@ -350,7 +354,7 @@ def test_recovery_upload_unknown_fails_closed_and_is_not_repeatable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch(monkeypatch)
-    config, _ = _interrupted_delete_journal(tmp_path)
+    config, _, staged = _interrupted_delete_journal(tmp_path)
     monkeypatch.setattr(
         workflow, "verify_archive",
         lambda *_: {
@@ -360,13 +364,13 @@ def test_recovery_upload_unknown_fails_closed_and_is_not_repeatable(
     )
     client = FakeClient(exists=False, fail_upload=True)
     with pytest.raises(SCCRemoteError, match="upload response"):
-        workflow.resume_after_uncertain_delete(config, tmp_path, client)
+        workflow.resume_after_uncertain_delete(config, staged, client)
     assert client.delete_calls == 0 and client.upload_calls == 1
     with SubmissionStore(state_root(config)) as store:
         assert store.get(ID)["state"] == "uncertain"
         assert store.events(ID)[-1]["action"] == "recovery_upload_uncertain"
     with pytest.raises(SCCRemoteError, match="limited to"):
-        workflow.resume_after_uncertain_delete(config, tmp_path, client)
+        workflow.resume_after_uncertain_delete(config, staged, client)
     assert client.upload_calls == 1
 
 
