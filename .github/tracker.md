@@ -1,7 +1,7 @@
 # Phase 12 — Optional SCC integration and publication workflow
 
 **Branch:** `scc-integration-refactor` (base: `milgraumaxxing`)  
-**Status:** Phases 12.1–12.3 implemented and cross-platform validated; Phase 12.4 pending  
+**Status:** Phases 12.1–12.3 validated; Phase 12.4 implementation complete (mock CI in progress, live SCC validation pending)  
 **Scope:** SCC configuration, optional export, staging, native upload/status/download/cleanup client.
 This branch's tracker intentionally contains **only Phase 12**. The earlier scientific tracker remains on the base branch.
 
@@ -113,13 +113,30 @@ validate dark-current availability for affected sessions before live upload.
 
 ## 12.4 — Optional native SCC client
 
-- [ ] Add `.[scc]` extra and `milgrau-scc` CLI with only `upload`, `status`, `download`, `cleanup`.
-- [ ] Validate real SCC protocol/authentication and implement safe HTTP/TLS, timeouts and bounded retry.
-- [ ] Keep credentials out of repository and configuration files.
-- [ ] Validate pending submission and support `upload --dry-run`.
-- [ ] Include raw and ancillary uploads; mock all network tests.
+- [x] Add `.[scc]` extra and `milgrau-scc` CLI with only `upload`, `status`, `download`, `cleanup`.
+- [x] Implement protocol based on SCC's public documented authenticated Quick upload form, optical ancillary field and measurement API, including HTTPS/TLS, CSRF protection, timeouts, safe bounded GET retries, duplicate rejection and no automatic POST retries.
+- [ ] **Live-server protocol/authentication validation** with the SPU operator and actual SCC deployment; code/mock testing does not establish real upload acceptance.
+- [x] Keep credentials out of repository and configuration files (website and optional HTTP Basic credentials only from environment).
+- [x] Validate pending submission and support `upload --dry-run` entirely offline, without credentials.
+- [x] Submit raw and optional climatological LR together; verify remote Measurement_ID before reporting success; test all network interactions with mocks.
+- [x] Require an explicit `--id ... --confirm` to submit only ONE remote measurement. Forbid delete, replacement, batch submission and unsafe redirects.
+- [x] Leave `download` and `cleanup` as explicit non-mutating gated commands until durable lifecycle exists in Phases 12.5–12.6.
+- [x] Document operator installation, environment-only credentials, CLI behavior and incident recovery in `docs/scc_native_client.md`.
 
-**Gate 12.4:** Client passes offline integration tests; real upload remains opt-in.
+**Implementation evidence:** `milgrau/scc/packages.py`, `milgrau/scc/client.py`,
+`milgrau/cli/scc.py`, `tests/test_scc_client.py`, `pyproject.toml`,
+`config.yaml`, `scc.yaml`, `docs/scc_native_client.md`. Upload uses
+`data` plus `lidar_ratio_file` under SCC's HTTPS quick-upload form and
+checks `api/v1/measurements/<Measurement_ID>/` to reject existing remote IDs
+and confirm response. Read-only `status --remote --id` is available; remote
+durable state/download/cleanup are **intentionally pending**.
+
+**Validation:** mocked HTTP protocol and local packet validators tested on CI;
+a real SPU SCC login/upload is still required before declaring live compatibility.
+**No real remote upload was performed by this development session.**
+
+**Gate 12.4:** Offline client and authentication mocks pass; real upload remains
+explicitly opt-in. Live integration validation is tracked separately in 12.7.
 
 ## 12.5 — Durable submission state
 
