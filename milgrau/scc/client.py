@@ -323,6 +323,14 @@ class SCCClient:
             if lr_name in manifest["files"]:
                 lr_handle = stack.enter_context(open(path / lr_name, "rb"))
                 uploads["lidar_ratio_file"] = (lr_name, lr_handle, "application/x-netcdf")
+            from milgrau.level0.scc_sounding import scc_sounding_name
+
+            sounding_name = scc_sounding_name(identity)
+            if sounding_name in manifest["files"]:
+                sounding_handle = stack.enter_context(open(path / sounding_name, "rb"))
+                uploads["sounding_file"] = (
+                    sounding_name, sounding_handle, "application/x-netcdf",
+                )
             try:
                 response = self.session.post(
                     url,
