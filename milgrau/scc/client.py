@@ -227,7 +227,9 @@ class SCCClient:
             )
         return result
 
-    def delete_measurement(self, identity: str) -> None:
+    def delete_measurement(
+        self, identity: str, *, expected_fingerprint: str,
+    ) -> None:
         """Delete exactly one SCC record via its documented Django admin form.
 
         Called only by the durable guarded replacement orchestration after a
@@ -241,6 +243,13 @@ class SCCClient:
             )
         if record.get("is_queued") or record.get("is_being_processed"):
             raise SCCRemoteError("Cannot delete queued or running SCC measurement.")
+        from milgrau.scc.backup import remote_fingerprint
+
+        if remote_fingerprint(record) != expected_fingerprint:
+            raise SCCRemoteError(
+                "Remote SCC metadata changed since pre-replacement backup. "
+                "Stop before deletion and reconcile."
+            )
         relative = f"admin/database/measurements/{identity}/delete/"
         url = self._url(relative)
         form = self._read(relative)
