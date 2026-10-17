@@ -164,12 +164,27 @@ explicitly opt-in. Live integration validation is tracked separately in 12.7.
 
 ## 12.5 — Durable submission state
 
-- [ ] Track original session, SCC Measurement ID, configuration/products, hashes, timestamps and remote IDs outside cache.
-- [ ] Represent pending/uploading/accepted/processing/completed/failed states explicitly.
-- [ ] Guarantee retry reconciliation, duplicate protection and process locking.
-- [ ] Make `status` useful offline and online.
+**Approved identity and replacement policy:** SCC Measurement_ID is stable.
+Never fabricate a new measurement identifier merely to accommodate a different
+period, set of source profiles, or climatological LR. Follow the established
+SCC force-upload semantics (delete the existing remote record, then upload
+the new raw + ancillary under the **same ID**) rather than introducing
+version-suffix IDs. No remote deletion is permitted before implementing
+safeguards and explicit operator confirmation.
 
-**Gate 12.5:** Interrupted upload cannot silently cause duplicate remote submission.
+- [ ] Track original session, SCC Measurement ID, configuration/products, source periods, raw/LR checksums, timestamps, and remote IDs outside disposable cache.
+- [ ] Compare existing SCC metadata and, when necessary, downloaded remote raw NetCDF/LR references; do not infer LR equivalence solely from API status or the remote timestamp.
+- [ ] Preserve stable Measurement_ID when local period/profiles/LR differ from the remote record.
+- [ ] Before replacement, validate new raw and LR package completely, archive original remote raw/configuration and downloadable products, and verify the archive locally.
+- [ ] Implement exact-ID opt-in `upload --id ID --replace-existing --confirm`, keeping destructive replacement disabled by default.
+- [ ] Use SCC's supported authenticated web deletion flow (not an invented overwrite API), verify disappearance, then submit original ID with new raw+LR.
+- [ ] Protect against intervening remote changes and concurrent clients; record all transitions in durable state outside cache, with process locking.
+- [ ] Record replacement as non-atomic: if deletion succeeds but POST or confirmation fails, keep explicit recoverable/uncertain state and do not falsely report success or automatically loop/overwrite.
+- [ ] Represent pending/uploading/accepted/processing/completed/failed/uncertain and replacement-specific states explicitly.
+- [ ] Guarantee retry reconciliation, prevent accidental duplicates, and make `status` useful offline and online.
+- [ ] Test deletion/backup failure, incomplete archive, same-data no-op, LR-only change, period-only change, stale-remote conflict, ambiguous POST, rollback best effort and absence of silent data loss with mocked server.
+
+**Gate 12.5:** No prior SCC measurement can be deleted without a locally verified archive of available remote inputs/results, explicit exact-ID operator authorization, and durable recoverability tracking. Interrupted replacement must never be reported as successful without API confirmation.
 
 ## 12.6 — Download and cleanup
 
