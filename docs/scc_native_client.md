@@ -1,4 +1,4 @@
-# SCC native client — Phase 12.4
+# SCC native client — Phases 12.4–12.6
 
 MILGRAU uses its own minimal HTTPS transport, **not** the historical
 `scc_access` package. The native client uses the publicly documented SCC
@@ -95,9 +95,19 @@ milgrau-scc status
 # Read-only remote state for one ID (requires credentials).
 milgrau-scc status --id 20240913spu1549 --remote
 
-# Reserved and safe: explicitly refuse to run until Phases 12.5–12.6.
-milgrau-scc download
-milgrau-scc cleanup
+# Read-only SCC ELPP/ELDA download for an owned, journalled upload.
+milgrau-scc download --id 20240913spu1549
+
+# For an older remote measurement never submitted by MILGRAU,
+# give its verified scientific session ID explicitly. This never enables cleanup.
+milgrau-scc download --id 20240913spu1549 --session spu_20240913-1549Z_20240913-1750Z
+
+# Keep cached raw/LR even after a successful confirmed-owned download.
+milgrau-scc download --id 20240913spu1549 --keep-cache
+
+# Preview or explicitly remove only eligible pending staging bytes.
+milgrau-scc cleanup --id 20240913spu1549 --dry-run
+milgrau-scc cleanup --id 20240913spu1549 --confirm
 ```
 
 There is deliberately no batch live upload, remote delete, force-replace or
@@ -203,9 +213,73 @@ editing the measurement during the narrow interval after its final read;
 there is no server-side atomic compare-and-swap. Use a restricted operator
 maintenance window for destructive replacements.
 
-`download` and `cleanup` remain explicitly **disabled** until Phase 12.6.
-Old SCC backups and journal entries are persistent evidence and must not
-be removed by cache cleanup.
+Phase 12.6 implements verified read-only download and cache-only cleanup.
+Old SCC backups and journal entries are persistent evidence and are never
+removed by cache cleanup.
+
+## Phase 12.6 — Verified results and disposable cache cleanup
+
+SCC results are explicitly **external scientific outputs**, not replacements
+for MILGRAU L0/L1/L2 or the station's own inversion. Download saves the
+read-only SCC processed result archives under the original scientific session:
+
+```text
+02-processed_data/spu/YYYY/MM/<Session_ID>/
+    <Session_ID>_L0.nc
+    scc-results/
+        <Measurement_ID>/
+            elpp.archive
+            elda.archive
+            cloudmask.archive      # only if finished and downloadable
+            ...                    # other completed SCC processors, if available
+            results.json           # remote provenance, URLs, hashes, processing states
+```
+
+An upload-specific result folder is created atomically after *all* advertised
+completed archives are obtained and validated. The remote record must have
+finished ELPP and ELDA (SCC result code 127 in the confirmed installation);
+missing URLs, corrupt/missing products, unfinished processing, unsafe redirects
+or a mismatched configuration fail without publishing an incomplete folder.
+The result manifest contains remote creation time, processing outcomes,
+configuration ID, linked scientific Session_ID, download links and SHA-256
+hashes. Existing results are verified and **never silently overwritten** by a
+new remote generation under the same Measurement_ID.
+
+`download` can retrieve an existing SCC portal measurement without having
+uploaded it from MILGRAU using `--session <Session_ID>`, provided that session
+already has a canonical scientific L0. Its manifest explicitly records
+`uploaded_by_milgrau: false`; it **cannot** authorize cache deletion.
+
+The journal now retains `results_path`, `results_manifest_sha256` and new
+`downloaded`/`cleaned` states. Old Phase 12.5 SQLite databases are migrated
+in place without deleting entries. The cache-cleanup gate requires:
+
+- the durable journal to confirm MILGRAU's own uploaded generation using the
+  SCC remote `creation_date` and configuration ID;
+- verified completed ELPP and ELDA archives and all other advertised finished
+  products, with their SHA-256 values rechecked against `results.json`;
+- the results manifest's checksum/path matching the durable journal;
+- the original pending raw NetCDF and any LR matching their submitted hashes.
+
+When `config.yaml` sets `scc.cleanup.policy: after_download` (current default),
+an owned, newly downloaded and verified packet triggers automatic **local-only**
+cleanup of `.cache/scc/pending/<Measurement_ID>/`. Use `download --keep-cache`
+to suppress that automatic cleanup. To exercise the same gate separately,
+use `cleanup --id ID --dry-run` then `cleanup --id ID --confirm`.
+`manual` policy also suppresses automatic deletion. Cleanup never touches
+Licel files, the scientific NetCDFs, retained SCC outputs, old remote
+replacement archives or `.state/scc/submissions.sqlite`. Failures and
+uncertain upload states are protected.
+
+A crash between the local directory removal and the SQLite `cleaned`
+transition may leave a journal state of `downloaded` with no cache folder.
+The command fails closed and requires manual inspection; it never silently
+deletes an arbitrary replacement folder.
+
+**Live validation pending:** no real SCC result was downloaded by this new
+12.6 command in development and no remote upload/delete occurred. Test first
+with a known existing remote measurement using `download --id ... --session`
+which is read-only and does **not** clean the pending upload package.
 
 ## What happens when the network fails?
 
@@ -216,8 +290,9 @@ outcome before considering another upload. An existing remote ID is never
 deleted/replaced.
 
 **Successful upload is recorded as accepted in the durable journal**, but
-still does not remove staged files. Remote processing completion is observed
-through read-only status checks; download and cleanup are Phase 12.6.
+does not immediately remove staged files. Remote processing completion is
+observed through read-only status checks; Phase 12.6 downloads verified
+SCC products and removes only eligible disposable staging files.
 An uploaded `raw.nc` packet must not be assumed processed by ELPP/ELDA.
 
 ## Test evidence and outstanding validation
