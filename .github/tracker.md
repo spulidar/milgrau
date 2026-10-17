@@ -1,7 +1,7 @@
 # Phase 12 — Optional SCC integration and publication workflow
 
 **Branch:** `scc-integration-refactor` (base: `milgraumaxxing`)  
-**Status:** Phase 12.1 implemented — cross-platform CI validation in progress  
+**Status:** Phase 12.1 validated; Phase 12.2 implemented — final CI validation in progress  
 **Scope:** SCC configuration, optional export, staging, native upload/status/download/cleanup client.
 This branch's tracker intentionally contains **only Phase 12**. The earlier scientific tracker remains on the base branch.
 
@@ -31,7 +31,7 @@ This branch's tracker intentionally contains **only Phase 12**. The earlier scie
 - [x] Remove SCC export from the disabled LIBIDS path and decouple disabled scientific incremental validation from SCC derivatives.
 - [x] Update unit/contract tests and confirm no SCC extras are required for scientific processing.
 - [x] Document the new configuration ownership and migration.
-- [~] Run all applicable CI tests and review failures before marking 12.1 complete (Ruff and Ubuntu Python 3.12/3.14 green; Windows jobs running).
+- [x] Run all applicable CI tests and review failures before marking 12.1 complete (all six checks green in run 39046944304).
 
 **Phase 12.1 implementation evidence:** `milgrau/config/scc.py`, `milgrau/config/loader.py`, `scc.yaml`, `milgrau/config/station.py`, `milgrau/level0/libids.py`, `milgrau/level0/processing.py`, `milgrau/level1/ingestion.py`, dedicated `tests/test_scc_configuration_split.py`, and updated SCC/Raman regression tests. Branch CI includes `scc-integration-refactor`.
 
@@ -39,14 +39,29 @@ This branch's tracker intentionally contains **only Phase 12**. The earlier scie
 
 ## 12.2 — Product registry and climatological LR
 
-- [ ] Migrate all SCC configuration IDs 248, 294, 484, 565, 1046, 1047 and their channel IDs.
-- [ ] Enter verified SCC product IDs and physical product types/use cases/wavelengths from screenshots.
-- [ ] Support legitimate reuse of product IDs by different systems.
-- [ ] Resolve multiple 1064 nm product variants where their use case matters.
-- [ ] Read monthly station climatology and stated spread without copying values into SCC configuration.
-- [ ] Generate compliant LR ancillary NetCDF for eligible elastic products only.
-- [ ] Preserve Raman retrieval independence and ensure ancillary ID/schema/altitude contracts.
-- [ ] Test representative day/night and historical configurations.
+- [x] Migrate all SCC configuration IDs 248, 294, 484, 565, 1046, 1047 and their channel IDs.
+- [x] Enter verified SCC product IDs and physical product types/use cases/wavelengths from screenshots.
+- [x] Support legitimate reuse of product IDs by different systems.
+- [x] Resolve multiple 1064 nm product variants where their use case matters.
+- [x] Read monthly station climatology and stated spread without copying values into SCC configuration.
+- [x] Generate compliant LR ancillary NetCDF for eligible elastic products only.
+- [x] Preserve Raman retrieval independence and ensure ancillary ID/schema/altitude contracts.
+- [x] Test representative day/night and historical configurations.
+
+**Implementation evidence:** `scc.yaml` now records all 30 distinct optical
+products and the six source-system memberships from user-provided SCC screenshots,
+including product type, wavelength, usecase, channel count and parent relations.
+`milgrau/config/scc.py` resolves typed elastic targets without duplicated ID
+lists, allows cross-system reuse and preserves both 746 and 3683 where present.
+`milgrau/level0/scc_lidar_ratio.py` produces station-month LR ancillary profiles
+with validated coverage of all detector ranges; only eligible elastic products
+receive LR_Input=0. New `tests/test_scc_product_registry.py` and extended
+`tests/test_scc_lidar_ratio_ancillary.py` cover current and historical modes,
+shared IDs, bad IDs, Raman guards, monthly values and NetCDF schema.
+
+**Validation:** Local implementation/tests complete; final branch CI is running.
+This phase does **not** claim successful live SCC upload. That is a separate
+gate in Phase 12.7.
 
 **Gate 12.2:** Every SCC product and LR ancillary is traceable to real SCC product IDs.
 
