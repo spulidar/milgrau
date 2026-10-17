@@ -9,7 +9,6 @@ import pytest
 import yaml
 
 from milgrau.config.loader import load_config
-from milgrau.config.scc import validate_scc_config
 from milgrau.config.station import resolve_station_context, validate_station_config
 from milgrau.level0 import libids
 from milgrau.level0.processing import _write_scc_exports
@@ -93,10 +92,8 @@ def test_enabled_scc_rejects_mismatched_station_and_unknown_profile(tmp_path: Pa
 
 
 def test_station_catalog_rejects_legacy_scc_fields(tmp_path: Path) -> None:
-    payload = _files(tmp_path)
-    catalog = load_config(tmp_path / "config.yaml")["_station_catalog"] if (
-        tmp_path / "config.yaml"
-    ).exists() else yaml.safe_load((tmp_path / "station.yaml").read_text(encoding="utf-8"))
+    _files(tmp_path)
+    catalog = yaml.safe_load((tmp_path / "station.yaml").read_text(encoding="utf-8"))
     catalog["scc_policy"] = {"lr_input": {}}
     with pytest.raises(ValueError, match="Unknown station catalog key"):
         validate_station_config(catalog)
