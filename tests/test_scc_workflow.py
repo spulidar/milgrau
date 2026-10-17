@@ -192,6 +192,30 @@ def test_backup_unavailable_or_changed_fingerprint_blocks_deletion(
         assert journal.get(ID)["state"] == "failed"
 
 
+def test_local_staged_bytes_change_during_backup_blocks_delete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from copy import deepcopy
+
+    _patch(monkeypatch)
+    counter = {"calls": 0}
+
+    def varying_manifest(_):
+        counter["calls"] += 1
+        result = deepcopy(_manifest())
+        if counter["calls"] > 1:
+            result["files"]["raw.nc"]["sha256"] = "f" * 64
+        return result
+
+    monkeypatch.setattr(workflow, "validate_upload_package", varying_manifest)
+    client = FakeClient()
+    with pytest.raises(SCCRemoteError, match="changed during remote backup"):
+        workflow.submit(_config(tmp_path), tmp_path, client, replace_existing=True)
+    assert client.delete_calls == client.upload_calls == 0
+    with SubmissionStore(state_root(_config(tmp_path))) as store:
+        assert store.get(ID)["state"] == "failed"
+
+
 def test_delete_uncertain_prevents_any_upload_and_retry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
