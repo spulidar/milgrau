@@ -129,6 +129,18 @@ class Catalog:
             reverse=True,
         )
 
+    def all_sessions(self) -> list[dict[str, Any]]:
+        """Newest-first inventory without imposing calendar/publication windows."""
+        self._refresh()
+        return sorted(
+            [
+                {k: v for k, v in entry.items() if not k.startswith("_")}
+                for entry in self._sessions.values()
+            ],
+            key=lambda entry: entry["start_utc"],
+            reverse=True,
+        )
+
     def products(self, session_id: str) -> list[dict[str, Any]]:
         self._refresh()
         session = self._sessions.get(session_id)
