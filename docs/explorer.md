@@ -23,18 +23,23 @@ build is required: Plotly.js is served from the installed Python package.
 
 ## Phase 1: RCS Maps
 
-- UTC date selector, continuous-session selector and available L1 product
-  selector (including canonical and SCC-derived variants).
+- One compact session selector in the header, listing all scientifically continuous
+  acquisitions in newest-first UTC order (no separate date selector or duplicated
+  session header), followed by the available L1 product and channel selectors.
+  Canonical and SCC-derived variants remain separate saved products.
 - All channels in the selected L1 product, not a fixed hard-coded channel list.
 - `range_corrected_signal`, `corrected_signal` and
   `signal_pre_background` when present as saved `(time, channel, altitude)`
   variables.
 - Time–altitude heatmap and accompanying time-mean vertical profile.
 - Hover inspection, interactive Plotly zoom, pan and PNG export.
-- Expandable **Plot settings**: robust displayed-cell percentiles (default P2–P98),
-  full-range auto or manual color minimum/maximum (scientific notation accepted),
-  color palette selection and optional log10 heatmap. Appearance updates occur
-  in the browser without reopening NetCDF, and preserve the current Plotly zoom.
+- Excel-like **in-plot editor**: click the heatmap colorbar (or the small
+  “Edit plot” button) to change robust percentiles (default P2–P98), auto/full
+  color limits, manual min/max (scientific notation), palette and log10. Click
+  a time/altitude axis label or the “Axes” tab to edit view ranges and reset
+  zoom. Plotly also supports native on-plot editable text and interactive
+  zoom/pan. Appearance updates occur in the browser without reopening NetCDF,
+  and preserve the current Plotly zoom.
   Robust percentiles describe finite cells in the *display-reduced* matrix,
   not quantiles of the entire scientific NetCDF. Values above/below the color
   limits are saturated in the palette, never removed from the dataset.
@@ -46,11 +51,16 @@ build is required: Plotly.js is served from the installed Python package.
   RCS samples or new scientific retrievals.
 - Large time gaps are represented by missing heatmap columns; NaNs are kept
   as missing values. The original file is never modified.
+- The interface says “Explorer” rather than “Scientific Explorer”, omits
+  redundant session explanations, and shows existing configured figure logos
+  at the bottom when the referenced image files exist. Logos are resolved
+  once from `visualization.logos` and served through an allowlisted route;
+  the browser cannot request arbitrary local file paths.
 - Other tabs are intentionally placeholders until later phases.
 
 ## Internal responsibilities
 
-- `milgrau/web/catalog.py`: filename-only session discovery and product IDs.
+- `milgrau/web/catalog.py`: filename-only session discovery, UTC sorting and product IDs.
 - `milgrau/web/rcs.py`: L1-only channel selection and bounded display reads.
 - `milgrau/web/app.py`: FastAPI endpoints and local bundled frontend.
 - `milgrau/web/static/`: independent HTML/CSS/JavaScript visual interface.
