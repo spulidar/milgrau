@@ -210,11 +210,12 @@ async function loadSessions() {
 async function loadProducts() {
   resetPlots();
   state.session = byId("session").value;
-   if (!state.session) {
-    populate("product", []);
+  if (!state.session) {
+    state.product = "";
     populate("channel", []);
     populate("variable", []);
-    setMessage("No saved scientific sessions were found in the configured processed-data directory.");
+    byId("variable-control").hidden = true;
+    setMessage("No scientific sessions found in the configured processed-data directory.");
     return;
   }
   const { products } = await api(
