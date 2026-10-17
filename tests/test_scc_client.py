@@ -252,8 +252,12 @@ def test_download_and_cleanup_are_nondestructive_until_later_phase(
     tmp_path: Path,
 ) -> None:
     path = _stage(tmp_path)
-    assert cli.main(["download"]) == 2
-    assert cli.main(["cleanup"]) == 2
+    with pytest.raises(SystemExit) as err_download:
+        cli.main(["download"])
+    assert err_download.value.code == 2
+    with pytest.raises(SystemExit) as err_cleanup:
+        cli.main(["cleanup"])
+    assert err_cleanup.value.code == 2
     assert path.is_dir()
     assert validate_upload_package(path)["measurement_id"] == IDENTITY
 
