@@ -298,6 +298,135 @@ def resume_after_uncertain_delete(
         return result
 
 
+def retry_rejected_recovery_upload(
+    config: Mapping[str, Any], package: Path, client: Any,
+) -> dict[str, Any]:
+    """One explicit upload-only retry after prior *recovery* POST was uncertain.
+
+    The operator must independently confirm the ID absent in SCC's website.
+    The code proves continued API absence, unchanged scientific source bytes,
+    a valid original remote backup and the exact previous failure type.
+    It NEVER sends DELETE and NEVER retries its own uncertain POST.
+    """
+    from milgrau.level0.scc_staging import pending_scc_package, scc_raw_filename
+
+    manifest = validate_upload_package(package)
+    identity = str(manifest["measurement_id"])
+    raw_name = scc_raw_filename(identity)
+    if raw_name not in manifest["files"]:
+        raise SCCRemoteError(
+            "First migrate local SCC cache to Measurement_ID.nc "
+            "using upload --migrate-cache."
+        )
+    expected_path = pending_scc_package(config, identity)
+    if package.is_symlink() or package.resolve() != expected_path.resolve():
+        raise SCCRemoteError("Recovery requires the exact pending package.")
+    root = state_root(config)
+    with operation_lock(root, identity), SubmissionStore(root) as store:
+        row = store.get(identity)
+        if row is None or row["state"] != "uncertain":
+            raise SCCRemoteError("SCC journal is not in the required uncertain state.")
+        events = store.events(identity)
+        if not events or events[-1]["action"] != "recovery_upload_uncertain":
+            raise SCCRemoteError(
+                "Only one operator-confirmed retry after recovery_upload_uncertain "
+                "is permitted. Never retry an ambiguous follow-up POST."
+            )
+        required = {
+            "backup_verified", "delete_result_uncertain",
+            "operator_confirmed_remote_absence_after_uncertain_delete",
+            "recovery_upload_requested",
+        }
+        if not required.issubset({event["action"] for event in events}):
+            raise SCCRemoteError("Incomplete original SCC recovery audit trail.")
+        files = manifest["files"]
+        lr_name = next((name for name in files if name != raw_name), None)
+        if (
+            row["scientific_session_id"] != manifest["scientific_session_id"]
+            or row["configuration_id"] != manifest["scc_configuration_id"]
+            or row["raw_sha256"] != files[raw_name]["sha256"]
+            or row["lr_sha256"] != (
+                files[lr_name]["sha256"] if lr_name else None
+            )
+            or row["start_utc"] != manifest["measurement_start_utc"]
+            or row["stop_utc"] != manifest["measurement_stop_utc"]
+            or row["product_ids_json"] != json.dumps(
+                [int(value) for value in manifest["scc_product_ids"]],
+                separators=(",", ":"),
+            )
+            or row["source_segments_json"] != json.dumps(
+                manifest.get("source_segments", []), separators=(",", ":"),
+            )
+            or row["scc_config_sha256"] != manifest.get("scc_config_sha256")
+        ):
+            raise SCCRemoteError(
+                "Pending raw/LR, period, configuration or scientific provenance "
+                "changed since original upload. Recovery blocked."
+            )
+        if not row["archive_path"] or not row["archive_manifest_sha256"]:
+            raise SCCRemoteError("Original deleted SCC measurement has no verified backup.")
+        archive = Path(row["archive_path"])
+        if (
+            archive.is_symlink() or not archive.is_dir()
+            or archive.resolve().parent != (root / "archives" / identity).resolve()
+        ):
+            raise SCCRemoteError("Original SCC archive location is unsafe or missing.")
+        original = verify_archive(archive, row["archive_manifest_sha256"])
+        if (
+            original["measurement_id"] != identity
+            or original["remote_snapshot"]["configuration_id"] != row["configuration_id"]
+        ):
+            raise SCCRemoteError("Original SCC archive identity/configuration mismatch.")
+
+        if client.measurement(identity) is not None:
+            raise SCCRemoteError(
+                "SCC ID reappeared since operator verified portal absence. "
+                "Do not overwrite the current remote measurement."
+            )
+        if validate_upload_package(package) != manifest:
+            raise SCCRemoteError("Pending package changed during reconciliation.")
+
+        store.transition(
+            identity, "uploading", action="manual_corrected_filename_upload_requested",
+            detail={
+                "multipart_filename": raw_name,
+                "remote_delete": False,
+                "prior_failed_action": events[-1]["action"],
+                "original_archive": str(archive),
+            },
+        )
+        try:
+            result = client.upload_package(package)
+            confirmed = client.measurement(identity)
+            if confirmed is None:
+                raise SCCRemoteError("Corrected upload was not confirmed by SCC API.")
+            system = confirmed.get("system")
+            if (
+                not isinstance(system, Mapping)
+                or system.get("id") != manifest["scc_configuration_id"]
+                or not confirmed.get("creation_date")
+            ):
+                raise SCCRemoteError("Recovered SCC record has unexpected configuration/date.")
+        except Exception as exc:
+            store.transition(
+                identity, "uncertain", action="manual_corrected_upload_uncertain",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            raise
+
+        store.transition(
+            identity, "accepted", action="manual_corrected_upload_verified",
+            remote_creation_date=str(confirmed["creation_date"]),
+            detail={
+                "remote_page": str(result["remote_page"]),
+                "remote_fingerprint": remote_fingerprint(confirmed),
+                "original_archive": str(archive),
+                "multipart_filename": raw_name,
+            },
+        )
+        return result
+
+
 def reconcile_status(
     store: SubmissionStore,
     identity: str,
