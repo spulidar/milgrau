@@ -167,6 +167,8 @@ historic scc_access package). Install and validate existing packets offline:
 ```bash
 python -m pip install -e ".[scc]"
 milgrau-scc upload --migrate-cache  # local-only migration of existing pending raw.nc
+milgrau-scc sounding --dry-run   # preview older pending packets using existing LIPANCORA L1
+milgrau-scc sounding --confirm   # offline backfill only eligible unsubmitted packets
 milgrau-scc upload --dry-run
 milgrau-scc status
 ```
