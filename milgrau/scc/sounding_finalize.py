@@ -92,6 +92,7 @@ def finalize_session_soundings(
 def _finalize_one(
     config: Mapping[str, Any], path: Path, *,
     available: bool, qa_target: str, logger: logging.Logger,
+    allow_legacy: bool = False,
 ) -> str:
     identity = path.name
     root = state_root(config)
@@ -107,14 +108,21 @@ def _finalize_one(
                 "refusing to revise source checksums or sounding."
             )
         manifest = validate_pending_scc_package(path)
-        if manifest.get("sounding_stage") != "awaiting_lipancora":
+        original_stage = manifest.get("sounding_stage", "not_requested")
+        legacy = allow_legacy and original_stage == "not_requested"
+        if not legacy and original_stage != "awaiting_lipancora":
             return f"{identity}: already finalized"
         catalog_path = config.get("_scc_config_path")
-        if (catalog_path and manifest.get("scc_config_sha256") != file_sha256(catalog_path)):
+        if (
+            not legacy and catalog_path
+            and manifest.get("scc_config_sha256") != file_sha256(catalog_path)
+        ):
             raise ValueError(
                 f"SCC {identity}: scc.yaml changed between LIBIDS and LIPANCORA; "
                 "the pending package cannot be silently rebound to a new configuration."
             )
+        if legacy and (not available or not qa_target):
+            return f"{identity}: no observed sounding; unchanged"
         if backup.exists() or backup.is_symlink():
             raise ValueError(
                 f"Interrupted SCC sounding transaction for {identity}: "
@@ -134,12 +142,26 @@ def _finalize_one(
                     temp, identity, manifest["measurement_start_utc"], config,
                     observed_target_utc=qa_target,
                 )
+            if sounding is None and legacy:
+                # Historical packages stay byte-for-byte unchanged when no
+                # observed sounding exists. Never claim sounding was attached.
+                return f"{identity}: no observed sounding; unchanged"
             if sounding is None and missing == "fail":
                 raise ValueError(
                     f"SCC {identity} has no validated observed sounding from "
                     "LIPANCORA; policy missing_policy=fail."
                 )
             revised = dict(manifest)
+            if legacy:
+                # Retain original SCC configuration digest for provenance,
+                # and record which later configuration added sounding.
+                revised["sounding_backfilled"] = True
+                revised["sounding_original_scc_config_sha256"] = manifest.get(
+                    "scc_config_sha256"
+                )
+                revised["sounding_preparation_config_sha256"] = (
+                    file_sha256(catalog_path) if catalog_path else None
+                )
             revised["files"] = dict(manifest["files"])
             raw_name = manifest_raw_name(manifest)
             if sounding is not None:
