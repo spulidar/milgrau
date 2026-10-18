@@ -98,7 +98,7 @@ SCC sounding integration is **opt-in** through
 It uses an existing observed Wyoming radiosonde cache for station 83779,
 with the sounding launch-site metadata, not the lidar station location.
 If available and validated, the packet also contains
-`rs_<Measurement_ID>.nc`, referenced by `Sounding_File_Name` with
+`rs_YYYYMMDDcccNN.nc`, referenced by `Sounding_File_Name` with
 `Molecular_Calc=1`. When disabled/missing under `missing_policy: skip`,
 it retains `Molecular_Calc=0` and no sounding file.
 No ERA5/USSA76 profile is labelled as observed sounding.
