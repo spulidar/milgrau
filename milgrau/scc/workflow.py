@@ -35,7 +35,7 @@ def submit(
         if previous is not None and previous["state"] in BLOCKED_RESTART:
             raise RuntimeError(
                 f"SCC {identity} recorded as {previous['state']}; "
-                "reconcile this ID before any other POST or DELETE."
+                "manual remote reconciliation required before any other POST or DELETE."
             )
         if replace_existing:
             # Do not reset an accepted/completed journal revision before
