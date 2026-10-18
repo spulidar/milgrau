@@ -468,9 +468,10 @@ def test_download_and_cleanup_are_nondestructive_until_later_phase(
     tmp_path: Path,
 ) -> None:
     path = _stage(tmp_path)
-    with pytest.raises(SystemExit) as err_download:
-        cli.main(["download"])
-    assert err_download.value.code == 2
+    # Bulk download/status intentionally accept no --id; cleanup
+    # still requires an explicit ID and confirmation.
+    assert cli._parser().parse_args(["download"]).identity is None
+    assert cli._parser().parse_args(["status", "--remote"]).identity is None
     with pytest.raises(SystemExit) as err_cleanup:
         cli.main(["cleanup"])
     assert err_cleanup.value.code == 2
