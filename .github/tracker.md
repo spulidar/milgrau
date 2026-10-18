@@ -727,4 +727,20 @@ match a file after manual renaming.
 - [ ] Validate repaired `20241008spu1650` cache and full 18-packet
   `upload --dry-run` before any authorized single-ID reattempt.
 
+**SCC sounding-repair bulk usability (operator request, 2026-10-18):**
+The original `milgrau-scc sounding-repair` required `--id` and
+a protected/corrupt ID interrupted repairs across the other stages.
+It now accepts an **optional** `--id`. Without it,
+`sounding-repair --dry-run` and `--confirm` traverse all complete
+pending stage directories in deterministic order, report each
+`CURRENT/REPAIRABLE/REPAIRED/BLOCKED/ERROR`, and print totals.
+Any unverified checksum or journal-protected ID is isolated to
+that ID rather than aborting work on unrelated IDs; the summary
+exits nonzero if actual `ERROR` items occurred.
+The same per-ID atomic backup and verification remains in place.
+No code path requests SCC remote upload, DELETE, or clears durable
+`uncertain` journal state. Tests cover four mixed statuses and
+continuation, old existing repaired packets and single-ID and
+bulk no-network paths.
+
 **Gate 12.7:** End-to-end SCC interoperability confirmed with real responses.
