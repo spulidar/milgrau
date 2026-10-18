@@ -8,6 +8,9 @@ reset an uncertain/accepted submission. Preserve the preimage for audit.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+from collections.abc import Callable
+
 import json
 import shutil
 import tempfile
@@ -21,6 +24,84 @@ from milgrau.level0.scc_staging import pending_scc_package, scc_raw_filename
 from milgrau.provenance import file_sha256
 from milgrau.scc.packages import validate_upload_package
 from milgrau.scc.state import SubmissionStore, operation_lock, state_root
+
+
+class SCCSoundingRepairBlocked(ValueError):
+    """This ID has durable remote submission provenance, so repair is read-only."""
+
+
+@dataclass
+class SoundingRepairReport:
+    """A batch must report every ID even if one remains invalid or protected."""
+
+    total: int
+    repaired: int = 0
+    repairable: int = 0
+    current: int = 0
+    blocked: int = 0
+    failed: int = 0
+    results: list[str] = field(default_factory=list)
+
+    @property
+    def successful(self) -> bool:
+        # BLOCKED entries are preserved intentionally; they do not prevent
+        # safely processing unrelated local SCC packages.
+        return self.failed == 0
+
+
+def repair_sounding_names(
+    config: Mapping[str, Any],
+    identity: str | None = None,
+    *,
+    confirm: bool = False,
+    report_line: Callable[[str], None] = print,
+) -> SoundingRepairReport:
+    """Process one or all staged IDs independently, without SCC network calls.
+
+    Invalid or journal-protected packets are reported individually rather
+    than aborting corrections to unrelated IDs. Nothing attempts remote
+    upload, deletion, retry, or a journal state reset.
+    """
+    from milgrau.scc.packages import discover_pending
+
+    paths = discover_pending(config, identity)
+    report = SoundingRepairReport(total=len(paths))
+    if not paths:
+        report_line("No local SCC pending packages to inspect.")
+        return report
+    for index, path in enumerate(paths, start=1):
+        try:
+            message = repair_sounding_name(
+                config, path.name, confirm=confirm,
+            )
+        except SCCSoundingRepairBlocked as exc:
+            report.blocked += 1
+            message = f"BLOCKED {path.name}: {exc}"
+        except Exception as exc:
+            report.failed += 1
+            message = f"ERROR {path.name}: {type(exc).__name__}: {exc}"
+        else:
+            status = message.partition(" ")[0]
+            if status == "REPAIRED":
+                report.repaired += 1
+            elif status == "REPAIRABLE":
+                report.repairable += 1
+            elif status == "CURRENT":
+                report.current += 1
+            else:
+                report.failed += 1
+                message = f"ERROR {path.name}: unexpected repair result: {message}"
+        line = f"[{index}/{report.total}] {message}"
+        report.results.append(line)
+        report_line(line)
+    report_line(
+        "SCC sounding repair: "
+        f"total={report.total}; repaired={report.repaired}; "
+        f"repairable={report.repairable}; current={report.current}; "
+        f"blocked={report.blocked}; errors={report.failed}; "
+        "offline only; no SCC POST/DELETE or journal changes."
+    )
+    return report
 
 
 def _validate_legacy(path: Path, identity: str) -> tuple[dict[str, Any], str, str]:
@@ -98,18 +179,18 @@ def repair_sounding_name(
     root = state_root(config)
     archive = stage.parent.parent / "legacy-sounding" / identity
     with operation_lock(root, identity), SubmissionStore(root) as journal:
-        if journal.get(identity) is not None:
-            raise ValueError(
-                f"{identity} already has SCC submission history. "
-                "Do not revise its pending files until the remote POST "
-                "and journal are reconciled separately."
-            )
         try:
             validate_upload_package(stage)
         except Exception:
             pass
         else:
             return f"CURRENT {identity}: sounding filename and hashes already valid"
+        if journal.get(identity) is not None:
+            raise SCCSoundingRepairBlocked(
+                f"{identity} has a durable SCC submission record. "
+                "Local repair cannot silently change submitted bytes. "
+                "Reconcile remote state separately."
+            )
         original, actual, correct = _validate_legacy(stage, identity)
         if not confirm:
             return (
