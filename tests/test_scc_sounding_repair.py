@@ -90,7 +90,7 @@ def test_repair_rejects_uncertain_or_accepted_journal(tmp_path):
         # Use the raw and LR hashes recorded before the operator's rename.
         journal.begin(json.loads(preimage))
         journal.transition(ID, "uncertain", action="upload_result_uncertain")
-    with pytest.raises(ValueError, match="submission history"):
+    with pytest.raises(ValueError, match="durable SCC submission record"):
         repair_sounding_name(cfg, ID, confirm=True)
     assert (path / "manifest.json").read_bytes() == preimage
     assert not (path.parent.parent / "legacy-sounding" / ID).exists()
@@ -103,3 +103,61 @@ def test_repair_refuses_tampered_raw_not_covered_by_manifest(tmp_path):
     with pytest.raises(ValueError, match="checksum/size mismatch"):
         repair_sounding_name(cfg, ID, confirm=True)
     assert not (path.parent.parent / "legacy-sounding" / ID).exists()
+
+
+def test_bulk_offline_repairs_continue_after_blocked_and_invalid_ids(
+    tmp_path, monkeypatch, capsys,
+) -> None:
+    from milgrau.scc import packages, sounding_repair
+
+    ids = [
+        "20241008spu1650", "20241127spu1600",
+        "20241220spu0414", "20250114spu0419",
+    ]
+    paths = [tmp_path / identity for identity in ids]
+    monkeypatch.setattr(
+        packages, "discover_pending",
+        lambda cfg, identity=None: (
+            paths if identity is None else [p for p in paths if p.name == identity]
+        ),
+    )
+    visited = []
+    def fake_repair(cfg, identity, *, confirm=False):
+        visited.append((identity, confirm))
+        if identity == ids[0]:
+            raise sounding_repair.SCCSoundingRepairBlocked("Remote journal present")
+        if identity == ids[1]:
+            return f"REPAIRED {identity}: valid old sounding moved"
+        if identity == ids[2]:
+            raise ValueError("Unverified sounding bytes")
+        return f"CURRENT {identity}: already valid"
+
+    monkeypatch.setattr(sounding_repair, "repair_sounding_name", fake_repair)
+    monkeypatch.setattr(cli, "load_config", lambda: _config(tmp_path))
+    monkeypatch.setattr(
+        cli, "_client", lambda _: pytest.fail("Offline repair must never connect to SCC"),
+    )
+    assert cli.main(["sounding-repair", "--confirm"]) == 1
+    out = capsys.readouterr().out
+    assert "blocked=1" in out and "repaired=1" in out
+    assert "current=1" in out and "errors=1" in out
+    assert len(visited) == 4
+    assert visited == [(identity, True) for identity in ids]
+    # A failure does not convert a batch into a remote operation.
+    assert cli.main(["sounding-repair", "--dry-run"]) == 1
+    assert visited[-4:] == [(identity, False) for identity in ids]
+
+
+def test_bulk_offline_real_package_works_without_id(tmp_path, monkeypatch, capsys):
+    cfg, path, _, new = _old_stage(tmp_path)
+    monkeypatch.setattr(cli, "load_config", lambda: cfg)
+    monkeypatch.setattr(
+        cli, "_client", lambda _: pytest.fail("Offline repair must not connect to SCC"),
+    )
+    assert cli.main(["sounding-repair", "--dry-run"]) == 0
+    assert "repairable=1" in capsys.readouterr().out
+    assert cli.main(["sounding-repair", "--confirm"]) == 0
+    assert "repaired=1" in capsys.readouterr().out
+    assert validate_upload_package(path)["files"][new]["sha256"]
+    assert cli.main(["sounding-repair", "--confirm"]) == 0
+    assert "current=1" in capsys.readouterr().out
