@@ -425,6 +425,23 @@ def test_remote_status_can_outlive_deleted_local_cache(
     assert f"remote {IDENTITY}" in text
 
 
+def test_remote_status_survives_corrupted_local_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
+) -> None:
+    pending = _stage(tmp_path)
+    # A half-finished manual rename must not prevent remote diagnosis.
+    (pending / f"{IDENTITY}.nc").write_bytes(b"locally damaged")
+    fake = FakeSession(duplicate=True)
+    monkeypatch.setattr(cli, "load_config", lambda: _config(tmp_path))
+    monkeypatch.setattr(cli, "_client", lambda _: _client(fake))
+    assert cli.main(["status", "--id", IDENTITY, "--remote"]) == 1
+    out = capsys.readouterr()
+    assert "invalid pending package" in out.err
+    assert f"remote {IDENTITY}: present" in out.out
+    assert all(not url.endswith("/quick/") and not url.endswith("/delete/")
+               for url, _ in fake.posts)
+
+
 def test_read_only_status_backup_does_not_upload_or_delete(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
 ) -> None:
