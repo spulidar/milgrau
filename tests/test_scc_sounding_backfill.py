@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
-from pathlib import Path
 
 import netCDF4 as nc
 import pytest
@@ -15,7 +13,7 @@ from milgrau.scc import sounding_backfill
 from milgrau.scc.packages import validate_upload_package
 from milgrau.scc.state import SubmissionStore, state_root
 
-from tests.test_scc_sounding_finalize import (
+from test_scc_sounding_finalize import (
     ID, _cached, _config, _create_stage, _l1,
 )
 
