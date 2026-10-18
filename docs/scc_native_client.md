@@ -339,7 +339,9 @@ The new `sounding` subcommand has only **dry-run** and **confirm**;
 neither opens the SCC network client nor uploads measurements. In
 preview, `READY` means L1 identifies a radiosonde observation that
 can be retrieved from the corresponding Wyoming CSV/JSON cache
-with matching station and target UTC time. `SKIP` means no eligible
+with matching station and target UTC time. The synoptic selection
+uses the **scientific session midpoint**, matching LIPANCORA's QA
+reference; it does not blindly compare against the first laser profile. `SKIP` means no eligible
 observed sounding, no L1 or a packet already finalized; it is
 left byte-for-byte intact. `BLOCKED` means any durable SQLite
 submission state already exists for the ID; it is never modified.
