@@ -325,6 +325,54 @@ the `rs_...` file **alone is insufficient**: its
 entries must also be consistent. Do not edit an accepted or journalled
 submission to force a retry.
 
+## Incident: mixed SCC batch failure after manual sounding rename
+
+After the October 18 batch, two **independent** states must be kept
+separate:
+
+- `20241008spu1650` (previously skipped because it exists remotely)
+  has a **local** legacy sounding filename/manifest checksum mismatch.
+  Do not run the 18-ID `--replace-existing --confirm` batch merely to
+  bypass this error.
+- `20241220spu0414` attempted an SCC Quick Upload POST which returned
+  to the HTML form rather than a confirmed measurement. The client
+  correctly journalled `upload_result_uncertain` and stopped the
+  remaining 15 IDs. The exact remote outcome must be checked through
+  `milgrau-scc status --id 20241220spu0414 --remote` and SCC portal
+  before any further remote attempt. Local filename repair does **not**
+  clear that durable uncertainty or authorize a second POST.
+
+For a locally inconsistent **unjournalled** package from the old
+`rs_<Measurement_ID>.nc` generation, a single-ID offline repair is
+available:
+
+```bash
+milgrau-scc sounding-repair --id 20241008spu1650 --dry-run
+milgrau-scc sounding-repair --id 20241008spu1650 --confirm
+milgrau-scc upload --dry-run
+```
+
+The repair accepts only the specific old sounding name and requires
+the old SHA-256 and byte size **still match the original manifest**,
+even if the operator has already moved the sounding to the short name
+manually. It validates the raw NetCDF's `Measurement_ID` and
+`Molecular_Calc`, and allows only an old or new
+`Sounding_File_Name` matching that measurement. It creates a
+candidate staging directory and changes just the filename reference
+and raw file hash; the observed sounding and LR bytes are unchanged.
+It verifies the complete candidate before publication, moves the old
+folder into `.cache/scc/legacy-sounding/<ID>` as a durable preimage,
+and performs an atomic rename with rollback if validation fails.
+**Any existing SCC journal row** (including uncertain, accepted and
+downloaded) blocks this operation. If the raw NetCDF has already
+been manually edited without updating the manifest checksum, this
+repair deliberately fails closed: inspect/recover the original copy,
+rather than overwriting unverified provenance.
+
+Even after the local dry-run is green, **do not repeat the batch until
+the `20241220spu0414` uncertain remote upload has been explicitly
+reconciled**. An unconfirmed POST should not be blindly retried.
+
 ## Explicit historical backfill (old pending SCC packets after LIPANCORA)
 
 Older pending packets staged before the two-stage LIBIDS/LIPANCORA
