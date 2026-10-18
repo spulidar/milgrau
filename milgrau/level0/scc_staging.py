@@ -169,10 +169,12 @@ def validate_pending_scc_package(path: Path) -> dict[str, Any]:
     if not isinstance(files, dict):
         raise ValueError("SCC package has no files mapping.")
     raw_name = manifest_raw_name(manifest)
+    from milgrau.level0.scc_sounding import scc_sounding_name
+
     for name, entry in files.items():
         if Path(name).name != name or name not in {
             raw_name, f"lr_{path.name}.nc", f"lr_{path.name[:13]}.nc",
-            f"rs_{path.name}.nc",
+            scc_sounding_name(path.name),
         }:
             raise ValueError(f"Unsafe/unexpected SCC staged filename: {name!r}.")
         file_path = path / name
