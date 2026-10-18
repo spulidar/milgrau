@@ -75,7 +75,7 @@ def test_observed_wyoming_cache_produces_scc_soundings_exact_schema(tmp_path) ->
     staging = tmp_path / ID
     staging.mkdir()
     output = stage_cached_sounding(staging, ID, START, cfg)
-    assert output == staging / f"rs_{ID}.nc"
+    assert output == staging / f"rs_{ID[:13]}.nc"
     assert validate_sounding(output, identity=ID)["points"] == 5
     with nc.Dataset(output) as ds:
         assert ds.file_format == "NETCDF4_CLASSIC"
@@ -154,7 +154,7 @@ def test_unphysical_pressure_fails_closed(tmp_path) -> None:
     assert list(stage.iterdir()) == []
 
 
-def test_sounding_id_filename_is_not_shortened_like_lr(tmp_path) -> None:
-    assert scc_sounding_name(ID) == f"rs_{ID}.nc"
+def test_sounding_filename_follows_scc_two_digit_suffix(tmp_path) -> None:
+    assert scc_sounding_name(ID) == "rs_20240913spu15.nc"
     with pytest.raises(ValueError, match="Unsafe"):
         scc_sounding_name("../fake")
