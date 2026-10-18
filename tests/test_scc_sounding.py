@@ -90,6 +90,27 @@ def test_observed_wyoming_cache_produces_scc_soundings_exact_schema(tmp_path) ->
         assert ds.getncattr("Altitude_meter_asl") == 722.0
 
 
+def test_sounding_uses_lipancora_session_midpoint_not_first_laser_time(tmp_path) -> None:
+    cfg = config(tmp_path)
+    cached_csv(cfg)  # 12Z sounding exists, 00Z sounding does not.
+    stage = tmp_path / ID
+    stage.mkdir()
+    output = stage_cached_sounding(
+        stage, ID, "2024-09-13T04:19:00+00:00", cfg,
+        observed_target_utc="2024-09-13T12:00:00+00:00",
+        measurement_stop_utc="2024-09-13T18:19:00+00:00",
+    )
+    assert output is not None
+    assert validate_sounding(output, identity=ID)["points"] == 5
+    # Without the stop time, the nearest launch to 04:19Z is 00Z;
+    # a 12Z observed QA must not be silently substituted.
+    with pytest.raises(ValueError, match="No matching LIPANCORA"):
+        stage_cached_sounding(
+            stage, ID, "2024-09-13T04:19:00+00:00", cfg,
+            observed_target_utc="2024-09-13T12:00:00+00:00",
+        )
+
+
 def test_sounding_is_off_by_default_and_never_downloads_or_fakes(tmp_path) -> None:
     cfg = config(tmp_path, enabled=False)
     stage = tmp_path / ID
