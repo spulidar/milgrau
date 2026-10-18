@@ -302,6 +302,7 @@ def _status(config: dict[str, Any], args: argparse.Namespace) -> int:
     packages = discover_pending(config)
     if args.identity is not None:
         packages = [path for path in packages if path.name == args.identity]
+    local_errors = 0
     for path in packages:
         try:
             manifest = validate_upload_package(path)
@@ -310,8 +311,10 @@ def _status(config: dict[str, Any], args: argparse.Namespace) -> int:
                 f"{manifest['scc_configuration_id']}); local integrity OK"
             )
         except Exception as exc:
+            local_errors += 1
             print(f"invalid pending package {path.name}: {exc}", file=sys.stderr)
-            return 1
+    # Remote status is read-only and must remain available even if local
+    # staged files are corrupted or were manually renamed incompletely.
     if not packages:
         print("No matching local SCC pending packets.")
     from milgrau.scc.state import SubmissionStore, state_root
@@ -367,7 +370,7 @@ def _status(config: dict[str, Any], args: argparse.Namespace) -> int:
                         "ATTENTION: journal remains uncertain; no automatic "
                         "retry or replacement is permitted."
                     )
-    return 0
+    return 1 if local_errors else 0
 
 
 def _download(config: dict[str, Any], args: argparse.Namespace) -> int:
