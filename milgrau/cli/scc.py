@@ -55,6 +55,21 @@ def _parser() -> argparse.ArgumentParser:
         help="Authorize SCC upload: one --id, or all local pending IDs sequentially if --id omitted.",
     )
 
+    sounding = sub.add_parser(
+        "sounding",
+        help="Preview or explicitly add LIPANCORA-observed soundings to legacy pending packets (offline).",
+    )
+    sounding.add_argument("--id", dest="identity", help="Optional single SCC Measurement_ID.")
+    sounding_action = sounding.add_mutually_exclusive_group(required=True)
+    sounding_action.add_argument(
+        "--dry-run", action="store_true",
+        help="Inspect legacy packages/L1 cache, no changes to pending files or SCC.",
+    )
+    sounding_action.add_argument(
+        "--confirm", action="store_true",
+        help="Update eligible unsubmitted cache packets from verified L1 observations (no SCC requests).",
+    )
+
     status = sub.add_parser("status", help="List local pending packets or query remote SCC.")
     status.add_argument("--id", dest="identity", help="Filter by Measurement_ID.")
     status.add_argument(
@@ -237,6 +252,25 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
     return 0
 
 
+def _sounding(config: dict[str, Any], args: argparse.Namespace) -> int:
+    from milgrau.scc.sounding_backfill import backfill_pending_soundings
+
+    report, code = backfill_pending_soundings(
+        config, identity=args.identity, confirm=args.confirm,
+    )
+    counts: dict[str, int] = {}
+    for item in report:
+        print(f"{item.status} {item.identity}: {item.reason}")
+        counts[item.status] = counts.get(item.status, 0) + 1
+    summary = ", ".join(f"{key.lower()}={val}" for key, val in sorted(counts.items()))
+    print(
+        f"SCC sounding {'backfill' if args.confirm else 'preview'}: "
+        f"total={len(report)}; {summary or 'none'}. "
+        "No SCC network calls, no submission journal changes."
+    )
+    return code
+
+
 def _status(config: dict[str, Any], args: argparse.Namespace) -> int:
     if args.remote and not args.identity:
         raise ValueError("Remote status requires --id MEASUREMENT_ID.")
@@ -370,6 +404,8 @@ def main(argv: list[str] | None = None) -> int:
             )
         if args.command == "upload":
             return _upload(config, args)
+        if args.command == "sounding":
+            return _sounding(config, args)
         if args.command == "status":
             return _status(config, args)
         if args.command == "download":
