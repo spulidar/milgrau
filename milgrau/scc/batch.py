@@ -1,7 +1,7 @@
 """Sequential SCC batch submissions with explicit destructive-replacement opt-in.
 
-All staged packages pass offline integrity checks BEFORE any live SCC request.
-A timeout, unknown remote outcome or per-ID journal conflict stops the batch;
+Every staged package is preflighted offline; invalid IDs are excluded from live SCC requests.
+A timeout, unknown remote outcome or per-ID journal conflict stops by default;
 never retry a POST or DELETE automatically, and never remove staging files.
 """
 
@@ -24,6 +24,7 @@ class BatchReport:
     identical: int = 0
     skipped_existing: int = 0
     failed: int = 0
+    invalid: int = 0
     stopped_at: str | None = None
     error: str | None = None
 
@@ -45,14 +46,16 @@ def submit_batch(
     client: Any,
     *,
     replace_existing: bool = False,
+    continue_on_error: bool = False,
     report_line: Callable[[str], None] = print,
 ) -> BatchReport:
     """Batch one at a time; never treat an existing SCC ID as upload ownership.
 
-    Default: submit absent IDs and skip remote-existing IDs without modifying
+    Default: submit absent valid IDs and skip remote-existing IDs without modifying
     their local journal. With replace_existing, invoke the same exact-ID,
-    backup-before-delete workflow as the single-upload command. No best-effort
-    continue after errors; stop and print a resumable report.
+    backup-before-delete workflow as the single-upload command. Invalid IDs
+    are always skipped; optional continue_on_error proceeds to independent IDs
+    after remote errors without clearing their durable blocked journal.
     """
     packages = sorted(packages, key=lambda path: path.name)
     report = BatchReport(total=len(packages))
@@ -60,52 +63,51 @@ def submit_batch(
         report_line("No local pending SCC packets.")
         return report
 
-    # All-or-nothing OFFLINE validation: one invalid file prevents any upload.
+    # Validate every package without turning an unrelated bad cache entry
+    # into a global blocker. Do NOT issue remote requests for invalid IDs.
     manifest_by_id: dict[str, dict[str, Any]] = {}
+    invalid_ids: set[str] = set()
     for path in packages:
         try:
             manifest = validate_upload_package(path)
+            identity = str(manifest["measurement_id"])
+            if identity in manifest_by_id:
+                raise ValueError("Duplicate staged SCC Measurement_ID.")
+            manifest_by_id[identity] = manifest
         except Exception as exc:
             report_line(
-                f"PRECHECK INVALID {path.name}: {type(exc).__name__}: {exc}. "
-                "No network request or submission was made by this batch."
+                f"PRECHECK INVALID {path.name}: {type(exc).__name__}: {exc}; "
+                "this ID will not be uploaded."
             )
-            report.failed = 1
-            report.stopped_at = path.name
-            report.error = str(exc)
-            return report
-        identity = str(manifest["measurement_id"])
-        if identity in manifest_by_id:
-            report.failed = 1
-            report.stopped_at = identity
-            report.error = "Repeated SCC Measurement_ID in staged package inventory."
-            report_line(f"PRECHECK INVALID {identity}: {report.error}")
-            return report
-        manifest_by_id[identity] = manifest
-
+            invalid_ids.add(path.name)
+            report.failed += 1
+            report.invalid += 1
     report_line(
-        f"Preflight OK: {len(packages)}/{len(packages)} local packages. "
-        "Live SCC operations will execute sequentially."
+        f"Preflight: {len(packages) - report.invalid}/{len(packages)} "
+        "local packages valid; invalid IDs will be skipped."
     )
     root = state_root(config)
     for index, path in enumerate(packages, start=1):
-        identity = str(manifest_by_id[path.name]["measurement_id"])
+        identity = path.name
         prefix = f"[{index}/{len(packages)}] {identity}"
+        if identity in invalid_ids:
+            continue
         try:
             with SubmissionStore(root) as store:
                 journal = store.get(identity)
-                if journal is not None and journal["state"] in BLOCKED_RESTART:
-                    raise RuntimeError(
-                        f"Local SCC journal state={journal['state']} is unsafe "
-                        "for automatic continuation. Reconcile this ID manually."
-                    )
-            # Classify remote without claiming that an externally-created
-            # SCC measurement was uploaded by this local client.
+            # Existing remote measurements are a safe read-only no-op when
+            # no replacement was requested, regardless of old journal state.
+            # Querying SCC cannot reset an uncertain operation.
             existing = client.measurement(identity)
             if existing is not None and not replace_existing:
                 report.skipped_existing += 1
                 report_line(f"{prefix}: SKIPPED — already exists on SCC (unchanged).")
                 continue
+            if journal is not None and journal["state"] in BLOCKED_RESTART:
+                raise RuntimeError(
+                    f"Local SCC journal state={journal['state']} needs "
+                    "single-ID reconciliation before any POST/DELETE."
+                )
             if existing is None and journal is not None and journal["state"] in {
                 "accepted", "processing", "completed", "downloaded", "cleaned",
             }:
@@ -136,5 +138,10 @@ def submit_batch(
                 f"{prefix}: STOPPED — {type(exc).__name__}: {exc}. "
                 "No further IDs will be processed; inspect status/journal first."
             )
-            break
+            if not continue_on_error:
+                break
+            report_line(
+                f"{prefix}: other IDs may continue under --continue-on-error; "
+                "this ID remains blocked."
+            )
     return report
