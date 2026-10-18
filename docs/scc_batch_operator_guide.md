@@ -25,7 +25,8 @@ milgrau-lipancora
 milgrau-scc upload --dry-run
 milgrau-scc status
 
-# Read-only remote check for an exact ID:
+# Read-only remote checks: all locally known IDs, or one specific ID:
+milgrau-scc status --remote
 milgrau-scc status --id MEASUREMENT_ID --remote
 
 # One new/absent ID (preferred for an SCC sounding smoke test):
@@ -105,9 +106,26 @@ manually to bypass its known provenance.
 ## Result download and retained cache
 
 ```bash
+milgrau-scc status --remote
+milgrau-scc download
+
+# For one specific ID:
 milgrau-scc status --id MEASUREMENT_ID --remote
 milgrau-scc download --id MEASUREMENT_ID --keep-cache
 ```
+
+In bulk mode, the ID list is the union of locally staged
+`.cache/scc/pending/` packets and durable `.state/scc` journal
+submissions. This is **not an SCC-wide station crawl**. Remote lookups
+continue past other IDs if one fails, and show a final summary.
+Bulk download fetches only records with ELPP and ELDA both completed
+(code 127), skips absent/unready records, reports independent failures,
+and **always retains pending input cache** (even when an old local
+config still has `cleanup.policy: after_download`).
+Previously downloaded verified remote generations are reused.
+A locally staged ID without a submission journal can also be
+downloaded by resolving its scientific Session_ID from a verified
+local manifest. No batch operation sends SCC POST or DELETE.
 
 Keep `scc.cleanup.policy: manual` in your **local**
 `config.yaml`; local configurations previously using
