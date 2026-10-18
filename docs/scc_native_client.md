@@ -273,8 +273,8 @@ ERA5/USSA76, or modify the scientific L1 itself.
 
 For an eligible observed sounding, the SCC-only raw NetCDF is updated
 with `Molecular_Calc=1` and
-`Sounding_File_Name=rs_<Measurement_ID>.nc`. A new
-`rs_<Measurement_ID>.nc` with station-relative altitude (m),
+`Sounding_File_Name=rs_YYYYMMDDcccNN.nc`. A new
+`rs_YYYYMMDDcccNN.nc` with station-relative altitude (m),
 temperature (°C), pressure (hPa), original synoptic launch
 time and radiosonde launch-site metadata is added. SHA-256 hashes in
 the manifest are updated. The change occurs via an isolated temporary
@@ -287,7 +287,7 @@ When no matching valid observed sounding is available, the policy
 `missing_policy: skip` finalizes the packet as
 `sounding_stage: skipped_missing`, retaining `Molecular_Calc=0`,
 or `missing_policy: fail` blocks completion until resolved.
-`sounding_stage: ready` includes the verified `rs_...` file.
+`sounding_stage: ready` includes the verified `rs_YYYYMMDDcccNN.nc` file.
 `milgrau-scc upload --dry-run` prevents uploads while a packet
 is still `awaiting_lipancora`.
 
@@ -313,6 +313,18 @@ or call `milgrau-scc download --id ID --keep-cache`.
 First validate one new measurement and the remote processing output
 before authorizing a multi-ID batch.
 
+**SCC sounding filename requirement:** Quick Upload rejects the complete
+Measurement_ID suffix in a sounding filename. For example,
+`20241008spu1650` is uploaded with `rs_20241008spu16.nc`
+(not `rs_20241008spu1650.nc`). The sounding's basename is
+validated at package creation and again immediately before upload.
+For locally prepared packets created before this fix, manually renaming
+the `rs_...` file **alone is insufficient**: its
+`Sounding_File_Name` raw-NetCDF attribute, the corresponding
+`manifest.json.files` key, and the raw/sounding SHA-256 and file-size
+entries must also be consistent. Do not edit an accepted or journalled
+submission to force a retry.
+
 ## Explicit historical backfill (old pending SCC packets after LIPANCORA)
 
 Older pending packets staged before the two-stage LIBIDS/LIPANCORA
@@ -331,7 +343,7 @@ milgrau-scc sounding --id 20241008spu1650 --dry-run
 # Explicitly backfill every eligible historical pending packet, offline:
 milgrau-scc sounding --confirm
 
-# Final integrity validation (shows rs_<ID>.nc for eligible packets):
+# Final integrity validation (shows rs_YYYYMMDDcccNN.nc for eligible packets):
 milgrau-scc upload --dry-run
 ```
 
@@ -352,7 +364,7 @@ With `--confirm`, only READY unsubmitted packets are revised,
 using the atomic temporary directory/rollback safeguards. The
 scientific L0, L1, original Licel inputs, L1 atmospheric data,
 and LR file remain unchanged. The SCC-specific raw `<ID>.nc`
-gains `Sounding_File_Name=rs_<ID>.nc` and `Molecular_Calc=1`;
+gains `Sounding_File_Name=rs_YYYYMMDDcccNN.nc` and `Molecular_Calc=1`;
 the new observed sounding and revised raw hashes are recorded in
 `manifest.json`. Its original SCC catalog hash remains recorded;
 the backfill's current catalog hash is stored separately to avoid
