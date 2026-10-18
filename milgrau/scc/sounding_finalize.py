@@ -141,6 +141,7 @@ def _finalize_one(
                 sounding = stage_cached_sounding(
                     temp, identity, manifest["measurement_start_utc"], config,
                     observed_target_utc=qa_target,
+                    measurement_stop_utc=manifest["measurement_stop_utc"],
                 )
             if sounding is None and legacy:
                 # Historical packages stay byte-for-byte unchanged when no
