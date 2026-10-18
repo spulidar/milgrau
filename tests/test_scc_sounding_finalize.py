@@ -120,11 +120,11 @@ def test_lipancora_finalizes_observed_sounding_then_upload_validation_passes(tmp
     assert result == [f"{ID}: observed sounding attached"]
     manifest = validate_upload_package(path)
     assert manifest["sounding_stage"] == "ready"
-    assert manifest["files"][f"rs_{ID}.nc"]["sha256"]
+    assert manifest["files"][f"rs_{ID[:13]}.nc"]["sha256"]
     assert file_sha256(path / f"lr_{ID[:13]}.nc") == original_lr
     assert manifest["files"][f"{ID}.nc"]["sha256"] != before["files"][f"{ID}.nc"]["sha256"]
     with nc.Dataset(path / f"{ID}.nc") as ds:
-        assert ds.getncattr("Sounding_File_Name") == f"rs_{ID}.nc"
+        assert ds.getncattr("Sounding_File_Name") == f"rs_{ID[:13]}.nc"
         assert ds.variables["Molecular_Calc"].getValue() == 1
     assert finalize_session_soundings(l0, l1, cfg, logging.getLogger(__name__)) == []
     assert not (path.parent / f".{ID}.before-sounding").exists()
@@ -138,7 +138,7 @@ def test_missing_l1_observation_skips_without_fake_profile(tmp_path) -> None:
         f"{ID}: no observed sounding (allowed)"
     ]
     assert validate_upload_package(path)["sounding_stage"] == "skipped_missing"
-    assert not (path / f"rs_{ID}.nc").exists()
+    assert not (path / f"rs_{ID[:13]}.nc").exists()
     with nc.Dataset(path / f"{ID}.nc") as ds:
         assert ds.variables["Molecular_Calc"].getValue() == 0
         assert "Sounding_File_Name" not in ds.ncattrs()
