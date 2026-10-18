@@ -75,6 +75,7 @@ def inspect_legacy_sounding(
                 sounding = stage_cached_sounding(
                     Path(tmp), identity, manifest["measurement_start_utc"],
                     config, observed_target_utc=selected,
+                    measurement_stop_utc=manifest["measurement_stop_utc"],
                 )
             except (ValueError, KeyError, OSError) as exc:
                 return SoundingCandidate(identity, "SKIP", f"Observed cache unusable: {exc}")
