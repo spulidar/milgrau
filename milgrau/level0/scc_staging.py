@@ -108,6 +108,14 @@ def write_scc_manifest(
     source_measurement_files: list[str] | None = None,
 ) -> dict[str, Any]:
     """Write a local handoff manifest with checksums of the actual upload bytes."""
+    if sounding_name is not None:
+        from milgrau.level0.scc_sounding import scc_sounding_name
+
+        expected_sounding = scc_sounding_name(measurement_id)
+        if sounding_name != expected_sounding:
+            raise ValueError(
+                f"SCC sounding filename must be {expected_sounding}, got {sounding_name!r}."
+            )
     names = [scc_raw_filename(measurement_id)] + (
         [] if ancillary_name is None else [ancillary_name]
     ) + ([] if sounding_name is None else [sounding_name])
