@@ -64,9 +64,9 @@ def test_backfill_historical_ready_and_preserves_l1_lr_original_digest(tmp_path,
     assert current["sounding_original_scc_config_sha256"] == old["scc_config_sha256"]
     assert file_sha256(path / f"lr_{ID[:13]}.nc") == first_lr_sha
     assert file_sha256(l1) == first_l1_sha
-    assert (path / f"rs_{ID}.nc").exists()
+    assert (path / f"rs_{ID[:13]}.nc").exists()
     with nc.Dataset(path / f"{ID}.nc") as raw:
-        assert raw.getncattr("Sounding_File_Name") == f"rs_{ID}.nc"
+        assert raw.getncattr("Sounding_File_Name") == f"rs_{ID[:13]}.nc"
         assert raw.variables["Molecular_Calc"].getValue() == 1
     again, code = sounding_backfill.backfill_pending_soundings(cfg, confirm=True)
     assert code == 0 and again[0].status == "SKIP"
@@ -85,7 +85,7 @@ def test_absent_l1_observation_leaves_historical_cache_unchanged(tmp_path, monke
     assert code == 0 and report[0].status == "SKIP"
     assert (path / "manifest.json").read_bytes() == initial
     assert file_sha256(path / f"{ID}.nc") == raw_sha
-    assert not (path / f"rs_{ID}.nc").exists()
+    assert not (path / f"rs_{ID[:13]}.nc").exists()
 
 
 def test_existing_journal_blocks_backfill_and_leaves_everything_untouched(
