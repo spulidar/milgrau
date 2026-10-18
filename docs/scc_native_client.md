@@ -313,6 +313,56 @@ or call `milgrau-scc download --id ID --keep-cache`.
 First validate one new measurement and the remote processing output
 before authorizing a multi-ID batch.
 
+## Explicit historical backfill (old pending SCC packets after LIPANCORA)
+
+Older pending packets staged before the two-stage LIBIDS/LIPANCORA
+handoff have `sounding_stage: not_requested` (or no stage entry).
+Running LIPANCORA does **not** implicitly change them. To prepare
+such packets from **existing** validated L1 observations without
+reprocessing LIBIDS/LIPANCORA or contacting SCC:
+
+```bash
+# Preview each historical Measurement_ID and its source L1/observational QA:
+milgrau-scc sounding --dry-run
+
+# Optional single-ID preview:
+milgrau-scc sounding --id 20241008spu1650 --dry-run
+
+# Explicitly backfill every eligible historical pending packet, offline:
+milgrau-scc sounding --confirm
+
+# Final integrity validation (shows rs_<ID>.nc for eligible packets):
+milgrau-scc upload --dry-run
+```
+
+The new `sounding` subcommand has only **dry-run** and **confirm**;
+neither opens the SCC network client nor uploads measurements. In
+preview, `READY` means L1 identifies a radiosonde observation that
+can be retrieved from the corresponding Wyoming CSV/JSON cache
+with matching station and target UTC time. `SKIP` means no eligible
+observed sounding, no L1 or a packet already finalized; it is
+left byte-for-byte intact. `BLOCKED` means any durable SQLite
+submission state already exists for the ID; it is never modified.
+`ERROR` identifies invalid/inconsistent scientific provenance or
+staging and prevents changes.
+
+With `--confirm`, only READY unsubmitted packets are revised,
+using the atomic temporary directory/rollback safeguards. The
+scientific L0, L1, original Licel inputs, L1 atmospheric data,
+and LR file remain unchanged. The SCC-specific raw `<ID>.nc`
+gains `Sounding_File_Name=rs_<ID>.nc` and `Molecular_Calc=1`;
+the new observed sounding and revised raw hashes are recorded in
+`manifest.json`. Its original SCC catalog hash remains recorded;
+the backfill's current catalog hash is stored separately to avoid
+misrepresenting its original production provenance.
+
+**This is a local preparation step, not remote validation.**
+IDs already submitted (including the accepted
+`20240913spu1549`) are protected. Some of the remaining historical
+packets may have no existing radiosonde observation; do not invent
+a sounding or force it into the cache. Test *one* READY/new remote ID
+after the local preview/backfill, before running any bulk SCC upload.
+
 ## Phase 12.6 — Verified results and disposable cache cleanup
 
 SCC results are explicitly **external scientific outputs**, not replacements
