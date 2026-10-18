@@ -19,6 +19,11 @@ def _parser() -> argparse.ArgumentParser:
     upload = sub.add_parser("upload", help="Validate or explicitly submit an SCC packet.")
     upload.add_argument("--id", dest="identity", help="Exact 15-character SCC Measurement_ID.")
     upload.add_argument(
+        "--continue-on-error", action="store_true",
+        help="In batch mode, keep processing other IDs after an independent "
+             "validation, journal or SCC error. Never retry or unlock the failed ID.",
+    )
+    upload.add_argument(
         "--replace-existing", action="store_true",
         help="Replace existing SCC IDs only after verified backup; with no --id applies sequentially to the batch.",
     )
@@ -176,7 +181,8 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
               "no SCC network requests, raw bytes or LR modified.")
         return 0
     if args.repair_lr_cache:
-        if args.replace_existing or args.resume_after_delete or args.retry_after_upload:
+        if (args.replace_existing or args.resume_after_delete
+                or args.retry_after_upload or args.retry_after_lr_fix):
             raise ValueError("Local LR cache repair cannot authorize any SCC operation.")
         from milgrau.scc.lr_repair import repair_lr_cache
 
@@ -196,6 +202,8 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
             "--replace-existing must be used with --confirm; "
             "offline --dry-run does not inspect remote SCC IDs."
         )
+    if args.continue_on_error and (not args.confirm or args.identity):
+        raise ValueError("--continue-on-error is only for a confirmed batch upload.")
     if args.confirm and args.identity and len(packages) != 1:
         raise ValueError("Single-ID upload requires exactly one local pending package.")
     errors = 0
@@ -220,18 +228,20 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
         report = submit_batch(
             config, [Path(path) for path in packages], _client(config),
             replace_existing=args.replace_existing,
+            continue_on_error=args.continue_on_error,
         )
         print(
             "Batch summary: "
             f"total={report.total}; submitted={report.submitted}; "
             f"replaced={report.replaced}; identical={report.identical}; "
             f"skipped_existing={report.skipped_existing}; "
-            f"failed={report.failed}; unprocessed={report.remaining}."
+            f"failed={report.failed}; invalid={report.invalid}; "
+            f"unprocessed={report.remaining}."
         )
         if report.stopped_at:
             print(
-                f"Batch stopped at {report.stopped_at}. "
-                "Review the SCC status and durable journal; do not blindly restart."
+                f"Batch encountered an error at {report.stopped_at}. "
+                "Review the SCC status and durable journal for that ID."
             )
         print("No staged cache, scientific data or durable SCC archive was removed.")
         return 0 if report.successful else 1
