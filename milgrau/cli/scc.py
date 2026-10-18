@@ -72,10 +72,11 @@ def _parser() -> argparse.ArgumentParser:
 
     repair_sounding = sub.add_parser(
         "sounding-repair",
-        help="Offline exact-ID repair of legacy sounding name/NetCDF reference/manifest hashes; refuses journalled IDs.",
+        help="Offline legacy sounding filename repair for one ID or every pending packet; "
+             "continue past individually blocked/invalid IDs.",
     )
     repair_sounding.add_argument(
-        "--id", dest="identity", required=True, help="One pending SCC Measurement_ID.",
+        "--id", dest="identity", help="Optional exact SCC Measurement_ID; omit for all pending packets.",
     )
     repair_mode = repair_sounding.add_mutually_exclusive_group(required=True)
     repair_mode.add_argument("--dry-run", action="store_true")
@@ -418,12 +419,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "sounding":
             return _sounding(config, args)
         if args.command == "sounding-repair":
-            from milgrau.scc.sounding_repair import repair_sounding_name
+            from milgrau.scc.sounding_repair import repair_sounding_names
 
-            print(repair_sounding_name(
+            report = repair_sounding_names(
                 config, args.identity, confirm=args.confirm,
-            ))
-            return 0
+            )
+            return 0 if report.successful else 1
         if args.command == "status":
             return _status(config, args)
         if args.command == "download":
