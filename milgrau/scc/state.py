@@ -158,6 +158,7 @@ class SubmissionStore:
 
     def begin(
         self, manifest: Mapping[str, Any], *, allow_new_revision: bool = False,
+        allow_same_revision: bool = False,
     ) -> dict[str, Any]:
         """Insert once; prevent changed cached bytes from silently resetting state."""
         identity = _id(str(manifest["measurement_id"]))
@@ -199,7 +200,12 @@ class SubmissionStore:
                         "replacement workflow for new contents."
                     )
             changed = any(row[key] != value for key, value in expected.items())
-            if changed:
+            if changed or (
+                allow_new_revision and allow_same_revision
+                and row["state"] in {
+                    "accepted", "processing", "completed", "downloaded", "cleaned",
+                }
+            ):
                 if not allow_new_revision:
                     raise RuntimeError(
                         f"SCC {identity} has different source bytes/period from "
