@@ -86,9 +86,10 @@ def test_batch_preflights_all_before_one_remote_request(
     report = batch.submit_batch(
         _config(tmp_path), _paths(tmp_path), client, report_line=lines.append,
     )
-    assert report.failed == 1 and report.remaining == 1
-    assert client.reads == submitted == []
-    assert "No network request" in " ".join(lines)
+    assert report.failed == 1 and report.invalid == 1 and report.remaining == 0
+    assert client.reads == [ID1]
+    assert submitted == [(ID1, False)]
+    assert "PRECHECK INVALID" in " ".join(lines)
 
 
 def test_batch_uploads_missing_and_skips_existing_without_deletion(
@@ -161,8 +162,9 @@ def test_uncertain_journal_blocks_batch_even_if_remote_exists(
     report = batch.submit_batch(
         config, _paths(tmp_path), client, report_line=lambda _: None,
     )
-    assert report.failed == 1 and report.stopped_at == ID1
-    assert client.reads == submitted == []
+    assert report.successful and report.skipped_existing == 1
+    assert client.reads == [ID1, ID2]
+    assert submitted == [(ID2, False)]
 
 
 def test_accepted_local_id_but_missing_remotely_halts_batch(
@@ -199,8 +201,42 @@ def test_nineteen_pending_are_sequential_and_cache_is_untouched(
         identity for identity in identities
         if identity not in client.existing
     ]
-    assert lines[0].startswith("Preflight OK: 19/19")
+    assert lines[0].startswith("Preflight: 19/19")
     assert lines[-1].startswith("[19/19]")
+
+
+def test_opt_in_continue_on_error_processes_independent_ids(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    submitted = _stubs(monkeypatch, fail_submit=ID1)
+    client = Client()
+    messages = []
+    report = batch.submit_batch(
+        _config(tmp_path), _paths(tmp_path), client,
+        continue_on_error=True, report_line=messages.append,
+    )
+    assert report.failed == 1 and report.submitted == 1
+    assert report.remaining == 0
+    assert submitted == [(ID1, False), (ID2, False)]
+    assert any("other IDs may continue" in message for message in messages)
+
+
+def test_one_invalid_package_no_longer_blocks_unrelated_valid_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    submitted = _stubs(monkeypatch)
+    def validate(path):
+        if path.name == ID1:
+            raise ValueError("corrupt ancillary")
+        return _manifest(path.name)
+
+    monkeypatch.setattr(batch, "validate_upload_package", validate)
+    report = batch.submit_batch(
+        _config(tmp_path), _paths(tmp_path), Client(),
+        report_line=lambda _: None,
+    )
+    assert report.invalid == 1 and report.submitted == 1
+    assert submitted == [(ID2, False)]
 
 
 def test_cli_routes_batch_without_id_and_prints_summary(
