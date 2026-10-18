@@ -695,4 +695,36 @@ multipart upload filename. This change does not retroactively alter
 operator-side cache or remotely submit files. Manual rename of an
 already-created packet must also update raw references and file hashes.
 
+**SCC batch incident + offline sounding filename repair (2026-10-18):**
+The operator ran `milgrau-scc upload --confirm` over 18 pending
+packets. IDs `20241008spu1650` and `20241127spu1600` were read-only
+skipped as already existing. `20241220spu0414` then reached a real
+multipart Quick Upload POST and the server returned to the form,
+leaving its journal `upload_result_uncertain`; the batch stopped
+without submitting the 15 later IDs. A subsequent
+`upload --replace-existing --confirm` made **no remote requests**:
+the preflight failed on `20241008spu1650` because the old
+`rs_20241008spu1650.nc` manifest entry's recorded checksum did not
+match a file after manual renaming.
+
+- [x] Introduce `milgrau-scc sounding-repair --id ID
+  --dry-run|--confirm` to reconcile *only* legacy full-ID sounding
+  names for **unjournalled** packets. It verifies original recorded
+  checksums, files and NetCDF identity, stages a correct
+  `rs_YYYYMMDDcccNN.nc`, revises the raw
+  `Sounding_File_Name` and digest, validates locally, saves the old
+  cache in `.cache/scc/legacy-sounding/ID` and atomically publishes.
+  No SCC GET/POST/DELETE or scientific L0/L1 modifications.
+- [x] Block any repairs with **any** SQLite submission journal row,
+  including uncertain/accepted. Refuse other manual content edits
+  not matched by original SHA-256 rather than rewriting hashes.
+- [x] Regression tests cover preview non-mutation, half-completed
+  physical file rename, original old physical file, journal block
+  and tamper refusal.
+- [ ] Operator: `milgrau-scc status --id 20241220spu0414 --remote`,
+  verify portal status, then reconcile the uncertain *remote*
+  upload before a second upload or any batch replacement.
+- [ ] Validate repaired `20241008spu1650` cache and full 18-packet
+  `upload --dry-run` before any authorized single-ID reattempt.
+
 **Gate 12.7:** End-to-end SCC interoperability confirmed with real responses.
