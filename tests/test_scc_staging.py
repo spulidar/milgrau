@@ -65,6 +65,26 @@ def test_complete_pending_package_and_manifest_checksum(tmp_path: Path) -> None:
         validate_pending_scc_package(target)
 
 
+def test_scc_manifest_rejects_long_sounding_filename_before_stage(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    identity = "20241008spu1650"
+    with pytest.raises(ValueError, match="rs_20241008spu16.nc"):
+        with atomic_scc_package(config, identity) as work:
+            (work / f"{identity}.nc").write_bytes(b"raw bytes")
+            write_scc_manifest(
+                work, measurement_id=identity,
+                session_id="spu_20241008-1650Z_20241008-1800Z",
+                regime="day", month_utc="202410", config_id=1047,
+                product_ids=[3683], source_segments=["seg00"],
+                profile_start_utc="2024-10-08T16:50:00Z",
+                profile_stop_utc="2024-10-08T18:00:00Z",
+                source_canonical_l0=Path("processed/session_L0.nc"),
+                config=config, ancillary_name=None,
+                sounding_name=f"rs_{identity}.nc",
+            )
+    assert not pending_scc_package(config, identity).exists()
+
+
 def test_staging_failures_leave_no_visible_or_partial_packages(tmp_path: Path) -> None:
     config = _config(tmp_path)
     with pytest.raises(RuntimeError, match="simulated"):
