@@ -196,7 +196,7 @@ def test_optional_sounding_in_multipart_and_checked_raw_reference(
     from milgrau.provenance import file_sha256
 
     folder = _stage(tmp_path)
-    sounding_name = f"rs_{IDENTITY}.nc"
+    sounding_name = f"rs_{IDENTITY[:13]}.nc"
     with nc.Dataset(folder / sounding_name, "w", format="NETCDF4_CLASSIC") as ds:
         ds.createDimension("points", 4)
         for name, values in (
