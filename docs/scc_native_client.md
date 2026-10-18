@@ -342,15 +342,33 @@ separate:
   before any further remote attempt. Local filename repair does **not**
   clear that durable uncertainty or authorize a second POST.
 
-For a locally inconsistent **unjournalled** package from the old
-`rs_<Measurement_ID>.nc` generation, a single-ID offline repair is
-available:
+For locally inconsistent **unjournalled** packets from the old
+`rs_<Measurement_ID>.nc` generation, the repair accepts either an optional
+single `--id`, or (by default) **all pending IDs**:
 
 ```bash
+# Preview all 18 staged packets without changing anything:
+milgrau-scc sounding-repair --dry-run
+
+# Fix every eligible staged packet, without remote network operations:
+milgrau-scc sounding-repair --confirm
+
+# Or use the same operation on one specific measurement:
 milgrau-scc sounding-repair --id 20241008spu1650 --dry-run
 milgrau-scc sounding-repair --id 20241008spu1650 --confirm
+
+# Always check SCC package integrity offline before any remote action:
 milgrau-scc upload --dry-run
 ```
+
+The bulk command does **not stop** when one ID has a mismatch or an SCC journal
+record. It prints `REPAIRABLE`, `REPAIRED`, `CURRENT`, `BLOCKED` or `ERROR`
+for **each** ID, with a count summary. When one or more packets return
+`ERROR`, the process exits nonzero **after checking every ID**. Journalled
+IDs that need correction are `BLOCKED` but do not prevent updating unrelated
+unjournalled packets. This removes the *whole-batch* barrier without erasing
+scientific provenance or resetting a potentially uncertain remote POST.
+An already valid journalled packet is reported as `CURRENT`; no changes are made.
 
 The repair accepts only the specific old sounding name and requires
 the old SHA-256 and byte size **still match the original manifest**,
