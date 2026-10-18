@@ -156,5 +156,8 @@ def test_unphysical_pressure_fails_closed(tmp_path) -> None:
 
 def test_sounding_filename_follows_scc_two_digit_suffix(tmp_path) -> None:
     assert scc_sounding_name(ID) == "rs_20240913spu15.nc"
+    # Regression: this exact ID previously failed Quick Upload in the SCC UI.
+    assert scc_sounding_name("20241008spu1650") == "rs_20241008spu16.nc"
+    assert scc_sounding_name("20241220spu0414") == "rs_20241220spu04.nc"
     with pytest.raises(ValueError, match="Unsafe"):
         scc_sounding_name("../fake")
