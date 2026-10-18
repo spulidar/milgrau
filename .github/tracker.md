@@ -562,7 +562,7 @@ before proceeding to a bulk upload.
 
 **Optional SCC radiosounding support (2026-10-17):**
 The SCC input specification v3.6, table 2 permits an observed
-`rs_<Measurement_ID>.nc` sounding with altitude above the sounding
+`rs_YYYYMMDDcccNN.nc` sounding with altitude above the sounding
 station, temperature (°C), pressure (hPa), latitude/longitude/altitude,
 and synoptic launch date/time. When supplied, the SCC raw file must set
 `Sounding_File_Name` and `Molecular_Calc=1`. The official
@@ -626,7 +626,7 @@ re-submission or remote deletion was performed by the changes below.
   according to explicit `skip`/`fail` policy; no ERA5/USSA76
   data are labelled as radiosonde observations.
 - [x] Atomic staged directory revision: preserve original raw/LR
-  provenance, attach validated `rs_<ID>.nc`, update raw
+  provenance, attach validated `rs_YYYYMMDDcccNN.nc`, update raw
   `Molecular_Calc` and `Sounding_File_Name`, recompute manifest
   SHA-256. Refuse changes whenever an SCC submission journal row
   already exists, or if `scc.yaml` changed after LIBIDS.
@@ -664,7 +664,7 @@ API writes.
 - [x] Missing observed soundings leave original historical packets
   unchanged (SKIP), and invalid packages stop modification (ERROR).
   A confirmed backfill produces `sounding_stage=ready`,
-  `rs_<ID>.nc`, `Sounding_File_Name`, `Molecular_Calc=1` and
+  `rs_YYYYMMDDcccNN.nc`, `Sounding_File_Name`, `Molecular_Calc=1` and
   checked SHA-256 values.
 - [x] Tests added for preview no mutation, successful one-ID
   conversion, missing observation no-op, journal safeguard,
@@ -683,5 +683,16 @@ explicit `sounding --confirm` action is required to change pre-existing
 SCC packets. Newly created `awaiting_lipancora` packets still follow
 the normal two-stage automatic finalization. No SCC POST/DELETE was
 executed in development.
+
+**SCC sounding filename fix (2026-10-18):**
+The SCC Quick Upload HTML form explicitly rejects `rs_<Measurement_ID>.nc`
+and requires `rs_YYYYMMDDcccNN.nc`, with a **two-digit** suffix
+(e.g., `rs_20241008spu16.nc`). Generation, manifest name validation,
+`Sounding_File_Name`, and outgoing `sounding_file` multipart now
+use the same canonical `scc_sounding_name()` function.
+New tests assert the exact expected name and validate the end-to-end
+multipart upload filename. This change does not retroactively alter
+operator-side cache or remotely submit files. Manual rename of an
+already-created packet must also update raw references and file hashes.
 
 **Gate 12.7:** End-to-end SCC interoperability confirmed with real responses.
