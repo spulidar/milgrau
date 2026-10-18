@@ -94,7 +94,7 @@ def validate_upload_package(
         if sounding_name is not None:
             if sounding_name != scc_sounding_name(identity) or molecular_calc != 1:
                 raise SCCPackageError(
-                    "Sounding_File_Name requires rs_ID.nc and Molecular_Calc=1."
+                    "Sounding_File_Name requires rs_YYYYMMDDcccNN.nc and Molecular_Calc=1."
                 )
             expected_files.add(sounding_name)
             validate_sounding(path / sounding_name, identity=identity)
