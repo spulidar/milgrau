@@ -783,4 +783,25 @@ standard commands plus the optional sounding preparation.
 - [ ] Live SCC acceptance of sounding remains to be confirmed;
   full batch replacement must not be treated as tested on real SCC.
 
+**SCC bulk read operations (operator priority, 2026-10-18):**
+- [x] `milgrau-scc status --remote` with no `--id` queries the **union**
+  of durable journal records and local staged IDs, once per ID,
+  with isolated per-ID GET failures and a final summary. Previous
+  `status --id ID --remote` and plain local `status` remain available.
+  Remote lookup is still possible if local NetCDF integrity fails.
+- [x] `milgrau-scc download` without `--id` iterates the same union;
+  processes only complete ELPP/ELDA results, skips records still
+  processing or absent, isolates remote/download failures, and saves
+  each generation by verified scientific session. For staged
+  external records lacking a journal, the session is recovered
+  from the validated local manifest.
+- [x] Batch downloads **always retain pending cache** even if the local
+  config retains the old `after_download` cleanup policy;
+  individual `download --id ID --keep-cache` remains unchanged.
+- [x] New tests exercise journal/cache union, remote status errors,
+  incomplete and absent results, externally owned uploads and
+  idempotent safe cache retention. No bulk POST/DELETE calls.
+- [ ] Optional later enhancement: remote SCC-wide discovery independent
+  of the known local/journal inventory (explicitly NOT this feature).
+
 **Gate 12.7:** End-to-end SCC interoperability confirmed with real responses.
