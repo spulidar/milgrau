@@ -669,6 +669,11 @@ API writes.
 - [x] Tests added for preview no mutation, successful one-ID
   conversion, missing observation no-op, journal safeguard,
   CLI dry-run/confirm and repeated invocation.
+- [x] LIPANCORA session-midpoint radiosonde selection validated
+  (rather than comparing the sounding with the first laser profile).
+- [x] All six jobs passed in
+  [GitHub Actions run 39085228536](https://github.com/spulidar/milgrau/actions/runs/39085228536):
+  Ruff, Explorer, Ubuntu/Windows Python 3.12 and 3.14.
 - [ ] Operator runs the real 18-packet offline preview, applies the
   eligible subset and validates **one** new remote SCC sounding
   upload before beginning any bulk replacement.
