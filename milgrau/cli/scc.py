@@ -90,7 +90,7 @@ def _parser() -> argparse.ArgumentParser:
     status = sub.add_parser("status", help="List local pending packets or query remote SCC.")
     status.add_argument("--id", dest="identity", help="Filter by Measurement_ID.")
     status.add_argument(
-        "--remote", action="store_true", help="Also query remote SCC (requires --id and credentials).",
+        "--remote", action="store_true", help="Query remote SCC for one ID or all locally known IDs (credentials required).",
     )
     status.add_argument(
         "--backup", action="store_true",
@@ -99,7 +99,10 @@ def _parser() -> argparse.ArgumentParser:
     download = sub.add_parser(
         "download", help="Read-only SCC result download into scientific session/scc-results."
     )
-    download.add_argument("--id", dest="identity", required=True, help="Exact SCC Measurement_ID.")
+    download.add_argument(
+        "--id", dest="identity",
+        help="Exact SCC Measurement_ID; omit to download every completed locally known SCC ID.",
+    )
     download.add_argument(
         "--session", help="Scientific Session_ID for a remote record not uploaded by MILGRAU."
     )
@@ -294,9 +297,7 @@ def _sounding(config: dict[str, Any], args: argparse.Namespace) -> int:
 
 
 def _status(config: dict[str, Any], args: argparse.Namespace) -> int:
-    if args.remote and not args.identity:
-        raise ValueError("Remote status requires --id MEASUREMENT_ID.")
-    if args.backup and not args.remote:
+    if args.backup and (not args.remote or not args.identity):
         raise ValueError("Remote archive --backup requires --id ID --remote.")
     # Remote measurements may outlive the disposable local staging cache.
     packages = discover_pending(config)
@@ -332,73 +333,181 @@ def _status(config: dict[str, Any], args: argparse.Namespace) -> int:
                 f"archive={row['archive_path'] or '-'}"
             )
         if args.remote:
-            client = _client(config)
-            record = client.measurement(args.identity)
-            reconcile_status(store, args.identity, record)
-            if args.backup:
-                if record is None:
-                    raise ValueError(
-                        "Cannot back up absent remote SCC measurement."
-                    )
-                from milgrau.scc.backup import (
-                    archive_remote_measurement, verify_archive,
-                )
-
-                archive, digest = archive_remote_measurement(
-                    client, record, state_root(config),
-                )
-                verify_archive(archive, digest)
-                print(
-                    f"Remote SCC archive VERIFIED: {archive}; sha256={digest}; "
-                    "no remote upload or deletion occurred."
-                )
-            if record is None:
-                print(f"remote {args.identity}: NOT FOUND")
+            # Local inventory + durable SQLite: prior uploads survive removal of
+            # disposable .cache/scc/pending, and external pre-staged sessions
+            # may have no journal row yet. This does NOT enumerate every
+            # measurement belonging to the SCC station.
+            identities = (
+                [args.identity] if args.identity
+                else sorted({p.name for p in packages} | {
+                    str(row["measurement_id"]) for row in recorded
+                })
+            )
+            if not identities:
+                print("No locally known SCC measurement IDs for remote status.")
             else:
-                system = record.get("system")
-                config_id = system.get("id") if isinstance(system, dict) else None
-                print(
-                    f"remote {args.identity}: present; configuration={config_id}; "
-                    f"start={record.get('start')}; stop={record.get('stop')}; "
-                    f"queued={record.get('is_queued')}; "
-                    f"running={record.get('is_being_processed')}; "
-                    f"ELPP={record.get('elpp')}; ELDA={record.get('elda')}"
-                )
-                row = store.get(args.identity)
-                if row is not None and row['state'] == 'uncertain':
+                client = _client(config)
+                present = absent = errors = 0
+                for identity in identities:
+                    try:
+                        record = client.measurement(identity)
+                        reconcile_status(store, identity, record)
+                        if args.backup:
+                            if record is None:
+                                raise ValueError("Cannot back up absent remote SCC measurement.")
+                            from milgrau.scc.backup import (
+                                archive_remote_measurement, verify_archive,
+                            )
+
+                            archive, digest = archive_remote_measurement(
+                                client, record, state_root(config),
+                            )
+                            verify_archive(archive, digest)
+                            print(
+                                f"Remote SCC archive VERIFIED: {archive}; sha256={digest}; "
+                                "no remote upload or deletion occurred."
+                            )
+                        if record is None:
+                            absent += 1
+                            print(f"remote {identity}: NOT FOUND")
+                        else:
+                            present += 1
+                            system = record.get("system")
+                            config_id = system.get("id") if isinstance(system, dict) else None
+                            print(
+                                f"remote {identity}: present; configuration={config_id}; "
+                                f"start={record.get('start')}; stop={record.get('stop')}; "
+                                f"queued={record.get('is_queued')}; "
+                                f"running={record.get('is_being_processed')}; "
+                                f"ELPP={record.get('elpp')}; ELDA={record.get('elda')}"
+                            )
+                            row = store.get(identity)
+                            if row is not None and row["state"] == "uncertain":
+                                print(
+                                    f"ATTENTION {identity}: journal remains uncertain; "
+                                    "no automatic retry or replacement is permitted."
+                                )
+                    except Exception as exc:
+                        errors += 1
+                        print(
+                            f"remote {identity}: ERROR — {type(exc).__name__}: {exc}",
+                            file=sys.stderr,
+                        )
+                        if args.identity:
+                            raise
+                if not args.identity:
                     print(
-                        "ATTENTION: journal remains uncertain; no automatic "
-                        "retry or replacement is permitted."
+                        f"Remote SCC status summary: total={len(identities)}; "
+                        f"present={present}; absent={absent}; errors={errors}; "
+                        "no remote POST/DELETE."
                     )
+                local_errors += errors
     return 1 if local_errors else 0
 
 
-def _download(config: dict[str, Any], args: argparse.Namespace) -> int:
+def _download_one(
+    config: dict[str, Any], identity: str, client: Any, *,
+    source_session: str | None, keep_cache: bool,
+) -> None:
     from milgrau.scc.results import download_results
     from milgrau.scc.cleanup import cleanup_pending
 
     destination, manifest = download_results(
-        config, args.identity, _client(config), source_session=args.session,
+        config, identity, client, source_session=source_session,
     )
     print(
         f"SCC downloads VERIFIED: {destination} | "
         f"products={', '.join(manifest['files'])} | "
         f"upload_owned={manifest['uploaded_by_milgrau']}"
     )
-    if not args.keep_cache and config["scc"].get("cleanup", {}).get("policy") == "after_download":
+    if not keep_cache and config["scc"].get("cleanup", {}).get("policy") == "after_download":
         if manifest["uploaded_by_milgrau"]:
-            result = cleanup_pending(config, args.identity, dry_run=False)
+            result = cleanup_pending(config, identity, dry_run=False)
             print(
-                f"SCC pending cache cleanup: "
+                "SCC pending cache cleanup: "
                 f"{'already done' if result['already_cleaned'] else 'verified and removed'} "
-                f"for {args.identity}; persistent results and journal preserved."
+                f"for {identity}; persistent results and journal preserved."
             )
         else:
             print(
                 "SCC pending cache retained: remote record was not confirmed as "
                 "a MILGRAU upload."
             )
-    return 0
+
+
+def _download(config: dict[str, Any], args: argparse.Namespace) -> int:
+    if args.identity:
+        _download_one(
+            config, args.identity, _client(config),
+            source_session=args.session, keep_cache=args.keep_cache,
+        )
+        return 0
+    if args.session:
+        raise ValueError("--session requires --id when downloading one measurement.")
+
+    # A batch is precisely the union of locally staged packets and recorded
+    # historical submissions, NOT every measurement hosted by the SCC station.
+    # Local L0 identity is required for scientific provenance.
+    from milgrau.scc.state import SubmissionStore, state_root
+    from milgrau.level0.scc_staging import validate_pending_scc_package
+
+    pending = {p.name: p for p in discover_pending(config)}
+    with SubmissionStore(state_root(config)) as store:
+        journal = {str(row["measurement_id"]): row for row in store.list()}
+    identities = sorted(set(pending) | set(journal))
+    if not identities:
+        print("No locally known SCC measurements available for bulk download.")
+        return 0
+    client = _client(config)
+    verified = not_ready = absent = failed = 0
+    for index, identity in enumerate(identities, 1):
+        prefix = f"[{index}/{len(identities)}] {identity}"
+        try:
+            # For old remote submissions without a local journal, infer the
+            # scientific session ONLY from a hash-verified staged manifest.
+            row = journal.get(identity)
+            source_session = None
+            if row is None:
+                path = pending[identity]
+                manifest = validate_pending_scc_package(path)
+                if manifest["measurement_id"] != identity:
+                    raise ValueError("SCC pending manifest measurement ID mismatch.")
+                source_session = str(manifest["scientific_session_id"])
+            remote = client.measurement(identity)
+            if remote is None:
+                absent += 1
+                print(f"{prefix}: SKIPPED — not present on SCC.")
+                continue
+            if (
+                remote.get("is_queued") or remote.get("is_being_processed")
+                or remote.get("elpp") != 127 or remote.get("elda") != 127
+            ):
+                not_ready += 1
+                print(
+                    f"{prefix}: WAITING — SCC processing incomplete "
+                    f"(ELPP={remote.get('elpp')}, ELDA={remote.get('elda')})."
+                )
+                continue
+            # Batch downloads always preserve local pending cache, even if a
+            # user's old config still specifies cleanup.policy=after_download.
+            _download_one(
+                config, identity, client, source_session=source_session,
+                keep_cache=True,
+            )
+            verified += 1
+            print(f"{prefix}: VERIFIED — results preserved; cache retained.")
+        except Exception as exc:
+            failed += 1
+            print(
+                f"{prefix}: ERROR — {type(exc).__name__}: {exc}",
+                file=sys.stderr,
+            )
+    print(
+        f"SCC download summary: total={len(identities)}; verified={verified}; "
+        f"waiting={not_ready}; absent={absent}; errors={failed}; "
+        "all local pending caches retained."
+    )
+    return 1 if failed else 0
 
 
 def _cleanup(config: dict[str, Any], args: argparse.Namespace) -> int:
