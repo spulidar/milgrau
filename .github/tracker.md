@@ -641,4 +641,42 @@ re-submission or remote deletion was performed by the changes below.
   server. Keep the already accepted `20240913spu1549` untouched.
 - [ ] Cross-platform CI on final documentation/implementation commit.
 
+**Historical SCC sounding backfill (operator request, 2026-10-17):**
+The previous LIPANCORA run did not add `rs_...` to **18/18**
+previously staged historical packets because their manifests were
+created before the `awaiting_lipancora` handoff. The operator
+explicitly requested a safe retrospective conversion from existing
+L1 and observed radiosonde caches, with no reprocessing and no SCC
+API writes.
+
+- [x] `milgrau-scc sounding --dry-run [--id ID]` performs read-only
+  per-ID inventory of old `sounding_stage=not_requested` packets,
+  checks the canonical L0/L1 relationship, L1 Session_ID and
+  radiosonde observation flag/target, station code and the actual
+  cached Wyoming sounding CSV/JSON with no remote calls.
+- [x] `milgrau-scc sounding --confirm [--id ID]` enriches only
+  eligible, *unsubmitted* historical packets. All existing
+  `SubmissionStore` rows block file changes. Older scientific
+  L0/L1, raw source files and LR hashes remain unchanged; SCC-specific
+  raw + manifest update atomically with original catalog provenance
+  retained and newly used sounding policy catalog hash recorded
+  separately.
+- [x] Missing observed soundings leave original historical packets
+  unchanged (SKIP), and invalid packages stop modification (ERROR).
+  A confirmed backfill produces `sounding_stage=ready`,
+  `rs_<ID>.nc`, `Sounding_File_Name`, `Molecular_Calc=1` and
+  checked SHA-256 values.
+- [x] Tests added for preview no mutation, successful one-ID
+  conversion, missing observation no-op, journal safeguard,
+  CLI dry-run/confirm and repeated invocation.
+- [ ] Operator runs the real 18-packet offline preview, applies the
+  eligible subset and validates **one** new remote SCC sounding
+  upload before beginning any bulk replacement.
+
+This historical backfill is **not automatic on LIPANCORA**: the
+explicit `sounding --confirm` action is required to change pre-existing
+SCC packets. Newly created `awaiting_lipancora` packets still follow
+the normal two-stage automatic finalization. No SCC POST/DELETE was
+executed in development.
+
 **Gate 12.7:** End-to-end SCC interoperability confirmed with real responses.
