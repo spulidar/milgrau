@@ -743,4 +743,44 @@ No code path requests SCC remote upload, DELETE, or clears durable
 continuation, old existing repaired packets and single-ID and
 bulk no-network paths.
 
+**SCC refactor consolidation and safer independent batch progress (2026-10-18):**
+Review of the current branch against the operator's archived 18-packet
+SCC upload and sounding failures. Removed global batch-wide interruption
+on a **single invalid local NetCDF/manifest**: the batch performs a
+complete offline preflight but skips only invalid IDs. Remote-existing
+IDs without replacement are read-only skipped, even if an old local
+journal says `uncertain`, without clearing their durable state.
+Remote/DELETE/POST errors continue to stop by default; optional
+`milgrau-scc upload --confirm --continue-on-error` proceeds with
+**independent** IDs after reporting the blocked ID, and never retries
+the uncertain ID.
+
+Revised same-ID replacement sequencing: remote preimage archive and
+fingerprint must be verified before a prior accepted/completed local
+journal revision is reset. Explicit same-hash replacement is permitted
+if the **remote** differs, while an archival comparison proven identical
+remains a no-op, preserving the prior journal state. A failed backup
+or missing target no longer destroys existing accepted provenance.
+
+Remote read-only `status --id ID --remote` now still queries the
+server when its staged local NetCDF or manifest is invalid, reporting
+the local validation error separately and exiting nonzero.
+
+Archived the lengthy incident-by-incident operator narrative in this
+tracker and replaced `docs/scc_batch_operator_guide.md` with concise,
+current instructions. The one-off migration/recovery helpers remain
+available to decode older `.state/scc` histories rather than being
+dangerously removed mid-migration. Normal work remains the four
+standard commands plus the optional sounding preparation.
+
+- [x] Regression tests: invalid cache isolation, `--continue-on-error`,
+  read-only skip of remote-existing uncertain ID, durable accepted
+  journal preservation on backup failure, same-hash explicit revision,
+  and remote status despite corrupt staged input.
+- [ ] Cross-platform CI against final change set.
+- [ ] Operator: local `upload --dry-run` and `status`, then trial
+  one **remote-absent** valid ID before any destructive replacement.
+- [ ] Live SCC acceptance of sounding remains to be confirmed;
+  full batch replacement must not be treated as tested on real SCC.
+
 **Gate 12.7:** End-to-end SCC interoperability confirmed with real responses.
