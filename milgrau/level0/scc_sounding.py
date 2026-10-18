@@ -76,6 +76,7 @@ def stage_cached_sounding(
     staging: Path, identity: str, measurement_start_utc: Any,
     config: Mapping[str, Any],
     *, observed_target_utc: str | None = None,
+    measurement_stop_utc: Any | None = None,
 ) -> Path | None:
     """Stage an SCC rs_ID.nc from existing observation cache, if opted in.
 
@@ -102,8 +103,17 @@ def stage_cached_sounding(
         )
     settings = config["level1"]["atmosphere"]["radiosonde"]
     start = pd.Timestamp(measurement_start_utc)
+    # LIPANCORA selects its radiosonde QA for the scientific session's
+    # midpoint, rather than its first laser profile. Use that same reference
+    # for SCC when the full measurement interval is available.
+    reference_time = start
+    if measurement_stop_utc is not None:
+        stop = pd.Timestamp(measurement_stop_utc)
+        if stop < start:
+            raise ValueError("SCC sounding measurement interval is inverted.")
+        reference_time = start + (stop - start) / 2
     target = select_radiosonde_target_datetime(
-        start,
+        reference_time,
         synoptic_hours_utc=settings["synoptic_hours_utc"],
         selection=settings["selection"],
         max_time_delta_hours=float(settings["max_time_delta_hours"]),
@@ -188,7 +198,7 @@ def stage_cached_sounding(
             "Source_Observation": "University of Wyoming Upper Air",
             "Source_CSV_SHA256": file_sha256(cache),
             "Selection_Time_Delta_hours": (
-                abs((pd.Timestamp(target) - start.tz_convert("UTC")).total_seconds()) / 3600
+                abs((pd.Timestamp(target) - reference_time.tz_convert("UTC")).total_seconds()) / 3600
             ),
         })
     validate_sounding(output, identity=identity)
