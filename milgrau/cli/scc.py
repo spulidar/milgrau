@@ -70,6 +70,17 @@ def _parser() -> argparse.ArgumentParser:
         help="Update eligible unsubmitted cache packets from verified L1 observations (no SCC requests).",
     )
 
+    repair_sounding = sub.add_parser(
+        "sounding-repair",
+        help="Offline exact-ID repair of legacy sounding name/NetCDF reference/manifest hashes; refuses journalled IDs.",
+    )
+    repair_sounding.add_argument(
+        "--id", dest="identity", required=True, help="One pending SCC Measurement_ID.",
+    )
+    repair_mode = repair_sounding.add_mutually_exclusive_group(required=True)
+    repair_mode.add_argument("--dry-run", action="store_true")
+    repair_mode.add_argument("--confirm", action="store_true")
+
     status = sub.add_parser("status", help="List local pending packets or query remote SCC.")
     status.add_argument("--id", dest="identity", help="Filter by Measurement_ID.")
     status.add_argument(
@@ -406,6 +417,13 @@ def main(argv: list[str] | None = None) -> int:
             return _upload(config, args)
         if args.command == "sounding":
             return _sounding(config, args)
+        if args.command == "sounding-repair":
+            from milgrau.scc.sounding_repair import repair_sounding_name
+
+            print(repair_sounding_name(
+                config, args.identity, confirm=args.confirm,
+            ))
+            return 0
         if args.command == "status":
             return _status(config, args)
         if args.command == "download":
