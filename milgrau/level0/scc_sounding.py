@@ -25,7 +25,9 @@ def scc_sounding_name(identity: str) -> str:
     from milgrau.level0.scc_staging import scc_raw_filename
 
     scc_raw_filename(identity)  # validate exact station measurement identity
-    return f"rs_{identity}.nc"
+    # SCC Quick Upload requires rs_YYYYMMDDcccNN.nc (two-digit suffix),
+    # not the full four-digit HHMM suffix of Measurement_ID.
+    return f"rs_{identity[:13]}.nc"
 
 
 def validate_sounding(path: Path, *, identity: str) -> dict[str, Any]:
@@ -78,7 +80,7 @@ def stage_cached_sounding(
     *, observed_target_utc: str | None = None,
     measurement_stop_utc: Any | None = None,
 ) -> Path | None:
-    """Stage an SCC rs_ID.nc from existing observation cache, if opted in.
+    """Stage an SCC rs_YYYYMMDDcccNN.nc from existing observation cache, if opted in.
 
     Missing/invalid Wyoming observations are not replaced with model profiles.
     Called only while a new SCC package is being built in an atomic staging
