@@ -44,7 +44,7 @@ def submit(
             existing = client.measurement(identity)
             if existing is None:
                 raise SCCRemoteError(
-                    f"SCC {identity} is absent: replacement requires an existing "
+                    f"SCC {identity} not present: replacement requires an existing "
                     "remote record. Use an ordinary upload for new IDs."
                 )
             original_fingerprint = remote_fingerprint(existing)
