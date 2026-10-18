@@ -189,7 +189,66 @@ def test_backup_unavailable_or_changed_fingerprint_blocks_deletion(
         workflow.submit(_config(tmp_path), tmp_path, client, replace_existing=True)
     assert client.delete_calls == client.upload_calls == 0
     with SubmissionStore(state_root(_config(tmp_path))) as journal:
-        assert journal.get(ID)["state"] == "failed"
+        # Failed remote backup never reassigns this ID's journal revision.
+        assert journal.get(ID) is None
+
+
+def test_previous_accepted_revision_survives_failed_remote_backup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch(monkeypatch, backup_failure=True)
+    config = _config(tmp_path)
+    with SubmissionStore(state_root(config)) as store:
+        store.begin(_manifest())
+        store.transition(ID, "accepted", action="previous_accepted")
+        before = store.get(ID)
+        events = store.events(ID)
+    client = FakeClient()
+    with pytest.raises(SCCRemoteError, match="archive unavailable"):
+        workflow.submit(config, tmp_path, client, replace_existing=True)
+    with SubmissionStore(state_root(config)) as store:
+        assert store.get(ID) == before
+        assert store.events(ID) == events
+    assert client.delete_calls == client.upload_calls == 0
+
+
+def test_explicit_replacement_with_same_local_hash_still_allowed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch(monkeypatch)
+    config = _config(tmp_path)
+    with SubmissionStore(state_root(config)) as store:
+        store.begin(_manifest())
+        store.transition(ID, "accepted", action="previous_accepted")
+    client = FakeClient()
+    workflow.submit(config, tmp_path, client, replace_existing=True)
+    assert client.delete_calls == client.upload_calls == 1
+    with SubmissionStore(state_root(config)) as store:
+        assert store.get(ID)["state"] == "accepted"
+        assert "new_explicit_revision" in {e["action"] for e in store.events(ID)}
+
+
+def test_remote_identical_preserves_previous_accepted_journal_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch(monkeypatch)
+    monkeypatch.setattr(
+        workflow, "compare_staged_to_archive",
+        lambda *_: {"identical": True, "period_differs": False,
+                    "raw_identical": True, "lr_identical": True},
+    )
+    config = _config(tmp_path)
+    with SubmissionStore(state_root(config)) as store:
+        store.begin(_manifest())
+        store.transition(ID, "accepted", action="previous_accepted")
+    client = FakeClient()
+    client._url = lambda path: "https://scc.example.test/" + path
+    result = workflow.submit(config, tmp_path, client, replace_existing=True)
+    assert result["status"] == "already_identical"
+    assert client.delete_calls == client.upload_calls == 0
+    with SubmissionStore(state_root(config)) as store:
+        assert store.get(ID)["state"] == "accepted"
+        assert store.events(ID)[-1]["action"] == "identical_noop"
 
 
 def test_local_staged_bytes_change_during_backup_blocks_delete(
