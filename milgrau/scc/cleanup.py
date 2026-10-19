@@ -49,7 +49,7 @@ def verify_cleanup(config: Mapping[str, Any], identity: str) -> dict[str, Any]:
             raise SCCRemoteError("Remote SCC generation is not the one accepted by MILGRAU.")
         if manifest["scc_configuration_id"] != row["configuration_id"]:
             raise SCCRemoteError("SCC results configuration differs from submission.")
-        staged = pending_scc_package(config, identity)
+        staged = pending_scc_package(config, identity, session_id=row["scientific_session_id"])
         if row["state"] == "cleaned":
             if staged.exists():
                 raise SCCRemoteError(
@@ -87,7 +87,7 @@ def verify_cleanup(config: Mapping[str, Any], identity: str) -> dict[str, Any]:
 def cleanup_pending(
     config: Mapping[str, Any], identity: str, *, dry_run: bool = True,
 ) -> dict[str, Any]:
-    """Delete only .cache/scc/pending/ID after independent durable verifications.
+    """Delete only session/scc/scc-inputs/ID after durable verifications.
 
     A crash between rmtree and the final SQLite transition leaves 'downloaded'
     state, which needs manual inspection; no automatic blind replay or deletion.
@@ -98,7 +98,11 @@ def cleanup_pending(
         if result["already_cleaned"] or dry_run:
             return result
         staged = Path(result["staged"])
-        expected = pending_scc_package(config, identity)
+        with SubmissionStore(root) as store:
+            row = store.get(identity)
+        if row is None:
+            raise SCCRemoteError("No SCC journal record for input cleanup.")
+        expected = pending_scc_package(config, identity, session_id=row["scientific_session_id"])
         if staged.resolve() != expected.resolve() or staged.is_symlink():
             raise SCCRemoteError("Unsafe SCC staging path; cleanup aborted.")
         shutil.rmtree(staged)
