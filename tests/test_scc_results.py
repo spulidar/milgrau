@@ -190,6 +190,25 @@ def test_download_keep_cache_then_explicit_cleanup_dry_run(
     assert cli.main(["cleanup", "--id", ID, "--confirm"]) == 0
 
 
+def test_download_uses_session_manifest_without_a_local_journal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _config(tmp_path)
+    _stage(config)
+    _mock_stream(monkeypatch)
+    monkeypatch.setattr(cli, "load_config", lambda: config)
+    monkeypatch.setattr(cli, "_client", lambda _: FakeClient())
+
+    # Download may be used on another machine with the scientific session
+    # but without any MILGRAU SCC submission journal.
+    assert cli.main(["download", "--id", ID]) == 0
+    target = results.result_location(config, SESSION, ID, CREATION)
+    saved = validate_results(target)
+    assert saved["scientific_session_id"] == SESSION
+    assert saved["uploaded_by_milgrau"] is False
+    assert pending_scc_package(config, ID, session_id=SESSION).is_dir()
+
+
 def test_preexisting_external_scc_can_download_but_must_keep_pending_cache(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
