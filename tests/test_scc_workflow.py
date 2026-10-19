@@ -1,4 +1,4 @@
-"""Phase 12.5 same-ID replacement must never delete without verified archive."""
+"""SCC replacement: verified backup by default or explicit --confirm waiver."""
 
 from __future__ import annotations
 
@@ -108,6 +108,44 @@ def _patch(monkeypatch: pytest.MonkeyPatch, *, backup_failure=False, changed=Fal
             "raw_identical": False, "lr_identical": False,
         },
     )
+
+
+def test_confirmed_replacement_skips_unavailable_backup_but_records_waiver(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch(monkeypatch, backup_failure=True)
+    client = FakeClient()
+    config = _config(tmp_path)
+    result = workflow.submit(
+        config, tmp_path, client, replace_existing=True, skip_backup=True,
+    )
+    assert result["measurement_id"] == ID
+    assert client.delete_calls == client.upload_calls == 1
+    with SubmissionStore(state_root(config)) as journal:
+        assert journal.get(ID)["state"] == "accepted"
+        assert journal.get(ID)["archive_path"] is None
+        events = journal.events(ID)
+        assert "operator_confirmed_no_backup" in [e["action"] for e in events]
+        assert "delete_requested_without_backup" in [e["action"] for e in events]
+
+
+def test_confirmed_unbacked_delete_failure_still_blocks_automatic_retry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch(monkeypatch, backup_failure=True)
+    config = _config(tmp_path)
+    client = FakeClient(fail_delete=True)
+    with pytest.raises(SCCRemoteError, match="deletion response lost"):
+        workflow.submit(
+            config, tmp_path, client, replace_existing=True, skip_backup=True,
+        )
+    with SubmissionStore(state_root(config)) as journal:
+        assert journal.get(ID)["state"] == "uncertain"
+    with pytest.raises(RuntimeError, match="manual remote reconciliation"):
+        workflow.submit(
+            config, tmp_path, client, replace_existing=True, skip_backup=True,
+        )
+    assert client.delete_calls == 1 and client.upload_calls == 0
 
 
 def test_new_measurement_is_journalled_and_accepted(
