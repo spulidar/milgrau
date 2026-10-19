@@ -83,7 +83,7 @@ def _stage(config: dict) -> dict:
     scientific = level0_output_path(SESSION, config)
     scientific.parent.mkdir(parents=True, exist_ok=True)
     scientific.write_bytes(b"canonical scientific Level 0 is NEVER modified")
-    with atomic_scc_package(config, ID) as directory:
+    with atomic_scc_package(config, ID, session_id=SESSION) as directory:
         with nc.Dataset(directory / f"{ID}.nc", "w") as raw:
             raw.setncattr("Measurement_ID", ID)
             raw.setncattr("SCC_Configuration_ID", 1047)
@@ -216,7 +216,7 @@ def test_missing_elda_completion_never_publishes_or_cleans(
     with pytest.raises(SCCRemoteError, match="ELPP|ELDA"):
         download_results(config, ID, FakeClient(_record(finished=False)))
     assert pending_scc_package(config, ID).is_dir()
-    assert not (level0_output_path(SESSION, config).parent / "scc-results" / ID).exists()
+    assert not (level0_output_path(SESSION, config).parent / "scc" / "scc-results" / ID).exists()
 
 
 def test_partial_network_failure_leaves_no_visible_results_and_retains_cache(
