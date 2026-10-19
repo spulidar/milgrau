@@ -19,8 +19,9 @@ def _config(tmp_path: Path) -> dict:
         "scc": {
             "enabled": True,
             "state_dir": str(tmp_path / ".state/scc"),
-            "staging_dir": str(tmp_path / ".cache/scc"),
         },
+        "directories": {"processed_data": str(tmp_path / "02-processed_data")},
+        "_station_catalog": {"station": {"id": "spu"}},
     }
 
 
@@ -361,7 +362,7 @@ def _interrupted_delete_journal(tmp_path: Path, *, action="delete_result_uncerta
         store.transition(ID, "uncertain", action=action)
     from milgrau.level0.scc_staging import pending_scc_package
 
-    staged = tmp_path / "scc-inputs" / ID
+    staged = pending_scc_package(config, ID, session_id="spu_20240913-1549Z_20240913-1750Z")
     staged.mkdir(parents=True)
     return config, backup, staged
 
