@@ -16,7 +16,7 @@ The intended separation is:
 
 ## Phase 12.1 — SCC is opt-in and separately configured
 
-`config.yaml` sets `scc.enabled: false` by default. In that state,
+`scc-integration-refactor` currently sets `scc.enabled: true` for testing. When set to false,
 MILGRAU does not load or validate `scc.yaml` and LIBIDS writes only
 the canonical scientific Level 0. SCC derivatives are not part of
 scientific incremental-current decisions.
@@ -26,9 +26,9 @@ relative to the processing configuration. The separate SCC catalog's
 station/profile IDs must match those in `station.yaml`; SCC channel and
 configuration IDs are not scientific identifiers.
 
-Phase 12.3 stages upload packages under `.cache/scc/pending/` rather
-than the scientific session directories. The SCC service client, durable
-submission state, remote download and cleanup will follow in phases 12.4–12.6.
+SCC input packages are now stored under each scientific session at
+`session/scc/scc-inputs/<Measurement_ID>/`. Remote downloads are saved to
+`session/scc/scc-results/`, separately from scientific L0/L1/L2.
 
 ## Supported channel identity
 
@@ -72,17 +72,19 @@ solar regime **and UTC month**, but the scientific session/segments stay intact.
 Example (one scientific session with distinct SCC publication pieces):
 
 ```text
-02-processed_data/spu/2025/09/SESSION/SESSION_L0.nc
-
-.cache/scc/pending/
-  20250930spu2300/
-    20250930spu2300.nc
-    lr_20250930spu23.nc
-    manifest.json
-  20251001spu0010/
-    20251001spu0010.nc
-    lr_20251001spu00.nc
-    manifest.json
+02-processed_data/spu/2025/09/SESSION/
+  SESSION_L0.nc
+  scc/
+    scc-inputs/
+      20250930spu2300/
+        20250930spu2300.nc
+        lr_20250930spu23.nc
+        manifest.json
+      20251001spu0010/
+        20251001spu0010.nc
+        lr_20251001spu00.nc
+        manifest.json
+    scc-results/
 ```
 
 `<Measurement_ID>.nc` includes the SCC global `Measurement_ID`, station/channel
@@ -107,7 +109,7 @@ SCC ancillary LR names instead use the deployed Quick Upload
 must be repaired offline before any upload.
 
 Packages are written in sibling temporary directories and moved atomically
-to `pending/<Measurement_ID>/` only after the raw/ancillary NetCDFs and manifest
+to `scc-inputs/<Measurement_ID>/` only after the raw/ancillary NetCDFs and manifest
 exist. Duplicate `Measurement_ID` values are rejected; existing pending
 packages are **never silently overwritten**. If a raw measurement profile
 *itself* straddles a UTC month boundary, staging fails explicitly rather than
@@ -115,7 +117,7 @@ guessing which monthly LR applies. Distinct profiles across the month boundary
 are partitioned into month-specific SCC submissions.
 
 The scientific L0 incremental validity check does **not** depend on SCC
-staged files. Deleting `.cache/scc/` never forces canonical L0 reprocessing,
+staged files. Deleting `session/scc/scc-inputs/` never forces canonical L0 reprocessing,
 and normal incremental runs do not recreate deleted SCC packages for a
 current scientific session. To explicitly regenerate SCC export packages
 from archived raw data **without rewriting canonical L0**, use:
