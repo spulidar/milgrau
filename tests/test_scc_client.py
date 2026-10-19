@@ -23,22 +23,25 @@ from milgrau.scc.packages import SCCPackageError, validate_upload_package
 
 
 IDENTITY = "20240913spu1549"
+SESSION = "spu_20240913-1549Z_20240913-1750Z"
 
 
 def _config(tmp_path: Path) -> dict:
     return {
         "scc": {
-            "enabled": True, "staging_dir": str(tmp_path / ".cache/scc"),
+            "enabled": True,
             "state_dir": str(tmp_path / ".state/scc"),
             "upload": {"retries": 0, "timeout_seconds": 30},
         },
         "_scc_catalog": {"server": {"base_url": "https://scc.example.test/"}},
+        "_station_catalog": {"station": {"id": "spu"}},
+        "directories": {"processed_data": str(tmp_path / "02-processed_data")},
     }
 
 
 def _stage(tmp_path: Path, *, lr: bool = True) -> Path:
     config = _config(tmp_path)
-    with atomic_scc_package(config, IDENTITY) as directory:
+    with atomic_scc_package(config, IDENTITY, session_id=SESSION) as directory:
         raw = directory / f"{IDENTITY}.nc"
         with nc.Dataset(raw, "w") as ds:
             ds.setncattr("Measurement_ID", IDENTITY)
@@ -71,7 +74,7 @@ def _stage(tmp_path: Path, *, lr: bool = True) -> Path:
             config=config,
             ancillary_name=ancillary_name,
         )
-    return pending_scc_package(config, IDENTITY)
+    return pending_scc_package(config, IDENTITY, session_id=SESSION)
 
 
 class FakeResponse:
