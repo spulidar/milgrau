@@ -122,10 +122,21 @@ def download_results(
     with operation_lock(root, identity), SubmissionStore(root) as journal:
         row = journal.get(identity)
         if row is None and not source_session:
-            raise SCCRemoteError(
-                "No submission in local SCC journal. Specify --session SESSION_ID "
-                "to download an existing, externally uploaded SCC measurement."
+            # Read-only downloads do not need a machine-local SQLite record:
+            # session association comes from the checksummed input manifest.
+            from milgrau.level0.scc_staging import (
+                pending_scc_package, validate_pending_scc_package,
             )
+
+            try:
+                staged = pending_scc_package(config, identity)
+                staged_manifest = validate_pending_scc_package(staged)
+                source_session = str(staged_manifest["scientific_session_id"])
+            except (FileNotFoundError, ValueError, KeyError) as exc:
+                raise SCCRemoteError(
+                    "Scientific SCC session is unknown locally; use --session SESSION_ID "
+                    "to download a remote record without a staged input."
+                ) from exc
         session_id = source_session or row["scientific_session_id"]
         if row and source_session and source_session != row["scientific_session_id"]:
             raise SCCRemoteError("Session does not match the existing durable SCC journal.")
