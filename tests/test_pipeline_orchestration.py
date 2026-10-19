@@ -246,3 +246,50 @@ def test_libids_groups_repeated_day_segments_into_one_expected_scc_context(
     assert night["source_segment_count"] == 1
     assert night["contains_time_gaps"] is False
     assert calls == ["day", "night"]
+
+
+def test_scc_sounding_failure_is_logged_without_invalidating_scientific_l1(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    def fail_scc(*_args) -> list[str]:
+        raise RuntimeError("optional SCC sounding cache unavailable")
+
+    monkeypatch.setattr(lipancora, "_finalize_scc_after_level1", fail_scc)
+    issue = lipancora._optional_scc_sounding_issue(
+        tmp_path / "scientific_L0.nc",
+        tmp_path / "scientific_L1.nc",
+        {"scc": {"enabled": True}},
+        _logger("test.scc.optional"),
+    )
+    assert issue == "RuntimeError: optional SCC sounding cache unavailable"
+
+
+def test_incremental_level1_remains_skipped_when_optional_scc_staging_fails(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    l0 = tmp_path / "spu_20240101-0000Z_20240101-0100Z_L0.nc"
+    l1 = tmp_path / "spu_20240101-0000Z_20240101-0100Z_L1.nc"
+    l1.touch()
+    monkeypatch.setattr(lipancora, "level1_output_path", lambda *_args: l1)
+    monkeypatch.setattr(lipancora, "incremental_enabled", lambda *_args: True)
+    monkeypatch.setattr(lipancora, "output_is_current", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        lipancora,
+        "generate_level1_figures",
+        lambda *_args, **_kwargs: ExecutionResult.skipped(
+            "level1.figures", "Figures already current",
+        ),
+    )
+
+    def fail_scc(*_args) -> list[str]:
+        raise RuntimeError("unavailable SCC radiosonde")
+
+    monkeypatch.setattr(lipancora, "_finalize_scc_after_level1", fail_scc)
+    pending, results = lipancora._files_requiring_level1(
+        [l0], {"scc": {"enabled": True}}, _logger("test.scc.incremental"),
+    )
+    assert pending == []
+    assert len(results) == 2
+    assert all(result.status is ExecutionStatus.SKIPPED for result in results)
+    assert results[0].metadata["pipeline"] == "L1"
+    assert "unavailable SCC radiosonde" in results[0].metadata["scc_staging_error"]
