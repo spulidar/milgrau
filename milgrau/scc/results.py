@@ -45,7 +45,7 @@ def result_location(config: Mapping[str, Any], session_id: str, identity: str, r
     digest = hashlib.sha256(
         (identity + "|" + remote_creation_date).encode("utf-8")
     ).hexdigest()[:20]
-    return level0.parent / "scc-results" / identity / "generations" / ("remote-" + digest)
+    return level0.parent / "scc" / "scc-results" / identity / "generations" / ("remote-" + digest)
 
 
 def _confirmed_outputs(remote: Mapping[str, Any]) -> dict[str, str]:
