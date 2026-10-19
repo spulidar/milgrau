@@ -18,6 +18,7 @@ from milgrau.scc.packages import validate_upload_package
 from milgrau.scc.state import SubmissionStore, state_root
 
 ID = "20240913spu1549"
+SESSION = "spu_20240913-1549Z_20240913-1750Z"
 
 
 def _config(tmp_path: Path) -> dict:
@@ -28,11 +29,13 @@ def _config(tmp_path: Path) -> dict:
             "state_dir": str(tmp_path / ".state/scc"),
         },
         "_scc_catalog": {"server": {"base_url": "https://scc.example.test/"}},
+        "_station_catalog": {"station": {"id": "spu"}},
+        "directories": {"processed_data": str(tmp_path / "02-processed_data")},
     }
 
 
 def _stage_old(config: dict, identity: str = ID) -> Path:
-    path = pending_scc_package(config, identity)
+    path = pending_scc_package(config, identity, session_id=SESSION)
     path.mkdir(parents=True)
     with nc.Dataset(path / "raw.nc", "w") as raw:
         raw.setncattr("Measurement_ID", identity)
