@@ -25,7 +25,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     upload.add_argument(
         "--replace-existing", action="store_true",
-        help="Replace existing SCC IDs only after verified backup; with no --id applies sequentially to the batch.",
+        help="Replace SCC IDs. Together with --confirm, waive the remote backup; without --id acts on the whole batch.",
     )
     upload.add_argument(
         "--resume-after-delete", action="store_true",
@@ -57,7 +57,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     action.add_argument(
         "--confirm", action="store_true",
-        help="Authorize SCC upload: one --id, or all local pending IDs sequentially if --id omitted.",
+        help="Authorize SCC upload; with --replace-existing, explicitly permit remote DELETE without a backup.",
     )
 
     sounding = sub.add_parser(
@@ -268,6 +268,7 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
     else:
         result = submit(
             config, path, client, replace_existing=args.replace_existing,
+            skip_backup=args.replace_existing,
         )
     print(
         f"SCC API confirmed {result['measurement_id']}: {result['remote_page']}. "
