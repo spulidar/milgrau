@@ -97,7 +97,7 @@ def _parser() -> argparse.ArgumentParser:
         help="Read-only download and verification of existing SCC remote inputs/results; requires --remote --id.",
     )
     download = sub.add_parser(
-        "download", help="Read-only SCC result download into scientific session/scc-results."
+        "download", help="Read-only SCC result download into scientific session/scc/scc-results."
     )
     download.add_argument(
         "--id", dest="identity",
@@ -140,7 +140,7 @@ def _client(config: dict[str, Any]):
 def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
     packages = discover_pending(config, args.identity)
     if not packages:
-        print("No SCC packages are staged in .cache/scc/pending/.")
+        print("No SCC packages are staged in scientific session/scc/scc-inputs/.")
         return 0 if args.dry_run or args.migrate_cache or args.repair_lr_cache else 1
     if args.resume_after_delete and (
         not args.confirm or not args.identity
