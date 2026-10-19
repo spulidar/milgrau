@@ -32,10 +32,12 @@ def state_root(config: Mapping[str, Any]) -> Path:
     if not isinstance(directory, str) or not directory.strip():
         raise ValueError("scc.state_dir must be a nonempty path.")
     root = resolve_project_path(directory).resolve()
-    staging = settings.get("staging_dir", ".cache/scc")
-    cache = resolve_project_path(staging).resolve()
-    if root == cache or cache in root.parents or root in cache.parents:
-        raise ValueError("Durable SCC state directory must be independent of staging cache.")
+    # Input packets live inside scientific sessions, not below a global cache.
+    from milgrau.io.paths import processed_data_root
+    if isinstance(config.get("directories"), Mapping) and "processed_data" in config["directories"]:
+        products = processed_data_root(config).resolve()
+        if root == products or products in root.parents or root in products.parents:
+            raise ValueError("Durable SCC journal must remain outside processed session products.")
     return root
 
 
