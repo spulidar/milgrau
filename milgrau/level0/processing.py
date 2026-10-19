@@ -349,7 +349,7 @@ def _write_scc_exports(
     config: Mapping[str, Any],
     logger: logging.Logger,
 ) -> list[Path]:
-    """Stage SCC-only day/night × UTC-month submissions atomically in cache.
+    """Stage SCC-only day/night × UTC-month submissions in the scientific session.
 
     A SCIENTIFIC session always remains continuous. One SCC Measurement_ID
     identifies precisely one staged submission, never a canonical output.
@@ -448,7 +448,7 @@ def _write_scc_exports(
         regime_weather = _weather_for_measurement_rows(
             weather_data, regime_measurements,
         )
-        with atomic_scc_package(config, measurement_id) as staging:
+        with atomic_scc_package(config, measurement_id, session_id=session_id) as staging:
             scc_path = staging / scc_raw_filename(measurement_id)
             lr_path = write_scc_lidar_ratio_ancillary(
                 scc_path, regime_measurements, scc_lidar, regime_config, context,
@@ -483,7 +483,7 @@ def _write_scc_exports(
                 source_profile_indices=profile_indices.tolist(),
                 source_measurement_files=regime_measurements["filepath"].astype(str).tolist(),
             )
-        package = pending_scc_package(config, measurement_id)
+        package = pending_scc_package(config, measurement_id, session_id=session_id)
         validate_pending_scc_package(package)
         outputs.append(package)
         scc_logger.info(
