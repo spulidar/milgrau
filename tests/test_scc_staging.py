@@ -23,7 +23,7 @@ from milgrau.level0.scc_staging import (
 
 def _config(tmp_path: Path) -> dict:
     return {
-        "scc": {"enabled": True, "staging_dir": str(tmp_path / ".cache/scc")},
+        "scc": {"enabled": True},
         "_scc_catalog": {},
         "_station_catalog": {"station": {"id": "spu"}},
         "directories": {"processed_data": str(tmp_path / "processed")},
@@ -31,7 +31,7 @@ def _config(tmp_path: Path) -> dict:
 
 
 def _stage(config: dict, identity: str = "20251001spu0000") -> Path:
-    with atomic_scc_package(config, identity) as work:
+    with atomic_scc_package(config, identity, session_id="spu_20251001-0000Z_20251001-0400Z") as work:
         (work / f"{identity}.nc").write_bytes(b"staged netcdf content")
         write_scc_manifest(
             work,
@@ -55,7 +55,7 @@ def test_complete_pending_package_and_manifest_checksum(tmp_path: Path) -> None:
     config = _config(tmp_path)
     target = _stage(config)
     manifest = validate_pending_scc_package(target)
-    assert target == scc_staging_root(config) / "pending" / "20251001spu0000"
+    assert target == scc_staging_root(config, "spu_20251001-0000Z_20251001-0400Z") / "20251001spu0000"
     assert manifest["scc_product_ids"] == [3683]
     assert manifest["scientific_session_id"] == "spu_20251001-0000Z_20251001-0400Z"
     assert manifest["files"]["20251001spu0000.nc"]["size_bytes"] > 0
@@ -69,7 +69,7 @@ def test_scc_manifest_rejects_long_sounding_filename_before_stage(tmp_path: Path
     config = _config(tmp_path)
     identity = "20241008spu1650"
     with pytest.raises(ValueError, match="rs_20241008spu16.nc"):
-        with atomic_scc_package(config, identity) as work:
+        with atomic_scc_package(config, identity, session_id="spu_20241008-1650Z_20241008-1800Z") as work:
             (work / f"{identity}.nc").write_bytes(b"raw bytes")
             write_scc_manifest(
                 work, measurement_id=identity,
@@ -82,17 +82,17 @@ def test_scc_manifest_rejects_long_sounding_filename_before_stage(tmp_path: Path
                 config=config, ancillary_name=None,
                 sounding_name=f"rs_{identity}.nc",
             )
-    assert not pending_scc_package(config, identity).exists()
+    assert not pending_scc_package(config, identity, session_id="spu_20241008-1650Z_20241008-1800Z").exists()
 
 
 def test_staging_failures_leave_no_visible_or_partial_packages(tmp_path: Path) -> None:
     config = _config(tmp_path)
     with pytest.raises(RuntimeError, match="simulated"):
-        with atomic_scc_package(config, "20251001spu0000") as work:
+        with atomic_scc_package(config, "20251001spu0000", session_id="spu_20251001-0000Z_20251001-0400Z") as work:
             (work / "20251001spu0000.nc").write_bytes(b"partial")
             raise RuntimeError("simulated failure")
-    assert not pending_scc_package(config, "20251001spu0000").exists()
-    assert not list((scc_staging_root(config) / "pending").glob(".*"))
+    assert not pending_scc_package(config, "20251001spu0000", session_id="spu_20251001-0000Z_20251001-0400Z").exists()
+    assert not list(scc_staging_root(config, "spu_20251001-0000Z_20251001-0400Z").glob(".*"))
 
 
 def test_pending_identity_collision_must_not_replace_original_bytes(tmp_path: Path) -> None:
@@ -100,7 +100,7 @@ def test_pending_identity_collision_must_not_replace_original_bytes(tmp_path: Pa
     target = _stage(config)
     digest = validate_pending_scc_package(target)["files"]["20251001spu0000.nc"]["sha256"]
     with pytest.raises(FileExistsError, match="already staged"):
-        with atomic_scc_package(config, "20251001spu0000"):
+        with atomic_scc_package(config, "20251001spu0000", session_id="spu_20251001-0000Z_20251001-0400Z"):
             pass
     assert validate_pending_scc_package(target)["files"]["20251001spu0000.nc"]["sha256"] == digest
     with pytest.raises(ValueError, match="Unsafe SCC Measurement_ID"):
