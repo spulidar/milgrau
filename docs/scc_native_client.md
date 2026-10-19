@@ -138,7 +138,7 @@ of all pending local packages. Local integrity preflight covers the whole
 batch before any network work. By default, pre-existing remote IDs are
 **skipped without deletion or journal ownership claims**. Only
 `upload --confirm --replace-existing` authorizes a batch to replace
-remote-existing IDs after verified original-data backups. A failed,
+remote-existing IDs without requiring original-data backups when `--confirm` is passed. A failed,
 interrupted or uncertain operation stops subsequent IDs; partial successes
 remain recorded in the durable journal, and no network POST is retried
 automatically. A final summary reports submitted, replaced, identical,
@@ -173,12 +173,12 @@ to outputs.
 The SCC `Measurement_ID` **does not change** when a replacement uses
 different source timestamps/profiles or a new climatological LR. The native
 client follows the documented `scc_access --force_upload` semantics:
-**backup original remote data → delete old SCC record → upload new bytes with
-the same ID**. SCC does not offer transactional overwrite, so this flow is
+**optional operator-requested backup → delete old SCC record → upload new bytes
+with the same ID**. SCC does not offer transactional overwrite, so this flow is
 intrinsically non-atomic.
 
 A private persistent SQLite journal lives in
-`.state/scc/submissions.sqlite`, explicitly **outside** `.cache/scc` and
+`.state/scc/submissions.sqlite`, explicitly **outside** processed session products and
 excluded by Git. It records scientific session, channel configuration,
 product IDs, source segments and periods, hashes of raw/LR NetCDF,
 transitions and timestamps, remote identity, archive location, and
@@ -193,10 +193,9 @@ into persistent state, but never modifies the server:
 milgrau-scc status --id 20240913spu1549 --remote --backup
 ```
 
-If this fails because an original auxiliary LR is unavailable, do not use
-`--replace-existing` until a reliable SCC LR retrieval method has been
-established. The backup operation can be run repeatedly and does not
-change scientific L0/L1/L2. The archived data is retained outside cache.
+Remote backup is optional when the operator uses `--replace-existing --confirm`.
+Skipping it may permanently destroy prior SCC inputs/results; the backup
+command remains a separate, repeatable read-only option.
 
 A replacement is never automatic. It requires precisely:
 
@@ -204,8 +203,7 @@ A replacement is never automatic. It requires precisely:
 milgrau-scc upload --id 20240913spu1549 --replace-existing --confirm
 ```
 
-**Do not run that command against live SCC until the backup protocol and
-permissions have been verified on an approved test measurement.** It is a
+**This command explicitly waives the backup requirement.** It is a
 destructive replacement operation; `--confirm` authorizes deletion of the
 existing SCC record after all safeguards. No other SCC records or related
 measurements are intentionally deleted.
@@ -452,7 +450,8 @@ read-only SCC processed result archives under the original scientific session:
 ```text
 02-processed_data/spu/YYYY/MM/<Session_ID>/
     <Session_ID>_L0.nc
-    scc-results/
+    scc/
+      scc-results/
         <Measurement_ID>/
             generations/
                 remote-<creation-hash>/
@@ -491,7 +490,7 @@ in place without deleting entries. The cache-cleanup gate requires:
 
 When a local `config.yaml` sets `scc.cleanup.policy: after_download` (not the current example default),
 an owned, newly downloaded and verified packet triggers automatic **local-only**
-cleanup of `.cache/scc/pending/<Measurement_ID>/`. Use `download --keep-cache`
+cleanup of `<Session_ID>/scc/scc-inputs/<Measurement_ID>/`. Use `download --keep-cache`
 to suppress that automatic cleanup. To exercise the same gate separately,
 use `cleanup --id ID --dry-run` then `cleanup --id ID --confirm`.
 `manual` policy also suppresses automatic deletion. Cleanup never touches
