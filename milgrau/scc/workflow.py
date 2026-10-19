@@ -22,9 +22,11 @@ from milgrau.scc.state import SubmissionStore, operation_lock, state_root
 
 def submit(
     config: Mapping[str, Any], package: Path, client: Any,
-    *, replace_existing: bool = False,
+    *, replace_existing: bool = False, skip_backup: bool = False,
 ) -> dict[str, Any]:
     """Submit with stable SCC ID; all destructive actions explicit and journalled."""
+    if skip_backup and not replace_existing:
+        raise ValueError("Backup waiver only applies to explicitly requested SCC replacements.")
     manifest = validate_upload_package(package)
     identity = str(manifest["measurement_id"])
     root = state_root(config)
@@ -48,73 +50,108 @@ def submit(
                     "remote record. Use an ordinary upload for new IDs."
                 )
             original_fingerprint = remote_fingerprint(existing)
-            archive, archive_hash = archive_remote_measurement(
-                client, existing, root,
-            )
-            copy = verify_archive(archive, archive_hash)
-            if copy["remote_fingerprint"] != original_fingerprint:
-                raise SCCRemoteError("Remote backup fingerprint does not match preflight.")
-            current = client.measurement(identity)
-            if current is None or remote_fingerprint(current) != original_fingerprint:
-                raise SCCRemoteError(
-                    "Remote SCC measurement changed or disappeared during backup."
+            if skip_backup:
+                # The operator explicitly waives a recoverable pre-deletion
+                # archive. Preserve integrity and remote fingerprint checks.
+                store.begin(
+                    manifest, allow_new_revision=True, allow_same_revision=True,
                 )
-            comparison = compare_staged_to_archive(manifest, copy)
-            if comparison["identical"]:
-                if previous is None:
-                    store.begin(manifest)
-                    store.transition(
-                        identity, "remote_exists", action="identical_noop",
-                        remote_creation_date=existing.get("creation_date"),
-                        detail=comparison,
-                    )
-                else:
-                    # A verified read-only no-op must not demote a prior
-                    # accepted/downloaded journal to remote_exists.
-                    store.transition(
-                        identity, previous["state"], action="identical_noop",
-                        detail=comparison,
-                    )
-                return {
-                    "measurement_id": identity,
-                    "remote_page": client._url(
-                        f"data_processing/measurements/{identity}/"
-                    ),
-                    "status": "already_identical",
-                }
-            # Remote preimage and local candidate are known: only now begin
-            # the new journal revision and authorize the destructive phase.
-            store.begin(
-                manifest, allow_new_revision=True, allow_same_revision=True,
-            )
-            store.transition(
-                identity, "archiving", action="archive_started",
-                detail={"remote_fingerprint": original_fingerprint},
-            )
-            store.transition(
-                identity, "backed_up", action="backup_verified",
-                archive_path=str(archive), archive_manifest_sha256=archive_hash,
-                detail={"archive_path": str(archive), "archive_sha256": archive_hash},
-            )
-            store.transition(
-                identity, "backed_up", action="replacement_difference_verified",
-                detail=comparison,
-            )
-            verify_archive(archive, archive_hash)
-            refreshed = validate_upload_package(package)
-            if refreshed["files"] != manifest["files"] or (
-                refreshed["scc_configuration_id"] != manifest["scc_configuration_id"]
-                or refreshed["measurement_id"] != identity
-            ):
                 store.transition(
-                    identity, "failed", action="local_source_changed_before_delete",
-                    error="Pending SCC input changed after preflight; no deletion attempted.",
+                    identity, "preflight", action="operator_confirmed_no_backup",
+                    detail={
+                        "remote_fingerprint": original_fingerprint,
+                        "remote_creation_date": existing.get("creation_date"),
+                        "irreversible": True,
+                    },
                 )
-                raise SCCRemoteError(
-                    "Pending SCC upload package changed during remote backup; "
-                    "the prior SCC measurement was not deleted."
+                current = client.measurement(identity)
+                if current is None or remote_fingerprint(current) != original_fingerprint:
+                    store.transition(
+                        identity, "failed", action="remote_changed_before_unbacked_delete",
+                        error="Remote SCC measurement changed after --confirm.",
+                    )
+                    raise SCCRemoteError("Remote SCC measurement changed before replacement.")
+                refreshed = validate_upload_package(package)
+                if (
+                    refreshed["files"] != manifest["files"]
+                    or refreshed["scc_configuration_id"] != manifest["scc_configuration_id"]
+                ):
+                    store.transition(
+                        identity, "failed", action="local_changed_before_unbacked_delete",
+                        error="Staged SCC bytes changed before delete.",
+                    )
+                    raise SCCRemoteError("Staged SCC bytes changed before replacement.")
+            else:
+                archive, archive_hash = archive_remote_measurement(
+                    client, existing, root,
                 )
-            store.transition(identity, "deleting", action="delete_requested")
+                copy = verify_archive(archive, archive_hash)
+                if copy["remote_fingerprint"] != original_fingerprint:
+                    raise SCCRemoteError("Remote backup fingerprint does not match preflight.")
+                current = client.measurement(identity)
+                if current is None or remote_fingerprint(current) != original_fingerprint:
+                    raise SCCRemoteError(
+                        "Remote SCC measurement changed or disappeared during backup."
+                    )
+                comparison = compare_staged_to_archive(manifest, copy)
+                if comparison["identical"]:
+                    if previous is None:
+                        store.begin(manifest)
+                        store.transition(
+                            identity, "remote_exists", action="identical_noop",
+                            remote_creation_date=existing.get("creation_date"),
+                            detail=comparison,
+                        )
+                    else:
+                        # A verified read-only no-op must not demote a prior
+                        # accepted/downloaded journal to remote_exists.
+                        store.transition(
+                            identity, previous["state"], action="identical_noop",
+                            detail=comparison,
+                        )
+                    return {
+                        "measurement_id": identity,
+                        "remote_page": client._url(
+                            f"data_processing/measurements/{identity}/"
+                        ),
+                        "status": "already_identical",
+                    }
+                # Remote preimage and local candidate are known: only now begin
+                # the new journal revision and authorize the destructive phase.
+                store.begin(
+                    manifest, allow_new_revision=True, allow_same_revision=True,
+                )
+                store.transition(
+                    identity, "archiving", action="archive_started",
+                    detail={"remote_fingerprint": original_fingerprint},
+                )
+                store.transition(
+                    identity, "backed_up", action="backup_verified",
+                    archive_path=str(archive), archive_manifest_sha256=archive_hash,
+                    detail={"archive_path": str(archive), "archive_sha256": archive_hash},
+                )
+                store.transition(
+                    identity, "backed_up", action="replacement_difference_verified",
+                    detail=comparison,
+                )
+                verify_archive(archive, archive_hash)
+                refreshed = validate_upload_package(package)
+                if refreshed["files"] != manifest["files"] or (
+                    refreshed["scc_configuration_id"] != manifest["scc_configuration_id"]
+                    or refreshed["measurement_id"] != identity
+                ):
+                    store.transition(
+                        identity, "failed", action="local_source_changed_before_delete",
+                        error="Pending SCC input changed after preflight; no deletion attempted.",
+                    )
+                    raise SCCRemoteError(
+                        "Pending SCC upload package changed during remote backup; "
+                        "the prior SCC measurement was not deleted."
+                    )
+            store.transition(
+                identity, "deleting",
+                action="delete_requested_without_backup" if skip_backup else "delete_requested",
+            )
             try:
                 client.delete_measurement(
                     identity, expected_fingerprint=original_fingerprint,
