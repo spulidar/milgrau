@@ -14,6 +14,7 @@ import pytest
 from milgrau.level0.scc_staging import (
     atomic_scc_package, pending_scc_package, write_scc_manifest,
 )
+from milgrau.io.paths import level0_output_path
 from milgrau.provenance import file_sha256
 from milgrau.scc.packages import SCCPackageError, validate_upload_package
 from milgrau.scc.sounding_finalize import finalize_session_soundings
@@ -34,7 +35,8 @@ def _config(tmp_path: Path, *, missing="skip") -> dict:
             "enabled": True, "source": "cached_wyoming",
             "missing_policy": missing,
         }}},
-        "_station_catalog": {"station": {"radiosonde": {
+        "directories": {"processed_data": str(tmp_path / "02-processed_data")},
+        "_station_catalog": {"station": {"id": "spu", "radiosonde": {
             "station_id": "83779", "station_name": "SBMT",
             "latitude": -23.5167, "longitude": -46.6333,
             "station_altitude_m": 722.0,
@@ -49,10 +51,11 @@ def _config(tmp_path: Path, *, missing="skip") -> dict:
 
 
 def _create_stage(config: dict, tmp_path: Path) -> tuple[Path, Path, Path]:
-    l0 = tmp_path / f"{SESSION}_L0.nc"
+    l0 = level0_output_path(SESSION, config)
+    l0.parent.mkdir(parents=True, exist_ok=True)
     l0.write_bytes(b"scientific Level 0 not modified")
-    l1 = tmp_path / f"{SESSION}_L1.nc"
-    with atomic_scc_package(config, ID) as stage:
+    l1 = l0.with_name(f"{SESSION}_L1.nc")
+    with atomic_scc_package(config, ID, session_id=SESSION) as stage:
         raw = stage / f"{ID}.nc"
         with nc.Dataset(raw, "w") as ds:
             ds.setncattr("Measurement_ID", ID)
