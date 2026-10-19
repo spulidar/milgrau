@@ -9,7 +9,6 @@ station_config: "station.yaml"
 scc:
   enabled: true
   config_file: "scc.yaml"
-  staging_dir: ".cache/scc"
   # Persistent SCC submission journal and pre-replacement archive (never cache).
   state_dir: ".state/scc"
   upload:
