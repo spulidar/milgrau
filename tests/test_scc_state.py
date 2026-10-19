@@ -110,8 +110,9 @@ def test_cross_process_exclusive_lock_is_safe(tmp_path: Path) -> None:
     assert not list((root / "locks").glob("*.lock"))
 
 
-def test_state_cannot_be_stored_under_disposable_cache(tmp_path: Path) -> None:
+def test_state_cannot_be_stored_under_scientific_session_products(tmp_path: Path) -> None:
     config = _config(tmp_path)
-    config["scc"]["state_dir"] = str(tmp_path / ".cache/scc/state")
-    with pytest.raises(ValueError, match="independent"):
+    config["directories"] = {"processed_data": str(tmp_path / "02-processed_data")}
+    config["scc"]["state_dir"] = str(tmp_path / "02-processed_data/spu/journal")
+    with pytest.raises(ValueError, match="outside processed session"):
         state_root(config)
