@@ -12,7 +12,7 @@ import netCDF4 as nc
 import numpy as np
 
 from milgrau.level0.scc_staging import (
-    _MEASUREMENT_ID, _staged_matches,
+    _MEASUREMENT_ID,
     manifest_raw_name,
     validate_pending_scc_package,
 )
