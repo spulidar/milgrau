@@ -66,6 +66,24 @@ def pending_scc_package(
     if session_id is not None:
         return scc_staging_root(config, session_id) / measurement_id
     matches = _staged_matches(config, measurement_id)
+    if not matches:
+        # An interrupted local rename/repair can temporarily remove the input
+        # directory. Resolve its session from the retained same-session preimage.
+        root = processed_data_root(config)
+        retained = []
+        for kind in ("legacy-lr", "legacy-sounding"):
+            retained.extend(
+                archive.parent.parent / "scc-inputs" / measurement_id
+                for archive in root.glob(f"*/*/*/*/scc/{kind}/{measurement_id}")
+                if archive.is_dir() and not archive.is_symlink()
+            )
+        retained.extend(
+            archive.with_name(measurement_id)
+            for archive in root.glob(
+                f"*/*/*/*/scc/scc-inputs/.{measurement_id}.before-sounding"
+            ) if archive.is_dir() and not archive.is_symlink()
+        )
+        matches = sorted(set(retained))
     if len(matches) != 1:
         raise FileNotFoundError(
             f"Expected one session/scc/scc-inputs/{measurement_id}, "
