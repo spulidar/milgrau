@@ -28,7 +28,6 @@ def _config(tmp_path: Path, *, missing="skip") -> dict:
     return {
         "scc": {
             "enabled": True,
-            "staging_dir": str(tmp_path / ".cache/scc"),
             "state_dir": str(tmp_path / ".state/scc"),
         },
         "_scc_catalog": {"scc_policy": {"sounding": {

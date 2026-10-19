@@ -19,7 +19,6 @@ def _config(tmp_path: Path) -> dict:
     return {
         "scc": {
             "enabled": True,
-            "staging_dir": str(tmp_path / ".cache/scc"),
             "state_dir": str(tmp_path / ".state/scc"),
             "cleanup": {"policy": "manual"},
         },
