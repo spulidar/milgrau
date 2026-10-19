@@ -202,13 +202,12 @@ class SCCClient:
         """Read-only API lookup; 404 means absent, every other error is fatal."""
         if not self._logged_in:
             self.login()
-        from milgrau.level0.scc_staging import pending_scc_package
+        from milgrau.level0.scc_staging import _MEASUREMENT_ID
 
-        # Validate IDs via the same safe path rules; no path construction escapes.
-        # A synthetic config avoids any filesystem operation.
-        pending_scc_package(
-            {"scc": {"enabled": True, "staging_dir": ".cache/scc"}}, identity,
-        )
+        # Remote reads must validate the ID without requiring local sessions,
+        # staged packages, or any machine-specific filesystem state.
+        if not _MEASUREMENT_ID.fullmatch(identity):
+            raise ValueError(f"Unsafe SCC Measurement_ID: {identity!r}.")
         response = self._read(f"api/v1/measurements/{identity}/")
         if response.status_code == 404:
             return None
