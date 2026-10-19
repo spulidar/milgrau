@@ -19,6 +19,8 @@ This branch's tracker intentionally contains **only Phase 12**. The earlier scie
 10. Retain lossless station profile history through configuration migration; avoid unrequested compatibility layers.
 11. A failure of optional SCC staging must not invalidate a valid scientific L1; record the SCC issue separately and keep its upload preflight fail-closed.
 12. Read live processing/availability status from the SCC server; retain the local SQLite journal for upload attempts, uncertain outcomes, source identity and irreversible-operation evidence. It is not disposable cache.
+13. Store SCC packages under `<scientific-session>/scc/scc-inputs/<Measurement_ID>/` and SCC download generations under `<scientific-session>/scc/scc-results/`. No global `.cache/scc` staging for new exports.
+14. `upload --replace-existing --confirm` explicitly skips mandatory remote backup, recording that irreversible waiver. Remote fingerprint checks, input checksums and uncertain-POST/DELETE protection remain.
 
 ## 12.1 — Configuration ownership and migration
 
