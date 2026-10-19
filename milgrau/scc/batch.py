@@ -53,7 +53,7 @@ def submit_batch(
 
     Default: submit absent valid IDs and skip remote-existing IDs without modifying
     their local journal. With replace_existing, invoke the same exact-ID,
-    backup-before-delete workflow as the single-upload command. Invalid IDs
+    explicitly confirmed no-backup replacement workflow as the single-upload command. Invalid IDs
     are always skipped; optional continue_on_error proceeds to independent IDs
     after remote errors without clearing their durable blocked journal.
     """
@@ -118,15 +118,20 @@ def submit_batch(
             # submit() re-queries the API and independently enforces all
             # replacement preconditions, snapshots and exact-ID locks.
             is_replacement = bool(existing is not None and replace_existing)
-            result = submit(
-                config, path, client, replace_existing=is_replacement,
-            )
+            if is_replacement:
+                result = submit(
+                    config, path, client, replace_existing=True, skip_backup=True,
+                )
+            else:
+                result = submit(
+                    config, path, client, replace_existing=False,
+                )
             if result.get("status") == "already_identical":
                 report.identical += 1
                 report_line(f"{prefix}: IDENTICAL — remote measurement preserved.")
             elif is_replacement:
                 report.replaced += 1
-                report_line(f"{prefix}: REPLACED — same Measurement_ID; prior SCC archived.")
+                report_line(f"{prefix}: REPLACED — same Measurement_ID; no remote backup requested.")
             else:
                 report.submitted += 1
                 report_line(f"{prefix}: SUBMITTED — remote API accepted.")
