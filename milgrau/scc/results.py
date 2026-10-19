@@ -134,7 +134,7 @@ def download_results(
                 source_session = str(staged_manifest["scientific_session_id"])
             except (FileNotFoundError, ValueError, KeyError) as exc:
                 raise SCCRemoteError(
-                    "Scientific SCC session is unknown locally; use --session SESSION_ID "
+                    "Scientific SCC session is unknown locally. Specify --session SESSION_ID "
                     "to download a remote record without a staged input."
                 ) from exc
         session_id = source_session or row["scientific_session_id"]
