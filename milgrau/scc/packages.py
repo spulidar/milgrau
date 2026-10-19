@@ -12,7 +12,7 @@ import netCDF4 as nc
 import numpy as np
 
 from milgrau.level0.scc_staging import (
-    scc_staging_root,
+    _MEASUREMENT_ID, _staged_matches,
     manifest_raw_name,
     validate_pending_scc_package,
 )
@@ -26,19 +26,23 @@ class SCCPackageError(ValueError):
 
 def discover_pending(config: Mapping[str, Any], identity: str | None = None) -> list[Path]:
     """List only named complete package directories; never follow arbitrary paths."""
-    root = scc_staging_root(config) / "pending"
     if identity is not None:
         from milgrau.level0.scc_staging import pending_scc_package
 
-        path = pending_scc_package(config, identity)
-        if not path.is_dir() or path.is_symlink():
-            raise SCCPackageError(f"SCC Measurement_ID {identity!r} is not pending.")
+        try:
+            path = pending_scc_package(config, identity)
+        except FileNotFoundError as exc:
+            raise SCCPackageError(f"SCC Measurement_ID {identity!r} is not staged.") from exc
         return [path]
+    from milgrau.io.paths import processed_data_root
+
+    root = processed_data_root(config)
     if not root.exists():
         return []
     return sorted(
-        path for path in root.iterdir()
-        if path.is_dir() and not path.is_symlink() and not path.name.startswith(".")
+        path for path in root.glob("*/*/*/*/scc/scc-inputs/*")
+        if path.is_dir() and not path.is_symlink()
+        and _MEASUREMENT_ID.fullmatch(path.name)
     )
 
 
