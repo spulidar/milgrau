@@ -60,7 +60,7 @@ class Client:
 def _stubs(monkeypatch: pytest.MonkeyPatch, *, fail_submit=None):
     submitted = []
 
-    def submit(config, path, client, *, replace_existing):
+    def submit(config, path, client, *, replace_existing, skip_backup=False):
         submitted.append((path.name, replace_existing))
         if path.name == fail_submit:
             raise RuntimeError("remote POST unknown")
