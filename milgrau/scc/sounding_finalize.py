@@ -18,7 +18,7 @@ import netCDF4 as nc
 
 from milgrau.level0.scc_sounding import stage_cached_sounding
 from milgrau.level0.scc_staging import (
-    manifest_raw_name, scc_staging_root, validate_pending_scc_package,
+    manifest_raw_name, validate_pending_scc_package,
 )
 from milgrau.provenance import file_sha256
 from milgrau.scc.packages import validate_upload_package
@@ -52,7 +52,7 @@ def finalize_session_soundings(
         available = str(getattr(ds, "radiosonde_available", "false")).lower() == "true"
         qa_target = str(getattr(ds, "radiosonde_qa_target_datetime_utc", ""))
         l1_session = str(getattr(ds, "Session_ID", ""))
-    packets = scc_staging_root(config) / "pending"
+    packets = level0_path.parent / "scc" / "scc-inputs"
     if not packets.is_dir():
         return []
     orphaned_backups = sorted(p.name for p in packets.iterdir()
