@@ -305,6 +305,22 @@ def _finalize_scc_after_level1(
     return finalize_session_soundings(source_level0, level1_file, config, logger)
 
 
+def _optional_scc_sounding_issue(
+    source_level0: Path, level1_file: Path,
+    config: Mapping[str, Any], logger: logging.Logger,
+) -> str | None:
+    """Report an SCC staging issue without invalidating an already valid scientific L1."""
+    try:
+        _finalize_scc_after_level1(source_level0, level1_file, config, logger)
+    except Exception as exc:
+        logger.error(
+            "SCC sounding not upload-ready; scientific L1 remains valid: %s",
+            exc, exc_info=True,
+        )
+        return f"{type(exc).__name__}: {exc}"
+    return None
+
+
 def _files_requiring_level1(
     files: list[Path],
     config: Mapping[str, Any],
@@ -327,28 +343,20 @@ def _files_requiring_level1(
         if is_current:
             file_logger = bind_log_context(logger, session_id=session_id)
             bind_log_context(file_logger, stage="skip").info("up to date | %s", output_path.name)
-            try:
-                _finalize_scc_after_level1(
-                    file_path, output_path, config,
-                    bind_log_context(file_logger, stage="scc_sounding"),
-                )
-            except Exception as exc:
-                skipped_results.append(ExecutionResult.failure(
-                    "scc.sounding", "SCC sounding finalization failed after current L1",
-                    input_path=file_path, output_path=output_path,
-                    cause=exc, include_traceback=True,
-                    metadata={"pipeline": "SCC", "session_id": session_id},
-                ))
-                bind_log_context(file_logger, stage="scc_sounding").error(
-                    "SCC pending package not upload-ready: %s", exc,
-                )
+            scc_issue = _optional_scc_sounding_issue(
+                file_path, output_path, config,
+                bind_log_context(file_logger, stage="scc_sounding"),
+            )
+            metadata = {"pipeline": "L1", "session_id": session_id}
+            if scc_issue is not None:
+                metadata["scc_staging_error"] = scc_issue
             skipped_results.append(
                 ExecutionResult.skipped(
                     "level1.incremental",
                     "Level 1 is up to date",
                     input_path=file_path,
                     output_path=output_path,
-                    metadata={"pipeline": "L1", "session_id": session_id},
+                    metadata=metadata,
                 )
             )
             config_file = config.get("_config_file")
@@ -507,23 +515,25 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
             bind_log_context(file_logger, stage="figures"),
             root_dir=figure_root,
         )
-        stage = "scc.sounding"
-        _finalize_scc_after_level1(
+        scc_issue = _optional_scc_sounding_issue(
             nc_file, save_path, config,
             bind_log_context(file_logger, stage="scc_sounding"),
         )
+        metadata = {
+            "pipeline": "L1",
+            "session_id": session_id,
+            "channel_count": final_ds.sizes.get("channel", 0),
+            "figure_status": figure_result.status.value,
+        }
+        if scc_issue is not None:
+            metadata["scc_staging_error"] = scc_issue
         return ExecutionResult.success(
             "level1.complete",
             "Level 1 generated",
             input_path=nc_file,
             output_path=save_path,
             duration_seconds=time.perf_counter() - started_at,
-            metadata={
-                "pipeline": "L1",
-                "session_id": session_id,
-                "channel_count": final_ds.sizes.get("channel", 0),
-                "figure_status": figure_result.status.value,
-            },
+            metadata=metadata,
         )
     except Exception as exc:
         return ExecutionResult.failure(
