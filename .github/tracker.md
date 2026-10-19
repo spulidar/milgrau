@@ -1,7 +1,7 @@
 # Phase 12 — Optional SCC integration and publication workflow
 
 **Branch:** `scc-integration-refactor` (base: `milgraumaxxing`)  
-**Status:** Phases 12.1–12.6 implemented and CI validated; Phase 12.7 sequential batch-upload code/mock CI 6/6 passed; live single-ID upload/replacement and full batch pending operator validation  
+**Status:** Core SCC upload/download implemented and CI validated; live LR-corrected upload/download confirmed for one ID; new sounding, destructive replacement and full-batch acceptance remain open gates.  
 **Scope:** SCC configuration, optional export, staging, native upload/status/download/cleanup client.
 This branch's tracker intentionally contains **only Phase 12**. The earlier scientific tracker remains on the base branch.
 
@@ -10,13 +10,15 @@ This branch's tracker intentionally contains **only Phase 12**. The earlier scie
 1. `station.yaml` owns observational station data, instrument hardware, calibration and climatology.
 2. `config.yaml` owns scientific processing controls, optional SCC activation and operational policy.
 3. `scc.yaml` owns SCC-specific configuration IDs, channel IDs, product IDs and external-service policy.
-4. SCC integration is disabled by default. Disabled scientific processing must not load, validate or require `scc.yaml`.
+4. This integration branch intentionally has `scc.enabled: true` for operator testing. When disabled, scientific processing must not load, validate or require `scc.yaml`.
 5. SCIENTIFIC `Session_ID` and continuous canonical L0/L1/L2 products are independent of SCC `Measurement_ID` and publication boundaries.
 6. Staged SCC NetCDFs are disposable. The durable submission history and downloaded outputs are not.
 7. Remote upload is never implicit without explicit operator configuration; no silent delete or replacement of SCC measurements.
 8. Unknown SCC IDs are errors, never inferred from other identifier types.
 9. Raman retrieval products are not replaced with elastic climatological assumptions.
 10. Retain lossless station profile history through configuration migration; avoid unrequested compatibility layers.
+11. A failure of optional SCC staging must not invalidate a valid scientific L1; record the SCC issue separately and keep its upload preflight fail-closed.
+12. Read live processing/availability status from the SCC server; retain the local SQLite journal for upload attempts, uncertain outcomes, source identity and irreversible-operation evidence. It is not disposable cache.
 
 ## 12.1 — Configuration ownership and migration
 
