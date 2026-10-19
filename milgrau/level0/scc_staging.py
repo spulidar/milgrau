@@ -1,7 +1,7 @@
-"""Disposable, atomic SCC submission staging.
+"""Atomic SCC submission inputs located beside each scientific session.
 
-Do not record remote acceptance here: .cache may be deleted at any time.
-Durable submission state and upload/cleanup commands belong to later phases.
+Input packages are ancillary to scientific L0/L1/L2; SCC upload state is
+tracked independently of their filesystem location.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, Mapping, Any
 
-from milgrau.io.paths import resolve_project_path
+from milgrau.io.paths import processed_data_root, session_dir
 from milgrau.provenance import file_sha256
 
 _MEASUREMENT_ID = re.compile(r"^\d{8}[a-z0-9]{3}\d{4}$")
@@ -38,27 +38,48 @@ def manifest_raw_name(manifest: Mapping[str, Any]) -> str:
     return names[0]
 
 
-def scc_staging_root(config: Mapping[str, Any]) -> Path:
-    """Return the configured SCC cache, never a scientific output directory."""
+def scc_staging_root(config: Mapping[str, Any], session_id: str) -> Path:
+    """Session-scoped SCC inputs: <session>/scc/scc-inputs/."""
     scc = config.get("scc")
     if not isinstance(scc, Mapping) or scc.get("enabled") is not True:
         raise ValueError("SCC staging requires config.scc.enabled: true.")
-    setting = scc.get("staging_dir", ".cache/scc")
-    if not isinstance(setting, str) or not setting.strip():
-        raise ValueError("config.scc.staging_dir must be a non-empty directory.")
-    return resolve_project_path(setting)
+    return session_dir(session_id, config) / "scc" / "scc-inputs"
 
 
-def pending_scc_package(config: Mapping[str, Any], measurement_id: str) -> Path:
+def _staged_matches(config: Mapping[str, Any], measurement_id: str) -> list[Path]:
+    """Find exact IDs without relying on a machine-specific SQLite journal."""
+    root = processed_data_root(config)
+    if not root.is_dir():
+        return []
+    return sorted(
+        path for path in root.glob(f"*/*/*/*/scc/scc-inputs/{measurement_id}")
+        if path.is_dir() and not path.is_symlink()
+    )
+
+
+def pending_scc_package(
+    config: Mapping[str, Any], measurement_id: str, *,
+    session_id: str | None = None,
+) -> Path:
     if not _MEASUREMENT_ID.fullmatch(measurement_id):
         raise ValueError(f"Unsafe SCC Measurement_ID: {measurement_id!r}.")
-    return scc_staging_root(config) / "pending" / measurement_id
+    if session_id is not None:
+        return scc_staging_root(config, session_id) / measurement_id
+    matches = _staged_matches(config, measurement_id)
+    if len(matches) != 1:
+        raise FileNotFoundError(
+            f"Expected one session/scc/scc-inputs/{measurement_id}, "
+            f"found {len(matches)}; specify a scientific session when staging."
+        )
+    return matches[0]
 
 
 @contextmanager
 def atomic_scc_package(
     config: Mapping[str, Any],
     measurement_id: str,
+    *,
+    session_id: str,
 ) -> Iterator[Path]:
     """Stage in a sibling temporary directory; expose only complete packages.
 
@@ -66,7 +87,12 @@ def atomic_scc_package(
     historical session. Re-export must be explicit and cannot silently alter
     already queued upload bytes.
     """
-    target = pending_scc_package(config, measurement_id)
+    target = pending_scc_package(config, measurement_id, session_id=session_id)
+    elsewhere = [p for p in _staged_matches(config, measurement_id) if p != target]
+    if elsewhere:
+        raise FileExistsError(
+            f"SCC Measurement_ID {measurement_id} already belongs to {elsewhere[0]}."
+        )
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists():
         raise FileExistsError(
