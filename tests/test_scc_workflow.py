@@ -323,7 +323,7 @@ def _interrupted_delete_journal(tmp_path: Path, *, action="delete_result_uncerta
         store.transition(ID, "uncertain", action=action)
     from milgrau.level0.scc_staging import pending_scc_package
 
-    staged = pending_scc_package(config, ID)
+    staged = tmp_path / "scc-inputs" / ID
     staged.mkdir(parents=True)
     return config, backup, staged
 
