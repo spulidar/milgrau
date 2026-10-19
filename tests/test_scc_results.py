@@ -156,7 +156,7 @@ def test_journal_owned_download_auto_cleans_only_pending_cache(
     assert saved["uploaded_by_milgrau"] is True
     assert saved["scientific_session_id"] == SESSION
     assert set(saved["files"]) == {"elpp", "elda"}
-    assert not pending_scc_package(config, ID).exists()
+    assert not pending_scc_package(config, ID, session_id=SESSION).exists()
     assert level0_output_path(SESSION, config).read_bytes() == (
         b"canonical scientific Level 0 is NEVER modified"
     )
@@ -180,13 +180,13 @@ def test_download_keep_cache_then_explicit_cleanup_dry_run(
     monkeypatch.setattr(cli, "load_config", lambda: config)
     monkeypatch.setattr(cli, "_client", lambda _: FakeClient())
     assert cli.main(["download", "--id", ID, "--keep-cache"]) == 0
-    assert pending_scc_package(config, ID).is_dir()
+    assert pending_scc_package(config, ID, session_id=SESSION).is_dir()
     with SubmissionStore(state_root(config)) as store:
         assert store.get(ID)["state"] == "downloaded"
     assert cli.main(["cleanup", "--id", ID, "--dry-run"]) == 0
-    assert pending_scc_package(config, ID).is_dir()
+    assert pending_scc_package(config, ID, session_id=SESSION).is_dir()
     assert cli.main(["cleanup", "--id", ID, "--confirm"]) == 0
-    assert not pending_scc_package(config, ID).exists()
+    assert not pending_scc_package(config, ID, session_id=SESSION).exists()
     assert cli.main(["cleanup", "--id", ID, "--confirm"]) == 0
 
 
@@ -199,7 +199,7 @@ def test_preexisting_external_scc_can_download_but_must_keep_pending_cache(
     monkeypatch.setattr(cli, "load_config", lambda: config)
     monkeypatch.setattr(cli, "_client", lambda _: FakeClient())
     assert cli.main(["download", "--id", ID, "--session", SESSION]) == 0
-    assert pending_scc_package(config, ID).is_dir()
+    assert pending_scc_package(config, ID, session_id=SESSION).is_dir()
     target = results.result_location(config, SESSION, ID, CREATION)
     assert validate_results(target)["uploaded_by_milgrau"] is False
     with pytest.raises(SCCRemoteError, match="No MILGRAU submission journal"):
@@ -215,7 +215,7 @@ def test_missing_elda_completion_never_publishes_or_cleans(
     _mock_stream(monkeypatch)
     with pytest.raises(SCCRemoteError, match="ELPP|ELDA"):
         download_results(config, ID, FakeClient(_record(finished=False)))
-    assert pending_scc_package(config, ID).is_dir()
+    assert pending_scc_package(config, ID, session_id=SESSION).is_dir()
     assert not (level0_output_path(SESSION, config).parent / "scc" / "scc-results" / ID).exists()
 
 
@@ -229,7 +229,7 @@ def test_partial_network_failure_leaves_no_visible_results_and_retains_cache(
     with pytest.raises(SCCRemoteError, match="transfer interruption"):
         download_results(config, ID, FakeClient())
     assert not results.result_location(config, SESSION, ID, CREATION).exists()
-    assert pending_scc_package(config, ID).exists()
+    assert pending_scc_package(config, ID, session_id=SESSION).exists()
     with SubmissionStore(state_root(config)) as store:
         assert store.get(ID)["state"] == "accepted"
 
@@ -262,7 +262,7 @@ def test_tampered_result_blocks_cleanup_without_touching_pending(
     (target / "elpp.archive").write_bytes(b"tampered")
     with pytest.raises(SCCRemoteError, match="Corrupted"):
         cleanup_pending(config, ID, dry_run=False)
-    assert pending_scc_package(config, ID).is_dir()
+    assert pending_scc_package(config, ID, session_id=SESSION).is_dir()
 
 
 def test_download_without_scientific_session_is_rejected(
@@ -303,7 +303,7 @@ def test_result_snapshot_is_immutable_across_remote_revision(
     assert newer != previous
     assert previous.is_dir() and newer.is_dir()
     assert newer_manifest["remote_creation_date"] == "new-generation"
-    assert pending_scc_package(config, ID).exists()
+    assert pending_scc_package(config, ID, session_id=SESSION).exists()
 
 
 def test_legacy_state_db_migrates_without_losing_upload_journal(tmp_path: Path) -> None:
