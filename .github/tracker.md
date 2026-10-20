@@ -208,7 +208,22 @@ Esses arquivos possuem alterações nas duas branches e devem ser revisados mesm
 - [ ] Remover testes exclusivamente associados a funcionalidades removidas.
 - [ ] Preservar testes de segurança e integridade que continuem relevantes ao fluxo novo.
 
-### 3.2. `level0/scc_staging.py`
+### 3.2. Remoção do `milgrau-scc cleanup` — decisão operacional
+
+Os inputs SCC são artefatos persistidos por sessão científica, não cache
+descartável. A limpeza será responsabilidade manual do operador, fora da CLI,
+**sem exclusão automática após upload ou download**.
+
+- [ ] Remover o subcomando `milgrau-scc cleanup`, seu handler e o módulo `scc/cleanup.py` quando não houver consumidores.
+- [ ] Remover `scc.cleanup.policy` da configuração, incluindo o legado `after_download`.
+- [ ] Remover `download --keep-cache` e todos os caminhos de exclusão pós-download; downloads devem sempre preservar os inputs SCC.
+- [ ] Revisar mensagens, testes e documentação para usar "inputs SCC por sessão" em vez de "cache descartável".
+- [ ] Preservar a interpretação do estado histórico `cleaned` em journals SQLite antigos, sem apagar nem migrar registros.
+- [ ] Não apagar automaticamente pacotes com envio pendente, POST/DELETE incerto ou evidências ainda necessárias.
+- [ ] Documentar a exclusão manual restrita a `<sessão>/scc/scc-inputs/<Measurement_ID>/`, somente após verificar status remoto, journal e necessidade de reenvio/auditoria; nunca apagar `scc-results`, `.state/scc`, L0/L1/L2 ou figuras.
+- [ ] Garantir por testes que upload, download, status e reexportação não apagam inputs.
+
+### 3.3. `level0/scc_staging.py`
 
 - [ ] Remover lógica de descoberta e recuperação de layouts históricos depois da transição.
 - [ ] Manter apenas os diretórios de entrada por sessão.
@@ -217,7 +232,7 @@ Esses arquivos possuem alterações nas duas branches e devem ser revisados mesm
 - [ ] Preservar manifesto, hashes e identificação da sessão científica.
 - [ ] Garantir que nenhuma etapa altere L0/L1/L2 como consequência de limpeza SCC.
 
-### 3.3. `scc/sounding_finalize.py`
+### 3.4. `scc/sounding_finalize.py`
 
 - [ ] Simplificar a finalização dos soundings para o layout atual por sessão.
 - [ ] Preservar apenas soundings observados e rastreáveis.
@@ -240,7 +255,6 @@ Manter como interface principal:
 milgrau-scc upload
 milgrau-scc status
 milgrau-scc download
-milgrau-scc cleanup
 ```
 
 - [ ] Preservar upload individual e em lote.
@@ -257,21 +271,20 @@ milgrau-scc cleanup
 
 - [ ] Remover `scc.upload.automatic`, atualmente sem efeito de upload.
 - [ ] Revisar `scc.upload.retries`, garantindo que nunca permita retry inseguro de POST/DELETE.
-- [ ] Remover a política `after_download` se a limpeza manual for adotada como única opção.
+- [ ] Remover toda a configuração `scc.cleanup` (incluindo `after_download` e `manual`); a CLI não gerencia exclusão de inputs.
 - [ ] Simplificar opções de limpeza e flags redundantes.
 - [ ] Remover referências restantes ao staging global.
 - [ ] Preservar `scc.enabled: true` na branch experimental.
 - [ ] Decidir explicitamente o valor padrão de SCC antes do merge em `main`.
 
-### 4.3. `scc/cleanup.py`
+### 4.3. Retirada do cleanup da interface operacional
 
-- [ ] Manter exclusão manual dos inputs SCC.
-- [ ] Exigir identificação inequívoca do pacote e da sessão.
-- [ ] Evitar exclusão de pacotes com operações remotas pendentes ou incertas.
-- [ ] Não remover resultados SCC, produtos científicos ou figuras.
-- [ ] Simplificar verificações duplicadas sem perder garantias de integridade.
+- [ ] Remover `scc/cleanup.py` e `milgrau-scc cleanup` na Fase 3.
+- [ ] Não oferecer exclusão automática de inputs via download, upload ou status.
+- [ ] Preservar leitura de estados históricos `cleaned` e proteção contra operações incertas.
+- [ ] Documentar exclusão de diretórios de input pelo operador, após auditoria.
 
-**Gate 4:** quatro comandos operacionais principais, configuração reduzida e limpeza previsível.
+**Gate 4:** três comandos operacionais principais, configuração reduzida e nenhuma exclusão automática de inputs SCC.
 
 ---
 
@@ -310,7 +323,7 @@ milgrau-scc cleanup
 - [ ] Verificar status remoto sem arquivos locais.
 - [ ] Verificar download sem journal local, com manifesto válido.
 - [ ] Verificar gerações de resultados com proveniência preservada.
-- [ ] Verificar que cleanup nunca exclui arquivos científicos ou resultados.
+- [ ] Verificar que nenhum comando SCC apaga inputs de sessão automaticamente, nem produtos científicos ou resultados.
 
 ### 5.4. Validação real com SCC
 
