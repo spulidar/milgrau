@@ -164,6 +164,36 @@ def test_new_measurement_is_journalled_and_accepted(
     assert client.delete_calls == 0 and client.upload_calls == 1
 
 
+@pytest.mark.parametrize("field", ["configuration", "creation_date"])
+def test_post_upload_api_confirmation_mismatch_remains_uncertain_and_never_retries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, field: str,
+) -> None:
+    _patch(monkeypatch)
+    config = _config(tmp_path)
+    client = FakeClient(exists=False)
+    original_upload = client.upload_package
+
+    def upload_then_return_unexpected_record(path):
+        result = original_upload(path)
+        if field == "configuration":
+            client.record["system"] = {"id": 9999}
+        else:
+            client.record.pop("creation_date")
+        return result
+
+    monkeypatch.setattr(client, "upload_package", upload_then_return_unexpected_record)
+    with pytest.raises(SCCRemoteError, match="unexpected configuration|creation timestamp"):
+        workflow.submit(config, tmp_path, client)
+    assert client.upload_calls == 1
+    assert client.delete_calls == 0
+    with SubmissionStore(state_root(config)) as journal:
+        assert journal.get(ID)["state"] == "uncertain"
+        assert journal.events(ID)[-1]["action"] == "post_upload_recheck_failed"
+    with pytest.raises(RuntimeError, match="manual remote reconciliation"):
+        workflow.submit(config, tmp_path, client)
+    assert client.upload_calls == 1 and client.delete_calls == 0
+
+
 def test_existing_without_replace_never_deletes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

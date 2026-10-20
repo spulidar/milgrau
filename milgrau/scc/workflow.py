@@ -293,6 +293,17 @@ def submit(
                 raise SCCRemoteError(
                     "New SCC measurement disappeared after upload confirmation."
                 )
+            system = confirmed.get("system")
+            if (
+                not isinstance(system, Mapping)
+                or system.get("id") != manifest["scc_configuration_id"]
+                or not confirmed.get("creation_date")
+            ):
+                raise SCCRemoteError(
+                    "SCC API confirmation has an unexpected configuration "
+                    "or lacks a remote creation timestamp; upload outcome "
+                    "remains uncertain."
+                )
         except Exception as exc:
             store.transition(
                 identity, "uncertain", action="post_upload_recheck_failed",
