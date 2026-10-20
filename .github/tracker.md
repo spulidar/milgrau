@@ -138,8 +138,10 @@ Esses arquivos possuem alterações nas duas branches e devem ser revisados mesm
 
 ## 2. Simplificação do workflow SCC
 
-### Progresso da Fase 2 — implementação em PR #5
+### Progresso da Fase 2 — integrada no PR #5 (20/10/2026)
 
+- Merge de integração em `scc-integration-refactor`: `d915f28`, via [PR #5](https://github.com/spulidar/milgrau/pull/5).
+- Código da Fase 2 validado em [GitHub Actions, 6/6 jobs aprovados](https://github.com/spulidar/milgrau/actions/runs/39490065222); push de merge e tracker sujeitos às execuções posteriores de CI.
 - Identidade imutável de manifesto/hashes centralizada no journal SQLite, sem migração destrutiva do schema.
 - Reconciliação de DELETE incerto com arquivo verificado **ou** dispensa explícita de backup registrada na revisão corrente; SCC deve confirmar ausência antes de qualquer POST.
 - Um único caminho journalizado de POST de recuperação mantém estados incertos bloqueados e nunca repete DELETE.
@@ -360,7 +362,7 @@ milgrau-scc cleanup
 |---|---|
 | 0. Baseline e preparação | Parcialmente concluída |
 | 1. Merge das mudanças de `main` | Integrada, CI 6/6; dois testes operacionais pendentes |
-| 2. Simplificação do workflow SCC | Núcleo de segurança implementado em PR #5; revisão de estados e comandos históricos pendente |
+| 2. Simplificação do workflow SCC | Núcleo integrado e CI do PR aprovado; revisão de estados e comandos históricos pendente |
 | 3. Remoção de código transitório | Pendente |
 | 4. CLI e configuração | Pendente |
 | 5. Validação e regressões | Pendente |
@@ -369,6 +371,6 @@ milgrau-scc cleanup
 
 ### Próxima ação
 
-**O núcleo da Fase 2 está em revisão no PR #5.** Concluir o CI e incorporar na branch SCC; depois verificar os journals de operações incertas e pacotes locais da Fase 0 antes de eliminar caminhos históricos, consolidar comandos e revisar estados redundantes. Os dois testes operacionais restantes da Fase 1 também permanecem pendentes.
+**O núcleo da Fase 2 foi incorporado à branch SCC pelo PR #5.** Verificar os journals de operações incertas e pacotes locais da Fase 0 antes de eliminar caminhos históricos, consolidar comandos e revisar estados redundantes. Os dois testes operacionais restantes da Fase 1 também permanecem pendentes.
 
 Não executar uploads, substituições ou DELETE reais sem autorização explícita, ID adequado e preflight remoto. L0/L1/L2 e arquivos históricos devem continuar preservados.
