@@ -28,7 +28,14 @@ def _screen_acquisition_rows(
     positive_shots = shots[shots > 0]
     positive_rates = rates[rates > 0]
     if positive_shots.empty or positive_rates.empty:
-        return rows.iloc[0:0].copy(), rows, None, None
+        rejected = rows.copy()
+        causes = []
+        if positive_shots.empty:
+            causes.append("no_positive_shot_count")
+        if positive_rates.empty:
+            causes.append("no_positive_laser_frequency")
+        rejected["qa_rejection_reasons"] = ",".join(causes)
+        return rows.iloc[0:0].copy(), rejected, None, None
 
     expected_shots = float(safe_mode(positive_shots.values))
     expected_rate = float(safe_mode(positive_rates.values))
