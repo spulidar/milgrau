@@ -320,7 +320,7 @@ def _status(config: dict[str, Any], args: argparse.Namespace) -> int:
     if not packages:
         print("No matching local SCC pending packets.")
     from milgrau.scc.state import SubmissionStore, state_root
-    from milgrau.scc.workflow import reconcile_status
+    from milgrau.scc.workflow import reconciliation_guidance, reconcile_status
 
     with SubmissionStore(state_root(config)) as store:
         recorded = (
@@ -382,12 +382,9 @@ def _status(config: dict[str, Any], args: argparse.Namespace) -> int:
                                 f"running={record.get('is_being_processed')}; "
                                 f"ELPP={record.get('elpp')}; ELDA={record.get('elda')}"
                             )
-                            row = store.get(identity)
-                            if row is not None and row["state"] == "uncertain":
-                                print(
-                                    f"ATTENTION {identity}: journal remains uncertain; "
-                                    "no automatic retry or replacement is permitted."
-                                )
+                        guidance = reconciliation_guidance(store, identity, record)
+                        if guidance is not None:
+                            print(f"ATTENTION {identity}: {guidance}")
                     except Exception as exc:
                         errors += 1
                         print(
