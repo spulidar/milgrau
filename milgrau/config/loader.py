@@ -124,7 +124,7 @@ def _scc_settings(config: Mapping[str, Any]) -> Mapping[str, Any]:
         return {"enabled": False}
     if not isinstance(raw, Mapping):
         raise ValueError("config.scc must be a mapping.")
-    allowed = {"enabled", "config_file", "state_dir", "upload"}
+    allowed = {"enabled", "config_file", "state_dir", "http"}
     if set(raw) - allowed:
         raise ValueError(f"Unknown config.scc keys: {sorted(set(raw) - allowed)}.")
     enabled = raw.get("enabled", False)
@@ -133,24 +133,22 @@ def _scc_settings(config: Mapping[str, Any]) -> Mapping[str, Any]:
     for name in ("config_file", "state_dir"):
         if name in raw and (not isinstance(raw[name], str) or not raw[name].strip()):
             raise ValueError(f"config.scc.{name} must be a non-empty path.")
-    upload = raw.get("upload", {})
-    if not isinstance(upload, Mapping) or set(upload) - {"automatic", "timeout_seconds", "retries"}:
-        raise ValueError("config.scc.upload allows only automatic, timeout_seconds, retries.")
-    if "automatic" in upload and not isinstance(upload["automatic"], bool):
-        raise ValueError("config.scc.upload.automatic must be a boolean.")
-    if "timeout_seconds" in upload and (
-        isinstance(upload["timeout_seconds"], bool)
-        or not isinstance(upload["timeout_seconds"], (float, int))
-        or not math.isfinite(upload["timeout_seconds"])
-        or upload["timeout_seconds"] <= 0
+    http = raw.get("http", {})
+    if not isinstance(http, Mapping) or set(http) - {"timeout_seconds", "get_retries"}:
+        raise ValueError("config.scc.http allows only timeout_seconds and get_retries.")
+    if "timeout_seconds" in http and (
+        isinstance(http["timeout_seconds"], bool)
+        or not isinstance(http["timeout_seconds"], (float, int))
+        or not math.isfinite(http["timeout_seconds"])
+        or not 0 < http["timeout_seconds"] <= 600
     ):
-        raise ValueError("config.scc.upload.timeout_seconds must be finite and positive.")
-    if "retries" in upload and (
-        isinstance(upload["retries"], bool)
-        or not isinstance(upload["retries"], int)
-        or not 0 <= upload["retries"] <= 5
+        raise ValueError("config.scc.http.timeout_seconds must be in (0, 600].")
+    if "get_retries" in http and (
+        isinstance(http["get_retries"], bool)
+        or not isinstance(http["get_retries"], int)
+        or not 0 <= http["get_retries"] <= 5
     ):
-        raise ValueError("config.scc.upload.retries must be an integer 0..5.")
+        raise ValueError("config.scc.http.get_retries must be an integer 0..5.")
     if enabled and not raw.get("config_file"):
         raise ValueError("config.scc.config_file is required when SCC is enabled.")
     return raw

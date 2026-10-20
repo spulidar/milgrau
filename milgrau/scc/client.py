@@ -68,15 +68,18 @@ class SCCClient:
 
     def __init__(
         self, base_url: str, credentials: SCCCredentials,
-        *, timeout: float = 60.0, retries: int = 2, session: Any = None,
+        *, timeout: float = 60.0, get_retries: int = 2, session: Any = None,
     ) -> None:
         self.base_url = validated_origin(base_url)
         if not 0 < timeout <= 600:
             raise ValueError("SCC timeout must be in (0, 600] seconds.")
-        if isinstance(retries, bool) or not isinstance(retries, int) or not 0 <= retries <= 5:
-            raise ValueError("SCC retries must be between 0 and 5.")
+        if (
+            isinstance(get_retries, bool) or not isinstance(get_retries, int)
+            or not 0 <= get_retries <= 5
+        ):
+            raise ValueError("SCC safe-GET retries must be between 0 and 5.")
         self.timeout = float(timeout)
-        self.retries = retries
+        self.get_retries = get_retries
         self.credentials = credentials
         if session is None:
             try:
@@ -102,9 +105,9 @@ class SCCClient:
             raise SCCRemoteError("SCC returned a response redirected outside its HTTPS origin.")
 
     def _read(self, relative: str, **kwargs: Any) -> Any:
-        """Bounded retries only for safe GET requests, never for multipart POST."""
+        """Retry only safe GETs; POST upload, login and DELETE are never replayed."""
         url = self._url(relative)
-        for attempt in range(self.retries + 1):
+        for attempt in range(self.get_retries + 1):
             try:
                 response = self.session.get(
                     url, timeout=self.timeout, allow_redirects=False, **kwargs,
@@ -123,11 +126,11 @@ class SCCClient:
                     if response.status_code in {301, 302, 303, 307, 308}:
                         raise SCCRemoteError("SCC issued multiple GET redirects.")
             except Exception as exc:
-                if attempt == self.retries:
+                if attempt == self.get_retries:
                     raise SCCRemoteError(f"Could not retrieve SCC {relative}: {type(exc).__name__}") from exc
                 time.sleep(min(0.25 * (2**attempt), 2.0))
                 continue
-            if response.status_code in {502, 503, 504} and attempt < self.retries:
+            if response.status_code in {502, 503, 504} and attempt < self.get_retries:
                 time.sleep(min(0.25 * (2**attempt), 2.0))
                 continue
             return response

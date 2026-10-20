@@ -19,17 +19,15 @@ def _parser() -> argparse.ArgumentParser:
     upload = sub.add_parser("upload", help="Validate or explicitly submit an SCC packet.")
     upload.add_argument("--id", dest="identity", help="Exact 15-character SCC Measurement_ID.")
     upload.add_argument(
-        "--continue-on-error", action="store_true",
-        help="In batch mode, keep processing other IDs after an independent "
-             "validation, journal or SCC error. Never retry or unlock the failed ID.",
-    )
-    upload.add_argument(
         "--replace-existing", action="store_true",
-        help="Replace SCC IDs. Together with --confirm, waive the remote backup; without --id acts on the whole batch.",
+        help="Replace remote-existing IDs only with --confirm (no mandatory backup). "
+             "With no --id, replaces eligible existing IDs in batch.",
     )
     upload.add_argument(
         "--resume-after-delete", action="store_true",
-        help="Exact-ID recovery after uncertain DELETE; requires verified archive or recorded no-backup waiver and SCC 404. Sends one upload, no deletion.",
+        help="Manual recovery for an uncertain DELETE only: --id ID --confirm, "
+             "original verified archive or same-revision waiver, confirmed remote absence. "
+             "Sends one POST, never repeats DELETE.",
     )
     action = upload.add_mutually_exclusive_group(required=True)
     action.add_argument(
@@ -38,7 +36,8 @@ def _parser() -> argparse.ArgumentParser:
     )
     action.add_argument(
         "--confirm", action="store_true",
-        help="Authorize SCC upload; with --replace-existing, explicitly permit remote DELETE without a backup.",
+        help="Explicitly authorize upload, or same-ID DELETE and replacement "
+             "with --replace-existing (no mandatory backup).",
     )
 
     status = sub.add_parser("status", help="List local pending packets or query remote SCC.")
@@ -71,20 +70,18 @@ def _client(config: dict[str, Any]):
     server = catalog.get("server", {})
     if not isinstance(server, dict) or not server.get("base_url"):
         raise ValueError("Set scc.yaml server.base_url before remote SCC operations.")
-    upload = config["scc"].get("upload", {})
+    http = config["scc"].get("http", {})
     return SCCClient(
         server["base_url"],
         SCCCredentials.from_environment(),
-        timeout=float(upload.get("timeout_seconds", 60)),
-        retries=upload.get("retries", 2),
+        timeout=float(http.get("timeout_seconds", 60)),
+        get_retries=http.get("get_retries", 2),
     )
 
 
 def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
-    packages = discover_pending(config, args.identity)
-    if not packages:
-        print("No SCC packages are staged in scientific session/scc/scc-inputs/.")
-        return 0 if args.dry_run else 1
+    # Reject contradictory/destructive mode flags before reading staging,
+    # credentials, journals, or performing any remote API operation.
     if args.resume_after_delete and (
         not args.confirm or not args.identity or args.replace_existing
     ):
@@ -97,8 +94,10 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
             "--replace-existing must be used with --confirm; "
             "offline --dry-run does not inspect remote SCC IDs."
         )
-    if args.continue_on_error and (not args.confirm or args.identity):
-        raise ValueError("--continue-on-error is only for a confirmed batch upload.")
+    packages = discover_pending(config, args.identity)
+    if not packages:
+        print("No SCC packages are staged in scientific session/scc/scc-inputs/.")
+        return 0 if args.dry_run else 1
     if args.confirm and args.identity and len(packages) != 1:
         raise ValueError("Single-ID upload requires exactly one local pending package.")
     errors = 0
@@ -123,7 +122,6 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
         report = submit_batch(
             config, [Path(path) for path in packages], _client(config),
             replace_existing=args.replace_existing,
-            continue_on_error=args.continue_on_error,
         )
         print(
             "Batch summary: "
@@ -165,7 +163,7 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
 def _status(config: dict[str, Any], args: argparse.Namespace) -> int:
     if args.backup and (not args.remote or not args.identity):
         raise ValueError("Remote archive --backup requires --id ID --remote.")
-    # Remote measurements may outlive the disposable local staging cache.
+    # Remote measurements may outlive manually retained session SCC inputs.
     packages = discover_pending(config)
     if args.identity is not None:
         packages = [path for path in packages if path.name == args.identity]
@@ -199,10 +197,9 @@ def _status(config: dict[str, Any], args: argparse.Namespace) -> int:
                 f"archive={row['archive_path'] or '-'}"
             )
         if args.remote:
-            # Local inventory + durable SQLite: prior uploads survive removal of
-            # disposable .cache/scc/pending, and external pre-staged sessions
-            # may have no journal row yet. This does NOT enumerate every
-            # measurement belonging to the SCC station.
+            # Local session inputs + durable SQLite; manually removed inputs
+            # do not erase submission history, and external records may have
+            # no journal. This does NOT enumerate the remote SCC station.
             identities = (
                 [args.identity] if args.identity
                 else sorted({p.name for p in packages} | {

@@ -46,16 +46,15 @@ def submit_batch(
     client: Any,
     *,
     replace_existing: bool = False,
-    continue_on_error: bool = False,
     report_line: Callable[[str], None] = print,
 ) -> BatchReport:
     """Batch one at a time; never treat an existing SCC ID as upload ownership.
 
     Default: submit absent valid IDs and skip remote-existing IDs without modifying
     their local journal. With replace_existing, invoke the same exact-ID,
-    explicitly confirmed no-backup replacement workflow as the single-upload command. Invalid IDs
-    are always skipped; optional continue_on_error proceeds to independent IDs
-    after remote errors without clearing their durable blocked journal.
+    explicitly confirmed no-backup replacement workflow as the single-upload
+    command. Invalid local packages are skipped; any operational error blocks
+    all subsequent IDs, including when the remote result is uncertain.
     """
     packages = sorted(packages, key=lambda path: path.name)
     report = BatchReport(total=len(packages))
@@ -143,10 +142,5 @@ def submit_batch(
                 f"{prefix}: STOPPED — {type(exc).__name__}: {exc}. "
                 "No further IDs will be processed; inspect status/journal first."
             )
-            if not continue_on_error:
-                break
-            report_line(
-                f"{prefix}: other IDs may continue under --continue-on-error; "
-                "this ID remains blocked."
-            )
+            break
     return report

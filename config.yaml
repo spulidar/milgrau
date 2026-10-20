@@ -11,10 +11,10 @@ scc:
   config_file: "scc.yaml"
   # Persistent SCC submission journal and pre-replacement archive (never cache).
   state_dir: ".state/scc"
-  upload:
-    automatic: false
+  # HTTP read-only GET retries only; never repeat upload/delete/login POST.
+  http:
     timeout_seconds: 60
-    retries: 2
+    get_retries: 2
 
 project:
   name: "MILGRAU"
