@@ -146,3 +146,30 @@ def test_parse_licel_group_propagates_unexpected_runtime_failure(monkeypatch) ->
     monkeypatch.setattr(licel_module, "parse_single_licel_file", fail_parser)
     with pytest.raises(RuntimeError, match="synthetic group parser defect"):
         parse_licel_group(["synthetic.licel"], logging.getLogger("test"))
+
+
+def test_invalid_licel_header_details_are_debug_only(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture,
+) -> None:
+    missing = tmp_path / "unreadable-licel"
+    logger = logging.getLogger("test.licel.invalid-header-level")
+    with caplog.at_level(logging.DEBUG, logger=logger.name):
+        result = read_licel_header(str(missing), logger=logger)
+    assert result == (None, None, None, None, None)
+    records = [record for record in caplog.records if "Invalid Licel header skipped" in record.getMessage()]
+    assert len(records) == 1
+    assert records[0].levelno == logging.DEBUG
+    assert str(missing) in records[0].getMessage()
+
+
+def test_licel_parse_count_is_debug_not_info(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture,
+) -> None:
+    path = _write_synthetic_licel_file(tmp_path / "parse-debug.licel")
+    logger = logging.getLogger("test.licel.parser-level")
+    with caplog.at_level(logging.DEBUG, logger=logger.name):
+        parsed = parse_licel_group([str(path)], logger=logger)
+    assert parsed.get("tensors")
+    records = [record for record in caplog.records if "Parsing 1 raw binary files" in record.getMessage()]
+    assert len(records) == 1
+    assert records[0].levelno == logging.DEBUG
