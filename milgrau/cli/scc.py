@@ -31,61 +31,15 @@ def _parser() -> argparse.ArgumentParser:
         "--resume-after-delete", action="store_true",
         help="Exact-ID recovery after uncertain DELETE; requires verified archive or recorded no-backup waiver and SCC 404. Sends one upload, no deletion.",
     )
-    upload.add_argument(
-        "--retry-after-upload", action="store_true",
-        help="One explicit same-ID upload-only retry after recovery_upload_uncertain; "
-             "requires --id ID --confirm, never deletes or runs in batch.",
-    )
-    upload.add_argument(
-        "--retry-after-lr-fix", action="store_true",
-        help="One explicitly confirmed same-ID POST after journalled LR filename repair; "
-             "never deletes, never retries automatically or runs in batch.",
-    )
     action = upload.add_mutually_exclusive_group(required=True)
     action.add_argument(
         "--dry-run", action="store_true",
         help="Validate pending packages locally; never connect to the SCC.",
     )
     action.add_argument(
-        "--migrate-cache", action="store_true",
-        help="Migrate staged raw.nc to Measurement_ID.nc for one or all IDs; offline only.",
-    )
-    action.add_argument(
-        "--repair-lr-cache", action="store_true",
-        help="Offline: fix rejected LR filename and raw LR_File_Name; retain original "
-             "cache bytes and audit journal hashes, no SCC POST.",
-    )
-    action.add_argument(
         "--confirm", action="store_true",
         help="Authorize SCC upload; with --replace-existing, explicitly permit remote DELETE without a backup.",
     )
-
-    sounding = sub.add_parser(
-        "sounding",
-        help="Preview or explicitly add LIPANCORA-observed soundings to legacy pending packets (offline).",
-    )
-    sounding.add_argument("--id", dest="identity", help="Optional single SCC Measurement_ID.")
-    sounding_action = sounding.add_mutually_exclusive_group(required=True)
-    sounding_action.add_argument(
-        "--dry-run", action="store_true",
-        help="Inspect legacy packages/L1 cache, no changes to pending files or SCC.",
-    )
-    sounding_action.add_argument(
-        "--confirm", action="store_true",
-        help="Update eligible unsubmitted cache packets from verified L1 observations (no SCC requests).",
-    )
-
-    repair_sounding = sub.add_parser(
-        "sounding-repair",
-        help="Offline legacy sounding filename repair for one ID or every pending packet; "
-             "continue past individually blocked/invalid IDs.",
-    )
-    repair_sounding.add_argument(
-        "--id", dest="identity", help="Optional exact SCC Measurement_ID; omit for all pending packets.",
-    )
-    repair_mode = repair_sounding.add_mutually_exclusive_group(required=True)
-    repair_mode.add_argument("--dry-run", action="store_true")
-    repair_mode.add_argument("--confirm", action="store_true")
 
     status = sub.add_parser("status", help="List local pending packets or query remote SCC.")
     status.add_argument("--id", dest="identity", help="Filter by Measurement_ID.")
@@ -130,65 +84,14 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
     packages = discover_pending(config, args.identity)
     if not packages:
         print("No SCC packages are staged in scientific session/scc/scc-inputs/.")
-        return 0 if args.dry_run or args.migrate_cache or args.repair_lr_cache else 1
+        return 0 if args.dry_run else 1
     if args.resume_after_delete and (
-        not args.confirm or not args.identity
-        or args.replace_existing or args.retry_after_upload
-        or args.retry_after_lr_fix
+        not args.confirm or not args.identity or args.replace_existing
     ):
         raise ValueError(
             "--resume-after-delete requires exactly --id ID --confirm; "
             "never combine it with batch mode or --replace-existing."
         )
-    if args.retry_after_upload and (
-        not args.confirm or not args.identity
-        or args.replace_existing or args.resume_after_delete
-        or args.retry_after_lr_fix
-    ):
-        raise ValueError(
-            "--retry-after-upload requires exactly --id ID --confirm; "
-            "never use it with batch, --replace-existing or --resume-after-delete."
-        )
-    if args.retry_after_lr_fix and (
-        not args.confirm or not args.identity
-        or args.replace_existing or args.resume_after_delete
-        or args.retry_after_upload
-    ):
-        raise ValueError(
-            "--retry-after-lr-fix requires --id ID --confirm, "
-            "never batch/replace/another retry mode."
-        )
-    if args.migrate_cache:
-        if (args.replace_existing or args.resume_after_delete
-                or args.retry_after_upload or args.retry_after_lr_fix):
-            raise ValueError("Cache migration never combines with remote upload options.")
-        from milgrau.scc.migrate import migrate_pending
-
-        changed = 0
-        for path in packages:
-            destination, migrated = migrate_pending(config, path.name)
-            print(f"{'MIGRATED' if migrated else 'ALREADY CURRENT'} {destination.name}")
-            changed += int(migrated)
-        print(f"Local cache: {changed} migrated, {len(packages)-changed} already current; "
-              "no SCC network requests, raw bytes or LR modified.")
-        return 0
-    if args.repair_lr_cache:
-        if (args.replace_existing or args.resume_after_delete
-                or args.retry_after_upload or args.retry_after_lr_fix):
-            raise ValueError("Local LR cache repair cannot authorize any SCC operation.")
-        from milgrau.scc.lr_repair import repair_lr_cache
-
-        changed = 0
-        for path in packages:
-            _, repaired = repair_lr_cache(config, path.name)
-            print(f"{'REPAIRED' if repaired else 'ALREADY CURRENT'} LR {path.name}")
-            changed += int(repaired)
-        print(
-            f"Local LR repair: {changed} repaired, "
-            f"{len(packages) - changed} already current; "
-            "SCC not contacted, original cache saved."
-        )
-        return 0
     if args.replace_existing and args.dry_run:
         raise ValueError(
             "--replace-existing must be used with --confirm; "
@@ -235,25 +138,17 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
                 f"Batch encountered an error at {report.stopped_at}. "
                 "Review the SCC status and durable journal for that ID."
             )
-        print("No staged cache, scientific data or durable SCC archive was removed.")
+        print("SCC inputs, scientific data and durable SCC archives were retained.")
         return 0 if report.successful else 1
 
     # Single-ID operation uses the same guarded workflow as before.
     path = Path(packages[0])
     validate_upload_package(path)
-    from milgrau.scc.workflow import (
-        resume_after_uncertain_delete, retry_rejected_recovery_upload, submit,
-    )
+    from milgrau.scc.workflow import resume_after_uncertain_delete, submit
 
     client = _client(config)
     if args.resume_after_delete:
         result = resume_after_uncertain_delete(config, path, client)
-    elif args.retry_after_upload:
-        result = retry_rejected_recovery_upload(config, path, client)
-    elif args.retry_after_lr_fix:
-        result = retry_rejected_recovery_upload(
-            config, path, client, after_lr_fix=True,
-        )
     else:
         result = submit(
             config, path, client, replace_existing=args.replace_existing,
@@ -265,25 +160,6 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
         "retained until the operator manages them manually."
     )
     return 0
-
-
-def _sounding(config: dict[str, Any], args: argparse.Namespace) -> int:
-    from milgrau.scc.sounding_backfill import backfill_pending_soundings
-
-    report, code = backfill_pending_soundings(
-        config, identity=args.identity, confirm=args.confirm,
-    )
-    counts: dict[str, int] = {}
-    for item in report:
-        print(f"{item.status} {item.identity}: {item.reason}")
-        counts[item.status] = counts.get(item.status, 0) + 1
-    summary = ", ".join(f"{key.lower()}={val}" for key, val in sorted(counts.items()))
-    print(
-        f"SCC sounding {'backfill' if args.confirm else 'preview'}: "
-        f"total={len(report)}; {summary or 'none'}. "
-        "No SCC network calls, no submission journal changes."
-    )
-    return code
 
 
 def _status(config: dict[str, Any], args: argparse.Namespace) -> int:
@@ -495,15 +371,6 @@ def main(argv: list[str] | None = None) -> int:
             )
         if args.command == "upload":
             return _upload(config, args)
-        if args.command == "sounding":
-            return _sounding(config, args)
-        if args.command == "sounding-repair":
-            from milgrau.scc.sounding_repair import repair_sounding_names
-
-            report = repair_sounding_names(
-                config, args.identity, confirm=args.confirm,
-            )
-            return 0 if report.successful else 1
         if args.command == "status":
             return _status(config, args)
         if args.command == "download":

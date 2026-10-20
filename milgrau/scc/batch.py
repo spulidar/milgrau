@@ -63,7 +63,7 @@ def submit_batch(
         report_line("No local pending SCC packets.")
         return report
 
-    # Validate every package without turning an unrelated bad cache entry
+    # Validate every package without turning an unrelated bad input entry
     # into a global blocker. Do NOT issue remote requests for invalid IDs.
     manifest_by_id: dict[str, dict[str, Any]] = {}
     invalid_ids: set[str] = set()

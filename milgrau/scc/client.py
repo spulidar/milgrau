@@ -299,11 +299,6 @@ class SCCClient:
         from milgrau.level0.scc_staging import scc_raw_filename
 
         raw_name = scc_raw_filename(identity)
-        if raw_name not in manifest["files"]:
-            raise SCCRemoteError(
-                "SCC pending packet still uses legacy raw.nc. "
-                "Run milgrau-scc upload --migrate-cache before any live upload."
-            )
         if self.measurement(identity) is not None:
             raise SCCAlreadyExists(
                 f"SCC already contains measurement {identity}; remote replacement is disabled."

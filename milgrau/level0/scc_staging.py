@@ -29,13 +29,11 @@ def scc_raw_filename(measurement_id: str) -> str:
 
 
 def manifest_raw_name(manifest: Mapping[str, Any]) -> str:
-    """Read current files, or identify a *legacy* cache awaiting migration."""
-    new_name = scc_raw_filename(str(manifest["measurement_id"]))
-    files = manifest["files"]
-    names = [name for name in (new_name, "raw.nc") if name in files]
-    if len(names) != 1:
-        raise ValueError("SCC package must reference exactly one raw NetCDF.")
-    return names[0]
+    """Require the canonical session-local SCC raw NetCDF filename."""
+    name = scc_raw_filename(str(manifest["measurement_id"]))
+    if name not in manifest["files"]:
+        raise ValueError(f"SCC package must reference its canonical raw NetCDF {name}.")
+    return name
 
 
 def scc_staging_root(config: Mapping[str, Any], session_id: str) -> Path:
@@ -66,24 +64,6 @@ def pending_scc_package(
     if session_id is not None:
         return scc_staging_root(config, session_id) / measurement_id
     matches = _staged_matches(config, measurement_id)
-    if not matches:
-        # An interrupted local rename/repair can temporarily remove the input
-        # directory. Resolve its session from the retained same-session preimage.
-        root = processed_data_root(config)
-        retained = []
-        for kind in ("legacy-lr", "legacy-sounding"):
-            retained.extend(
-                archive.parent.parent / "scc-inputs" / measurement_id
-                for archive in root.glob(f"*/*/*/*/scc/{kind}/{measurement_id}")
-                if archive.is_dir() and not archive.is_symlink()
-            )
-        retained.extend(
-            archive.with_name(measurement_id)
-            for archive in root.glob(
-                f"*/*/*/*/scc/scc-inputs/.{measurement_id}.before-sounding"
-            ) if archive.is_dir() and not archive.is_symlink()
-        )
-        matches = sorted(set(retained))
     if len(matches) != 1:
         raise FileNotFoundError(
             f"Expected one session/scc/scc-inputs/{measurement_id}, "
@@ -225,7 +205,7 @@ def validate_pending_scc_package(path: Path) -> dict[str, Any]:
 
     for name, entry in files.items():
         if Path(name).name != name or name not in {
-            raw_name, f"lr_{path.name}.nc", f"lr_{path.name[:13]}.nc",
+            raw_name, f"lr_{path.name[:13]}.nc",
             scc_sounding_name(path.name),
         }:
             raise ValueError(f"Unsafe/unexpected SCC staged filename: {name!r}.")
