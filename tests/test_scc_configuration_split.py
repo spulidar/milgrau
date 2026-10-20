@@ -136,3 +136,38 @@ def test_scc_cleanup_policy_is_rejected(tmp_path: Path) -> None:
     payload["scc"]["cleanup"] = {"policy": "after_download"}
     with pytest.raises(ValueError, match="Unknown config.scc keys"):
         _load_temp(tmp_path, payload)
+
+
+@pytest.mark.parametrize("get_retries", [True, -1, 6, "2", 2.5])
+def test_scc_rejects_invalid_safe_get_retries(tmp_path: Path, get_retries) -> None:
+    payload = _files(tmp_path)
+    payload["scc"]["http"] = {"timeout_seconds": 30, "get_retries": get_retries}
+    with pytest.raises(ValueError, match="http.get_retries"):
+        _load_temp(tmp_path, payload)
+
+
+@pytest.mark.parametrize("timeout", [True, 0, -1, 601, float("inf")])
+def test_scc_rejects_invalid_http_timeout(tmp_path: Path, timeout) -> None:
+    payload = _files(tmp_path)
+    payload["scc"]["http"] = {"timeout_seconds": timeout, "get_retries": 0}
+    with pytest.raises(ValueError, match="http.timeout_seconds"):
+        _load_temp(tmp_path, payload)
+
+
+def test_scc_http_settings_allow_only_explicit_safe_get_retry(
+    tmp_path: Path,
+) -> None:
+    payload = _files(tmp_path)
+    payload["scc"]["http"] = {"get_retries": 2, "timeout_seconds": 45}
+    result = _load_temp(tmp_path, payload)
+    assert result["scc"]["http"] == {"get_retries": 2, "timeout_seconds": 45}
+    assert result["scc"]["enabled"] is True
+    for legacy in (
+        {"automatic": True},
+        {"retries": 3},
+        {"timeout_seconds": 30, "retries": 3},
+    ):
+        changed = _files(tmp_path)
+        changed["scc"]["upload"] = legacy
+        with pytest.raises(ValueError, match="Unknown config.scc keys"):
+            _load_temp(tmp_path, changed)

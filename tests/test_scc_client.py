@@ -31,7 +31,7 @@ def _config(tmp_path: Path) -> dict:
         "scc": {
             "enabled": True,
             "state_dir": str(tmp_path / ".state/scc"),
-            "upload": {"retries": 0, "timeout_seconds": 30},
+            "http": {"get_retries": 0, "timeout_seconds": 30},
         },
         "_scc_catalog": {"server": {"base_url": "https://scc.example.test/"}},
         "_station_catalog": {"station": {"id": "spu"}},
@@ -147,7 +147,7 @@ def _client(fake: FakeSession) -> SCCClient:
     return SCCClient(
         "https://scc.example.test/",
         SCCCredentials("person", "password", "basic", "secret"),
-        timeout=30, retries=0, session=fake,
+        timeout=30, get_retries=0, session=fake,
     )
 
 
@@ -299,11 +299,18 @@ def test_remote_duplicate_never_triggers_upload_or_delete(tmp_path: Path) -> Non
     assert len(fake.posts) == 1  # Website login only
 
 
-def test_ambiguous_post_is_never_retried(tmp_path: Path) -> None:
+def test_ambiguous_post_is_never_retried_with_get_retries_enabled(
+    tmp_path: Path,
+) -> None:
     path = _stage(tmp_path)
     fake = FakeSession(fail_post=True)
+    client = SCCClient(
+        "https://scc.example.test/",
+        SCCCredentials("person", "password", "basic", "secret"),
+        timeout=30, get_retries=3, session=fake,
+    )
     with pytest.raises(SCCRemoteError, match="UNKNOWN remote outcome"):
-        _client(fake).upload_package(path)
+        client.upload_package(path)
     assert len([url for url, _ in fake.posts if url.endswith("/quick/")]) == 1
 
 
@@ -603,3 +610,53 @@ def test_https_origin_and_environment_credentials_are_strict(
     monkeypatch.delenv("MILGRAU_SCC_BASIC_PASSWORD", raising=False)
     with pytest.raises(SCCRemoteError, match="both"):
         SCCCredentials.from_environment()
+
+
+def test_safe_http_get_retries_only_reads(monkeypatch: pytest.MonkeyPatch) -> None:
+    import milgrau.scc.client as module
+
+    class TemporaryFailure(FakeSession):
+        def get(self, url, **kwargs):
+            if url.endswith("/api/v1/measurements/" + IDENTITY + "/") and not self.gets:
+                self.gets.append((url, kwargs))
+                return FakeResponse(503, url)
+            return super().get(url, **kwargs)
+
+    fake = TemporaryFailure()
+    monkeypatch.setattr(module.time, "sleep", lambda *_: None)
+    client = SCCClient(
+        "https://scc.example.test/",
+        SCCCredentials("person", "password"),
+        timeout=30, get_retries=1, session=fake,
+    )
+    assert client.measurement(IDENTITY) is None
+    assert len(fake.gets) == 2
+    assert fake.posts == []
+
+
+def test_obsolete_continue_on_error_flag_is_rejected_by_cli_parser() -> None:
+    with pytest.raises(SystemExit, match="2"):
+        cli._parser().parse_args(["upload", "--confirm", "--continue-on-error"])
+
+
+def test_invalid_replacement_and_recovery_flags_stop_before_staging(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
+) -> None:
+    config = _config(tmp_path)
+    monkeypatch.setattr(cli, "load_config", lambda: config)
+    touched = []
+    monkeypatch.setattr(
+        cli, "discover_pending",
+        lambda *_: touched.append("staging") or [],
+    )
+    monkeypatch.setattr(
+        cli, "_client",
+        lambda *_: touched.append("remote") or None,
+    )
+    assert cli.main(["upload", "--replace-existing", "--dry-run"]) == 1
+    assert cli.main([
+        "upload", "--id", IDENTITY, "--resume-after-delete", "--dry-run",
+    ]) == 1
+    assert touched == []
+    err = capsys.readouterr().err
+    assert "--replace-existing" in err and "--resume-after-delete" in err

@@ -203,7 +203,7 @@ def test_nineteen_pending_are_sequential_and_cache_is_untouched(
     assert lines[-1].startswith("[19/19]")
 
 
-def test_opt_in_continue_on_error_processes_independent_ids(
+def test_operational_error_never_continues_to_another_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     submitted = _stubs(monkeypatch, fail_submit=ID1)
@@ -211,12 +211,13 @@ def test_opt_in_continue_on_error_processes_independent_ids(
     messages = []
     report = batch.submit_batch(
         _config(tmp_path), _paths(tmp_path), client,
-        continue_on_error=True, report_line=messages.append,
+        report_line=messages.append,
     )
-    assert report.failed == 1 and report.submitted == 1
-    assert report.remaining == 0
-    assert submitted == [(ID1, False), (ID2, False)]
-    assert any("other IDs may continue" in message for message in messages)
+    assert report.failed == 1 and report.submitted == 0
+    assert report.remaining == 1
+    assert submitted == [(ID1, False)]
+    assert any("No further IDs will be processed" in message for message in messages)
+    assert not any("other IDs may continue" in message for message in messages)
 
 
 def test_one_invalid_package_no_longer_blocks_unrelated_valid_id(
