@@ -1,8 +1,10 @@
-"""Non-destructive remote SCC snapshot retained outside disposable staging cache.
+"""Optional, non-destructive SCC snapshot retained outside input staging.
 
-Fail closed: never allow a remote delete if an advertised archive download is
-missing, corrupt, cross-origin or unexpectedly HTML. A prior external LR
-reference must also be retrievable, not silently forgotten.
+An operator-requested archive is verified completely or fails closed:
+remote download responses must not be missing, corrupt, cross-origin or HTML.
+A confirmed replacement may explicitly waive the archive; this module does
+not authorize remote deletion. Such authorization and durable audit belong
+exclusively to the guarded upload workflow.
 """
 
 from __future__ import annotations
