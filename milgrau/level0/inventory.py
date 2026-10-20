@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
+from time import perf_counter
 
 import numpy as np
 import pandas as pd
 
 from milgrau.io.filesystem import scan_raw_files
 from milgrau.io.licel import read_licel_header
+from milgrau.io.logging_utils import bind_log_context
 from milgrau.io.paths import build_session_id, station_id
 from milgrau.level0.config import resolve_level0_config, station_timezone
 
@@ -363,29 +365,38 @@ def build_session_inventory(
     logger: logging.Logger,
 ) -> pd.DataFrame:
     """Build the Level-0 inventory and group continuous Licel acquisitions into sessions."""
-    logger.info("Building raw data inventory...")
+    started = perf_counter()
+    inventory_logger = bind_log_context(logger, stage="inventory")
+    discovery_logger = bind_log_context(logger, stage="discovery")
+    inventory_logger.info("building raw inventory | station=%s", station_id(config))
     level0_config = resolve_level0_config(config)
     discovery = level0_config.discovery
 
+    scan_started = perf_counter()
     file_paths, file_types = scan_raw_files(
         raw_dir,
         spurious_extensions=discovery.spurious_extensions,
         quarantine_dir=discovery.quarantine_dir,
         raw_scan_ignore_dirs=discovery.raw_scan_ignore_dirs,
-        logger=logger,
+        logger=discovery_logger,
     )
+    discovery_logger.debug("raw scan elapsed=%.2fs", perf_counter() - scan_started)
     if not file_paths:
+        inventory_logger.info("inventory empty | %.1fs", perf_counter() - started)
         return pd.DataFrame()
 
+    header_logger = bind_log_context(logger, stage="headers")
+    headers_started = perf_counter()
+    last_progress = headers_started
     records = []
-    for filepath, file_type in zip(file_paths, file_types):
+    progress_every = max(1000, len(file_paths) // 10)
+    for position, (filepath, file_type) in enumerate(zip(file_paths, file_types), start=1):
         start_time_utc, stop_time, duration, n_shots, laser_freq = read_licel_header(
             filepath,
-            logger=logger,
+            logger=header_logger,
         )
-        if start_time_utc is None:
-            continue
-        records.append(
+        if start_time_utc is not None:
+            records.append(
             {
                 "filepath": filepath,
                 "meas_type": file_type,
@@ -396,15 +407,42 @@ def build_session_inventory(
                 "laser_freq": laser_freq,
             }
         )
+        now = perf_counter()
+        if (
+            position % progress_every == 0
+            or now - last_progress >= 20.0
+        ) and position < len(file_paths):
+            header_logger.info(
+                "read %d/%d (%.0f%%) | %d accepted | %d invalid | %.1fs",
+                position,
+                len(file_paths),
+                position * 100.0 / len(file_paths),
+                len(records),
+                position - len(records),
+                now - headers_started,
+            )
+            last_progress = now
 
+    header_logger.info(
+        "read %d/%d | %d valid | %d invalid | %.1fs",
+        len(file_paths),
+        len(file_paths),
+        len(records),
+        len(file_paths) - len(records),
+        perf_counter() - headers_started,
+    )
     df_raw = pd.DataFrame.from_records(records)
     if df_raw.empty:
+        inventory_logger.warning("inventory has no valid headers | %.1fs", perf_counter() - started)
         return df_raw
 
+    normalization_started = perf_counter()
     df_raw = _normalize_header_times(df_raw)
     df_raw = df_raw[df_raw["start_time_utc"].notna()].copy()
     if df_raw.empty:
+        inventory_logger.warning("inventory has no dated headers | %.1fs", perf_counter() - started)
         return df_raw
+    inventory_logger.debug("header normalization elapsed=%.2fs", perf_counter() - normalization_started)
 
     timezone_name = station_timezone(config)
     df_raw["start_time_local"] = df_raw["start_time_utc"].dt.tz_convert(timezone_name)
@@ -413,26 +451,49 @@ def build_session_inventory(
     measurement_rows = df_raw[df_raw["meas_type"] == "measurements"].copy()
     dark_rows = df_raw[df_raw["meas_type"] == "dark_current"].copy()
 
+    station_started = perf_counter()
     measurement_rows = _annotate_station_context(measurement_rows, config)
+    bind_log_context(logger, stage="station").info(
+        "%d measurement headers | profile/calibration identities | %.1fs",
+        len(measurement_rows),
+        perf_counter() - station_started,
+    )
+
+    session_started = perf_counter()
     measurement_rows = _sessionize_measurements(
         measurement_rows,
         station=station_id(config),
         max_gap_seconds=level0_config.session.max_gap_seconds,
-        logger=logger,
+        logger=bind_log_context(logger, stage="sessions"),
+    )
+    bind_log_context(logger, stage="sessions").info(
+        "%d sessions | %d measurement headers | %.1fs",
+        int(measurement_rows["session_id"].nunique()) if not measurement_rows.empty else 0,
+        len(measurement_rows),
+        perf_counter() - session_started,
     )
     if not measurement_rows.empty:
         measurement_rows["association_method"] = "measurement"
         measurement_rows["dark_current_association_delta_hours"] = np.nan
 
+    dark_started = perf_counter()
     dark_rows = _associate_dark_currents(
         dark_rows,
         measurement_rows,
         config,
-        logger,
+        bind_log_context(logger, stage="darkcurrent"),
     )
+    inventory_logger.debug("dark-current association elapsed=%.2fs", perf_counter() - dark_started)
 
     inventory = pd.concat([measurement_rows, dark_rows], ignore_index=True, sort=False)
     if inventory.empty:
         return inventory
     inventory["original_session_id"] = inventory["session_id"]
+    inventory_logger.info(
+        "ready | %d sessions | %d measurement + %d dark-current files | %.1fs total",
+        int(measurement_rows["session_id"].nunique()) if not measurement_rows.empty else 0,
+        len(measurement_rows),
+        len(dark_rows),
+        perf_counter() - started,
+    )
     return inventory.sort_values(["start_time_utc", "filepath"]).reset_index(drop=True)
