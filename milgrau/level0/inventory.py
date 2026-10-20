@@ -77,6 +77,7 @@ def _sessionize_measurements(
     *,
     station: str,
     max_gap_seconds: float,
+    logger: logging.Logger | None = None,
 ) -> pd.DataFrame:
     """Assign continuous measurement rows to canonical complete-session IDs."""
     if measurements.empty:
@@ -136,11 +137,44 @@ def _sessionize_measurements(
     for _sequence, group in rows.groupby("_session_sequence", sort=True):
         session_start = pd.to_datetime(group["start_time_utc"], utc=True).min()
         session_end = pd.to_datetime(group["stop_time"], utc=True).max()
-        session_id = build_session_id(
-            station,
-            session_start.to_pydatetime(),
-            session_end.to_pydatetime(),
-        )
+        try:
+            session_id = build_session_id(
+                station,
+                session_start.to_pydatetime(),
+                session_end.to_pydatetime(),
+            )
+        except ValueError as exc:
+            # Keep exact timestamps and every implicated Licel path in the log.
+            # In particular, an otherwise valid short acquisition can collapse
+            # to one minute in the human-readable canonical session ID.
+            candidates = group.sort_values(["start_time_utc", "filepath"])
+            first_file = str(candidates.iloc[0]["filepath"])
+            last_file = str(candidates.iloc[-1]["filepath"])
+            message = (
+                f"Cannot identify session sequence {_sequence}: "
+                f"{len(candidates)} measurement file(s), "
+                f"start_utc={session_start.isoformat()}, "
+                f"end_utc={session_end.isoformat()}, "
+                f"first_file={first_file}, last_file={last_file}: {exc}"
+            )
+            if logger is not None:
+                logger.error("%s", message)
+                for row in candidates.itertuples(index=False):
+                    logger.error(
+                        "Session ID failure source: path=%s | start_utc=%s | "
+                        "stop_utc=%s | header_duration_s=%s | nshots=%s | "
+                        "laser_freq_hz=%s | profile=%s | calibration=%s | boundary=%s",
+                        row.filepath,
+                        pd.Timestamp(row.start_time_utc).isoformat(),
+                        pd.Timestamp(row.stop_time).isoformat(),
+                        row.duration,
+                        row.nshots,
+                        row.laser_freq,
+                        row.station_profile_id,
+                        row.instrument_calibration_id,
+                        row.session_boundary_reason,
+                    )
+            raise ValueError(message) from exc
         rows.loc[group.index, "session_id"] = session_id
         rows.loc[group.index, "session_start_utc"] = session_start
         rows.loc[group.index, "session_end_utc"] = session_end
@@ -299,6 +333,7 @@ def build_session_inventory(
         measurement_rows,
         station=station_id(config),
         max_gap_seconds=level0_config.session.max_gap_seconds,
+        logger=logger,
     )
     if not measurement_rows.empty:
         measurement_rows["association_method"] = "measurement"
