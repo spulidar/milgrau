@@ -256,8 +256,8 @@ configuração `scc.http.timeout_seconds`/`scc.http.get_retries` limita
 explicitamente retries a GETs. Erros operacionais de batch passam a
 interromper sempre a execução, sem repetir POST/DELETE. A recuperação
 do DELETE incerto permanece exclusiva de `upload --id ID
---resume-after-delete --confirm`. Código, testes e documentação
-atualizados diretamente na branch SCC; CI final deve ser confirmado.
+--resume-after-delete --confirm`. Código, testes e documentação atualizados diretamente na branch SCC.
+[GitHub Actions #39495985015](https://github.com/spulidar/milgrau/actions/runs/39495985015): **6/6 jobs aprovados** (Ruff, Web Explorer e pytest Linux/Windows Python 3.12/3.14; 722 testes aprovados no Linux/Python 3.12).
 
 **Decisão de integração:** manter `scc.enabled: true` nesta branch
 experimental. Para a futura integração na `main`, avaliar explicitamente
@@ -393,17 +393,18 @@ milgrau-scc download
 | 1. Merge das mudanças de `main` | Integrada, CI 6/6; dois testes operacionais pendentes |
 | 2. Simplificação do workflow SCC | Núcleo integrado e CI do PR aprovado; revisão de estados e comandos históricos pendente |
 | 3. Remoção de código transitório | Concluída no código, CI 6/6; pacotes locais não inspecionados pela API |
-| 4. CLI e configuração | Núcleo implementado; CI final a confirmar; default de `main` reservado para Gate 7 |
+| 4. CLI e configuração | Concluída no código, CI 6/6; default de `main` reservado para Gate 7 |
 | 5. Validação e regressões | Pendente |
 | 6. Documentação | Pendente |
 | 7. Merge final em `main` | Pendente |
 
 ### Próxima ação
 
-**Fase 4 implementada diretamente em `scc-integration-refactor`, sem PR.**
-Confirmar Ruff e pytest em Linux/Windows 3.12/3.14 para fechar o gate de código.
-Permanecem os dois testes operacionais pendentes da Fase 1, a validação
-real de SCC (Fase 5) e a escolha definitiva do default para `main`
-no Gate 7. Nenhum POST/DELETE remoto foi executado nesta fase.
+**Fase 4 concluída no código, sem PR, com CI 6/6** no commit
+`07600287` ([execução](https://github.com/spulidar/milgrau/actions/runs/39495985015)).
+Próxima fase: validação e regressões (Fase 5). Permanecem os dois testes
+operacionais pendentes da Fase 1, a validação real de SCC e a escolha
+definitiva do default para `main` no Gate 7. Nenhum POST/DELETE remoto
+foi executado nesta fase.
 
 Não executar uploads, substituições ou DELETE reais sem autorização explícita, ID adequado e preflight remoto. L0/L1/L2 e arquivos históricos devem continuar preservados.
