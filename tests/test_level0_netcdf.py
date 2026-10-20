@@ -425,3 +425,31 @@ def test_build_level0_netcdf_without_dark_current_writes_unavailable_flags(tmp_p
         assert "Background_Profile" not in ds
         assert "Background_Laser_Shots" not in ds
         assert np.array_equal(ds["Background_Profile_Available"].values, np.array([0, 0], dtype=np.int8))
+
+
+def test_scc_time_normalization_diagnostics_are_debug_only(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from milgrau.level0.netcdf import _scc_time_axis
+
+    reference = pd.Timestamp("2024-01-01T00:00:00Z")
+    rows = pd.DataFrame(
+        {
+            "start_time_utc": [reference, reference + pd.Timedelta(seconds=40)],
+            "stop_time": [
+                reference + pd.Timedelta(seconds=39),
+                reference + pd.Timedelta(seconds=81),
+            ],
+            "qa_nominal_duration_s": [40.0, 40.0],
+        }
+    )
+    logger = logging.getLogger("test.scc.time-log-level")
+    with caplog.at_level(logging.DEBUG, logger=logger.name):
+        _starts, stops, attrs = _scc_time_axis(
+            rows, reference, _config(), logger, label="Measurement",
+        )
+    np.testing.assert_array_equal(stops, np.array([40, 80], dtype=np.int32))
+    assert int(attrs["SCC_Time_Adjusted_Profile_Count"]) == 2
+    records = [record for record in caplog.records if "SCC time axis normalized" in record.getMessage()]
+    assert len(records) == 1
+    assert records[0].levelno == logging.DEBUG
