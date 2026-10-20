@@ -29,7 +29,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     upload.add_argument(
         "--resume-after-delete", action="store_true",
-        help="Exact-ID recovery ONLY after uncertain DELETE, verified old archive and SCC 404; sends one upload, no deletion.",
+        help="Exact-ID recovery after uncertain DELETE; requires verified archive or recorded no-backup waiver and SCC 404. Sends one upload, no deletion.",
     )
     upload.add_argument(
         "--retry-after-upload", action="store_true",
