@@ -61,7 +61,11 @@ def _station_context_identity(config: dict, timestamp: pd.Timestamp) -> tuple[st
     return str(matched[0]["id"]), str(matched[0]["calibration_id"])
 
 
-def _annotate_station_context(measurements: pd.DataFrame, config: dict) -> pd.DataFrame:
+def _annotate_station_context(
+    measurements: pd.DataFrame,
+    config: dict,
+    logger: logging.Logger | None = None,
+) -> pd.DataFrame:
     """Attach one homogeneous station profile/calibration identity to each raw file."""
     if measurements.empty:
         return measurements.copy()
@@ -69,7 +73,10 @@ def _annotate_station_context(measurements: pd.DataFrame, config: dict) -> pd.Da
     rows = measurements.copy()
     profile_ids: list[str] = []
     calibration_ids: list[str] = []
-    for row in rows.itertuples():
+    started = perf_counter()
+    last_progress = started
+    progress_every = max(1000, len(rows) // 10)
+    for position, row in enumerate(rows.itertuples(), start=1):
         start = pd.Timestamp(row.start_time_utc)
         stop = pd.Timestamp(row.stop_time)
         start_identity = _station_context_identity(config, start)
@@ -83,6 +90,15 @@ def _annotate_station_context(measurements: pd.DataFrame, config: dict) -> pd.Da
             )
         profile_ids.append(start_identity[0])
         calibration_ids.append(start_identity[1])
+        if logger is not None and position < len(rows):
+            now = perf_counter()
+            if position % progress_every == 0 or now - last_progress >= 20.0:
+                logger.info(
+                    "resolved %d/%d profiles (%.0f%%) | %.1fs",
+                    position, len(rows),
+                    position * 100.0 / len(rows), now - started,
+                )
+                last_progress = now
 
     rows["station_profile_id"] = profile_ids
     rows["instrument_calibration_id"] = calibration_ids
@@ -452,8 +468,9 @@ def build_session_inventory(
     dark_rows = df_raw[df_raw["meas_type"] == "dark_current"].copy()
 
     station_started = perf_counter()
-    measurement_rows = _annotate_station_context(measurement_rows, config)
-    bind_log_context(logger, stage="station").info(
+    station_logger = bind_log_context(logger, stage="station")
+    measurement_rows = _annotate_station_context(measurement_rows, config, station_logger)
+    station_logger.info(
         "%d measurement headers | profile/calibration identities | %.1fs",
         len(measurement_rows),
         perf_counter() - station_started,
