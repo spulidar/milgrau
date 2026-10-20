@@ -369,7 +369,7 @@ def test_scc_reexport_cannot_replace_accepted_packet_or_change_scientific_l0(
         session, group, cfg, logging.getLogger("test.scc.phase5.reexport"),
         scc_only=True,
     )
-    assert result.status is ExecutionStatus.FAILED
+    assert result.status is ExecutionStatus.ERROR
     assert canonical.read_bytes() == original_l0
     assert (staged / "20251001spu0000.nc").read_bytes() == original_bytes
     assert validate_pending_scc_package(staged) == original_manifest
