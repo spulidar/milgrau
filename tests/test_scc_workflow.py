@@ -636,3 +636,168 @@ def test_replacement_rejects_missing_remote_target(
     with pytest.raises(SCCRemoteError, match="not present"):
         workflow.submit(_config(tmp_path), tmp_path, client, replace_existing=True)
     assert client.upload_calls == client.delete_calls == 0
+
+
+def _interrupted_unbacked_delete(tmp_path: Path, *, with_waiver: bool = True):
+    """Simulate only journal evidence; never send a real SCC request."""
+    from milgrau.level0.scc_staging import pending_scc_package
+    from milgrau.scc.backup import remote_fingerprint
+
+    config = _config(tmp_path)
+    root = state_root(config)
+    with SubmissionStore(root) as store:
+        store.begin(_manifest())
+        if with_waiver:
+            store.transition(
+                ID, "preflight", action="operator_confirmed_no_backup",
+                detail={
+                    "remote_fingerprint": remote_fingerprint(_remote()),
+                    "irreversible": True,
+                },
+            )
+        store.transition(ID, "deleting", action="delete_requested_without_backup")
+        store.transition(ID, "uncertain", action="delete_result_uncertain")
+    staged = pending_scc_package(
+        config, ID, session_id="spu_20240913-1549Z_20240913-1750Z",
+    )
+    staged.mkdir(parents=True)
+    return config, staged
+
+
+def test_unbacked_uncertain_delete_can_be_reconciled_only_with_waiver_and_404(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch(monkeypatch)
+    config, staged = _interrupted_unbacked_delete(tmp_path)
+    client = FakeClient(exists=False)
+    result = workflow.resume_after_uncertain_delete(config, staged, client)
+    assert result["measurement_id"] == ID
+    assert client.upload_calls == 1 and client.delete_calls == 0
+    with SubmissionStore(state_root(config)) as store:
+        row = store.get(ID)
+        assert row["state"] == "accepted"
+        assert row["archive_path"] is None
+        assert row["archive_manifest_sha256"] is None
+        audit = store.events(ID)
+        assert audit[-3]["action"] == "operator_confirmed_remote_absence_after_uncertain_delete"
+        assert __import__("json").loads(audit[-3]["payload_json"])["no_backup_waiver"] is True
+        assert audit[-1]["action"] == "recovery_upload_verified"
+
+
+@pytest.mark.parametrize("exists,waiver", [(True, True), (False, False)])
+def test_unbacked_delete_cannot_be_recovered_without_remote_absence_and_waiver(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    exists: bool, waiver: bool,
+) -> None:
+    _patch(monkeypatch)
+    config, staged = _interrupted_unbacked_delete(tmp_path, with_waiver=waiver)
+    client = FakeClient(exists=exists)
+    with pytest.raises(SCCRemoteError, match="present again|no explicit no-backup"):
+        workflow.resume_after_uncertain_delete(config, staged, client)
+    assert client.upload_calls == client.delete_calls == 0
+    with SubmissionStore(state_root(config)) as store:
+        assert store.get(ID)["state"] == "uncertain"
+
+
+def test_old_revision_waiver_does_not_authorize_new_unbacked_recovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from milgrau.scc.backup import remote_fingerprint
+    from milgrau.level0.scc_staging import pending_scc_package
+
+    _patch(monkeypatch)
+    config = _config(tmp_path)
+    root = state_root(config)
+    with SubmissionStore(root) as store:
+        store.begin(_manifest())
+        store.transition(
+            ID, "preflight", action="operator_confirmed_no_backup",
+            detail={"remote_fingerprint": remote_fingerprint(_remote()), "irreversible": True},
+        )
+        store.transition(ID, "accepted", action="old_revision_accepted")
+        store.begin(_manifest(), allow_new_revision=True, allow_same_revision=True)
+        store.transition(ID, "deleting", action="delete_requested_without_backup")
+        store.transition(ID, "uncertain", action="delete_result_uncertain")
+        assert store.current_revision_events(ID)[0]["action"] == "new_explicit_revision"
+    staged = pending_scc_package(
+        config, ID, session_id="spu_20240913-1549Z_20240913-1750Z",
+    )
+    staged.mkdir(parents=True)
+    client = FakeClient(exists=False)
+    with pytest.raises(SCCRemoteError, match="no explicit no-backup"):
+        workflow.resume_after_uncertain_delete(config, staged, client)
+    assert client.upload_calls == client.delete_calls == 0
+
+
+def test_unbacked_recovery_uncertain_post_stays_blocked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch(monkeypatch)
+    config, staged = _interrupted_unbacked_delete(tmp_path)
+    client = FakeClient(exists=False, fail_upload=True)
+    with pytest.raises(SCCRemoteError, match="upload response lost"):
+        workflow.resume_after_uncertain_delete(config, staged, client)
+    assert client.upload_calls == 1 and client.delete_calls == 0
+    with SubmissionStore(state_root(config)) as store:
+        assert store.get(ID)["state"] == "uncertain"
+        assert store.events(ID)[-1]["action"] == "recovery_upload_uncertain"
+    with pytest.raises(SCCRemoteError, match="limited to"):
+        workflow.resume_after_uncertain_delete(config, staged, client)
+    assert client.upload_calls == 1
+
+
+def test_explicit_retry_after_unbacked_recovery_uncertain_post_is_single_shot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from copy import deepcopy
+
+    _patch(monkeypatch)
+    config, staged = _interrupted_unbacked_delete(tmp_path)
+    with SubmissionStore(state_root(config)) as store:
+        store.transition(
+            ID, "remote_deleted",
+            action="operator_confirmed_remote_absence_after_uncertain_delete",
+        )
+        store.transition(ID, "uploading", action="recovery_upload_requested")
+        store.transition(ID, "uncertain", action="recovery_upload_uncertain")
+    manifest = deepcopy(_manifest())
+    manifest["files"][f"{ID}.nc"] = manifest["files"].pop("raw.nc")
+    monkeypatch.setattr(workflow, "validate_upload_package", lambda _: manifest)
+    client = FakeClient(exists=False, fail_upload=True)
+    with pytest.raises(SCCRemoteError, match="upload response lost"):
+        workflow.retry_rejected_recovery_upload(config, staged, client)
+    assert client.upload_calls == 1 and client.delete_calls == 0
+    with SubmissionStore(state_root(config)) as store:
+        assert store.events(ID)[-1]["action"] == "manual_corrected_upload_uncertain"
+    with pytest.raises(SCCRemoteError, match="latest journal event"):
+        workflow.retry_rejected_recovery_upload(config, staged, client)
+    assert client.upload_calls == 1
+
+
+def test_failed_unbacked_preflight_preserves_previous_accepted_revision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch(monkeypatch)
+    config = _config(tmp_path)
+    with SubmissionStore(state_root(config)) as store:
+        store.begin(_manifest())
+        store.transition(ID, "accepted", action="previous_accepted")
+        old_row, old_events = store.get(ID), store.events(ID)
+
+    client = FakeClient(exists=True)
+    initial_measurement = client.measurement
+    reads = {"count": 0}
+
+    def disappeared(identity: str):
+        reads["count"] += 1
+        return initial_measurement(identity) if reads["count"] == 1 else None
+
+    client.measurement = disappeared
+    with pytest.raises(SCCRemoteError, match="changed before replacement"):
+        workflow.submit(
+            config, tmp_path, client, replace_existing=True, skip_backup=True,
+        )
+    with SubmissionStore(state_root(config)) as store:
+        assert store.get(ID) == old_row
+        assert store.events(ID) == old_events
+    assert client.delete_calls == client.upload_calls == 0
