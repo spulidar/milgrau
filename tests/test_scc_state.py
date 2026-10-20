@@ -115,3 +115,39 @@ def test_state_cannot_be_stored_under_scientific_session_products(tmp_path: Path
     config["scc"]["state_dir"] = str(tmp_path / "02-processed_data/spu/journal")
     with pytest.raises(ValueError, match="outside processed session"):
         state_root(config)
+
+
+def test_manifest_identity_matches_durable_journal_and_rejects_changed_inputs(
+    tmp_path: Path,
+) -> None:
+    from copy import deepcopy
+
+    with SubmissionStore(state_root(_config(tmp_path))) as store:
+        store.begin(_manifest())
+        assert store.matches_manifest(IDENTITY, _manifest())
+        changed = deepcopy(_manifest())
+        changed["scc_product_ids"] = [3683]
+        assert not store.matches_manifest(IDENTITY, changed)
+        changed = deepcopy(_manifest())
+        changed["files"]["raw.nc"]["sha256"] = "f" * 64
+        assert not store.matches_manifest(IDENTITY, changed)
+        changed = deepcopy(_manifest())
+        changed["measurement_start_utc"] = "2024-09-13T15:49:33+00:00"
+        assert not store.matches_manifest(IDENTITY, changed)
+
+
+def test_current_revision_events_never_reuses_older_replacement_waiver(
+    tmp_path: Path,
+) -> None:
+    with SubmissionStore(state_root(_config(tmp_path))) as store:
+        store.begin(_manifest())
+        store.transition(
+            IDENTITY, "preflight", action="operator_confirmed_no_backup",
+            detail={"irreversible": True, "remote_fingerprint": "a" * 64},
+        )
+        store.transition(IDENTITY, "accepted", action="old_submission_accepted")
+        store.begin(_manifest(), allow_new_revision=True, allow_same_revision=True)
+        store.transition(IDENTITY, "uncertain", action="delete_result_uncertain")
+        actions = [event["action"] for event in store.current_revision_events(IDENTITY)]
+        assert actions == ["new_explicit_revision", "delete_result_uncertain"]
+        assert len(store.events(IDENTITY)) > len(actions)

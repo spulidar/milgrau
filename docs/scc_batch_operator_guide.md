@@ -89,8 +89,21 @@ that is not what you intend.
 A response lost after DELETE or POST is *uncertain*, not proof of
 success/failure. Ordinary `--confirm` does not silently clear a prior
 uncertain journal entry or retry its destructive operation. In
-particular, no-backup replacement cannot use the archive-based
-recovery command. Inspect SCC remotely and reconcile that ID.
+particular, an interrupted **DELETE** can be reconciled without a backup
+*only* if the same journal revision records the explicit no-backup waiver,
+its remote fingerprint and the uncertain DELETE outcome. After independently
+checking the SCC portal and confirming API absence for that ID, use:
+
+```bash
+milgrau-scc upload --id MEASUREMENT_ID --resume-after-delete --confirm
+```
+
+This does **not** repeat DELETE; it performs at most one new POST and verifies
+the resulting remote record. If the ID is present, staged hashes differ,
+the waiver/audit trail is missing or the SCC lookup fails, it aborts without
+uploading. Any uncertain POST remains blocked; never repeat `upload --confirm`
+to guess the outcome. Existing special upload-only recovery commands require
+separate, exact-ID operator confirmation and audit verification.
 
 ## Sounding, historical maintenance and cleanup
 

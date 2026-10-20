@@ -53,6 +53,39 @@ def _id(identity: str) -> str:
     return identity
 
 
+
+def manifest_identity_fields(manifest: Mapping[str, Any]) -> dict[str, Any]:
+    """Canonical immutable SCC input identity shared by staging and recovery.
+
+    The stored fields intentionally retain the existing SQLite schema so that
+    historical journals remain readable without migration or state resets.
+    """
+    from milgrau.level0.scc_staging import manifest_raw_name
+
+    files = manifest["files"]
+    raw_name = manifest_raw_name(manifest)
+    return {
+        "scientific_session_id": str(manifest["scientific_session_id"]),
+        "configuration_id": int(manifest["scc_configuration_id"]),
+        "raw_sha256": str(files[raw_name]["sha256"]),
+        "lr_sha256": next(
+            (str(v["sha256"]) for k, v in files.items() if k.startswith("lr_")), None,
+        ),
+        "sounding_sha256": next(
+            (str(v["sha256"]) for k, v in files.items() if k.startswith("rs_")), None,
+        ),
+        "product_ids_json": json.dumps(
+            [int(x) for x in manifest["scc_product_ids"]], separators=(",", ":"),
+        ),
+        "source_segments_json": json.dumps(
+            manifest.get("source_segments", []), separators=(",", ":"),
+        ),
+        "scc_config_sha256": manifest.get("scc_config_sha256"),
+        "start_utc": str(manifest["measurement_start_utc"]),
+        "stop_utc": str(manifest["measurement_stop_utc"]),
+    }
+
+
 @contextmanager
 def operation_lock(root: Path, identity: str) -> Iterator[None]:
     """OS-exclusive lock file: no implicit deletion of crash remnants."""
@@ -158,36 +191,33 @@ class SubmissionStore:
             (_id(identity),),
         ).fetchall()]
 
+    def matches_manifest(self, identity: str, manifest: Mapping[str, Any]) -> bool:
+        """Require every immutable field to match the existing journal revision."""
+        row = self.get(identity)
+        if row is None or str(manifest["measurement_id"]) != identity:
+            return False
+        expected = manifest_identity_fields(manifest)
+        return all(row[field] == value for field, value in expected.items())
+
+    def current_revision_events(self, identity: str) -> list[dict[str, Any]]:
+        """Exclude events from older accepted revisions when reconciling uncertainty.
+
+        Historical event rows remain untouched; a new explicit revision has
+        its own initial/new revision marker and its own audit evidence.
+        """
+        events = self.events(identity)
+        for index in range(len(events) - 1, -1, -1):
+            if events[index]["action"] in {"initial_stage", "new_explicit_revision"}:
+                return events[index:]
+        return events
+
     def begin(
         self, manifest: Mapping[str, Any], *, allow_new_revision: bool = False,
         allow_same_revision: bool = False,
     ) -> dict[str, Any]:
         """Insert once; prevent changed cached bytes from silently resetting state."""
         identity = _id(str(manifest["measurement_id"]))
-        from milgrau.level0.scc_staging import manifest_raw_name
-
-        files = manifest["files"]
-        raw_name = manifest_raw_name(manifest)
-        expected = {
-            "scientific_session_id": str(manifest["scientific_session_id"]),
-            "configuration_id": int(manifest["scc_configuration_id"]),
-            "raw_sha256": str(files[raw_name]["sha256"]),
-            "lr_sha256": next(
-                (str(v["sha256"]) for k, v in files.items() if k.startswith("lr_")), None,
-            ),
-            "sounding_sha256": next(
-                (str(v["sha256"]) for k, v in files.items() if k.startswith("rs_")), None,
-            ),
-            "product_ids_json": json.dumps(
-                [int(x) for x in manifest["scc_product_ids"]], separators=(",", ":"),
-            ),
-            "source_segments_json": json.dumps(
-                manifest.get("source_segments", []), separators=(",", ":"),
-            ),
-            "scc_config_sha256": manifest.get("scc_config_sha256"),
-            "start_utc": str(manifest["measurement_start_utc"]),
-            "stop_utc": str(manifest["measurement_stop_utc"]),
-        }
+        expected = manifest_identity_fields(manifest)
         row = self.get(identity)
         if row is not None:
             if row["state"] in BLOCKED_RESTART:
