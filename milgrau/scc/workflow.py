@@ -499,6 +499,38 @@ def retry_rejected_recovery_upload(
         )
 
 
+def reconciliation_guidance(
+    store: SubmissionStore, identity: str, remote: Mapping[str, Any] | None,
+) -> str | None:
+    """Read-only operator guidance: a 404 never resets an unknown POST."""
+    row = store.get(identity)
+    if row is None or row["state"] not in {
+        "uncertain", "deleting", "remote_deleted", "uploading",
+    }:
+        return None
+    events = store.current_revision_events(identity)
+    action = events[-1]["action"] if events else "unknown"
+    if remote is not None:
+        return (
+            f"journal {row['state']} ({action}); SCC ID is present. "
+            "Inspect remote generation/configuration and local audit; "
+            "do not automatically POST or DELETE."
+        )
+    if action == "delete_result_uncertain":
+        return (
+            "SCC API reports ID absent after uncertain DELETE. A manually "
+            "confirmed recovery requires unchanged staged inputs and either "
+            "a verified original archive or a current-revision no-backup waiver. "
+            "Never repeat DELETE."
+        )
+    return (
+        f"journal {row['state']} ({action}); SCC API reports ID absent, "
+        "but absence alone does not prove a POST was rejected or authorize "
+        "another POST. Reconcile the exact journal events manually; "
+        "no automatic retry or replacement."
+    )
+
+
 def reconcile_status(
     store: SubmissionStore,
     identity: str,
