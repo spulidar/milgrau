@@ -70,7 +70,7 @@ def _confirmed_outputs(remote: Mapping[str, Any]) -> dict[str, str]:
 
 
 def validate_results(directory: Path) -> dict[str, Any]:
-    """Check a finalized, trusted results package before a cache cleanup."""
+    """Verify an immutable SCC result package without changing session inputs."""
     manifest_file = directory / "results.json"
     if directory.is_symlink() or not manifest_file.is_file() or manifest_file.is_symlink():
         raise SCCRemoteError("SCC results manifest missing or unsafe.")
@@ -116,7 +116,7 @@ def download_results(
     Durable accepted/processing/completed submissions are promoted to downloaded
     only when the same exact remote creation date and configuration are present.
     Existing, externally uploaded measurements can be downloaded for scientific
-    comparison, but do not become eligible for cache cleanup.
+    comparison; downloads do not authorize deletion of session inputs.
     """
     root = state_root(config)
     with operation_lock(root, identity), SubmissionStore(root) as journal:

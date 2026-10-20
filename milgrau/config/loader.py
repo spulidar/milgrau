@@ -124,7 +124,7 @@ def _scc_settings(config: Mapping[str, Any]) -> Mapping[str, Any]:
         return {"enabled": False}
     if not isinstance(raw, Mapping):
         raise ValueError("config.scc must be a mapping.")
-    allowed = {"enabled", "config_file", "state_dir", "upload", "cleanup"}
+    allowed = {"enabled", "config_file", "state_dir", "upload"}
     if set(raw) - allowed:
         raise ValueError(f"Unknown config.scc keys: {sorted(set(raw) - allowed)}.")
     enabled = raw.get("enabled", False)
@@ -151,11 +151,6 @@ def _scc_settings(config: Mapping[str, Any]) -> Mapping[str, Any]:
         or not 0 <= upload["retries"] <= 5
     ):
         raise ValueError("config.scc.upload.retries must be an integer 0..5.")
-    cleanup = raw.get("cleanup", {})
-    if not isinstance(cleanup, Mapping) or set(cleanup) - {"policy"}:
-        raise ValueError("config.scc.cleanup must contain only policy.")
-    if "policy" in cleanup and cleanup["policy"] not in {"after_download", "manual"}:
-        raise ValueError("config.scc.cleanup.policy must be after_download or manual.")
     if enabled and not raw.get("config_file"):
         raise ValueError("config.scc.config_file is required when SCC is enabled.")
     return raw

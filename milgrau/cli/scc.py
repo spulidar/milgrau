@@ -1,4 +1,4 @@
-"""Four-command SCC CLI: upload, status, verified download and safe cleanup."""
+"""SCC CLI: explicit upload, read-only status and retained result downloads."""
 
 from __future__ import annotations
 
@@ -106,17 +106,6 @@ def _parser() -> argparse.ArgumentParser:
     download.add_argument(
         "--session", help="Scientific Session_ID for a remote record not uploaded by MILGRAU."
     )
-    download.add_argument(
-        "--keep-cache", action="store_true",
-        help="Keep eligible staging files even if cleanup.policy is after_download."
-    )
-    cleanup = sub.add_parser(
-        "cleanup", help="Remove only verified pending SCC cache for a journal-confirmed upload."
-    )
-    cleanup.add_argument("--id", dest="identity", required=True)
-    approval = cleanup.add_mutually_exclusive_group(required=True)
-    approval.add_argument("--dry-run", action="store_true")
-    approval.add_argument("--confirm", action="store_true")
     return parser
 
 
@@ -272,8 +261,8 @@ def _upload(config: dict[str, Any], args: argparse.Namespace) -> int:
         )
     print(
         f"SCC API confirmed {result['measurement_id']}: {result['remote_page']}. "
-        "Submission is journalled in .state/scc; cached files remain "
-        "unchanged until an explicitly configured cleanup after download."
+        "Submission is journalled in .state/scc; session SCC inputs are "
+        "retained until the operator manages them manually."
     )
     return 0
 
@@ -405,10 +394,10 @@ def _status(config: dict[str, Any], args: argparse.Namespace) -> int:
 
 def _download_one(
     config: dict[str, Any], identity: str, client: Any, *,
-    source_session: str | None, keep_cache: bool,
+    source_session: str | None,
 ) -> None:
+    """Only store verified remote results; never delete SCC input artifacts."""
     from milgrau.scc.results import download_results
-    from milgrau.scc.cleanup import cleanup_pending
 
     destination, manifest = download_results(
         config, identity, client, source_session=source_session,
@@ -416,28 +405,16 @@ def _download_one(
     print(
         f"SCC downloads VERIFIED: {destination} | "
         f"products={', '.join(manifest['files'])} | "
-        f"upload_owned={manifest['uploaded_by_milgrau']}"
+        f"upload_owned={manifest['uploaded_by_milgrau']}; "
+        "session SCC inputs retained."
     )
-    if not keep_cache and config["scc"].get("cleanup", {}).get("policy") == "after_download":
-        if manifest["uploaded_by_milgrau"]:
-            result = cleanup_pending(config, identity, dry_run=False)
-            print(
-                "SCC pending cache cleanup: "
-                f"{'already done' if result['already_cleaned'] else 'verified and removed'} "
-                f"for {identity}; persistent results and journal preserved."
-            )
-        else:
-            print(
-                "SCC pending cache retained: remote record was not confirmed as "
-                "a MILGRAU upload."
-            )
 
 
 def _download(config: dict[str, Any], args: argparse.Namespace) -> int:
     if args.identity:
         _download_one(
             config, args.identity, _client(config),
-            source_session=args.session, keep_cache=args.keep_cache,
+            source_session=args.session,
         )
         return 0
     if args.session:
@@ -486,14 +463,12 @@ def _download(config: dict[str, Any], args: argparse.Namespace) -> int:
                     f"(ELPP={remote.get('elpp')}, ELDA={remote.get('elda')})."
                 )
                 continue
-            # Batch downloads always preserve local pending cache, even if a
-            # user's old config still specifies cleanup.policy=after_download.
+            # Batch downloads always preserve session-scoped input artifacts.
             _download_one(
                 config, identity, client, source_session=source_session,
-                keep_cache=True,
             )
             verified += 1
-            print(f"{prefix}: VERIFIED — results preserved; cache retained.")
+            print(f"{prefix}: VERIFIED — results and SCC inputs retained.")
         except Exception as exc:
             failed += 1
             print(
@@ -503,25 +478,9 @@ def _download(config: dict[str, Any], args: argparse.Namespace) -> int:
     print(
         f"SCC download summary: total={len(identities)}; verified={verified}; "
         f"waiting={not_ready}; absent={absent}; errors={failed}; "
-        "all local pending caches retained."
+        "all session SCC inputs retained."
     )
     return 1 if failed else 0
-
-
-def _cleanup(config: dict[str, Any], args: argparse.Namespace) -> int:
-    from milgrau.scc.cleanup import cleanup_pending
-
-    result = cleanup_pending(config, args.identity, dry_run=not args.confirm)
-    if result["already_cleaned"]:
-        print(f"SCC pending cache already cleaned: {args.identity}")
-    elif args.confirm:
-        print(f"SCC pending cache removed: {args.identity}; results/journal preserved.")
-    else:
-        print(
-            f"DRY RUN: eligible pending SCC package {result['staged']} "
-            "would be removed; nothing was deleted."
-        )
-    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -549,8 +508,6 @@ def main(argv: list[str] | None = None) -> int:
             return _status(config, args)
         if args.command == "download":
             return _download(config, args)
-        if args.command == "cleanup":
-            return _cleanup(config, args)
         parser.error(f"Unexpected SCC subcommand: {args.command}")
     except Exception as exc:
         print(f"SCC operation failed: {exc}", file=sys.stderr)
