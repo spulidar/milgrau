@@ -25,9 +25,11 @@ python -m pip install -e ".[scc]"
 The default is `https://scc.imaa.cnr.it/`. This can be changed to the
 specific deployed SCC HTTPS origin after verification.
 `config.yaml` enables the optional integration with `scc.enabled: true`
-and controls `scc.upload.timeout_seconds` and `scc.upload.retries`.
-Upload retries apply **only to safe GET requests**; multipart POSTs are
-never blindly retried.
+and controls `scc.http.timeout_seconds` and `scc.http.get_retries`.
+The latter retries **only read-only HTTP GETs**, on transient errors:
+it never repeats a Quick Upload POST, authentication POST or DELETE.
+The previous `scc.upload.automatic`, `scc.upload.timeout_seconds` and
+`scc.upload.retries` configuration keys have been removed.
 
 Web-login credentials must be provided in the **local environment**:
 
@@ -130,8 +132,11 @@ available and are the required first live replacement test.
 
 For a current operator workflow and exact runbook, read
 [batch submission and first replacement test](scc_batch_operator_guide.md).
-Setting `scc.upload.automatic: true` **does not** cause LIBIDS to perform
-a POST.
+There is no automatic SCC submission flag. LIBIDS and LIPANCORA never
+initiate SCC HTTP uploads. Remote POST/DELETE operations require
+`milgrau-scc upload --confirm` and remain fail-stop on uncertainty.
+`--continue-on-error` has been removed: a remote/journal error halts
+the batch before later IDs are processed.
 
 ## Local preflight
 

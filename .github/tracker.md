@@ -249,6 +249,20 @@ descartável. A limpeza será responsabilidade manual do operador, fora da CLI,
 
 ## 4. CLI e configuração
 
+**Fase 4 — implementação:** os três comandos `upload`, `status` e `download`
+foram mantidos. Removidos `--continue-on-error` e os parâmetros
+`scc.upload.*` (`automatic` sem efeito; `retries` ambíguo). A
+configuração `scc.http.timeout_seconds`/`scc.http.get_retries` limita
+explicitamente retries a GETs. Erros operacionais de batch passam a
+interromper sempre a execução, sem repetir POST/DELETE. A recuperação
+do DELETE incerto permanece exclusiva de `upload --id ID
+--resume-after-delete --confirm`. Código, testes e documentação
+atualizados diretamente na branch SCC; CI final deve ser confirmado.
+
+**Decisão de integração:** manter `scc.enabled: true` nesta branch
+experimental. Para a futura integração na `main`, avaliar explicitamente
+o default conforme a política de publicação (sem alterar `main` agora).
+
 ### 4.1. Interface operacional
 
 Manter como interface principal:
@@ -259,24 +273,24 @@ milgrau-scc status
 milgrau-scc download
 ```
 
-- [ ] Preservar upload individual e em lote.
-- [ ] Preservar `--dry-run` para validação local.
-- [ ] Preservar `--replace-existing --confirm` para substituição explícita.
-- [ ] Preservar consulta remota somente de leitura.
-- [ ] Preservar download em lote.
-- [ ] Consolidar a recuperação de operações incertas em uma interface clara e documentada.
-- [ ] Remover opções exclusivas de migrações ou reparos eliminados.
-- [ ] Revisar nomes de opções que ainda utilizam o termo `cache` para pacotes persistidos nas sessões.
-- [ ] Manter preparação de sounding apenas se ainda for uma operação manual necessária.
+- [x] Preservar upload individual e em lote.
+- [x] Preservar `--dry-run` para validação local.
+- [x] Preservar `--replace-existing --confirm` para substituição explícita.
+- [x] Preservar consulta remota somente de leitura.
+- [x] Preservar download em lote.
+- [x] Consolidar a recuperação de operações incertas em uma interface clara e documentada.
+- [x] Remover opções exclusivas de migrações ou reparos eliminados.
+- [x] Revisar nomes de opções que ainda utilizam o termo `cache` para pacotes persistidos nas sessões.
+- [x] Manter preparação de sounding apenas se ainda for uma operação manual necessária.
 
 ### 4.2. `config.yaml`
 
-- [ ] Remover `scc.upload.automatic`, atualmente sem efeito de upload.
-- [ ] Revisar `scc.upload.retries`, garantindo que nunca permita retry inseguro de POST/DELETE.
+- [x] Remover `scc.upload.automatic` (e o grupo `scc.upload`) sem efeito de upload.
+- [x] Substituir `scc.upload.retries` por `scc.http.get_retries`, aplicável apenas a GET; POST/DELETE nunca são repetidos automaticamente.
 - [x] Remover toda a configuração `scc.cleanup` (incluindo `after_download` e `manual`); a CLI não gerencia exclusão de inputs.
-- [ ] Simplificar opções de limpeza e flags redundantes.
-- [ ] Remover referências restantes ao staging global.
-- [ ] Preservar `scc.enabled: true` na branch experimental.
+- [x] Simplificar opções de limpeza e flags redundantes.
+- [x] Remover referências restantes ao staging global.
+- [x] Preservar `scc.enabled: true` na branch experimental.
 - [ ] Decidir explicitamente o valor padrão de SCC antes do merge em `main`.
 
 ### 4.3. Retirada do cleanup da interface operacional
@@ -286,7 +300,7 @@ milgrau-scc download
 - [x] Preservar leitura de estados históricos `cleaned` e proteção contra operações incertas.
 - [x] Documentar exclusão de diretórios de input pelo operador, após auditoria.
 
-**Gate 4:** três comandos operacionais principais, configuração reduzida e nenhuma exclusão automática de inputs SCC.
+**Gate 4:** três comandos operacionais principais, configuração HTTP explícita com retry apenas de GET, batch fail-stop e nenhuma exclusão automática de inputs SCC. Configuração padrão na futura `main` fica para o Gate 7.
 
 ---
 
@@ -379,13 +393,17 @@ milgrau-scc download
 | 1. Merge das mudanças de `main` | Integrada, CI 6/6; dois testes operacionais pendentes |
 | 2. Simplificação do workflow SCC | Núcleo integrado e CI do PR aprovado; revisão de estados e comandos históricos pendente |
 | 3. Remoção de código transitório | Concluída no código, CI 6/6; pacotes locais não inspecionados pela API |
-| 4. CLI e configuração | Cleanup e política de exclusão removidos; outras opções ainda pendentes |
+| 4. CLI e configuração | Núcleo implementado; CI final a confirmar; default de `main` reservado para Gate 7 |
 | 5. Validação e regressões | Pendente |
 | 6. Documentação | Pendente |
 | 7. Merge final em `main` | Pendente |
 
 ### Próxima ação
 
-**Fase 3 concluída no código e validada no CI (6/6) no commit `d47e9bb`.** O operador confirmou journals resolvidos; arquivos locais não foram inspecionados nem alterados pela API GitHub. A próxima etapa é a Fase 4 (CLI/configuração). Os dois testes operacionais restantes da Fase 1 e a validação real SCC permanecem pendentes.
+**Fase 4 implementada diretamente em `scc-integration-refactor`, sem PR.**
+Confirmar Ruff e pytest em Linux/Windows 3.12/3.14 para fechar o gate de código.
+Permanecem os dois testes operacionais pendentes da Fase 1, a validação
+real de SCC (Fase 5) e a escolha definitiva do default para `main`
+no Gate 7. Nenhum POST/DELETE remoto foi executado nesta fase.
 
 Não executar uploads, substituições ou DELETE reais sem autorização explícita, ID adequado e preflight remoto. L0/L1/L2 e arquivos históricos devem continuar preservados.

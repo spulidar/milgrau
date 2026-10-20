@@ -629,7 +629,8 @@ def test_safe_http_get_retries_only_reads(monkeypatch: pytest.MonkeyPatch) -> No
         SCCCredentials("person", "password"),
         timeout=30, get_retries=1, session=fake,
     )
-    assert client.measurement(IDENTITY) is None
+    response = client._read(f"api/v1/measurements/{IDENTITY}/")
+    assert response.status_code == 404
     assert len(fake.gets) == 2
     assert fake.posts == []
 

@@ -102,8 +102,31 @@ This does **not** repeat DELETE; it performs at most one new POST and verifies
 the resulting remote record. If the ID is present, staged hashes differ,
 the waiver/audit trail is missing or the SCC lookup fails, it aborts without
 uploading. Any uncertain POST remains blocked; never repeat `upload --confirm`
-to guess the outcome. Existing special upload-only recovery commands require
-separate, exact-ID operator confirmation and audit verification.
+to guess the outcome. The historical second-POST repair options have been
+removed; an uncertain POST must be independently investigated rather
+than resubmitted through a generic retry switch.
+
+## Simplified SCC CLI and HTTP configuration
+
+The three supported commands are `upload`, `status`, and `download`.
+For remote HTTP requests, `config.yaml` has an explicit read-only retry
+configuration:
+
+```yaml
+scc:
+  enabled: true
+  config_file: "scc.yaml"
+  state_dir: ".state/scc"
+  http:
+    timeout_seconds: 60
+    get_retries: 2
+```
+
+`get_retries` applies **only to GET**, not to login, upload, or DELETE
+POSTs. `scc.upload.automatic`, `scc.upload.retries` and
+`--continue-on-error` have been removed. Every batch stops on its
+first operational SCC/journal error. Local input validation still checks
+each staged package before making remote requests.
 
 ## Soundings and operational input retention
 
