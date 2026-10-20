@@ -64,7 +64,8 @@ def test_scan_is_read_only_and_reports_spurious_detection(tmp_path: Path) -> Non
     ]
     assert spurious.read_text(encoding="utf-8") == "archive"
     assert not (tmp_path / "quarantine").exists()
-    assert any("Spurious file detected; no action taken" in message for message in logger.messages)
+    assert any("DEBUG: spurious ignored" in message and str(spurious) in message for message in logger.messages)
+    assert any("INFO: raw scan | 2 Licel candidates | 1 spurious ignored" in message for message in logger.messages)
 
 
 def test_discovery_exposes_validation_classification_without_side_effects(tmp_path: Path) -> None:
