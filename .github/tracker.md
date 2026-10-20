@@ -189,7 +189,7 @@ Esses arquivos possuem alterações nas duas branches e devem ser revisados mesm
 
 ## 3. Remoção do código transitório
 
-**Fase 3 — implementação concluída no código (20/10/2026):** por confirmação do operador de que os journals estão resolvidos, retirados os módulos históricos de migração/reparo/backfill e os comandos exclusivos desses incidentes. A inspeção do computador do operador não foi realizada por esta integração; nenhuma pasta histórica, journal ou pacote local foi apagado. A validação de CI e os testes operacionais reais continuam sendo gates separados.
+**Fase 3 — implementação concluída no código (20/10/2026):** por confirmação do operador de que os journals estão resolvidos, retirados os módulos históricos de migração/reparo/backfill e os comandos exclusivos desses incidentes. A inspeção do computador do operador não foi realizada por esta integração; nenhuma pasta histórica, journal ou pacote local foi apagado. O código atualizado passou nos seis jobs de CI de [GitHub Actions #39494187032](https://github.com/spulidar/milgrau/actions/runs/39494187032), incluindo 708 testes no Linux/Python 3.12. Os testes operacionais reais continuam sendo gates separados.
 
 ### 3.1. Ferramentas históricas
 
@@ -378,7 +378,7 @@ milgrau-scc download
 | 0. Baseline e preparação | Parcialmente concluída |
 | 1. Merge das mudanças de `main` | Integrada, CI 6/6; dois testes operacionais pendentes |
 | 2. Simplificação do workflow SCC | Núcleo integrado e CI do PR aprovado; revisão de estados e comandos históricos pendente |
-| 3. Remoção de código transitório | Código histórico removido; inventário local opcional de pacotes não verificável via GitHub |
+| 3. Remoção de código transitório | Concluída no código, CI 6/6; pacotes locais não inspecionados pela API |
 | 4. CLI e configuração | Cleanup e política de exclusão removidos; outras opções ainda pendentes |
 | 5. Validação e regressões | Pendente |
 | 6. Documentação | Pendente |
@@ -386,6 +386,6 @@ milgrau-scc download
 
 ### Próxima ação
 
-**Código da Fase 3 removido diretamente em `scc-integration-refactor`, sem PR.** O operador confirmou journals resolvidos; arquivos locais não foram inspecionados nem alterados pela API GitHub. Confirmar o CI final antes de avançar à Fase 4 (CLI/configuração). Os dois testes operacionais restantes da Fase 1 e a validação real SCC permanecem pendentes.
+**Fase 3 concluída no código e validada no CI (6/6) no commit `d47e9bb`.** O operador confirmou journals resolvidos; arquivos locais não foram inspecionados nem alterados pela API GitHub. A próxima etapa é a Fase 4 (CLI/configuração). Os dois testes operacionais restantes da Fase 1 e a validação real SCC permanecem pendentes.
 
 Não executar uploads, substituições ou DELETE reais sem autorização explícita, ID adequado e preflight remoto. L0/L1/L2 e arquivos históricos devem continuar preservados.
