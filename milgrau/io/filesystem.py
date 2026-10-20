@@ -306,7 +306,7 @@ def discover_raw_files(
             candidate = classify_raw_file(full_path, spurious_extensions)
             candidates.append(candidate)
             if logger and candidate.kind is RawFileKind.SPURIOUS:
-                logger.info(f"  -> Spurious file detected; no action taken: {full_path}")
+                logger.debug("spurious ignored | %s | %s", full_path, candidate.reason)
 
     return tuple(candidates)
 
@@ -328,6 +328,12 @@ def scan_raw_files(
         logger=logger,
     )
     licel_candidates = [candidate for candidate in candidates if candidate.kind is not RawFileKind.SPURIOUS]
+    if logger is not None:
+        logger.info(
+            "raw scan | %d Licel candidates | %d spurious ignored",
+            len(licel_candidates),
+            len(candidates) - len(licel_candidates),
+        )
     filepath = [str(candidate.path) for candidate in licel_candidates]
     meas_type = [candidate.kind.value for candidate in licel_candidates]
     return filepath, meas_type
