@@ -129,3 +129,10 @@ def test_disabled_scc_export_does_not_require_scc_dependencies() -> None:
         config={"scc": {"enabled": False}},
         logger=logging.getLogger("test.scc.disabled"),
     ) == []
+
+
+def test_scc_cleanup_policy_is_rejected(tmp_path: Path) -> None:
+    payload = _files(tmp_path)
+    payload["scc"]["cleanup"] = {"policy": "after_download"}
+    with pytest.raises(ValueError, match="Unknown config.scc keys"):
+        _load_temp(tmp_path, payload)

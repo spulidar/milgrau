@@ -93,7 +93,7 @@ def test_bulk_remote_status_continues_after_one_get_error(
 def test_bulk_download_captures_complete_external_packet_and_retains_cache(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
 ) -> None:
-    cfg = _config(tmp_path)  # cleanup.policy=after_download
+    cfg = _config(tmp_path)  # all session inputs are retained
     _stage(cfg)  # No local submission journal: externally uploaded SCC ID.
     _journal(cfg, ID2)
     client = ManyClient({ID: _record()})
@@ -125,8 +125,7 @@ def test_bulk_download_defers_processing_and_isolates_failure(
     client = ManyClient({ID2: waiting, ID3: success})
     monkeypatch.setattr(cli, "load_config", lambda: cfg)
     monkeypatch.setattr(cli, "_client", lambda _: client)
-    def failed_download(config, identity, client, *, source_session, keep_cache):
-        assert keep_cache is True
+    def failed_download(config, identity, client, *, source_session):
         raise RuntimeError("one archive failed")
     monkeypatch.setattr(cli, "_download_one", failed_download)
     assert cli.main(["download"]) == 1
@@ -136,14 +135,14 @@ def test_bulk_download_defers_processing_and_isolates_failure(
     assert "waiting=1; absent=0; errors=1" in out.out
 
 
-def test_bulk_download_rejects_unscoped_session_and_keeps_single_id(
+def test_bulk_download_rejects_unscoped_session_and_allows_single_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
 ) -> None:
     cfg = _config(tmp_path)
     monkeypatch.setattr(cli, "load_config", lambda: cfg)
     assert cli.main(["download", "--session", SESSION]) == 1
     assert "--session requires --id" in capsys.readouterr().err
-    assert cli._parser().parse_args(["download", "--id", ID, "--keep-cache"]).identity == ID
+    assert cli._parser().parse_args(["download", "--id", ID]).identity == ID
 
 
 def test_remote_status_reports_ambiguous_post_even_after_api_404(

@@ -1,4 +1,4 @@
-"""Phase 12.6: verified SCC downloads and conservative disposable-cache cleanup."""
+"""Verified SCC downloads preserve scientific and session input artifacts."""
 
 from __future__ import annotations
 
@@ -17,7 +17,6 @@ from milgrau.level0.scc_staging import (
     atomic_scc_package, pending_scc_package, write_scc_manifest,
 )
 from milgrau.scc import results
-from milgrau.scc.cleanup import cleanup_pending, verify_cleanup
 from milgrau.scc.client import SCCRemoteError
 from milgrau.scc.results import download_results, validate_results
 from milgrau.scc.state import SubmissionStore, state_root
@@ -37,7 +36,6 @@ def _config(tmp_path: Path) -> dict:
         "scc": {
             "enabled": True,
             "state_dir": str(tmp_path / ".state/scc"),
-            "cleanup": {"policy": "after_download"},
         },
     }
 
@@ -138,16 +136,17 @@ def _mock_stream(monkeypatch: pytest.MonkeyPatch, *, fail: str | None = None):
     return calls
 
 
-def test_journal_owned_download_auto_cleans_only_pending_cache(
+def test_owned_download_retains_input_even_with_legacy_policy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = _config(tmp_path)
+    # Old runtime dictionaries must not be able to trigger deletion.
+    config["scc"]["cleanup"] = {"policy": "after_download"}
     manifest = _stage(config)
     _owned(config, manifest)
     calls = _mock_stream(monkeypatch)
     monkeypatch.setattr(cli, "load_config", lambda: config)
     monkeypatch.setattr(cli, "_client", lambda _: FakeClient())
-
     assert cli.main(["download", "--id", ID]) == 0
     assert sorted(calls) == ["elda", "elpp"]
     target = results.result_location(config, SESSION, ID, CREATION)
@@ -155,21 +154,22 @@ def test_journal_owned_download_auto_cleans_only_pending_cache(
     assert saved["uploaded_by_milgrau"] is True
     assert saved["scientific_session_id"] == SESSION
     assert set(saved["files"]) == {"elpp", "elda"}
-    assert not pending_scc_package(config, ID, session_id=SESSION).exists()
+    pending = pending_scc_package(config, ID, session_id=SESSION)
+    assert pending.is_dir()
+    assert (pending / f"{ID}.nc").is_file()
     assert level0_output_path(SESSION, config).read_bytes() == (
         b"canonical scientific Level 0 is NEVER modified"
     )
-    assert not (target.parent.parent / f"{SESSION}_L1.nc").exists()
     with SubmissionStore(state_root(config)) as journal:
-        assert journal.get(ID)["state"] == "cleaned"
+        assert journal.get(ID)["state"] == "downloaded"
         assert journal.get(ID)["results_manifest_sha256"]
-        assert journal.events(ID)[-1]["action"] == "verified_pending_cache_cleanup"
-        assert len(journal.events(ID)) >= 3
+        assert "verified_pending_cache_cleanup" not in [
+            event["action"] for event in journal.events(ID)
+        ]
     assert (target / "results.json").is_file()
-    assert (state_root(config) / "submissions.sqlite").exists()
 
 
-def test_download_keep_cache_then_explicit_cleanup_dry_run(
+def test_cleanup_command_and_keep_cache_option_are_removed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = _config(tmp_path)
@@ -178,15 +178,14 @@ def test_download_keep_cache_then_explicit_cleanup_dry_run(
     _mock_stream(monkeypatch)
     monkeypatch.setattr(cli, "load_config", lambda: config)
     monkeypatch.setattr(cli, "_client", lambda _: FakeClient())
-    assert cli.main(["download", "--id", ID, "--keep-cache"]) == 0
+    assert cli.main(["download", "--id", ID]) == 0
     assert pending_scc_package(config, ID, session_id=SESSION).is_dir()
-    with SubmissionStore(state_root(config)) as store:
-        assert store.get(ID)["state"] == "downloaded"
-    assert cli.main(["cleanup", "--id", ID, "--dry-run"]) == 0
-    assert pending_scc_package(config, ID, session_id=SESSION).is_dir()
-    assert cli.main(["cleanup", "--id", ID, "--confirm"]) == 0
-    assert not pending_scc_package(config, ID, session_id=SESSION).exists()
-    assert cli.main(["cleanup", "--id", ID, "--confirm"]) == 0
+    with SubmissionStore(state_root(config)) as journal:
+        assert journal.get(ID)["state"] == "downloaded"
+    with pytest.raises(SystemExit, match="2"):
+        cli._parser().parse_args(["cleanup", "--id", ID, "--confirm"])
+    with pytest.raises(SystemExit, match="2"):
+        cli._parser().parse_args(["download", "--id", ID, "--keep-cache"])
 
 
 def test_download_uses_session_manifest_without_a_local_journal(
@@ -220,8 +219,8 @@ def test_preexisting_external_scc_can_download_but_must_keep_pending_cache(
     assert pending_scc_package(config, ID, session_id=SESSION).is_dir()
     target = results.result_location(config, SESSION, ID, CREATION)
     assert validate_results(target)["uploaded_by_milgrau"] is False
-    with pytest.raises(SCCRemoteError, match="No MILGRAU submission journal"):
-        verify_cleanup(config, ID)
+    with SubmissionStore(state_root(config)) as journal:
+        assert journal.get(ID) is None
 
 
 def test_missing_elda_completion_never_publishes_or_cleans(
@@ -252,7 +251,7 @@ def test_partial_network_failure_leaves_no_visible_results_and_retains_cache(
         assert store.get(ID)["state"] == "accepted"
 
 
-def test_remote_generation_mismatch_downloads_but_refuses_cleanup(
+def test_remote_generation_mismatch_preserves_inputs_and_prior_journal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = _config(tmp_path)
@@ -264,11 +263,10 @@ def test_remote_generation_mismatch_downloads_but_refuses_cleanup(
     assert saved["uploaded_by_milgrau"] is False
     with SubmissionStore(state_root(config)) as store:
         assert store.get(ID)["state"] == "accepted"
-    with pytest.raises(SCCRemoteError, match="not eligible"):
-        verify_cleanup(config, ID)
+    assert pending_scc_package(config, ID, session_id=SESSION).is_dir()
 
 
-def test_tampered_result_blocks_cleanup_without_touching_pending(
+def test_tampered_results_fail_verification_without_touching_inputs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = _config(tmp_path)
@@ -279,7 +277,7 @@ def test_tampered_result_blocks_cleanup_without_touching_pending(
     target = results.result_location(config, SESSION, ID, CREATION)
     (target / "elpp.archive").write_bytes(b"tampered")
     with pytest.raises(SCCRemoteError, match="Corrupted"):
-        cleanup_pending(config, ID, dry_run=False)
+        validate_results(target)
     assert pending_scc_package(config, ID, session_id=SESSION).is_dir()
 
 
@@ -292,18 +290,6 @@ def test_download_without_scientific_session_is_rejected(
         download_results(config, ID, FakeClient())
     with pytest.raises(SCCRemoteError, match="Canonical Level 0"):
         download_results(config, ID, FakeClient(), source_session=SESSION)
-
-
-def test_failed_legacy_record_cleanup_never_assumes_upload_ownership(
-    tmp_path: Path,
-) -> None:
-    config = _config(tmp_path)
-    manifest = _stage(config)
-    with SubmissionStore(state_root(config)) as store:
-        store.begin(manifest)
-        store.transition(ID, "remote_exists", action="read_only_remote_check")
-    with pytest.raises(SCCRemoteError, match="not eligible"):
-        cleanup_pending(config, ID, dry_run=False)
 
 
 def test_result_snapshot_is_immutable_across_remote_revision(
