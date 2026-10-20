@@ -232,60 +232,130 @@ def _associate_dark_currents(
     config: dict,
     logger: logging.Logger,
 ) -> pd.DataFrame:
-    """Associate dark-current rows to the nearest continuous measurement session."""
+    """Associate each dark current with its nearest full session in O(D log S).
+
+    Sessions are sorted by start time. Prefix-maximum end times also cover
+    overlapping sessions; ties preserve the first chronological session, as
+    in the previous exhaustive nearest-interval search. No persistent state.
+    """
     if dark_rows.empty:
         return dark_rows.copy()
 
     rows = dark_rows.copy()
     rows["session_id"] = None
     rows["session_start_utc"] = pd.Series(
-        pd.NaT,
-        index=rows.index,
-        dtype="datetime64[ns, UTC]",
+        pd.NaT, index=rows.index, dtype="datetime64[ns, UTC]",
     )
     rows["session_end_utc"] = pd.Series(
-        pd.NaT,
-        index=rows.index,
-        dtype="datetime64[ns, UTC]",
+        pd.NaT, index=rows.index, dtype="datetime64[ns, UTC]",
     )
     rows["association_method"] = "unassociated"
     rows["dark_current_association_delta_hours"] = np.nan
 
     sessions = _session_table(measurements)
     if sessions.empty:
-        logger.warning("No measurement sessions available; dark currents remain unassociated.")
+        logger.warning(
+            "dark currents | %d unassociated | no measurement sessions",
+            len(rows),
+        )
         return rows
 
+    starts = pd.DatetimeIndex(sessions["session_start_utc"]).asi8
+    ends = pd.DatetimeIndex(sessions["session_end_utc"]).asi8
+    timestamps = pd.DatetimeIndex(rows["start_time_utc"]).asi8
+    n_sessions = len(sessions)
+
+    # Earliest overlapping interval covering a timestamp can be found by
+    # binary-searching the monotonic prefix maximum of session end times.
+    prefix_max_ends = np.maximum.accumulate(ends)
+    best_end_positions = np.zeros(n_sessions, dtype=np.intp)
+    best_position = 0
+    for pos in range(1, n_sessions):
+        if ends[pos] > ends[best_position]:
+            best_position = pos
+        best_end_positions[pos] = best_position
+
+    prior = np.searchsorted(starts, timestamps, side="right") - 1
+    following = prior + 1
+    valid_prior = prior >= 0
+    valid_following = following < n_sessions
+    nearest_prior = best_end_positions[np.clip(prior, 0, n_sessions - 1)]
+    nearest_following = np.clip(following, 0, n_sessions - 1)
+
+    # Distances are nanoseconds, cast to float before differences to avoid
+    # integer overflow for unusual but valid historical timestamps.
+    previous_distance = np.full(len(rows), np.inf)
+    next_distance = np.full(len(rows), np.inf)
+    previous_distance[valid_prior] = (
+        timestamps[valid_prior].astype(float)
+        - ends[nearest_prior[valid_prior]].astype(float)
+    )
+    next_distance[valid_following] = (
+        starts[nearest_following[valid_following]].astype(float)
+        - timestamps[valid_following].astype(float)
+    )
+
+    covered = valid_prior & (
+        prefix_max_ends[np.clip(prior, 0, n_sessions - 1)] >= timestamps
+    )
+    first_covering = np.searchsorted(prefix_max_ends, timestamps, side="left")
+    selected_positions = np.where(
+        covered,
+        np.clip(first_covering, 0, n_sessions - 1),
+        np.where(
+            previous_distance <= next_distance,
+            nearest_prior,
+            nearest_following,
+        ),
+    )
+    distance_hours = np.where(
+        covered, 0.0, np.minimum(previous_distance, next_distance) / 3.6e12,
+    )
+    # A missing UTC timestamp cannot be associated. Normal inventory creation
+    # filters these out, but this guard keeps the helper safe independently.
+    missing_timestamp = timestamps == np.iinfo(np.int64).min
     max_hours = resolve_level0_config(config).dark_current.max_association_hours
-    for index, row in rows.iterrows():
-        timestamp = pd.Timestamp(row["start_time_utc"])
-        candidates: list[tuple[float, pd.Series]] = []
-        for _session_index, session in sessions.iterrows():
-            distance_h = _distance_to_session_hours(
-                timestamp,
-                pd.Timestamp(session["session_start_utc"]),
-                pd.Timestamp(session["session_end_utc"]),
-            )
-            candidates.append((distance_h, session))
-        distance_h, selected = min(candidates, key=lambda item: item[0])
-        if distance_h > max_hours:
-            logger.warning(
-                "Dark current remains unassociated; nearest session is %.2f h away "
-                "(configured maximum %.2f h): %s",
-                distance_h,
-                max_hours,
-                row["filepath"],
-            )
-            continue
+    associated = (distance_hours <= max_hours) & ~missing_timestamp
 
-        rows.at[index, "session_id"] = str(selected["session_id"])
-        rows.at[index, "session_start_utc"] = selected["session_start_utc"]
-        rows.at[index, "session_end_utc"] = selected["session_end_utc"]
-        rows.at[index, "association_method"] = "nearest_session"
-        rows.at[index, "dark_current_association_delta_hours"] = distance_h
+    matching_index = rows.index[associated]
+    matched_sessions = sessions.iloc[selected_positions[associated]]
+    if len(matching_index):
+        rows.loc[matching_index, "session_id"] = matched_sessions["session_id"].to_numpy()
+        rows.loc[matching_index, "session_start_utc"] = list(
+            matched_sessions["session_start_utc"]
+        )
+        rows.loc[matching_index, "session_end_utc"] = list(
+            matched_sessions["session_end_utc"]
+        )
+        rows.loc[matching_index, "association_method"] = "nearest_session"
+        rows.loc[matching_index, "dark_current_association_delta_hours"] = distance_hours[associated]
 
+    unassociated_count = int((~associated).sum())
+    logger.info(
+        "dark currents | %d/%d associated | %d unassociated | limit %.1f h",
+        int(associated.sum()),
+        len(rows),
+        unassociated_count,
+        max_hours,
+    )
+    if unassociated_count:
+        logger.warning(
+            "dark currents | %d could not be associated within %.1f h; "
+            "see DEBUG for affected paths",
+            unassociated_count,
+            max_hours,
+        )
+    if logger.isEnabledFor(logging.DEBUG):
+        for offset, path in enumerate(rows["filepath"]):
+            logger.debug(
+                "dark current | %s | %s | nearest=%s | distance=%.4f h",
+                "associated" if associated[offset] else "unassociated",
+                path,
+                sessions.iloc[selected_positions[offset]]["session_id"]
+                if not missing_timestamp[offset] else "-",
+                distance_hours[offset] if not missing_timestamp[offset] else float("nan"),
+            )
     return rows
-
 
 def build_session_inventory(
     raw_dir: str,
