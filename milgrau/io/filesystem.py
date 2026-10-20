@@ -306,7 +306,7 @@ def discover_raw_files(
             candidate = classify_raw_file(full_path, spurious_extensions)
             candidates.append(candidate)
             if logger and candidate.kind is RawFileKind.SPURIOUS:
-                logger.info(f"  -> Spurious file detected; no action taken: {full_path}")
+                logger.debug(f"spurious ignored | {full_path} | {candidate.reason}")
 
     return tuple(candidates)
 
@@ -328,6 +328,13 @@ def scan_raw_files(
         logger=logger,
     )
     licel_candidates = [candidate for candidate in candidates if candidate.kind is not RawFileKind.SPURIOUS]
+    # A missing root was already reported by discovery; do not emit a misleading
+    # successful raw-scan summary for a nonexistent directory.
+    if logger is not None and Path(datadir_name).exists():
+        logger.info(
+            f"raw scan | {len(licel_candidates)} Licel candidates | "
+            f"{len(candidates) - len(licel_candidates)} spurious ignored"
+        )
     filepath = [str(candidate.path) for candidate in licel_candidates]
     meas_type = [candidate.kind.value for candidate in licel_candidates]
     return filepath, meas_type

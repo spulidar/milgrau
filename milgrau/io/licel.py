@@ -240,7 +240,7 @@ def read_licel_header(
         return start_time_utc, stop_time_utc, duration, representative_shots, laser_freq
     except (OSError, ValueError) as exc:
         if logger:
-            logger.warning(f"  -> Invalid Licel header skipped: {filepath} ({exc})")
+            logger.debug("Invalid Licel header skipped: %s (%s)", filepath, exc)
         return None, None, None, None, None
 
 
@@ -341,7 +341,7 @@ def _metadata_compatible(
 
 def parse_licel_group(filepaths: list[str], logger: logging.Logger) -> dict:
     """Parse multiple Licel files into time x range tensors and SCC metadata."""
-    logger.info(f"    -> Parsing {len(filepaths)} raw binary files...")
+    logger.debug("Parsing %d raw binary files", len(filepaths))
     time_series: defaultdict[str, list[np.ndarray]] = defaultdict(list)
     global_shots: list[int] = []
     laser_shot_rows: list[list[int]] = []

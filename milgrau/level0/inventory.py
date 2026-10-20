@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
+from time import perf_counter
 
 import numpy as np
 import pandas as pd
 
 from milgrau.io.filesystem import scan_raw_files
 from milgrau.io.licel import read_licel_header
-from milgrau.config.station import resolve_station_context
+from milgrau.io.logging_utils import bind_log_context
 from milgrau.io.paths import build_session_id, station_id
 from milgrau.level0.config import resolve_level0_config, station_timezone
 
@@ -35,16 +36,36 @@ def _normalize_header_times(df_raw: pd.DataFrame) -> pd.DataFrame:
 
 
 def _station_context_identity(config: dict, timestamp: pd.Timestamp) -> tuple[str, str]:
-    """Return profile/calibration identity for one aware UTC timestamp."""
-    context = resolve_station_context(
-        config,
-        measurement_time=timestamp.to_pydatetime(),
-        available_channels=[],
-    )
-    return str(context["profile_id"]), str(context["calibration_id"])
+    """Resolve only identity for an inventory header, without materializing SCC context.
+
+    This uses the same station-local, inclusive profile dates as the full station
+    resolver. Full calibration/overlap/SCC context is still resolved by Level 0
+    processing, once the actual channels and solar regime are known.
+    """
+    catalog = config["_station_catalog"]
+    local_date = pd.Timestamp(timestamp).tz_convert(station_timezone(config)).date()
+    matched = []
+    for profile in catalog["profiles"]:
+        valid_from = pd.Timestamp(profile["valid_from"]).date()
+        valid_to = (
+            None if profile.get("valid_to") is None
+            else pd.Timestamp(profile["valid_to"]).date()
+        )
+        if local_date >= valid_from and (valid_to is None or local_date <= valid_to):
+            matched.append(profile)
+    if len(matched) != 1:
+        raise ValueError(
+            "Expected exactly one station profile for "
+            f"{local_date.isoformat()}, found {[profile['id'] for profile in matched]}."
+        )
+    return str(matched[0]["id"]), str(matched[0]["calibration_id"])
 
 
-def _annotate_station_context(measurements: pd.DataFrame, config: dict) -> pd.DataFrame:
+def _annotate_station_context(
+    measurements: pd.DataFrame,
+    config: dict,
+    logger: logging.Logger | None = None,
+) -> pd.DataFrame:
     """Attach one homogeneous station profile/calibration identity to each raw file."""
     if measurements.empty:
         return measurements.copy()
@@ -52,7 +73,10 @@ def _annotate_station_context(measurements: pd.DataFrame, config: dict) -> pd.Da
     rows = measurements.copy()
     profile_ids: list[str] = []
     calibration_ids: list[str] = []
-    for row in rows.itertuples():
+    started = perf_counter()
+    last_progress = started
+    progress_every = max(1000, len(rows) // 10)
+    for position, row in enumerate(rows.itertuples(), start=1):
         start = pd.Timestamp(row.start_time_utc)
         stop = pd.Timestamp(row.stop_time)
         start_identity = _station_context_identity(config, start)
@@ -66,6 +90,15 @@ def _annotate_station_context(measurements: pd.DataFrame, config: dict) -> pd.Da
             )
         profile_ids.append(start_identity[0])
         calibration_ids.append(start_identity[1])
+        if logger is not None and position < len(rows):
+            now = perf_counter()
+            if position % progress_every == 0 or now - last_progress >= 20.0:
+                logger.info(
+                    "resolved %d/%d profiles (%.0f%%) | %.1fs",
+                    position, len(rows),
+                    position * 100.0 / len(rows), now - started,
+                )
+                last_progress = now
 
     rows["station_profile_id"] = profile_ids
     rows["instrument_calibration_id"] = calibration_ids
@@ -77,6 +110,7 @@ def _sessionize_measurements(
     *,
     station: str,
     max_gap_seconds: float,
+    logger: logging.Logger | None = None,
 ) -> pd.DataFrame:
     """Assign continuous measurement rows to canonical complete-session IDs."""
     if measurements.empty:
@@ -136,11 +170,44 @@ def _sessionize_measurements(
     for _sequence, group in rows.groupby("_session_sequence", sort=True):
         session_start = pd.to_datetime(group["start_time_utc"], utc=True).min()
         session_end = pd.to_datetime(group["stop_time"], utc=True).max()
-        session_id = build_session_id(
-            station,
-            session_start.to_pydatetime(),
-            session_end.to_pydatetime(),
-        )
+        try:
+            session_id = build_session_id(
+                station,
+                session_start.to_pydatetime(),
+                session_end.to_pydatetime(),
+            )
+        except ValueError as exc:
+            # Keep exact timestamps and every implicated Licel path in the log.
+            # In particular, an otherwise valid short acquisition can collapse
+            # to one minute in the human-readable canonical session ID.
+            candidates = group.sort_values(["start_time_utc", "filepath"])
+            first_file = str(candidates.iloc[0]["filepath"])
+            last_file = str(candidates.iloc[-1]["filepath"])
+            message = (
+                f"Cannot identify session sequence {_sequence}: "
+                f"{len(candidates)} measurement file(s), "
+                f"start_utc={session_start.isoformat()}, "
+                f"end_utc={session_end.isoformat()}, "
+                f"first_file={first_file}, last_file={last_file}: {exc}"
+            )
+            if logger is not None:
+                logger.error("%s", message)
+                for row in candidates.itertuples(index=False):
+                    logger.error(
+                        "Session ID failure source: path=%s | start_utc=%s | "
+                        "stop_utc=%s | header_duration_s=%s | nshots=%s | "
+                        "laser_freq_hz=%s | profile=%s | calibration=%s | boundary=%s",
+                        row.filepath,
+                        pd.Timestamp(row.start_time_utc).isoformat(),
+                        pd.Timestamp(row.stop_time).isoformat(),
+                        row.duration,
+                        row.nshots,
+                        row.laser_freq,
+                        row.station_profile_id,
+                        row.instrument_calibration_id,
+                        row.session_boundary_reason,
+                    )
+            raise ValueError(message) from exc
         rows.loc[group.index, "session_id"] = session_id
         rows.loc[group.index, "session_start_utc"] = session_start
         rows.loc[group.index, "session_end_utc"] = session_end
@@ -183,60 +250,141 @@ def _associate_dark_currents(
     config: dict,
     logger: logging.Logger,
 ) -> pd.DataFrame:
-    """Associate dark-current rows to the nearest continuous measurement session."""
+    """Associate each dark current with its nearest full session in O(D log S).
+
+    Sessions are sorted by start time. Prefix-maximum end times also cover
+    overlapping sessions; ties preserve the first chronological session, as
+    in the previous exhaustive nearest-interval search. No persistent state.
+    """
     if dark_rows.empty:
         return dark_rows.copy()
 
     rows = dark_rows.copy()
     rows["session_id"] = None
     rows["session_start_utc"] = pd.Series(
-        pd.NaT,
-        index=rows.index,
-        dtype="datetime64[ns, UTC]",
+        pd.NaT, index=rows.index, dtype="datetime64[ns, UTC]",
     )
     rows["session_end_utc"] = pd.Series(
-        pd.NaT,
-        index=rows.index,
-        dtype="datetime64[ns, UTC]",
+        pd.NaT, index=rows.index, dtype="datetime64[ns, UTC]",
     )
     rows["association_method"] = "unassociated"
     rows["dark_current_association_delta_hours"] = np.nan
 
     sessions = _session_table(measurements)
     if sessions.empty:
-        logger.warning("No measurement sessions available; dark currents remain unassociated.")
+        logger.warning(
+            "dark currents | %d unassociated | no measurement sessions",
+            len(rows),
+        )
         return rows
 
+    # Pandas 2.x preserves datetime64 resolutions independently per column.
+    # A raw header may be datetime64[us, UTC] while session bounds are [ns, UTC].
+    # Comparing their raw .asi8 integers would be off by 1,000x, yielding
+    # spurious ~470,000 h distances and dropping every dark current.
+    session_starts = pd.DatetimeIndex(sessions["session_start_utc"])
+    session_ends = pd.DatetimeIndex(sessions["session_end_utc"])
+    dark_times = pd.DatetimeIndex(rows["start_time_utc"])
+    logger.debug(
+        "time resolution | session start=%s | session end=%s | dark current=%s | normalized=ns",
+        session_starts.dtype, session_ends.dtype, dark_times.dtype,
+    )
+    starts = session_starts.as_unit("ns").asi8
+    ends = session_ends.as_unit("ns").asi8
+    timestamps = dark_times.as_unit("ns").asi8
+    n_sessions = len(sessions)
+
+    # Earliest overlapping interval covering a timestamp can be found by
+    # binary-searching the monotonic prefix maximum of session end times.
+    prefix_max_ends = np.maximum.accumulate(ends)
+    best_end_positions = np.zeros(n_sessions, dtype=np.intp)
+    best_position = 0
+    for pos in range(1, n_sessions):
+        if ends[pos] > ends[best_position]:
+            best_position = pos
+        best_end_positions[pos] = best_position
+
+    prior = np.searchsorted(starts, timestamps, side="right") - 1
+    following = prior + 1
+    valid_prior = prior >= 0
+    valid_following = following < n_sessions
+    nearest_prior = best_end_positions[np.clip(prior, 0, n_sessions - 1)]
+    nearest_following = np.clip(following, 0, n_sessions - 1)
+
+    # Distances are nanoseconds, cast to float before differences to avoid
+    # integer overflow for unusual but valid historical timestamps.
+    previous_distance = np.full(len(rows), np.inf)
+    next_distance = np.full(len(rows), np.inf)
+    previous_distance[valid_prior] = (
+        timestamps[valid_prior].astype(float)
+        - ends[nearest_prior[valid_prior]].astype(float)
+    )
+    next_distance[valid_following] = (
+        starts[nearest_following[valid_following]].astype(float)
+        - timestamps[valid_following].astype(float)
+    )
+
+    covered = valid_prior & (
+        prefix_max_ends[np.clip(prior, 0, n_sessions - 1)] >= timestamps
+    )
+    first_covering = np.searchsorted(prefix_max_ends, timestamps, side="left")
+    selected_positions = np.where(
+        covered,
+        np.clip(first_covering, 0, n_sessions - 1),
+        np.where(
+            previous_distance <= next_distance,
+            nearest_prior,
+            nearest_following,
+        ),
+    )
+    distance_hours = np.where(
+        covered, 0.0, np.minimum(previous_distance, next_distance) / 3.6e12,
+    )
+    # A missing UTC timestamp cannot be associated. Normal inventory creation
+    # filters these out, but this guard keeps the helper safe independently.
+    missing_timestamp = timestamps == np.iinfo(np.int64).min
     max_hours = resolve_level0_config(config).dark_current.max_association_hours
-    for index, row in rows.iterrows():
-        timestamp = pd.Timestamp(row["start_time_utc"])
-        candidates: list[tuple[float, pd.Series]] = []
-        for _session_index, session in sessions.iterrows():
-            distance_h = _distance_to_session_hours(
-                timestamp,
-                pd.Timestamp(session["session_start_utc"]),
-                pd.Timestamp(session["session_end_utc"]),
-            )
-            candidates.append((distance_h, session))
-        distance_h, selected = min(candidates, key=lambda item: item[0])
-        if distance_h > max_hours:
-            logger.warning(
-                "Dark current remains unassociated; nearest session is %.2f h away "
-                "(configured maximum %.2f h): %s",
-                distance_h,
-                max_hours,
-                row["filepath"],
-            )
-            continue
+    associated = (distance_hours <= max_hours) & ~missing_timestamp
 
-        rows.at[index, "session_id"] = str(selected["session_id"])
-        rows.at[index, "session_start_utc"] = selected["session_start_utc"]
-        rows.at[index, "session_end_utc"] = selected["session_end_utc"]
-        rows.at[index, "association_method"] = "nearest_session"
-        rows.at[index, "dark_current_association_delta_hours"] = distance_h
+    matching_index = rows.index[associated]
+    matched_sessions = sessions.iloc[selected_positions[associated]]
+    if len(matching_index):
+        rows.loc[matching_index, "session_id"] = matched_sessions["session_id"].to_numpy()
+        rows.loc[matching_index, "session_start_utc"] = list(
+            matched_sessions["session_start_utc"]
+        )
+        rows.loc[matching_index, "session_end_utc"] = list(
+            matched_sessions["session_end_utc"]
+        )
+        rows.loc[matching_index, "association_method"] = "nearest_session"
+        rows.loc[matching_index, "dark_current_association_delta_hours"] = distance_hours[associated]
 
+    unassociated_count = int((~associated).sum())
+    logger.info(
+        "dark currents | %d/%d associated | %d unassociated | limit %.1f h",
+        int(associated.sum()),
+        len(rows),
+        unassociated_count,
+        max_hours,
+    )
+    if unassociated_count:
+        logger.warning(
+            "dark currents | %d could not be associated within %.1f h; "
+            "see DEBUG for affected paths",
+            unassociated_count,
+            max_hours,
+        )
+    if logger.isEnabledFor(logging.DEBUG):
+        for offset, path in enumerate(rows["filepath"]):
+            logger.debug(
+                "dark current | %s | %s | nearest=%s | distance=%.4f h",
+                "associated" if associated[offset] else "unassociated",
+                path,
+                sessions.iloc[selected_positions[offset]]["session_id"]
+                if not missing_timestamp[offset] else "-",
+                distance_hours[offset] if not missing_timestamp[offset] else float("nan"),
+            )
     return rows
-
 
 def build_session_inventory(
     raw_dir: str,
@@ -244,48 +392,84 @@ def build_session_inventory(
     logger: logging.Logger,
 ) -> pd.DataFrame:
     """Build the Level-0 inventory and group continuous Licel acquisitions into sessions."""
-    logger.info("Building raw data inventory...")
+    started = perf_counter()
+    inventory_logger = bind_log_context(logger, stage="inventory")
+    discovery_logger = bind_log_context(logger, stage="discovery")
+    inventory_logger.info("building raw inventory | station=%s", station_id(config))
     level0_config = resolve_level0_config(config)
     discovery = level0_config.discovery
 
+    scan_started = perf_counter()
     file_paths, file_types = scan_raw_files(
         raw_dir,
         spurious_extensions=discovery.spurious_extensions,
         quarantine_dir=discovery.quarantine_dir,
         raw_scan_ignore_dirs=discovery.raw_scan_ignore_dirs,
-        logger=logger,
+        logger=discovery_logger,
     )
+    discovery_logger.debug("raw scan elapsed=%.2fs", perf_counter() - scan_started)
     if not file_paths:
+        inventory_logger.info("inventory empty | %.1fs", perf_counter() - started)
         return pd.DataFrame()
 
+    header_logger = bind_log_context(logger, stage="headers")
+    headers_started = perf_counter()
+    last_progress = headers_started
     records = []
-    for filepath, file_type in zip(file_paths, file_types):
+    progress_every = max(1000, len(file_paths) // 10)
+    for position, (filepath, file_type) in enumerate(zip(file_paths, file_types), start=1):
         start_time_utc, stop_time, duration, n_shots, laser_freq = read_licel_header(
             filepath,
-            logger=logger,
+            logger=header_logger,
         )
-        if start_time_utc is None:
-            continue
-        records.append(
-            {
-                "filepath": filepath,
-                "meas_type": file_type,
-                "start_time_utc": start_time_utc,
-                "stop_time": stop_time,
-                "nshots": n_shots,
-                "duration": duration,
-                "laser_freq": laser_freq,
-            }
-        )
+        if start_time_utc is not None:
+            records.append(
+                {
+                    "filepath": filepath,
+                    "meas_type": file_type,
+                    "start_time_utc": start_time_utc,
+                    "stop_time": stop_time,
+                    "nshots": n_shots,
+                    "duration": duration,
+                    "laser_freq": laser_freq,
+                }
+            )
+        now = perf_counter()
+        if (
+            position % progress_every == 0
+            or now - last_progress >= 20.0
+        ) and position < len(file_paths):
+            header_logger.info(
+                "read %d/%d (%.0f%%) | %d accepted | %d invalid | %.1fs",
+                position,
+                len(file_paths),
+                position * 100.0 / len(file_paths),
+                len(records),
+                position - len(records),
+                now - headers_started,
+            )
+            last_progress = now
 
+    header_logger.info(
+        "read %d/%d | %d valid | %d invalid | %.1fs",
+        len(file_paths),
+        len(file_paths),
+        len(records),
+        len(file_paths) - len(records),
+        perf_counter() - headers_started,
+    )
     df_raw = pd.DataFrame.from_records(records)
     if df_raw.empty:
+        inventory_logger.warning("inventory has no valid headers | %.1fs", perf_counter() - started)
         return df_raw
 
+    normalization_started = perf_counter()
     df_raw = _normalize_header_times(df_raw)
     df_raw = df_raw[df_raw["start_time_utc"].notna()].copy()
     if df_raw.empty:
+        inventory_logger.warning("inventory has no dated headers | %.1fs", perf_counter() - started)
         return df_raw
+    inventory_logger.debug("header normalization elapsed=%.2fs", perf_counter() - normalization_started)
 
     timezone_name = station_timezone(config)
     df_raw["start_time_local"] = df_raw["start_time_utc"].dt.tz_convert(timezone_name)
@@ -294,25 +478,50 @@ def build_session_inventory(
     measurement_rows = df_raw[df_raw["meas_type"] == "measurements"].copy()
     dark_rows = df_raw[df_raw["meas_type"] == "dark_current"].copy()
 
-    measurement_rows = _annotate_station_context(measurement_rows, config)
+    station_started = perf_counter()
+    station_logger = bind_log_context(logger, stage="station")
+    measurement_rows = _annotate_station_context(measurement_rows, config, station_logger)
+    station_logger.info(
+        "%d measurement headers | profile/calibration identities | %.1fs",
+        len(measurement_rows),
+        perf_counter() - station_started,
+    )
+
+    session_started = perf_counter()
     measurement_rows = _sessionize_measurements(
         measurement_rows,
         station=station_id(config),
         max_gap_seconds=level0_config.session.max_gap_seconds,
+        logger=bind_log_context(logger, stage="sessions"),
+    )
+    bind_log_context(logger, stage="sessions").info(
+        "%d sessions | %d measurement headers | %.1fs",
+        int(measurement_rows["session_id"].nunique()) if not measurement_rows.empty else 0,
+        len(measurement_rows),
+        perf_counter() - session_started,
     )
     if not measurement_rows.empty:
         measurement_rows["association_method"] = "measurement"
         measurement_rows["dark_current_association_delta_hours"] = np.nan
 
+    dark_started = perf_counter()
     dark_rows = _associate_dark_currents(
         dark_rows,
         measurement_rows,
         config,
-        logger,
+        bind_log_context(logger, stage="darkcurrent"),
     )
+    inventory_logger.debug("dark-current association elapsed=%.2fs", perf_counter() - dark_started)
 
     inventory = pd.concat([measurement_rows, dark_rows], ignore_index=True, sort=False)
     if inventory.empty:
         return inventory
     inventory["original_session_id"] = inventory["session_id"]
+    inventory_logger.info(
+        "ready | %d sessions | %d measurement + %d dark-current files | %.1fs total",
+        int(measurement_rows["session_id"].nunique()) if not measurement_rows.empty else 0,
+        len(measurement_rows),
+        len(dark_rows),
+        perf_counter() - started,
+    )
     return inventory.sort_values(["start_time_utc", "filepath"]).reset_index(drop=True)

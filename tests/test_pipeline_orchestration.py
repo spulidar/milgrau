@@ -293,3 +293,91 @@ def test_incremental_level1_remains_skipped_when_optional_scc_staging_fails(
     assert all(result.status is ExecutionStatus.SKIPPED for result in results)
     assert results[0].metadata["pipeline"] == "L1"
     assert "unavailable SCC radiosonde" in results[0].metadata["scc_staging_error"]
+
+def test_libids_runs_qa_then_processing_per_session(tmp_path: Path, monkeypatch) -> None:
+    first = "spu_20240101-0000Z_20240101-0100Z"
+    second = "spu_20240101-0200Z_20240101-0300Z"
+    inventory = pd.DataFrame({
+        "session_id": [first, second],
+        "meas_type": ["measurements", "measurements"],
+        "filepath": [str(tmp_path / "first.licel"), str(tmp_path / "second.licel")],
+    })
+    config = {
+        "directories": {"raw_data": str(tmp_path), "processed_data": str(tmp_path)},
+        "processing": {"incremental": False},
+        "_station_catalog": {"station": {"id": "spu"}},
+    }
+    resolved = SimpleNamespace(
+        acquisition_qa=SimpleNamespace(
+            laser_shot_tolerance_fraction=0.002, licel_header_time_jitter_s=1.0
+        )
+    )
+    events: list[str] = []
+    monkeypatch.setattr(libids, "validate_level0_config", lambda _config: None)
+    monkeypatch.setattr(libids, "resolve_level0_config", lambda _config: resolved)
+    monkeypatch.setattr(libids, "build_session_inventory", lambda *_args: inventory)
+    monkeypatch.setattr(libids, "incremental_enabled", lambda _config: False)
+
+    def screen_one_session(df, *_args, **_kwargs):
+        current = str(df["session_id"].iloc[0])
+        assert df["session_id"].nunique() == 1
+        events.append("qa:" + current)
+        return df
+
+    def process_one_session(session_id, *_args):
+        events.append("process:" + session_id)
+        return ExecutionResult.success("level0.complete", "ok")
+
+    monkeypatch.setattr(libids, "filter_laser_shots", screen_one_session)
+    monkeypatch.setattr(libids, "process_session_group", process_one_session)
+
+    summary = libids.process_level_0(config, _logger("test.orchestration.l0.progressive"))
+
+    assert events == [
+        "qa:" + first, "process:" + first,
+        "qa:" + second, "process:" + second,
+    ]
+    assert summary.counts[ExecutionStatus.OK] == 2
+
+
+def test_libids_qa_failure_skips_only_affected_session(tmp_path: Path, monkeypatch) -> None:
+    first = "spu_20240101-0000Z_20240101-0100Z"
+    second = "spu_20240101-0200Z_20240101-0300Z"
+    inventory = pd.DataFrame({
+        "session_id": [first, second],
+        "meas_type": ["measurements", "measurements"],
+        "filepath": [str(tmp_path / "bad.licel"), str(tmp_path / "good.licel")],
+    })
+    config = {
+        "directories": {"raw_data": str(tmp_path), "processed_data": str(tmp_path)},
+        "processing": {"incremental": False},
+        "_station_catalog": {"station": {"id": "spu"}},
+    }
+    resolved = SimpleNamespace(
+        acquisition_qa=SimpleNamespace(
+            laser_shot_tolerance_fraction=0.002, licel_header_time_jitter_s=1.0
+        )
+    )
+    processed: list[str] = []
+    monkeypatch.setattr(libids, "validate_level0_config", lambda _config: None)
+    monkeypatch.setattr(libids, "resolve_level0_config", lambda _config: resolved)
+    monkeypatch.setattr(libids, "build_session_inventory", lambda *_args: inventory)
+    monkeypatch.setattr(libids, "incremental_enabled", lambda _config: False)
+    monkeypatch.setattr(
+        libids, "filter_laser_shots",
+        lambda df, *_args, **_kwargs: df.iloc[0:0].copy()
+        if str(df["session_id"].iloc[0]) == first else df,
+    )
+
+    def process_one_session(session_id, *_args):
+        processed.append(session_id)
+        return ExecutionResult.success("level0.complete", "ok")
+
+    monkeypatch.setattr(libids, "process_session_group", process_one_session)
+    summary = libids.process_level_0(config, _logger("test.orchestration.l0.qa-skip"))
+
+    assert processed == [second]
+    assert [result.status for result in summary.results] == [
+        ExecutionStatus.SKIPPED, ExecutionStatus.OK,
+    ]
+    assert summary.results[0].stage == "level0.quality"
