@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -680,7 +681,7 @@ def test_unbacked_uncertain_delete_can_be_reconciled_only_with_waiver_and_404(
         assert row["archive_manifest_sha256"] is None
         audit = store.events(ID)
         assert audit[-3]["action"] == "operator_confirmed_remote_absence_after_uncertain_delete"
-        assert __import__("json").loads(audit[-3]["payload_json"])["no_backup_waiver"] is True
+        assert json.loads(audit[-3]["payload_json"])["no_backup_waiver"] is True
         assert audit[-1]["action"] == "recovery_upload_verified"
 
 
