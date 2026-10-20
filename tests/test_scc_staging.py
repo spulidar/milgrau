@@ -267,3 +267,14 @@ def test_profile_crossing_month_is_refused_without_touching_scientific_l0(
             group, {}, config, logging.getLogger("test.scc.boundary"),
         )
     assert not (tmp_path / ".cache/scc").exists()
+
+
+def test_current_staging_rejects_legacy_raw_filename(tmp_path: Path) -> None:
+    from milgrau.level0.scc_staging import manifest_raw_name
+
+    identity = "20240913spu1549"
+    with pytest.raises(ValueError, match="canonical raw NetCDF"):
+        manifest_raw_name({
+            "measurement_id": identity,
+            "files": {"raw.nc": {"sha256": "a" * 64}},
+        })

@@ -169,3 +169,28 @@ def test_submitted_id_is_never_revised_even_if_l1_now_has_sounding(tmp_path) -> 
         finalize_session_soundings(l0, l1, cfg, logging.getLogger(__name__))
     with pytest.raises(SCCPackageError, match="LIPANCORA"):
         validate_upload_package(path)
+
+
+def test_legacy_not_requested_sounding_is_never_implicitly_backfilled(tmp_path: Path) -> None:
+    """Old packages are not rewritten when finalizing new LIPANCORA outputs."""
+    from milgrau.scc.sounding_finalize import _finalize_one
+    from milgrau.level0.scc_staging import pending_scc_package
+
+    import logging
+    from unittest.mock import patch
+
+    cfg = _config(tmp_path)
+    # Do not touch a historical manifest even if the stage has not been finalized.
+    staged = pending_scc_package(
+        cfg, "20240913spu1549", session_id="spu_20240913-1549Z_20240913-1750Z",
+    )
+    staged.mkdir(parents=True)
+    with patch("milgrau.scc.sounding_finalize.validate_pending_scc_package",
+               return_value={"sounding_stage": "not_requested"}):
+        result = _finalize_one(
+            cfg, staged, available=True,
+            qa_target="2024-09-13T16:00:00+00:00",
+            logger=logging.getLogger("test.scc"),
+        )
+    assert "already finalized" in result
+    assert list(staged.iterdir()) == []

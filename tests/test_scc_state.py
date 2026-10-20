@@ -35,7 +35,7 @@ def _manifest(raw_hash: str = "a" * 64):
         "measurement_start_utc": "2024-09-13T15:49:32+00:00",
         "measurement_stop_utc": "2024-09-13T17:50:42+00:00",
         "files": {
-            "raw.nc": {"sha256": raw_hash},
+            f"{IDENTITY}.nc": {"sha256": raw_hash},
             f"lr_{IDENTITY}.nc": {"sha256": "b" * 64},
         },
     }
@@ -129,7 +129,7 @@ def test_manifest_identity_matches_durable_journal_and_rejects_changed_inputs(
         changed["scc_product_ids"] = [3683]
         assert not store.matches_manifest(IDENTITY, changed)
         changed = deepcopy(_manifest())
-        changed["files"]["raw.nc"]["sha256"] = "f" * 64
+        changed["files"][f"{IDENTITY}.nc"]["sha256"] = "f" * 64
         assert not store.matches_manifest(IDENTITY, changed)
         changed = deepcopy(_manifest())
         changed["measurement_start_utc"] = "2024-09-13T15:49:33+00:00"

@@ -20,7 +20,6 @@ def _config(tmp_path: Path) -> dict:
         "scc": {
             "enabled": True,
             "state_dir": str(tmp_path / ".state/scc"),
-            "cleanup": {"policy": "manual"},
         },
         "_scc_catalog": {"server": {"base_url": "https://scc.example.test/"}},
     }
@@ -39,7 +38,7 @@ def _manifest(identity: str) -> dict:
         "source_segments": ["seg00"],
         "measurement_start_utc": "2024-09-13T15:49:32+00:00",
         "measurement_stop_utc": "2024-09-13T17:50:42+00:00",
-        "files": {"raw.nc": {"sha256": "a" * 64}},
+        "files": {f"{identity}.nc": {"sha256": "a" * 64}},
     }
 
 
