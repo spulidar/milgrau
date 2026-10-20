@@ -185,7 +185,7 @@ transitions and timestamps, remote identity, archive location, and
 the last error. An exclusive per-ID lock prevents concurrent local uploads.
 A stale lock after a crash **must be investigated before manual removal**.
 
-A safe read-only preflight exists **before** any destructive replacement.
+A safe, optional read-only backup can be requested **before** replacement.
 It authenticates and downloads/verifies the remote raw and available products
 into persistent state, but never modifies the server:
 
@@ -209,26 +209,26 @@ existing SCC record after all safeguards. No other SCC records or related
 measurements are intentionally deleted.
 
 The replacement workflow:
-1. Validate the complete pending local package and its SHA-256 checksums.
-2. Query SCC and reject queued/active processing or unexpected remote
-   changes. An absent ID is not treated as a replacement.
-3. Download and verify the old raw NetCDF or ZIP, and each available remote
-   result archive (ELPP, ELDA, etc.) into
-   `.state/scc/archives/<Measurement_ID>/<timestamp>/`.
-   If the previous raw file references an external LR, archive it too.
-   If SCC does not expose a verifiable LR download, **refuse deletion**.
-4. Recheck the original SCC record fingerprint; compare the actual old
-   NetCDF data/period/LR to local data. Provably identical content is a
-   **no-op**, without deletion or second upload. Uncertain equivalence is
-   *not* assumed identical.
-5. Only then POST to SCC's administrative
-   `admin/database/measurements/<ID>/delete/` page using the documented
-   `not_delete_related` value. Query API for confirmed disappearance.
-   Upload the new raw NetCDF and optional LR with the **same ID**, then
-   require API confirmation.
-6. Record every transition in SQLite. After a crash, deletion timeout or
-   uncertain upload, the state becomes `uncertain` or is left in an
-   interrupted state. The command must never automatically retry it.
+1. Validate the complete pending package and its SHA-256 checksums.
+2. Query SCC and reject queued/active processing or unexpected changes.
+   An absent ID is not treated as a replacement.
+3. With `--replace-existing --confirm`, record the explicit no-backup waiver,
+   check the remote fingerprint and local hashes **before** beginning a new
+   journal revision. When an archive is requested separately, download and
+   verify the old raw NetCDF/ZIP, available remote products and external LR
+   into `.state/scc/archives/<Measurement_ID>/<timestamp>/`. If the archive
+   cannot be verified, the archived flow refuses deletion. An identical
+   verified archive is a no-op.
+4. Issue the guarded administrative DELETE with `not_delete_related` and
+   confirm remote absence. POST the new packet with the **same ID** exactly
+   once, then require authoritative API confirmation.
+5. Record each phase in SQLite. An unknown DELETE/POST outcome remains
+   `uncertain`; ordinary uploads never retry it automatically.
+6. An operator can recover an *uncertain DELETE* using `upload --id ID
+   --resume-after-delete --confirm` only after checking remote absence,
+   immutable staged identity and either a verified archive or the explicit,
+   same-revision no-backup waiver. This submits at most one POST, never DELETE.
+   An uncertain POST requires separate explicit reconciliation.
 
 A pre-existing SCC record is **not** considered to have been uploaded by
 MILGRAU merely because remote `status` shows ELPP/ELDA results.
@@ -238,8 +238,9 @@ without exposing the full station object or credentials.
 
 **Limitations requiring live verification:** the official SCC version may
 return raw files or ancillary LR downloads in a different container/schema.
-If the original data cannot be archived and verified locally, the client
-stops before deletion. Upload of a new record and admin-delete endpoints are
+If an archive was requested and cannot be verified locally, its guarded
+workflow stops before deletion; an explicit no-backup replacement may instead
+accept the documented irreversible risk. Upload and admin-delete endpoints are
 mock-tested, but have not been exercised on the live SCC in this phase.
 The SQLite journal cannot prevent independent SCC portal operators from
 editing the measurement during the narrow interval after its final read;
