@@ -393,7 +393,7 @@ def retry_rejected_recovery_upload(
 
     The operator must independently confirm the ID absent in SCC's website.
     The code proves continued API absence, unchanged scientific source bytes,
-    a valid original remote backup and the exact previous failure type.
+    a verified original backup or explicit waiver and the exact prior failure type.
     It NEVER sends DELETE and NEVER retries its own uncertain POST.
     """
     from milgrau.level0.scc_staging import pending_scc_package, scc_raw_filename
@@ -425,7 +425,7 @@ def retry_rejected_recovery_upload(
                 "never repeat a previous uncertain POST."
             )
         required = {
-            "backup_verified", "delete_result_uncertain",
+            "delete_result_uncertain",
             "operator_confirmed_remote_absence_after_uncertain_delete",
             "recovery_upload_requested",
         }
@@ -443,6 +443,9 @@ def retry_rejected_recovery_upload(
                 "changed since original upload. Recovery blocked."
             )
         archive = _verify_recovery_preimage(row, root, identity, events)
+        delete_action = "delete_requested" if archive is not None else "delete_requested_without_backup"
+        if delete_action not in {event["action"] for event in events}:
+            raise SCCRemoteError("Original replacement DELETE request not journalled.")
 
         if client.measurement(identity) is not None:
             raise SCCRemoteError(
