@@ -248,7 +248,7 @@ def test_cli_routes_batch_without_id_and_prints_summary(
     assert cli.main(["upload", "--confirm"]) == 0
     out = capsys.readouterr().out
     assert "submitted=1" in out and "skipped_existing=1" in out
-    assert "No staged cache" in out
+    assert "SCC inputs, scientific data and durable SCC archives were retained." in out
 
 
 def test_cli_routes_replace_existing_batch_opt_in(

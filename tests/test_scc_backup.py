@@ -165,7 +165,7 @@ def test_period_and_lidar_ratio_changes_trigger_replacement(tmp_path: Path):
         "measurement_id": ID,
         "measurement_start_utc": "2024-09-13T15:49:32+00:00",
         "measurement_stop_utc": "2024-09-13T17:50:42+00:00",
-        "files": {"raw.nc": {"sha256": hashlib.sha256(raw).hexdigest()}},
+        "files": {f"{ID}.nc": {"sha256": hashlib.sha256(raw).hexdigest()}},
     }
     result = compare_staged_to_archive(local, snapshot)
     assert result["identical"]
