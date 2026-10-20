@@ -55,6 +55,22 @@ def _screen_acquisition_rows(
     bad_condition = shots.isna() | (shots <= 0) | bad_shots | bad_rates | bad_duration
     good = rows.loc[~bad_condition].copy()
     bad = rows.loc[bad_condition].copy()
+    if not bad.empty:
+        # Detailed rejection evidence stays with the individual raw file and
+        # is emitted at DEBUG level; console QA remains concise.
+        bad["qa_rejection_reasons"] = [
+            ",".join(
+                reason
+                for reason, rejected in (
+                    ("invalid_shots", bool(shots.isna().loc[index] or shots.loc[index] <= 0)),
+                    ("shot_count_outlier", bool(bad_shots.loc[index])),
+                    ("laser_frequency_mismatch", bool(bad_rates.loc[index])),
+                    ("invalid_or_inconsistent_duration", bool(bad_duration.loc[index])),
+                )
+                if rejected
+            )
+            for index in bad.index
+        ]
     if not good.empty:
         good["qa_nominal_shots"] = expected_shots
         good["qa_nominal_laser_freq_hz"] = expected_rate
@@ -123,6 +139,18 @@ def filter_laser_shots(
                 expected_dc_shots,
                 expected_dc_duration,
             )
+            for rejected in (bad_meas, bad_dc):
+                for raw in rejected.itertuples(index=False):
+                    qa_logger.debug(
+                        "QA rejected Licel: path=%s | kind=%s | reasons=%s | "
+                        "nshots=%s | header_duration_s=%s | laser_freq_hz=%s",
+                        raw.filepath,
+                        raw.meas_type,
+                        raw.qa_rejection_reasons,
+                        raw.nshots,
+                        raw.duration,
+                        raw.laser_freq,
+                    )
 
             good_group = pd.concat([good_meas, good_dc], ignore_index=True)
             if not good_group.empty:
