@@ -278,3 +278,101 @@ def test_current_staging_rejects_legacy_raw_filename(tmp_path: Path) -> None:
             "measurement_id": identity,
             "files": {"raw.nc": {"sha256": "a" * 64}},
         })
+
+
+def _mock_phase5_session_inputs(monkeypatch: pytest.MonkeyPatch) -> pd.DataFrame:
+    """Minimal deterministic scientific inputs; no SCC network or remote state."""
+    monkeypatch.setattr(processing, "parse_licel_group", lambda *_: {
+        "channels": ["532.AN"], "tensors": {"532.AN": np.ones((1, 8))},
+    })
+    monkeypatch.setattr(processing, "_annotate_solar_context", lambda group, _: group)
+    context = {
+        "profile_id": "reference-profile", "calibration_id": "reference-calibration",
+        "solar_regimes_present": ["day"], "solar_segments_present": ["seg00"],
+    }
+    monkeypatch.setattr(
+        processing, "_resolve_group_station_config",
+        lambda group, data, cfg, logger: (
+            {**cfg, "_resolved_station": context}, data, context,
+        ),
+    )
+    monkeypatch.setattr(processing, "fetch_group_weather", lambda *_: {})
+    return pd.DataFrame({
+        "meas_type": ["measurements"],
+        "filepath": ["reference-licel"],
+        "start_time_utc": [pd.Timestamp("2025-10-01T00:00:00Z")],
+    })
+
+
+def test_scientific_level0_succeeds_when_optional_scc_export_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SCC staging errors cannot demote a successfully written scientific L0."""
+    from milgrau.io.paths import level0_output_path
+
+    cfg = _config(tmp_path)
+    session = "spu_20251001-0000Z_20251001-0400Z"
+    canonical = level0_output_path(session, cfg)
+    group = _mock_phase5_session_inputs(monkeypatch)
+    scientific_bytes = b"reference scientific L0, independent of SCC"
+    monkeypatch.setattr(processing, "_internal_level0_config", lambda config: config)
+    monkeypatch.setattr(
+        processing, "build_level0_netcdf",
+        lambda **kwargs: Path(kwargs["netcdf_path"]).write_bytes(scientific_bytes),
+    )
+    monkeypatch.setattr(processing, "write_netcdf_provenance", lambda *_: {})
+    def fail_scc(**_):
+        raise RuntimeError("simulated optional SCC export failure")
+
+    monkeypatch.setattr(processing, "_write_scc_exports", fail_scc)
+    result = processing.process_session_group(
+        session, group, cfg, logging.getLogger("test.scc.phase5.science"),
+    )
+    assert result.status is ExecutionStatus.OK
+    assert canonical.read_bytes() == scientific_bytes
+    assert "simulated optional SCC export failure" in result.metadata["scc_staging_error"]
+    assert not scc_staging_root(cfg, session).exists()
+
+
+def test_scc_reexport_cannot_replace_accepted_packet_or_change_scientific_l0(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Even explicitly requested SCC-only re-export must not overwrite an accepted ID."""
+    from milgrau.io.paths import level0_output_path
+    from milgrau.scc.state import SubmissionStore, state_root
+
+    cfg = _config(tmp_path)
+    cfg["scc"]["state_dir"] = str(tmp_path / ".state" / "scc")
+    session = "spu_20251001-0000Z_20251001-0400Z"
+    canonical = level0_output_path(session, cfg)
+    canonical.parent.mkdir(parents=True, exist_ok=True)
+    original_l0 = b"reference scientific Level 0 that must not change"
+    canonical.write_bytes(original_l0)
+    staged = _stage(cfg)
+    original_manifest = validate_pending_scc_package(staged)
+    original_bytes = (staged / "20251001spu0000.nc").read_bytes()
+    with SubmissionStore(state_root(cfg)) as journal:
+        journal.begin(original_manifest)
+        journal.transition(
+            "20251001spu0000", "accepted", action="prior_remote_upload_verified",
+        )
+        before_row = journal.get("20251001spu0000")
+        before_events = journal.events("20251001spu0000")
+    monkeypatch.setattr(libids, "_primary_output_satisfies_contract", lambda _: True)
+    group = _mock_phase5_session_inputs(monkeypatch)
+    monkeypatch.setattr(
+        processing, "build_level0_netcdf",
+        lambda **_: pytest.fail("SCC reexport must never regenerate scientific L0"),
+    )
+    monkeypatch.setattr(processing, "_write_scc_exports", lambda **_: [_stage(cfg)])
+    result = processing.process_session_group(
+        session, group, cfg, logging.getLogger("test.scc.phase5.reexport"),
+        scc_only=True,
+    )
+    assert result.status is ExecutionStatus.FAILED
+    assert canonical.read_bytes() == original_l0
+    assert (staged / "20251001spu0000.nc").read_bytes() == original_bytes
+    assert validate_pending_scc_package(staged) == original_manifest
+    with SubmissionStore(state_root(cfg)) as journal:
+        assert journal.get("20251001spu0000") == before_row
+        assert journal.events("20251001spu0000") == before_events
