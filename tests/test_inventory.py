@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from milgrau.level0.inventory import build_session_inventory
 
@@ -352,3 +353,195 @@ def test_station_profile_change_splits_otherwise_continuous_acquisition(
         "acquisition_start",
         "station_context_change",
     ]
+
+
+def test_collapsed_minute_session_logs_exact_licel_sources(
+    tmp_path: Path, monkeypatch, caplog,
+) -> None:
+    """A short valid header must identify the source, not just a cryptic ID error."""
+    path = str(tmp_path / "short_licel_file")
+    headers = {
+        path: (
+            datetime(2024, 7, 16, 12, 35, 10),
+            pd.Timestamp("2024-07-16T12:35:16"),
+            6.0,
+            601,
+            100.0,
+        )
+    }
+    _patch_inventory(monkeypatch, [path], ["measurements"], headers)
+    logger = logging.getLogger("test.inventory.short-session")
+    with caplog.at_level(logging.ERROR, logger=logger.name):
+        with pytest.raises(ValueError, match="same minute") as caught:
+            build_session_inventory(str(tmp_path), _config(), logger)
+
+    assert path in str(caught.value)
+    assert "2024-07-16T12:35:10+00:00" in str(caught.value)
+    assert "2024-07-16T12:35:16+00:00" in str(caught.value)
+    assert any(
+        path in record.message
+        and "header_duration_s=6.0" in record.message
+        and "nshots=601" in record.message
+        for record in caplog.records
+    )
+
+
+def test_optimized_dark_current_matches_exhaustive_nearest_interval() -> None:
+    """Nearest-interval lookup preserves overlap, tie, threshold, and UTC semantics."""
+    from milgrau.level0.inventory import _associate_dark_currents, _session_table
+
+    base = pd.Timestamp("2024-06-01T00:00:00Z")
+    specifications = [
+        ("spu-a", 0, 120),
+        ("spu-b", 60, 180),
+        ("spu-c", 240, 300),
+        ("spu-d", 310, 360),
+    ]
+    measurements = pd.DataFrame(
+        [
+            {
+                "session_id": name,
+                "session_start_utc": base + pd.Timedelta(minutes=start),
+                "session_end_utc": base + pd.Timedelta(minutes=end),
+            }
+            for name, start, end in specifications
+        ]
+    )
+    offsets = [-180, 0, 60, 90, 120, 150, 180, 210, 240, 300, 305, 310, 400, 1080, 1081]
+    dark_rows = pd.DataFrame(
+        {
+            "filepath": [f"/raw/dark_{minute:+d}" for minute in offsets],
+            "meas_type": ["dark_current"] * len(offsets),
+            "start_time_utc": [base + pd.Timedelta(minutes=minute) for minute in offsets],
+        }
+    )
+
+    output = _associate_dark_currents(
+        dark_rows, measurements, _config(), logging.getLogger("test.dark.optimized")
+    )
+    sessions = _session_table(measurements)
+
+    for index, dark in dark_rows.iterrows():
+        timestamp = dark["start_time_utc"]
+        distances = [
+            max(start - timestamp, timestamp - end, pd.Timedelta(0))
+            for start, end in zip(
+                sessions["session_start_utc"], sessions["session_end_utc"],
+            )
+        ]
+        winning_position = min(range(len(distances)), key=lambda position: distances[position])
+        expected_hours = distances[winning_position].total_seconds() / 3600.0
+        if expected_hours > 12.0:
+            assert pd.isna(output.loc[index, "session_id"])
+            assert output.loc[index, "association_method"] == "unassociated"
+        else:
+            assert output.loc[index, "session_id"] == sessions.iloc[winning_position]["session_id"]
+            assert output.loc[index, "association_method"] == "nearest_session"
+            assert float(output.loc[index, "dark_current_association_delta_hours"]) == pytest.approx(
+                expected_hours
+            )
+            assert output.loc[index, "session_start_utc"] == sessions.iloc[winning_position]["session_start_utc"]
+            assert output.loc[index, "session_end_utc"] == sessions.iloc[winning_position]["session_end_utc"]
+
+    assert output.loc[3, "session_id"] == "spu-a"  # overlapping intervals
+    assert output.loc[7, "session_id"] == "spu-b"  # equal-distance tie
+
+
+def test_inventory_reports_stages_and_preserves_station_profile_boundary(
+    tmp_path: Path, monkeypatch, caplog,
+) -> None:
+    paths = [str(tmp_path / "first"), str(tmp_path / "second")]
+    headers = {
+        paths[0]: (
+            datetime(2024, 1, 1, 23, 59, 0),
+            pd.Timestamp("2024-01-02T00:04:00Z"),
+            300.0, 1200, 4.0,
+        ),
+        paths[1]: (
+            datetime(2024, 1, 2, 0, 4, 0),
+            pd.Timestamp("2024-01-02T00:09:00Z"),
+            300.0, 1200, 4.0,
+        ),
+    }
+    _patch_inventory(monkeypatch, paths, ["measurements", "measurements"], headers)
+    logger = logging.getLogger("test.inventory.progress-info")
+    with caplog.at_level(logging.DEBUG, logger=logger.name):
+        df = build_session_inventory(str(tmp_path), _config(), logger)
+
+    assert df["session_id"].nunique() == 1
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("building raw inventory | station=spu" in msg for msg in messages)
+    assert any("read 2/2 | 2 valid | 0 invalid" in msg for msg in messages)
+    assert any("2 measurement headers | profile/calibration identities" in msg for msg in messages)
+    assert any("1 sessions | 2 measurement headers" in msg for msg in messages)
+    assert any("ready | 1 sessions | 2 measurement + 0 dark-current files" in msg for msg in messages)
+    assert any("header normalization elapsed" in msg for msg in messages)
+
+
+@pytest.mark.parametrize(
+    ("session_unit", "dark_unit"),
+    [
+        ("ns", "ns"),
+        ("us", "ns"),
+        ("ns", "us"),
+        ("us", "us"),
+        ("ms", "ns"),
+    ],
+)
+def test_dark_current_association_normalizes_mixed_datetime_units(
+    session_unit: str,
+    dark_unit: str,
+) -> None:
+    """Pandas timestamps from raw headers and session IDs may use different units."""
+    from milgrau.level0.inventory import _associate_dark_currents
+
+    origin = pd.Timestamp("2024-02-06T21:23:00Z")
+    measurements = pd.DataFrame(
+        {
+            "session_id": ["spu-first", "spu-second"],
+            "session_start_utc": [
+                origin,
+                origin + pd.Timedelta(days=2),
+            ],
+            "session_end_utc": [
+                origin + pd.Timedelta(minutes=72),
+                origin + pd.Timedelta(days=2, minutes=72),
+            ],
+        }
+    )
+    measurements["session_start_utc"] = measurements["session_start_utc"].dt.as_unit(
+        session_unit
+    )
+    measurements["session_end_utc"] = measurements["session_end_utc"].dt.as_unit(
+        session_unit
+    )
+
+    dark_rows = pd.DataFrame(
+        {
+            "filepath": ["/raw/dark-first", "/raw/dark-second", "/raw/dark-too-far"],
+            "meas_type": ["dark_current"] * 3,
+            "start_time_utc": pd.DatetimeIndex(
+                [
+                    origin + pd.Timedelta(minutes=77),
+                    origin + pd.Timedelta(days=2, minutes=70),
+                    origin + pd.Timedelta(days=10),
+                ]
+            ).as_unit(dark_unit),
+        }
+    )
+
+    assert f"[{session_unit}," in str(measurements["session_start_utc"].dtype)
+    assert f"[{dark_unit}," in str(dark_rows["start_time_utc"].dtype)
+
+    matched = _associate_dark_currents(
+        dark_rows, measurements, _config(), logging.getLogger("test.dark.units"),
+    )
+
+    assert matched.loc[0, "session_id"] == "spu-first"
+    assert float(matched.loc[0, "dark_current_association_delta_hours"]) == pytest.approx(
+        5 / 60
+    )
+    assert matched.loc[1, "session_id"] == "spu-second"
+    assert matched.loc[1, "dark_current_association_delta_hours"] == pytest.approx(0.0)
+    assert pd.isna(matched.loc[2, "session_id"])
+    assert matched.loc[2, "association_method"] == "unassociated"
