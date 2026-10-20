@@ -9,7 +9,6 @@ import pandas as pd
 
 from milgrau.io.filesystem import scan_raw_files
 from milgrau.io.licel import read_licel_header
-from milgrau.config.station import resolve_station_context
 from milgrau.io.paths import build_session_id, station_id
 from milgrau.level0.config import resolve_level0_config, station_timezone
 
@@ -35,13 +34,29 @@ def _normalize_header_times(df_raw: pd.DataFrame) -> pd.DataFrame:
 
 
 def _station_context_identity(config: dict, timestamp: pd.Timestamp) -> tuple[str, str]:
-    """Return profile/calibration identity for one aware UTC timestamp."""
-    context = resolve_station_context(
-        config,
-        measurement_time=timestamp.to_pydatetime(),
-        available_channels=[],
-    )
-    return str(context["profile_id"]), str(context["calibration_id"])
+    """Resolve only identity for an inventory header, without materializing SCC context.
+
+    This uses the same station-local, inclusive profile dates as the full station
+    resolver. Full calibration/overlap/SCC context is still resolved by Level 0
+    processing, once the actual channels and solar regime are known.
+    """
+    catalog = config["_station_catalog"]
+    local_date = pd.Timestamp(timestamp).tz_convert(station_timezone(config)).date()
+    matched = []
+    for profile in catalog["profiles"]:
+        valid_from = pd.Timestamp(profile["valid_from"]).date()
+        valid_to = (
+            None if profile.get("valid_to") is None
+            else pd.Timestamp(profile["valid_to"]).date()
+        )
+        if local_date >= valid_from and (valid_to is None or local_date <= valid_to):
+            matched.append(profile)
+    if len(matched) != 1:
+        raise ValueError(
+            "Expected exactly one station profile for "
+            f"{local_date.isoformat()}, found {[profile['id'] for profile in matched]}."
+        )
+    return str(matched[0]["id"]), str(matched[0]["calibration_id"])
 
 
 def _annotate_station_context(measurements: pd.DataFrame, config: dict) -> pd.DataFrame:
