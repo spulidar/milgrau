@@ -282,9 +282,16 @@ def _associate_dark_currents(
     # A raw header may be datetime64[us, UTC] while session bounds are [ns, UTC].
     # Comparing their raw .asi8 integers would be off by 1,000x, yielding
     # spurious ~470,000 h distances and dropping every dark current.
-    starts = pd.DatetimeIndex(sessions["session_start_utc"]).as_unit("ns").asi8
-    ends = pd.DatetimeIndex(sessions["session_end_utc"]).as_unit("ns").asi8
-    timestamps = pd.DatetimeIndex(rows["start_time_utc"]).as_unit("ns").asi8
+    session_starts = pd.DatetimeIndex(sessions["session_start_utc"])
+    session_ends = pd.DatetimeIndex(sessions["session_end_utc"])
+    dark_times = pd.DatetimeIndex(rows["start_time_utc"])
+    logger.debug(
+        "time resolution | session start=%s | session end=%s | dark current=%s | normalized=ns",
+        session_starts.dtype, session_ends.dtype, dark_times.dtype,
+    )
+    starts = session_starts.as_unit("ns").asi8
+    ends = session_ends.as_unit("ns").asi8
+    timestamps = dark_times.as_unit("ns").asi8
     n_sessions = len(sessions)
 
     # Earliest overlapping interval covering a timestamp can be found by
