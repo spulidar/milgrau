@@ -328,7 +328,9 @@ def scan_raw_files(
         logger=logger,
     )
     licel_candidates = [candidate for candidate in candidates if candidate.kind is not RawFileKind.SPURIOUS]
-    if logger is not None:
+    # A missing root was already reported by discovery; do not emit a misleading
+    # successful raw-scan summary for a nonexistent directory.
+    if logger is not None and Path(datadir_name).exists():
         logger.info(
             f"raw scan | {len(licel_candidates)} Licel candidates | "
             f"{len(candidates) - len(licel_candidates)} spurious ignored"
