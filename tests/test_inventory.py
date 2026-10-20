@@ -476,3 +476,72 @@ def test_inventory_reports_stages_and_preserves_station_profile_boundary(
     assert any("1 sessions | 2 measurement headers" in msg for msg in messages)
     assert any("ready | 1 sessions | 2 measurement + 0 dark-current files" in msg for msg in messages)
     assert any("header normalization elapsed" in msg for msg in messages)
+
+
+@pytest.mark.parametrize(
+    ("session_unit", "dark_unit"),
+    [
+        ("ns", "ns"),
+        ("us", "ns"),
+        ("ns", "us"),
+        ("us", "us"),
+        ("ms", "ns"),
+    ],
+)
+def test_dark_current_association_normalizes_mixed_datetime_units(
+    session_unit: str,
+    dark_unit: str,
+) -> None:
+    """Pandas timestamps from raw headers and session IDs may use different units."""
+    from milgrau.level0.inventory import _associate_dark_currents
+
+    origin = pd.Timestamp("2024-02-06T21:23:00Z")
+    measurements = pd.DataFrame(
+        {
+            "session_id": ["spu-first", "spu-second"],
+            "session_start_utc": [
+                origin,
+                origin + pd.Timedelta(days=2),
+            ],
+            "session_end_utc": [
+                origin + pd.Timedelta(minutes=72),
+                origin + pd.Timedelta(days=2, minutes=72),
+            ],
+        }
+    )
+    measurements["session_start_utc"] = measurements["session_start_utc"].dt.as_unit(
+        session_unit
+    )
+    measurements["session_end_utc"] = measurements["session_end_utc"].dt.as_unit(
+        session_unit
+    )
+
+    dark_rows = pd.DataFrame(
+        {
+            "filepath": ["/raw/dark-first", "/raw/dark-second", "/raw/dark-too-far"],
+            "meas_type": ["dark_current"] * 3,
+            "start_time_utc": pd.DatetimeIndex(
+                [
+                    origin + pd.Timedelta(minutes=77),
+                    origin + pd.Timedelta(days=2, minutes=70),
+                    origin + pd.Timedelta(days=10),
+                ]
+            ).as_unit(dark_unit),
+        }
+    )
+
+    assert f"[{session_unit}," in str(measurements["session_start_utc"].dtype)
+    assert f"[{dark_unit}," in str(dark_rows["start_time_utc"].dtype)
+
+    matched = _associate_dark_currents(
+        dark_rows, measurements, _config(), logging.getLogger("test.dark.units"),
+    )
+
+    assert matched.loc[0, "session_id"] == "spu-first"
+    assert float(matched.loc[0, "dark_current_association_delta_hours"]) == pytest.approx(
+        5 / 60
+    )
+    assert matched.loc[1, "session_id"] == "spu-second"
+    assert matched.loc[1, "dark_current_association_delta_hours"] == pytest.approx(0.0)
+    assert pd.isna(matched.loc[2, "session_id"])
+    assert matched.loc[2, "association_method"] == "unassociated"
