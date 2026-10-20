@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from milgrau.level0.inventory import build_session_inventory
 
@@ -352,3 +353,34 @@ def test_station_profile_change_splits_otherwise_continuous_acquisition(
         "acquisition_start",
         "station_context_change",
     ]
+
+
+def test_collapsed_minute_session_logs_exact_licel_sources(
+    tmp_path: Path, monkeypatch, caplog,
+) -> None:
+    """A short valid header must identify the source, not just a cryptic ID error."""
+    path = str(tmp_path / "short_licel_file")
+    headers = {
+        path: (
+            datetime(2024, 7, 16, 12, 35, 10),
+            pd.Timestamp("2024-07-16T12:35:16"),
+            6.0,
+            601,
+            100.0,
+        )
+    }
+    _patch_inventory(monkeypatch, [path], ["measurements"], headers)
+    logger = logging.getLogger("test.inventory.short-session")
+    with caplog.at_level(logging.ERROR, logger=logger.name):
+        with pytest.raises(ValueError, match="same minute") as caught:
+            build_session_inventory(str(tmp_path), _config(), logger)
+
+    assert path in str(caught.value)
+    assert "2024-07-16T12:35:10+00:00" in str(caught.value)
+    assert "2024-07-16T12:35:16+00:00" in str(caught.value)
+    assert any(
+        path in record.message
+        and "header_duration_s=6.0" in record.message
+        and "nshots=601" in record.message
+        for record in caplog.records
+    )

@@ -262,22 +262,49 @@ def process_level_0(
             [ExecutionResult.skipped("level0.discovery", "No new data to process", input_path=raw_dir, metadata={"pipeline": "L0"})]
         )
 
-    df_good = filter_laser_shots(
-        df_raw,
-        pipeline_logger,
-        tolerance_fraction=level0_config.acquisition_qa.laser_shot_tolerance_fraction,
-        header_time_jitter_s=level0_config.acquisition_qa.licel_header_time_jitter_s,
+    # Header discovery and chronological sessionization must precede QA:
+    # sessions span directories/days, and dark currents associate to nearby
+    # complete sessions. Avoid materializing QA results for the entire archive;
+    # screen and process each session immediately after the lightweight index.
+    session_count = int(df_raw["session_id"].nunique(dropna=True))
+    measurements_count = int((df_raw["meas_type"] == "measurements").sum())
+    dark_count = int((df_raw["meas_type"] == "dark_current").sum())
+    bind_log_context(pipeline_logger, stage="discovery").info(
+        "inventory complete | %d candidate sessions | %d measurements | "
+        "%d dark currents | QA and L0 will run session by session",
+        session_count,
+        measurements_count,
+        dark_count,
     )
-    if df_good.empty:
-        bind_log_context(pipeline_logger, stage="qa").warning("no data survived acquisition QA")
-        return ExecutionSummary.from_results(
-            [ExecutionResult.skipped("level0.quality", "No data survived quality control", input_path=raw_dir, metadata={"pipeline": "L0"})]
-        )
 
     incremental = incremental_enabled(config)
     results: list[ExecutionResult] = []
-    for session_id, group_df in df_good.groupby("session_id"):
+    session_groups = df_raw.dropna(subset=["session_id"]).groupby("session_id", sort=False)
+    for session_number, (session_id, raw_group) in enumerate(session_groups, start=1):
         group_logger = bind_log_context(pipeline_logger, session_id=session_id)
+        bind_log_context(group_logger, stage="qa").info(
+            "session %d/%d | screening %d measurement + %d dark-current files",
+            session_number,
+            session_count,
+            int((raw_group["meas_type"] == "measurements").sum()),
+            int((raw_group["meas_type"] == "dark_current").sum()),
+        )
+        group_df = filter_laser_shots(
+            raw_group,
+            group_logger,
+            tolerance_fraction=level0_config.acquisition_qa.laser_shot_tolerance_fraction,
+            header_time_jitter_s=level0_config.acquisition_qa.licel_header_time_jitter_s,
+        )
+        if group_df.empty:
+            bind_log_context(group_logger, stage="qa").warning("no data survived acquisition QA")
+            results.append(ExecutionResult.skipped(
+                "level0.quality",
+                "No data survived quality control",
+                input_path=raw_dir,
+                metadata={"pipeline": "L0", "session_id": session_id},
+            ))
+            continue
+
         netcdf_path = level0_output_path(session_id, config)
         if not force and incremental and _level0_is_current(session_id, group_df, config, netcdf_path):
             bind_log_context(group_logger, stage="skip").info("up to date | %s", netcdf_path.name)
@@ -300,5 +327,18 @@ def process_level_0(
             if result.traceback:
                 group_logger.debug("failure traceback\n%s", result.traceback)
         results.append(result)
+
+    if not results:
+        bind_log_context(pipeline_logger, stage="qa").warning(
+            "no associated measurement sessions were available for QA"
+        )
+        return ExecutionSummary.from_results(
+            [ExecutionResult.skipped(
+                "level0.quality",
+                "No associated measurements survived discovery",
+                input_path=raw_dir,
+                metadata={"pipeline": "L0"},
+            )]
+        )
 
     return ExecutionSummary.from_results(results)
