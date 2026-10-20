@@ -384,3 +384,95 @@ def test_collapsed_minute_session_logs_exact_licel_sources(
         and "nshots=601" in record.message
         for record in caplog.records
     )
+
+
+def test_optimized_dark_current_matches_exhaustive_nearest_interval() -> None:
+    """Nearest-interval lookup preserves overlap, tie, threshold, and UTC semantics."""
+    from milgrau.level0.inventory import _associate_dark_currents, _session_table
+
+    base = pd.Timestamp("2024-06-01T00:00:00Z")
+    specifications = [
+        ("spu-a", 0, 120),
+        ("spu-b", 60, 180),
+        ("spu-c", 240, 300),
+        ("spu-d", 310, 360),
+    ]
+    measurements = pd.DataFrame(
+        [
+            {
+                "session_id": name,
+                "session_start_utc": base + pd.Timedelta(minutes=start),
+                "session_end_utc": base + pd.Timedelta(minutes=end),
+            }
+            for name, start, end in specifications
+        ]
+    )
+    offsets = [-180, 0, 60, 90, 120, 150, 180, 210, 240, 300, 305, 310, 400, 1080, 1081]
+    dark_rows = pd.DataFrame(
+        {
+            "filepath": [f"/raw/dark_{minute:+d}" for minute in offsets],
+            "meas_type": ["dark_current"] * len(offsets),
+            "start_time_utc": [base + pd.Timedelta(minutes=minute) for minute in offsets],
+        }
+    )
+
+    output = _associate_dark_currents(
+        dark_rows, measurements, _config(), logging.getLogger("test.dark.optimized")
+    )
+    sessions = _session_table(measurements)
+
+    for index, dark in dark_rows.iterrows():
+        timestamp = dark["start_time_utc"]
+        distances = [
+            max(start - timestamp, timestamp - end, pd.Timedelta(0))
+            for start, end in zip(
+                sessions["session_start_utc"], sessions["session_end_utc"],
+            )
+        ]
+        winning_position = min(range(len(distances)), key=lambda position: distances[position])
+        expected_hours = distances[winning_position].total_seconds() / 3600.0
+        if expected_hours > 12.0:
+            assert pd.isna(output.loc[index, "session_id"])
+            assert output.loc[index, "association_method"] == "unassociated"
+        else:
+            assert output.loc[index, "session_id"] == sessions.iloc[winning_position]["session_id"]
+            assert output.loc[index, "association_method"] == "nearest_session"
+            assert float(output.loc[index, "dark_current_association_delta_hours"]) == pytest.approx(
+                expected_hours
+            )
+            assert output.loc[index, "session_start_utc"] == sessions.iloc[winning_position]["session_start_utc"]
+            assert output.loc[index, "session_end_utc"] == sessions.iloc[winning_position]["session_end_utc"]
+
+    assert output.loc[3, "session_id"] == "spu-a"  # overlapping intervals
+    assert output.loc[7, "session_id"] == "spu-b"  # equal-distance tie
+
+
+def test_inventory_reports_stages_and_preserves_station_profile_boundary(
+    tmp_path: Path, monkeypatch, caplog,
+) -> None:
+    paths = [str(tmp_path / "first"), str(tmp_path / "second")]
+    headers = {
+        paths[0]: (
+            datetime(2024, 1, 1, 23, 59, 0),
+            pd.Timestamp("2024-01-02T00:04:00Z"),
+            300.0, 1200, 4.0,
+        ),
+        paths[1]: (
+            datetime(2024, 1, 2, 0, 4, 0),
+            pd.Timestamp("2024-01-02T00:09:00Z"),
+            300.0, 1200, 4.0,
+        ),
+    }
+    _patch_inventory(monkeypatch, paths, ["measurements", "measurements"], headers)
+    logger = logging.getLogger("test.inventory.progress-info")
+    with caplog.at_level(logging.DEBUG, logger=logger.name):
+        df = build_session_inventory(str(tmp_path), _config(), logger)
+
+    assert df["session_id"].nunique() == 1
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("building raw inventory | station=spu" in msg for msg in messages)
+    assert any("read 2/2 | 2 valid | 0 invalid" in msg for msg in messages)
+    assert any("2 measurement headers | profile/calibration identities" in msg for msg in messages)
+    assert any("1 sessions | 2 measurement headers" in msg for msg in messages)
+    assert any("ready | 1 sessions | 2 measurement + 0 dark-current files" in msg for msg in messages)
+    assert any("header normalization elapsed" in msg for msg in messages)
