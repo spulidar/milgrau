@@ -45,22 +45,32 @@ O resultado deverá ser uma implementação enxuta, previsível e fácil de mant
 - [x] Impedir que falhas opcionais de finalização SCC invalidem um L1 científico válido.
 - [x] Aprovar os seis jobs de CI da implementação SCC atual.
 
-### Referências para a integração
+### Referências de auditoria (antes da integração)
 
 - `main`: `827a2e5`
 - `scc-integration-refactor`: `d204a64`
 - Merge base: `7d8032e`
 - Divergência identificada: 18 commits exclusivos de `main` e 356 da branch SCC.
 
-Esses identificadores são o baseline da auditoria e deverão ser atualizados antes da execução do merge.
+Esses identificadores registram o baseline original da auditoria.
+
+### Estado após a Fase 1 (20/10/2026)
+
+- `main` preservada em `827a2e5`.
+- `scc-integration-refactor` integrada no merge `a6b598c` (PR #4).
+- Branch de preparação: `integration/scc-main`, commit validado `89858c4`.
+- Histórico de `main` incorporado sem rebase ou push forçado; commit de integração com os dois pais.
+- CI do PR: 6/6 jobs aprovados — [GitHub Actions](https://github.com/spulidar/milgrau/actions/runs/39486432591).
+- Nenhum upload, DELETE ou substituição remota SCC foi executado pela integração.
+
 
 ### Pendências de preparação
 
-- [ ] Conferir se os HEADs remotos mudaram desde o baseline.
+- [x] Conferir se os HEADs remotos mudaram desde o baseline.
 - [ ] Inventariar pacotes SCC históricos ainda presentes no computador.
 - [ ] Identificar journals com operações incertas que ainda precisam de reconciliação.
 - [ ] Preservar evidências e arquivos relevantes antes de eliminar ferramentas históricas.
-- [ ] Manter operações remotas destrutivas desabilitadas durante os testes automatizados.
+- [x] Manter operações remotas destrutivas desabilitadas durante os testes automatizados.
 
 **Gate 0:** estado atual conhecido, preservado e reproduzível.
 
@@ -70,29 +80,29 @@ Esses identificadores são o baseline da auditoria e deverão ser atualizados an
 
 ### 1.1. Estratégia
 
-- [ ] Executar `git fetch origin`.
-- [ ] Criar uma branch temporária `integration/scc-main` a partir de `scc-integration-refactor`.
-- [ ] Executar `git merge origin/main` nessa branch.
-- [ ] Resolver conflitos preservando os novos comportamentos científicos do `main`.
-- [ ] Não utilizar `git push --force` nem reescrever o histórico das duas branches.
-- [ ] Executar os testes antes de incorporar o merge à branch SCC.
-- [ ] Manter `main` inalterada até a aprovação do Pull Request final.
+- [x] Atualizar e comparar os HEADs remotos por API GitHub (equivalente à verificação de `git fetch origin`).
+- [x] Criar uma branch temporária `integration/scc-main` a partir de `scc-integration-refactor`.
+- [x] Registrar a integração com commit Git de dois pais por API (equivalente histórico ao merge de `origin/main`, sem rebase).
+- [x] Resolver conflitos preservando os novos comportamentos científicos do `main`.
+- [x] Não utilizar `git push --force` nem reescrever o histórico das duas branches.
+- [x] Executar os testes antes de incorporar o merge à branch SCC.
+- [x] Manter `main` inalterada até a aprovação do Pull Request final.
 
 ### 1.2. Preservar as mudanças do LIBIDS
 
 Os 18 commits exclusivos de `main` incluem alterações que deverão ser mantidas:
 
-- [ ] Preservar o inventário de sessões científicas contínuas.
-- [ ] Preservar a resolução leve de identidade de perfil e calibração por cabeçalho Licel.
-- [ ] Preservar a otimização de associação dos dark currents por busca temporal.
-- [ ] Preservar o tratamento de sessões sobrepostas, empates e limites temporais.
-- [ ] Preservar a normalização de timestamps em nanossegundos.
-- [ ] Preservar os diagnósticos de sessões muito curtas ou IDs inválidos.
-- [ ] Preservar o processamento de QA individual por sessão.
-- [ ] Garantir que uma sessão rejeitada pelo QA não impeça o processamento de outras sessões.
-- [ ] Manter mensagens resumidas de progresso no INFO.
-- [ ] Manter diagnósticos detalhados de Licel, QA e SCC no DEBUG.
-- [ ] Preservar `.dat` na lista de arquivos espúrios ignorados.
+- [x] Preservar o inventário de sessões científicas contínuas.
+- [x] Preservar a resolução leve de identidade de perfil e calibração por cabeçalho Licel.
+- [x] Preservar a otimização de associação dos dark currents por busca temporal.
+- [x] Preservar o tratamento de sessões sobrepostas, empates e limites temporais.
+- [x] Preservar a normalização de timestamps em nanossegundos.
+- [x] Preservar os diagnósticos de sessões muito curtas ou IDs inválidos.
+- [x] Preservar o processamento de QA individual por sessão.
+- [x] Garantir que uma sessão rejeitada pelo QA não impeça o processamento de outras sessões.
+- [x] Manter mensagens resumidas de progresso no INFO.
+- [x] Manter diagnósticos detalhados de Licel, QA e SCC no DEBUG.
+- [x] Preservar `.dat` na lista de arquivos espúrios ignorados.
 
 ### 1.3. Arquivos que exigem revisão conjunta
 
@@ -109,18 +119,20 @@ Esses arquivos possuem alterações nas duas branches e devem ser revisados mesm
 ### 1.4. Testes específicos do merge
 
 - [ ] Verificar seleção e processamento de uma única sessão.
-- [ ] Verificar inventário de sessões atravessando dias.
-- [ ] Verificar inventário de sessões atravessando meses UTC.
-- [ ] Comparar os resultados da associação otimizada de dark currents com uma implementação de referência.
-- [ ] Verificar identificação de perfil e calibração antes e depois do merge.
-- [ ] Confirmar que sessões rejeitadas pelo QA não bloqueiam sessões válidas.
-- [ ] Confirmar que SCC desabilitado não exige `scc.yaml`.
-- [ ] Confirmar que SCC habilitado gera inputs para os regimes e meses elegíveis.
-- [ ] Confirmar que a ausência de inputs SCC não torna o L0 científico desatualizado.
-- [ ] Confirmar que `--scc-reexport` preserva os bytes e o hash do L0 científico existente.
+- [x] Verificar inventário de sessões atravessando dias.
+- [x] Verificar inventário de sessões atravessando meses UTC.
+- [x] Comparar os resultados da associação otimizada de dark currents com uma implementação de referência.
+- [x] Verificar identificação de perfil e calibração antes e depois do merge.
+- [x] Confirmar que sessões rejeitadas pelo QA não bloqueiam sessões válidas.
+- [x] Confirmar que SCC desabilitado não exige `scc.yaml`.
+- [x] Confirmar que SCC habilitado gera inputs para os regimes e meses elegíveis.
+- [x] Confirmar que a ausência de inputs SCC não torna o L0 científico desatualizado.
+- [x] Confirmar que `--scc-reexport` preserva os bytes e o hash do L0 científico existente.
 - [ ] Verificar que reexportação não substitui automaticamente pacotes SCC já submetidos.
 
 **Gate 1:** merge tecnicamente resolvido e comportamento científico das melhorias do `main` preservado.
+
+**Situação (20/10/2026):** integração de código concluída e 6/6 jobs automatizados aprovados. Os dois itens não marcados na seção 1.4 ainda exigem verificação operacional específica: seleção explícita de uma única sessão e ausência de substituição remota já submetida durante reexportação. As validações com dados reais e os inventários locais pertencem à preparação/validação subsequentes; não foram executados via GitHub.
 
 ---
 
@@ -337,7 +349,7 @@ milgrau-scc cleanup
 | Fase | Status |
 |---|---|
 | 0. Baseline e preparação | Parcialmente concluída |
-| 1. Merge das mudanças de `main` | Pendente |
+| 1. Merge das mudanças de `main` | Integrada, CI 6/6; dois testes operacionais pendentes |
 | 2. Simplificação do workflow SCC | Pendente |
 | 3. Remoção de código transitório | Pendente |
 | 4. CLI e configuração | Pendente |
@@ -347,6 +359,6 @@ milgrau-scc cleanup
 
 ### Próxima ação
 
-**Iniciar pela Fase 0 e depois pela Fase 1: integrar as melhorias recentes do LIBIDS antes de simplificar o SCC.**
+**A Fase 1 já foi incorporada à branch SCC. Antes de remover ferramentas históricas, concluir o inventário local dos pacotes e journals pendentes da Fase 0 e os dois testes operacionais restantes da Fase 1.**
 
-O merge de integração deve preservar o processamento científico atual do `main`, adicionando a exportação SCC por sessão e a reexportação independente. A remoção de código histórico ocorrerá somente depois dessa integração estar validada.
+A próxima fase de código é a simplificação do workflow SCC (Fase 2), mantendo uploads/DELETE remotos apenas sob autorização explícita, preservando histórico, resultados e produtos científicos.
