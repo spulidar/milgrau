@@ -121,15 +121,11 @@ milgrau-scc status --id 20240913spu1549 --remote
 milgrau-scc download --id 20240913spu1549
 
 # For an older remote measurement never submitted by MILGRAU,
-# give its verified scientific session ID explicitly. This never enables cleanup.
+# give the verified scientific session ID explicitly; inputs remain untouched.
 milgrau-scc download --id 20240913spu1549 --session spu_20240913-1549Z_20240913-1750Z
 
-# Keep cached raw/LR even after a successful confirmed-owned download.
-milgrau-scc download --id 20240913spu1549 --keep-cache
-
-# Preview or explicitly remove only eligible pending staging bytes.
-milgrau-scc cleanup --id 20240913spu1549 --dry-run
-milgrau-scc cleanup --id 20240913spu1549 --confirm
+# A confirmed-owned download also preserves the inputs:
+milgrau-scc download --id 20240913spu1549
 ```
 
 The initial Phase 12.4 only implemented single-ID upload. In Phase 12.7,
@@ -247,9 +243,9 @@ editing the measurement during the narrow interval after its final read;
 there is no server-side atomic compare-and-swap. Use a restricted operator
 maintenance window for destructive replacements.
 
-Phase 12.6 implements verified read-only download and cache-only cleanup.
-Old SCC backups and journal entries are persistent evidence and are never
-removed by cache cleanup.
+Phase 12.6 implements verified read-only downloads. Session-local SCC
+inputs, old remote backups and journal entries are retained independently;
+there is no automatic or CLI-mediated SCC input cleanup.
 
 ## LIBIDS → LIPANCORA → SCC observed sounding (opt-in in scc.yaml)
 
@@ -303,10 +299,10 @@ previously created pending input files are not silently changed or
 resubmitted. To skip LIPANCORA sounding staging for new packets, set
 `scc_policy.sounding.enabled: false`.
 
-The current template's `config.yaml scc.cleanup.policy` is `manual`,
-so verified result downloads keep the input cache by default. Existing
-local configs still set to `after_download` should be explicitly edited
-or call `milgrau-scc download --id ID --keep-cache`.
+Session-local SCC inputs are persistent. Downloads never remove them.
+The former `scc.cleanup.policy`, `download --keep-cache` and
+`milgrau-scc cleanup` interfaces no longer exist. Remove legacy
+`scc.cleanup` settings from local `config.yaml` before running commands.
 
 **Live sounding acceptance by SCC has not yet been tested.**
 First validate one new measurement and the remote processing output
@@ -442,7 +438,7 @@ packets may have no existing radiosonde observation; do not invent
 a sounding or force it into the cache. Test *one* READY/new remote ID
 after the local preview/backfill, before running any bulk SCC upload.
 
-## Phase 12.6 — Verified results and disposable cache cleanup
+## Phase 12.6 — Verified SCC results and persistent inputs
 
 SCC results are explicitly **external scientific outputs**, not replacements
 for MILGRAU L0/L1/L2 or the station's own inversion. Download saves the
@@ -478,31 +474,21 @@ uploaded it from MILGRAU using `--session <Session_ID>`, provided that session
 already has a canonical scientific L0. Its manifest explicitly records
 `uploaded_by_milgrau: false`; it **cannot** authorize cache deletion.
 
-The journal now retains `results_path`, `results_manifest_sha256` and new
-`downloaded`/`cleaned` states. Old Phase 12.5 SQLite databases are migrated
-in place without deleting entries. The cache-cleanup gate requires:
+The journal retains `results_path`, `results_manifest_sha256` and the
+historical `downloaded`/`cleaned` states. Existing SQLite journals
+continue to be readable; the historical `cleaned` state is **not**
+an instruction to delete anything. Download verification validates
+the result archives and their checksums, independently of all local input
+directory lifecycle decisions.
 
-- the durable journal to confirm MILGRAU's own uploaded generation using the
-  SCC remote `creation_date` and configuration ID;
-- verified completed ELPP and ELDA archives and all other advertised finished
-  products, with their SHA-256 values rechecked against `results.json`;
-- the results manifest's checksum/path matching the durable journal;
-- the original pending raw NetCDF and any LR matching their submitted hashes.
-
-When a local `config.yaml` sets `scc.cleanup.policy: after_download` (not the current example default),
-an owned, newly downloaded and verified packet triggers automatic **local-only**
-cleanup of `<Session_ID>/scc/scc-inputs/<Measurement_ID>/`. Use `download --keep-cache`
-to suppress that automatic cleanup. To exercise the same gate separately,
-use `cleanup --id ID --dry-run` then `cleanup --id ID --confirm`.
-`manual` policy also suppresses automatic deletion. Cleanup never touches
-Licel files, the scientific NetCDFs, retained SCC outputs, old remote
-replacement archives or `.state/scc/submissions.sqlite`. Failures and
-uncertain upload states are protected.
-
-A crash between the local directory removal and the SQLite `cleaned`
-transition may leave a journal state of `downloaded` with no cache folder.
-The command fails closed and requires manual inspection; it never silently
-deletes an arbitrary replacement folder.
+There is no cleanup subcommand, automatic deletion on download or
+configuration policy for deleting inputs. All staged input folders are
+preserved by the upload/status/download workflow. For operator-managed
+disk cleanup, inspect the exact Measurement_ID, remote state, pending
+journal operations, file hashes and future re-export needs. Only then may
+the operator independently remove an exact
+`<Session_ID>/scc/scc-inputs/<Measurement_ID>/` folder; retain
+`.state/scc/`, `scc-results/`, raw Licel and all scientific files.
 
 **Live validation pending:** no real SCC result was downloaded by this new
 12.6 command in development and no remote upload/delete occurred. Test first
@@ -520,7 +506,7 @@ deleted/replaced.
 **Successful upload is recorded as accepted in the durable journal**, but
 does not immediately remove staged files. Remote processing completion is
 observed through read-only status checks; Phase 12.6 downloads verified
-SCC products and removes only eligible disposable staging files.
+SCC products without deleting session-local SCC inputs.
 An uploaded `<Measurement_ID>.nc` packet must not be assumed processed by ELPP/ELDA.
 
 ## Test evidence and outstanding validation

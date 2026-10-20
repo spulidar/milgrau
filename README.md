@@ -174,27 +174,28 @@ milgrau-scc status
 ```
 
 Remote SCC submissions are always explicitly operator-authorized:
-`milgrau-scc upload --confirm` now processes **all** locally staged packets
-sequentially, skipping any Measurement_ID already present on the server.
-`milgrau-scc upload --confirm --replace-existing` additionally allows
-**same-ID replacement** for remote-existing packets only after verifiable
-backup of the old raw measurement, LR (when present) and finished outputs.
-Use `--id MEASUREMENT_ID` for one targeted upload or replacement, and
-**validate a single real destructive replacement before any bulk replace**.
-Both modes are stop-on-uncertainty, with a per-run summary and no automatic
-POST retry. See the [operator batch and single-replacement guide](docs/scc_batch_operator_guide.md). A durable journal under `.state/scc/` records status,
-checksums, backups and interrupted attempts independently of the disposable
-`.cache/scc/` staging area. Uploads are never automatically initiated by
-LIBIDS. Phase 12.6 adds verified read-only SCC result downloads into each
-scientific session's separate `scc-results/<Measurement_ID>/generations/`
-archive, and conservative cache-only cleanup after confirmed MILGRAU uploads.
-Use `milgrau-scc download --id ID --session SESSION_ID --keep-cache` for
-a previously existing SCC record; this does **not** authorize cleanup of its
-pending local package. For a MILGRAU-journal-confirmed upload, a successful
-`download --id ID` automatically cleans only its verified staging cache
-when `scc.cleanup.policy: after_download`. Use `--keep-cache` to prevent
-automatic deletion or `milgrau-scc cleanup --id ID --dry-run` to preview.
-See [SCC client usage, recovery and security](docs/scc_native_client.md).
+`milgrau-scc upload --confirm` processes staged inputs sequentially and skips
+remote-existing IDs; `--replace-existing --confirm` permits same-ID replacement
+with an explicitly recorded **no-backup waiver**. A remote backup remains
+available separately using `milgrau-scc status --id ID --remote --backup`.
+Choose `--id MEASUREMENT_ID` for a single targeted operation and inspect its
+remote state before considering any destructive replacement. Uncertain POST
+or DELETE outcomes never trigger automatic retries.
+
+The SCC operational journal and optional remote archives are held under
+`.state/scc/`, independently of the **persistent session inputs** under
+`<Session_ID>/scc/scc-inputs/<Measurement_ID>/`. Verified external SCC
+results live under the session's separate
+`scc-results/<Measurement_ID>/generations/` hierarchy. Upload, status and
+download do **not** remove staged inputs, even after a successful download.
+The `milgrau-scc cleanup` subcommand, `download --keep-cache` flag and
+`scc.cleanup.policy` were removed. The operator may manage files manually
+only after reviewing remote state, journal uncertainty and evidence needs.
+Never manually delete `.state/scc/`, results, canonical L0/L1/L2 or figures
+as part of SCC input housekeeping.
+
+See the [SCC operator guide](docs/scc_batch_operator_guide.md) and
+[client architecture](docs/scc_native_client.md) for validation and recovery.
 
 The primary CLIs accept a session ID, a station-local civil date, or an
 explicit file/directory path. A date selects sessions that intersect that local day.

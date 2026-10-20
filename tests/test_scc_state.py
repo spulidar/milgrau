@@ -151,3 +151,17 @@ def test_current_revision_events_never_reuses_older_replacement_waiver(
         actions = [event["action"] for event in store.current_revision_events(IDENTITY)]
         assert actions == ["new_explicit_revision", "delete_result_uncertain"]
         assert len(store.events(IDENTITY)) > len(actions)
+
+
+def test_legacy_cleaned_journal_remains_readable_after_cleanup_removal(
+    tmp_path: Path,
+) -> None:
+    root = state_root(_config(tmp_path))
+    with SubmissionStore(root) as store:
+        store.begin(_manifest())
+        store.transition(IDENTITY, "cleaned", action="historical_cache_cleanup")
+    with SubmissionStore(root) as store:
+        assert store.get(IDENTITY)["state"] == "cleaned"
+        assert store.events(IDENTITY)[-1]["action"] == "historical_cache_cleanup"
+        with pytest.raises(RuntimeError, match="already submitted"):
+            store.begin(_manifest())

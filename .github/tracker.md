@@ -189,6 +189,8 @@ Esses arquivos possuem alterações nas duas branches e devem ser revisados mesm
 
 ## 3. Remoção do código transitório
 
+**Fase 3 — atualização:** remoção do cleanup implementada diretamente na branch SCC. A retirada de módulos históricos de migração/reparo continua bloqueada até inventário dos pacotes e journals locais; não houve migração ou exclusão desses dados.
+
 ### 3.1. Ferramentas históricas
 
 | Módulo | Destino pretendido |
@@ -214,14 +216,14 @@ Os inputs SCC são artefatos persistidos por sessão científica, não cache
 descartável. A limpeza será responsabilidade manual do operador, fora da CLI,
 **sem exclusão automática após upload ou download**.
 
-- [ ] Remover o subcomando `milgrau-scc cleanup`, seu handler e o módulo `scc/cleanup.py` quando não houver consumidores.
-- [ ] Remover `scc.cleanup.policy` da configuração, incluindo o legado `after_download`.
-- [ ] Remover `download --keep-cache` e todos os caminhos de exclusão pós-download; downloads devem sempre preservar os inputs SCC.
-- [ ] Revisar mensagens, testes e documentação para usar "inputs SCC por sessão" em vez de "cache descartável".
-- [ ] Preservar a interpretação do estado histórico `cleaned` em journals SQLite antigos, sem apagar nem migrar registros.
-- [ ] Não apagar automaticamente pacotes com envio pendente, POST/DELETE incerto ou evidências ainda necessárias.
-- [ ] Documentar a exclusão manual restrita a `<sessão>/scc/scc-inputs/<Measurement_ID>/`, somente após verificar status remoto, journal e necessidade de reenvio/auditoria; nunca apagar `scc-results`, `.state/scc`, L0/L1/L2 ou figuras.
-- [ ] Garantir por testes que upload, download, status e reexportação não apagam inputs.
+- [x] Remover o subcomando `milgrau-scc cleanup`, seu handler e o módulo `scc/cleanup.py` quando não houver consumidores.
+- [x] Remover `scc.cleanup.policy` da configuração, incluindo o legado `after_download`.
+- [x] Remover `download --keep-cache` e todos os caminhos de exclusão pós-download; downloads devem sempre preservar os inputs SCC.
+- [x] Revisar mensagens, testes e documentação para usar "inputs SCC por sessão" em vez de "cache descartável".
+- [x] Preservar a interpretação do estado histórico `cleaned` em journals SQLite antigos, sem apagar nem migrar registros.
+- [x] Não apagar automaticamente pacotes com envio pendente, POST/DELETE incerto ou evidências ainda necessárias.
+- [x] Documentar a exclusão manual restrita a `<sessão>/scc/scc-inputs/<Measurement_ID>/`, somente após verificar status remoto, journal e necessidade de reenvio/auditoria; nunca apagar `scc-results`, `.state/scc`, L0/L1/L2 ou figuras.
+- [x] Garantir por testes que upload, download, status e reexportação não apagam inputs.
 
 ### 3.3. `level0/scc_staging.py`
 
@@ -271,7 +273,7 @@ milgrau-scc download
 
 - [ ] Remover `scc.upload.automatic`, atualmente sem efeito de upload.
 - [ ] Revisar `scc.upload.retries`, garantindo que nunca permita retry inseguro de POST/DELETE.
-- [ ] Remover toda a configuração `scc.cleanup` (incluindo `after_download` e `manual`); a CLI não gerencia exclusão de inputs.
+- [x] Remover toda a configuração `scc.cleanup` (incluindo `after_download` e `manual`); a CLI não gerencia exclusão de inputs.
 - [ ] Simplificar opções de limpeza e flags redundantes.
 - [ ] Remover referências restantes ao staging global.
 - [ ] Preservar `scc.enabled: true` na branch experimental.
@@ -279,10 +281,10 @@ milgrau-scc download
 
 ### 4.3. Retirada do cleanup da interface operacional
 
-- [ ] Remover `scc/cleanup.py` e `milgrau-scc cleanup` na Fase 3.
-- [ ] Não oferecer exclusão automática de inputs via download, upload ou status.
-- [ ] Preservar leitura de estados históricos `cleaned` e proteção contra operações incertas.
-- [ ] Documentar exclusão de diretórios de input pelo operador, após auditoria.
+- [x] Remover `scc/cleanup.py` e `milgrau-scc cleanup` na Fase 3.
+- [x] Não oferecer exclusão automática de inputs via download, upload ou status.
+- [x] Preservar leitura de estados históricos `cleaned` e proteção contra operações incertas.
+- [x] Documentar exclusão de diretórios de input pelo operador, após auditoria.
 
 **Gate 4:** três comandos operacionais principais, configuração reduzida e nenhuma exclusão automática de inputs SCC.
 
@@ -376,14 +378,14 @@ milgrau-scc download
 | 0. Baseline e preparação | Parcialmente concluída |
 | 1. Merge das mudanças de `main` | Integrada, CI 6/6; dois testes operacionais pendentes |
 | 2. Simplificação do workflow SCC | Núcleo integrado e CI do PR aprovado; revisão de estados e comandos históricos pendente |
-| 3. Remoção de código transitório | Pendente |
-| 4. CLI e configuração | Pendente |
+| 3. Remoção de código transitório | Cleanup removido; módulos históricos aguardam inventário local |
+| 4. CLI e configuração | Cleanup e política de exclusão removidos; outras opções ainda pendentes |
 | 5. Validação e regressões | Pendente |
 | 6. Documentação | Pendente |
 | 7. Merge final em `main` | Pendente |
 
 ### Próxima ação
 
-**O núcleo da Fase 2 foi incorporado à branch SCC pelo PR #5.** Verificar os journals de operações incertas e pacotes locais da Fase 0 antes de eliminar caminhos históricos, consolidar comandos e revisar estados redundantes. Os dois testes operacionais restantes da Fase 1 também permanecem pendentes.
+**Cleanup desativado e removido na Fase 3.** Falta inventariar os journals de operações incertas e pacotes locais da Fase 0 antes de eliminar os módulos de migração, correção de LR e sounding históricos. O CI da remoção deve ser confirmado; os dois testes operacionais restantes da Fase 1 também permanecem pendentes.
 
 Não executar uploads, substituições ou DELETE reais sem autorização explícita, ID adequado e preflight remoto. L0/L1/L2 e arquivos históricos devem continuar preservados.

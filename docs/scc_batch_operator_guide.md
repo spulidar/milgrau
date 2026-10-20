@@ -105,7 +105,7 @@ uploading. Any uncertain POST remains blocked; never repeat `upload --confirm`
 to guess the outcome. Existing special upload-only recovery commands require
 separate, exact-ID operator confirmation and audit verification.
 
-## Sounding, historical maintenance and cleanup
+## Sounding and historical maintenance
 
 New packets can be finalized after LIPANCORA using cached *observed*
 radiosondes. Filenames must match the shorter SCC formats:
@@ -116,13 +116,20 @@ Neither ERA5 nor USSA76 is used as a fabricated observation.
 # Legacy unsubmitted staged inputs, when applicable:
 milgrau-scc sounding --dry-run
 milgrau-scc sounding --confirm
-
-# Remove verified, downloaded input package only if desired:
-milgrau-scc cleanup --id MEASUREMENT_ID --dry-run
-milgrau-scc cleanup --id MEASUREMENT_ID --confirm
 ```
 
-Results in `session/scc/scc-results/` are not removed by SCC input cleanup.
-Configuration `scc.cleanup.policy: manual` retains staged input by default.
+Inputs in `<Session_ID>/scc/scc-inputs/<Measurement_ID>/` are now
+**persistent**, not cache. The SCC CLI never deletes them after upload
+or download, and neither `cleanup` nor `download --keep-cache` exists.
+
+If local disk space requires manual input removal, identify the **exact**
+session and Measurement_ID, confirm the remote status and full journal
+(including any uncertain POST/DELETE), and preserve any needed hashes,
+manifest, scientific provenance and historical evidence first. Do not
+delete an input needed for retry/reexport/reconciliation. Only the
+operator may remove that specific `scc-inputs/<Measurement_ID>/` directory.
+Never treat `.state/scc/`, `scc-results/`, canonical L0/L1/L2, figures or
+raw Licel measurements as removable SCC input cache.
+
 See [technical SCC details](scc_native_client.md) for rare recovery and
 legacy migration procedures.
