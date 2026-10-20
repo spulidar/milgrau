@@ -144,3 +144,21 @@ def test_bulk_download_rejects_unscoped_session_and_keeps_single_id(
     assert cli.main(["download", "--session", SESSION]) == 1
     assert "--session requires --id" in capsys.readouterr().err
     assert cli._parser().parse_args(["download", "--id", ID, "--keep-cache"]).identity == ID
+
+
+def test_remote_status_reports_ambiguous_post_even_after_api_404(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
+) -> None:
+    cfg = _config(tmp_path)
+    _journal(cfg, ID2, state="uncertain")
+    client = ManyClient({})
+    monkeypatch.setattr(cli, "load_config", lambda: cfg)
+    monkeypatch.setattr(cli, "_client", lambda _: client)
+
+    assert cli.main(["status", "--id", ID2, "--remote"]) == 0
+    output = capsys.readouterr().out
+    assert f"remote {ID2}: NOT FOUND" in output
+    assert f"ATTENTION {ID2}:" in output
+    assert "absence alone does not prove a POST was rejected" in output
+    with SubmissionStore(state_root(cfg)) as journal:
+        assert journal.get(ID2)["state"] == "uncertain"
