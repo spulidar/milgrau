@@ -127,3 +127,21 @@ def test_unexpected_qa_runtime_failure_is_not_silently_rejected(monkeypatch: pyt
 
     with pytest.raises(RuntimeError, match="synthetic implementation failure"):
         filter_laser_shots(df, logging.getLogger("test"), **QA)
+
+
+def test_qa_debug_log_identifies_rejected_file_and_reason(caplog) -> None:
+    rows = pd.DataFrame([
+        _row(filepath="/raw/valid.licel", meas_type="measurements", nshots=3000, duration=30),
+        _row(filepath="/raw/bad-duration.licel", meas_type="measurements", nshots=3000, duration=91),
+    ])
+    logger = logging.getLogger("test.qa.file-reasons")
+    with caplog.at_level(logging.DEBUG, logger=logger.name):
+        good = filter_laser_shots(rows, logger, **QA)
+
+    assert good["filepath"].tolist() == ["/raw/valid.licel"]
+    assert any(
+        "/raw/bad-duration.licel" in record.message
+        and "invalid_or_inconsistent_duration" in record.message
+        and "header_duration_s=91" in record.message
+        for record in caplog.records
+    )
