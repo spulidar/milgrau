@@ -319,7 +319,7 @@ def _scc_time_axis(
         f"{prefix}_Time_Normalization_Basis": "upstream acquisition QA; Licel whole-second header correction",
     }
     if adjusted_count:
-        logger.info(
+        logger.debug(
             "  -> %s SCC time axis normalized to %d s from upstream QA; adjusted %d/%d profiles (max %d s).",
             label,
             nominal_duration_s,
