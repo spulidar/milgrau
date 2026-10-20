@@ -306,40 +306,45 @@ milgrau-scc download
 
 ## 5. Validação e regressões
 
+**Fase 5 — CI e cenários simulados validados em 20/10/2026:**
+[GitHub Actions #39497902391](https://github.com/spulidar/milgrau/actions/runs/39497902391) aprovou **6/6 jobs** no código `a3c6c211`, incluindo **726 testes aprovados no Linux/Python 3.12**. Também foi reforçada a confirmação pós-upload: configuração SCC divergente ou ausência de `creation_date` mantém o journal `uncertain`, sem retry. A matriz e o procedimento de validação real estão em [`docs/scc_phase5_validation.md`](../docs/scc_phase5_validation.md).
+
+**Limite do gate:** testes em CI utilizam mocks e arquivos científicos sintéticos. Nenhum pacote de dados reais do operador foi comparado antes/depois, nenhuma API SCC real foi acionada, nenhum upload/DELETE remoto foi realizado. Portanto o Gate 5 completo continua pendente, embora a parte automatizada esteja aprovada.
+
 ### 5.1. Testes automatizados
 
-- [ ] Executar Ruff.
-- [ ] Executar pytest no Linux com Python 3.12.
-- [ ] Executar pytest no Linux com Python 3.14.
-- [ ] Executar pytest no Windows com Python 3.12.
-- [ ] Executar pytest no Windows com Python 3.14.
-- [ ] Executar os testes do Web Explorer.
-- [ ] Confirmar 6/6 jobs aprovados no commit final.
+- [x] Executar Ruff.
+- [x] Executar pytest no Linux com Python 3.12.
+- [x] Executar pytest no Linux com Python 3.14.
+- [x] Executar pytest no Windows com Python 3.12.
+- [x] Executar pytest no Windows com Python 3.14.
+- [x] Executar os testes do Web Explorer.
+- [x] Confirmar 6/6 jobs aprovados no commit final.
 
 ### 5.2. Testes científicos
 
-- [ ] Verificar continuidade e identidade das sessões.
-- [ ] Verificar QA por sessão.
-- [ ] Verificar associação dos dark currents.
-- [ ] Verificar processamento incremental.
-- [ ] Verificar processamento sem SCC.
-- [ ] Verificar geração SCC sem modificar produtos científicos.
-- [ ] Verificar `--scc-reexport`.
+- [x] Verificar continuidade e identidade das sessões.
+- [x] Verificar QA por sessão.
+- [x] Verificar associação dos dark currents.
+- [x] Verificar processamento incremental.
+- [x] Verificar processamento sem SCC.
+- [x] Verificar geração SCC sem modificar produtos científicos.
+- [x] Verificar `--scc-reexport`.
 - [ ] Verificar resultados consistentes em amostras representativas antes e depois do merge.
 
 ### 5.3. Testes SCC
 
-- [ ] Validar pacote novo com `--dry-run`.
-- [ ] Simular envio de um ID ausente.
-- [ ] Simular ID existente sem autorização de substituição.
-- [ ] Simular substituição explicitamente confirmada sem backup.
-- [ ] Simular DELETE incerto sem backup e posterior reconciliação.
-- [ ] Simular POST incerto sem retry automático.
-- [ ] Verificar lote contendo pacotes válidos e inválidos.
-- [ ] Verificar status remoto sem arquivos locais.
-- [ ] Verificar download sem journal local, com manifesto válido.
-- [ ] Verificar gerações de resultados com proveniência preservada.
-- [ ] Verificar que nenhum comando SCC apaga inputs de sessão automaticamente, nem produtos científicos ou resultados.
+- [x] Validar pacote novo com `--dry-run`.
+- [x] Simular envio de um ID ausente.
+- [x] Simular ID existente sem autorização de substituição.
+- [x] Simular substituição explicitamente confirmada sem backup.
+- [x] Simular DELETE incerto sem backup e posterior reconciliação.
+- [x] Simular POST incerto sem retry automático.
+- [x] Verificar lote contendo pacotes válidos e inválidos.
+- [x] Verificar status remoto sem arquivos locais.
+- [x] Verificar download sem journal local, com manifesto válido.
+- [x] Verificar gerações de resultados com proveniência preservada.
+- [x] Verificar que nenhum comando SCC apaga inputs de sessão automaticamente, nem produtos científicos ou resultados.
 
 ### 5.4. Validação real com SCC
 
@@ -350,7 +355,7 @@ milgrau-scc download
 - [ ] Confirmar download e integridade dos resultados.
 - [ ] Realizar testes de substituição destrutiva somente com autorização explícita e ID de teste adequado.
 
-**Gate 5:** testes automatizados aprovados, ausência de regressão científica conhecida e comportamento SCC real validado nos cenários autorizados.
+**Gate 5 (parcial):** testes automatizados aprovados e nenhuma regressão científica conhecida nos cenários simulados. Comparação de amostras científicas reais antes/depois e verificação real no servidor SCC permanecem obrigatórias antes de declarar validação integral.
 
 ---
 
@@ -394,17 +399,12 @@ milgrau-scc download
 | 2. Simplificação do workflow SCC | Núcleo integrado e CI do PR aprovado; revisão de estados e comandos históricos pendente |
 | 3. Remoção de código transitório | Concluída no código, CI 6/6; pacotes locais não inspecionados pela API |
 | 4. CLI e configuração | Concluída no código, CI 6/6; default de `main` reservado para Gate 7 |
-| 5. Validação e regressões | Pendente |
+| 5. Validação e regressões | CI 6/6 e testes simulados aprovados; amostras reais e SCC remoto pendentes |
 | 6. Documentação | Pendente |
 | 7. Merge final em `main` | Pendente |
 
 ### Próxima ação
 
-**Fase 4 concluída no código, sem PR, com CI 6/6** no commit
-`07600287` ([execução](https://github.com/spulidar/milgrau/actions/runs/39495985015)).
-Próxima fase: validação e regressões (Fase 5). Permanecem os dois testes
-operacionais pendentes da Fase 1, a validação real de SCC e a escolha
-definitiva do default para `main` no Gate 7. Nenhum POST/DELETE remoto
-foi executado nesta fase.
+**Fase 5 automatizada validada no CI 6/6** (código `a3c6c211`, 726 testes no Linux/Python 3.12); evidências em `docs/scc_phase5_validation.md`. Pendem a comparação antes/depois com amostras científicas reais, a verificação de upload/sounding/download no SCC real e os dois testes operacionais da Fase 1. Nenhum POST/DELETE remoto foi realizado. A documentação final (Fase 6) pode ser revisada sem confundir isso com o fechamento do Gate 5; a configuração padrão de `main` permanece no Gate 7.
 
 Não executar uploads, substituições ou DELETE reais sem autorização explícita, ID adequado e preflight remoto. L0/L1/L2 e arquivos históricos devem continuar preservados.
