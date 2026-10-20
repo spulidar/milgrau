@@ -397,16 +397,16 @@ def build_session_inventory(
         )
         if start_time_utc is not None:
             records.append(
-            {
-                "filepath": filepath,
-                "meas_type": file_type,
-                "start_time_utc": start_time_utc,
-                "stop_time": stop_time,
-                "nshots": n_shots,
-                "duration": duration,
-                "laser_freq": laser_freq,
-            }
-        )
+                {
+                    "filepath": filepath,
+                    "meas_type": file_type,
+                    "start_time_utc": start_time_utc,
+                    "stop_time": stop_time,
+                    "nshots": n_shots,
+                    "duration": duration,
+                    "laser_freq": laser_freq,
+                }
+            )
         now = perf_counter()
         if (
             position % progress_every == 0
