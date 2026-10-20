@@ -105,18 +105,21 @@ uploading. Any uncertain POST remains blocked; never repeat `upload --confirm`
 to guess the outcome. Existing special upload-only recovery commands require
 separate, exact-ID operator confirmation and audit verification.
 
-## Sounding and historical maintenance
+## Soundings and operational input retention
 
-New packets can be finalized after LIPANCORA using cached *observed*
-radiosondes. Filenames must match the shorter SCC formats:
-`lr_YYYYMMDDcccNN.nc` and `rs_YYYYMMDDcccNN.nc`.
-Neither ERA5 nor USSA76 is used as a fabricated observation.
+New packets are finalized automatically after LIPANCORA when observed
+radiosondes are enabled in `scc.yaml`. Filenames must match SCC's
+`lr_YYYYMMDDcccNN.nc` and `rs_YYYYMMDDcccNN.nc` formats.
+Only independently verified observations may be included; neither ERA5
+nor USSA76 may be fabricated as a measured sounding.
 
-```bash
-# Legacy unsubmitted staged inputs, when applicable:
-milgrau-scc sounding --dry-run
-milgrau-scc sounding --confirm
-```
+There are three main commands: `upload`, `status`, and `download`.
+The former `sounding`, `sounding-repair`, `upload --migrate-cache`,
+`upload --repair-lr-cache` and incident-only retry options are removed.
+Use `milgrau-scc upload --dry-run` for a read-only validation of the
+current session inputs. Only `upload --id ID --resume-after-delete --confirm`
+remains as guarded reconciliation of a genuinely uncertain DELETE;
+uncertain POST outcomes never trigger automatic retries.
 
 Inputs in `<Session_ID>/scc/scc-inputs/<Measurement_ID>/` are now
 **persistent**, not cache. The SCC CLI never deletes them after upload

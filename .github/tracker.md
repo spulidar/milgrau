@@ -189,26 +189,26 @@ Esses arquivos possuem alterações nas duas branches e devem ser revisados mesm
 
 ## 3. Remoção do código transitório
 
-**Fase 3 — atualização:** remoção do cleanup implementada diretamente na branch SCC. A retirada de módulos históricos de migração/reparo continua bloqueada até inventário dos pacotes e journals locais; não houve migração ou exclusão desses dados.
+**Fase 3 — implementação concluída no código (20/10/2026):** por confirmação do operador de que os journals estão resolvidos, retirados os módulos históricos de migração/reparo/backfill e os comandos exclusivos desses incidentes. A inspeção do computador do operador não foi realizada por esta integração; nenhuma pasta histórica, journal ou pacote local foi apagado. A validação de CI e os testes operacionais reais continuam sendo gates separados.
 
 ### 3.1. Ferramentas históricas
 
-| Módulo | Destino pretendido |
+| Módulo histórico | Resultado |
 |---|---|
-| `scc/migrate.py` | Remover após conferir pacotes históricos |
-| `scc/lr_repair.py` | Remover após resolver os nomes LR antigos |
-| `scc/sounding_repair.py` | Remover após resolver os nomes de sounding antigos |
-| `scc/sounding_backfill.py` | Avaliar remoção após finalizar os pacotes históricos |
+| `scc/migrate.py` | Removido |
+| `scc/lr_repair.py` | Removido |
+| `scc/sounding_repair.py` | Removido |
+| `scc/sounding_backfill.py` | Removido; novos soundings continuam no fluxo automático LIPANCORA |
 
-- [ ] Inventariar pacotes no layout antigo `.cache/scc/pending/`.
-- [ ] Distinguir pacotes nunca submetidos de pacotes com histórico remoto.
-- [ ] Identificar quais pacotes ainda exigem correções de nome ou conteúdo.
-- [ ] Migrar ou regenerar apenas os pacotes elegíveis, mantendo evidências de integridade.
-- [ ] Preservar registros de operações incertas ainda não resolvidas.
-- [ ] Remover os módulos históricos quando não houver dependências operacionais relevantes.
-- [ ] Remover os comandos CLI exclusivos das ferramentas eliminadas.
-- [ ] Remover testes exclusivamente associados a funcionalidades removidas.
-- [ ] Preservar testes de segurança e integridade que continuem relevantes ao fluxo novo.
+- [ ] Inventário local de pacotes históricos (não verificável via GitHub; operador confirmou somente journals resolvidos).
+- [ ] Distinguir eventuais pacotes locais não submetidos daqueles com histórico remoto, caso ainda existam.
+- [ ] Identificar eventuais pacotes incompatíveis que precisem de reexportação.
+- [ ] Reexportar manualmente apenas eventuais inputs históricos não submetidos que sejam necessários, preservando evidências. Não existe migração automática.
+- [x] Preservar registros de operações incertas ainda não resolvidas.
+- [x] Remover os módulos históricos quando não houver dependências operacionais relevantes.
+- [x] Remover os comandos CLI exclusivos das ferramentas eliminadas.
+- [x] Remover testes exclusivamente associados a funcionalidades removidas.
+- [x] Preservar testes de segurança e integridade que continuem relevantes ao fluxo novo.
 
 ### 3.2. Remoção do `milgrau-scc cleanup` — decisão operacional
 
@@ -227,21 +227,21 @@ descartável. A limpeza será responsabilidade manual do operador, fora da CLI,
 
 ### 3.3. `level0/scc_staging.py`
 
-- [ ] Remover lógica de descoberta e recuperação de layouts históricos depois da transição.
-- [ ] Manter apenas os diretórios de entrada por sessão.
-- [ ] Preservar criação atômica dos pacotes.
-- [ ] Preservar prevenção de colisões de `Measurement_ID`.
-- [ ] Preservar manifesto, hashes e identificação da sessão científica.
-- [ ] Garantir que nenhuma etapa altere L0/L1/L2 como consequência de limpeza SCC.
+- [x] Remover lógica de descoberta e recuperação de layouts históricos depois da transição.
+- [x] Manter apenas os diretórios de entrada por sessão.
+- [x] Preservar criação atômica dos pacotes.
+- [x] Preservar prevenção de colisões de `Measurement_ID`.
+- [x] Preservar manifesto, hashes e identificação da sessão científica.
+- [x] Garantir que nenhuma etapa altere L0/L1/L2 como consequência de limpeza SCC.
 
 ### 3.4. `scc/sounding_finalize.py`
 
-- [ ] Simplificar a finalização dos soundings para o layout atual por sessão.
-- [ ] Preservar apenas soundings observados e rastreáveis.
-- [ ] Preservar `missing_policy: skip` e `fail` enquanto necessários.
-- [ ] Não alterar pacotes com histórico de submissão.
-- [ ] Reduzir a dependência operacional entre LIPANCORA e preparação SCC.
-- [ ] Manter falhas SCC isoladas do resultado científico do L1.
+- [x] Simplificar a finalização dos soundings para o layout atual por sessão.
+- [x] Preservar apenas soundings observados e rastreáveis.
+- [x] Preservar `missing_policy: skip` e `fail` enquanto necessários.
+- [x] Não alterar pacotes com histórico de submissão.
+- [x] Reduzir a dependência operacional entre LIPANCORA e preparação SCC.
+- [x] Manter falhas SCC isoladas do resultado científico do L1.
 
 **Gate 3:** o fluxo comum não depende de funções de migração ou reparos históricos.
 
@@ -378,7 +378,7 @@ milgrau-scc download
 | 0. Baseline e preparação | Parcialmente concluída |
 | 1. Merge das mudanças de `main` | Integrada, CI 6/6; dois testes operacionais pendentes |
 | 2. Simplificação do workflow SCC | Núcleo integrado e CI do PR aprovado; revisão de estados e comandos históricos pendente |
-| 3. Remoção de código transitório | Cleanup removido; módulos históricos aguardam inventário local |
+| 3. Remoção de código transitório | Código histórico removido; inventário local opcional de pacotes não verificável via GitHub |
 | 4. CLI e configuração | Cleanup e política de exclusão removidos; outras opções ainda pendentes |
 | 5. Validação e regressões | Pendente |
 | 6. Documentação | Pendente |
@@ -386,6 +386,6 @@ milgrau-scc download
 
 ### Próxima ação
 
-**Cleanup desativado e removido na Fase 3.** Falta inventariar os journals de operações incertas e pacotes locais da Fase 0 antes de eliminar os módulos de migração, correção de LR e sounding históricos. O CI da remoção deve ser confirmado; os dois testes operacionais restantes da Fase 1 também permanecem pendentes.
+**Código da Fase 3 removido diretamente em `scc-integration-refactor`, sem PR.** O operador confirmou journals resolvidos; arquivos locais não foram inspecionados nem alterados pela API GitHub. Confirmar o CI final antes de avançar à Fase 4 (CLI/configuração). Os dois testes operacionais restantes da Fase 1 e a validação real SCC permanecem pendentes.
 
 Não executar uploads, substituições ou DELETE reais sem autorização explícita, ID adequado e preflight remoto. L0/L1/L2 e arquivos históricos devem continuar preservados.

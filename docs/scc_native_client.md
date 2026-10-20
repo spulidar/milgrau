@@ -77,22 +77,9 @@ an issue, a screenshot, or a copied command containing literal secrets.
 Use a restricted SCC upload-only user where possible. TLS certificate
 verification is **always on**.
 
-## Four operator commands
+## Three primary operator commands
 
 ```bash
-# Upgrade older local raw filenames and fix deployed SCC LR form validation.
-milgrau-scc upload --migrate-cache
-milgrau-scc upload --repair-lr-cache
-milgrau-scc upload --dry-run
-
-# Explicit single-ID upload-only retry after local LR filename correction,
-# original SCC backup validation and portal/API absence; NOT batch-safe:
-milgrau-scc upload --id 20240913spu1549 --retry-after-lr-fix --confirm
-
-# After a confirmed portal/API absence and recovery_upload_uncertain,
-# one explicitly authorized upload-only retry (never deletes):
-milgrau-scc upload --id 20240913spu1549 --retry-after-upload --confirm
-
 # Validate every staged packet, offline; no SCC credentials or network needed.
 milgrau-scc upload --dry-run
 
@@ -320,123 +307,24 @@ the `rs_...` file **alone is insufficient**: its
 entries must also be consistent. Do not edit an accepted or journalled
 submission to force a retry.
 
-## Incident: mixed SCC batch failure after manual sounding rename
+## Current SCC sounding preparation
 
-After the October 18 batch, two **independent** states must be kept
-separate:
+For newly generated inputs, LIBIDS stages `sounding_stage: awaiting_lipancora`
+only when observed soundings are enabled. LIPANCORA finalizes those inputs
+automatically, using independently verified local radiosonde observations
+and the corresponding session's scientific provenance. The
+`missing_policy: skip` and `fail` options remain supported. Packages
+already recorded in the SCC journal cannot be altered by finalization.
 
-- `20241008spu1650` (previously skipped because it exists remotely)
-  has a **local** legacy sounding filename/manifest checksum mismatch.
-  Do not run the 18-ID `--replace-existing --confirm` batch merely to
-  bypass this error.
-- `20241220spu0414` attempted an SCC Quick Upload POST which returned
-  to the HTML form rather than a confirmed measurement. The client
-  correctly journalled `upload_result_uncertain` and stopped the
-  remaining 15 IDs. The exact remote outcome must be checked through
-  `milgrau-scc status --id 20241220spu0414 --remote` and SCC portal
-  before any further remote attempt. Local filename repair does **not**
-  clear that durable uncertainty or authorize a second POST.
-
-For locally inconsistent **unjournalled** packets from the old
-`rs_<Measurement_ID>.nc` generation, the repair accepts either an optional
-single `--id`, or (by default) **all pending IDs**:
-
-```bash
-# Preview all 18 staged packets without changing anything:
-milgrau-scc sounding-repair --dry-run
-
-# Fix every eligible staged packet, without remote network operations:
-milgrau-scc sounding-repair --confirm
-
-# Or use the same operation on one specific measurement:
-milgrau-scc sounding-repair --id 20241008spu1650 --dry-run
-milgrau-scc sounding-repair --id 20241008spu1650 --confirm
-
-# Always check SCC package integrity offline before any remote action:
-milgrau-scc upload --dry-run
-```
-
-The bulk command does **not stop** when one ID has a mismatch or an SCC journal
-record. It prints `REPAIRABLE`, `REPAIRED`, `CURRENT`, `BLOCKED` or `ERROR`
-for **each** ID, with a count summary. When one or more packets return
-`ERROR`, the process exits nonzero **after checking every ID**. Journalled
-IDs that need correction are `BLOCKED` but do not prevent updating unrelated
-unjournalled packets. This removes the *whole-batch* barrier without erasing
-scientific provenance or resetting a potentially uncertain remote POST.
-An already valid journalled packet is reported as `CURRENT`; no changes are made.
-
-The repair accepts only the specific old sounding name and requires
-the old SHA-256 and byte size **still match the original manifest**,
-even if the operator has already moved the sounding to the short name
-manually. It validates the raw NetCDF's `Measurement_ID` and
-`Molecular_Calc`, and allows only an old or new
-`Sounding_File_Name` matching that measurement. It creates a
-candidate staging directory and changes just the filename reference
-and raw file hash; the observed sounding and LR bytes are unchanged.
-It verifies the complete candidate before publication, moves the old
-folder into `.cache/scc/legacy-sounding/<ID>` as a durable preimage,
-and performs an atomic rename with rollback if validation fails.
-**Any existing SCC journal row** (including uncertain, accepted and
-downloaded) blocks this operation. If the raw NetCDF has already
-been manually edited without updating the manifest checksum, this
-repair deliberately fails closed: inspect/recover the original copy,
-rather than overwriting unverified provenance.
-
-Even after the local dry-run is green, **do not repeat the batch until
-the `20241220spu0414` uncertain remote upload has been explicitly
-reconciled**. An unconfirmed POST should not be blindly retried.
-
-## Explicit historical backfill (old pending SCC packets after LIPANCORA)
-
-Older pending packets staged before the two-stage LIBIDS/LIPANCORA
-handoff have `sounding_stage: not_requested` (or no stage entry).
-Running LIPANCORA does **not** implicitly change them. To prepare
-such packets from **existing** validated L1 observations without
-reprocessing LIBIDS/LIPANCORA or contacting SCC:
-
-```bash
-# Preview each historical Measurement_ID and its source L1/observational QA:
-milgrau-scc sounding --dry-run
-
-# Optional single-ID preview:
-milgrau-scc sounding --id 20241008spu1650 --dry-run
-
-# Explicitly backfill every eligible historical pending packet, offline:
-milgrau-scc sounding --confirm
-
-# Final integrity validation (shows rs_YYYYMMDDcccNN.nc for eligible packets):
-milgrau-scc upload --dry-run
-```
-
-The new `sounding` subcommand has only **dry-run** and **confirm**;
-neither opens the SCC network client nor uploads measurements. In
-preview, `READY` means L1 identifies a radiosonde observation that
-can be retrieved from the corresponding Wyoming CSV/JSON cache
-with matching station and target UTC time. The synoptic selection
-uses the **scientific session midpoint**, matching LIPANCORA's QA
-reference; it does not blindly compare against the first laser profile. `SKIP` means no eligible
-observed sounding, no L1 or a packet already finalized; it is
-left byte-for-byte intact. `BLOCKED` means any durable SQLite
-submission state already exists for the ID; it is never modified.
-`ERROR` identifies invalid/inconsistent scientific provenance or
-staging and prevents changes.
-
-With `--confirm`, only READY unsubmitted packets are revised,
-using the atomic temporary directory/rollback safeguards. The
-scientific L0, L1, original Licel inputs, L1 atmospheric data,
-and LR file remain unchanged. The SCC-specific raw `<ID>.nc`
-gains `Sounding_File_Name=rs_YYYYMMDDcccNN.nc` and `Molecular_Calc=1`;
-the new observed sounding and revised raw hashes are recorded in
-`manifest.json`. Its original SCC catalog hash remains recorded;
-the backfill's current catalog hash is stored separately to avoid
-misrepresenting its original production provenance.
-
-**This is a local preparation step, not remote validation.**
-IDs already submitted (including the accepted
-`20240913spu1549`) are protected. Some of the remaining historical
-packets may have no existing radiosonde observation; do not invent
-a sounding or force it into the cache. Test *one* READY/new remote ID
-after the local preview/backfill, before running any bulk SCC upload.
+The historical `milgrau-scc sounding` and `sounding-repair` commands,
+`upload --migrate-cache`, `upload --repair-lr-cache`, and the
+incident-specific `--retry-after-upload`/`--retry-after-lr-fix` options
+were removed. They must not be used on existing jobs. `upload --dry-run`
+validates current `<Measurement_ID>.nc`, `lr_YYYYMMDDcccNN.nc` and optional
+`rs_YYYYMMDDcccNN.nc` names. Recreate incompatible, unsubmitted
+historical inputs through explicit session SCC re-export after inspecting
+the journal and original science; do not rewrite submitted/uncertain inputs
+or silently resume historical network POSTs.
 
 ## Phase 12.6 — Verified SCC results and persistent inputs
 

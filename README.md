@@ -158,19 +158,17 @@ milgrau-libids -i spu_20250511-0012Z_20250511-0737Z --scc-reexport
 
 This command requires the archived raw measurements and a valid existing
 canonical L0 but **does not rewrite that L0**. Normal incremental processing
-does not regenerate deleted cache files. Existing `*_L0_scc.nc` files from
+does not regenerate deleted SCC inputs. Existing `*_L0_scc.nc` files from
 older runs are retained without modification.
 
 Phase 12.4 provides an **optional native SCC client** (no dependency on the
-historic scc_access package). Install and validate existing packets offline:
+historic scc_access package). Install and validate session-local inputs offline:
 
 ```bash
 python -m pip install -e ".[scc]"
-milgrau-scc upload --migrate-cache  # local-only migration of existing pending raw.nc
-milgrau-scc sounding --dry-run   # preview older pending packets using existing LIPANCORA L1
-milgrau-scc sounding --confirm   # offline backfill only eligible unsubmitted packets
 milgrau-scc upload --dry-run
 milgrau-scc status
+milgrau-scc download
 ```
 
 Remote SCC submissions are always explicitly operator-authorized:
