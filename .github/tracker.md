@@ -138,38 +138,48 @@ Esses arquivos possuem alterações nas duas branches e devem ser revisados mesm
 
 ## 2. Simplificação do workflow SCC
 
+### Progresso da Fase 2 — implementação em PR #5
+
+- Identidade imutável de manifesto/hashes centralizada no journal SQLite, sem migração destrutiva do schema.
+- Reconciliação de DELETE incerto com arquivo verificado **ou** dispensa explícita de backup registrada na revisão corrente; SCC deve confirmar ausência antes de qualquer POST.
+- Um único caminho journalizado de POST de recuperação mantém estados incertos bloqueados e nunca repete DELETE.
+- `status --remote` fornece orientação somente de leitura para estados incertos, inclusive quando a API retorna 404 (ausência não autoriza retry de POST).
+- Preflight da substituição sem backup ocorre antes de reiniciar a revisão do journal, preservando histórico em caso de falha.
+- Os comandos específicos para incidentes antigos foram mantidos provisoriamente: sua remoção depende do inventário de arquivos e journals locais das Fases 0/3.
+- Segurança verificada em testes simulados, sem POST/DELETE reais. A validação com servidor SCC e dados históricos permanece pendente.
+
 ### 2.1. `scc/workflow.py`
 
 - [ ] Separar claramente três operações: envio novo, substituição explícita e reconciliação de estado incerto.
-- [ ] Unificar validações repetidas de ID, manifesto, hashes e configuração.
+- [x] Unificar validações repetidas de ID, manifesto, hashes e configuração.
 - [ ] Reduzir caminhos condicionais associados a incidentes históricos.
-- [ ] Manter preflight remoto antes de qualquer exclusão.
-- [ ] Manter confirmação explícita para substituições.
-- [ ] Tratar a substituição sem backup como fluxo operacional normal autorizado.
-- [ ] Implementar reconciliação de DELETE incerto mesmo quando nenhum backup foi produzido.
-- [ ] Padronizar reconciliação após POST incerto.
-- [ ] Permitir nova tentativa somente após avaliação explícita do estado remoto e dos registros disponíveis.
-- [ ] Manter proteção contra repetição automática de POST/DELETE após resultado desconhecido.
+- [x] Manter preflight remoto antes de qualquer exclusão.
+- [x] Manter confirmação explícita para substituições.
+- [x] Tratar a substituição sem backup como fluxo operacional normal autorizado.
+- [x] Implementar reconciliação de DELETE incerto mesmo quando nenhum backup foi produzido.
+- [x] Padronizar reconciliação após POST incerto.
+- [x] Permitir nova tentativa somente após avaliação explícita do estado remoto e dos registros disponíveis.
+- [x] Manter proteção contra repetição automática de POST/DELETE após resultado desconhecido.
 - [ ] Evitar manter diversos comandos de recuperação específicos para incidentes antigos.
 
 ### 2.2. `scc/backup.py`
 
-- [ ] Tornar o backup remoto estritamente opcional.
-- [ ] Remover dependências obrigatórias de backup do fluxo de substituição confirmada.
+- [x] Tornar o backup remoto estritamente opcional.
+- [x] Remover dependências obrigatórias de backup do fluxo de substituição confirmada.
 - [ ] Manter apenas funções que sejam necessárias para backup solicitado pelo operador ou verificação de dados.
 - [ ] Avaliar centralizar verificações de identidade remota em um único módulo.
-- [ ] Evitar duplicação de download de arquivos já implementado em `results.py`.
+- [x] Evitar duplicação de download de arquivos já implementado em `results.py`.
 
 ### 2.3. `scc/state.py`
 
-- [ ] Manter SQLite como histórico operacional local, sem utilizá-lo como fonte do estado atual do servidor.
-- [ ] Preservar registro das operações potencialmente irreversíveis e seus resultados incertos.
+- [x] Manter SQLite como histórico operacional local, sem utilizá-lo como fonte do estado atual do servidor.
+- [x] Preservar registro das operações potencialmente irreversíveis e seus resultados incertos.
 - [ ] Revisar estados e transições redundantes.
-- [ ] Centralizar a reconciliação do journal.
-- [ ] Garantir que `status --remote` funcione sem journal local.
-- [ ] Garantir que download de resultados não exija journal quando a sessão for conhecida.
-- [ ] Preservar leitura de journals históricos necessários à resolução de operações pendentes.
-- [ ] Manter journal e arquivos operacionais fora do GitHub.
+- [x] Centralizar a reconciliação do journal.
+- [x] Garantir que `status --remote` funcione sem journal local.
+- [x] Garantir que download de resultados não exija journal quando a sessão for conhecida.
+- [x] Preservar leitura de journals históricos necessários à resolução de operações pendentes.
+- [x] Manter journal e arquivos operacionais fora do GitHub.
 
 **Gate 2:** upload, substituição e recuperação utilizam um fluxo coerente, sem dependências artificiais de backups ou incidentes antigos.
 
@@ -350,7 +360,7 @@ milgrau-scc cleanup
 |---|---|
 | 0. Baseline e preparação | Parcialmente concluída |
 | 1. Merge das mudanças de `main` | Integrada, CI 6/6; dois testes operacionais pendentes |
-| 2. Simplificação do workflow SCC | Pendente |
+| 2. Simplificação do workflow SCC | Núcleo de segurança implementado em PR #5; revisão de estados e comandos históricos pendente |
 | 3. Remoção de código transitório | Pendente |
 | 4. CLI e configuração | Pendente |
 | 5. Validação e regressões | Pendente |
@@ -359,6 +369,6 @@ milgrau-scc cleanup
 
 ### Próxima ação
 
-**A Fase 1 já foi incorporada à branch SCC. Antes de remover ferramentas históricas, concluir o inventário local dos pacotes e journals pendentes da Fase 0 e os dois testes operacionais restantes da Fase 1.**
+**O núcleo da Fase 2 está em revisão no PR #5.** Concluir o CI e incorporar na branch SCC; depois verificar os journals de operações incertas e pacotes locais da Fase 0 antes de eliminar caminhos históricos, consolidar comandos e revisar estados redundantes. Os dois testes operacionais restantes da Fase 1 também permanecem pendentes.
 
-A próxima fase de código é a simplificação do workflow SCC (Fase 2), mantendo uploads/DELETE remotos apenas sob autorização explícita, preservando histórico, resultados e produtos científicos.
+Não executar uploads, substituições ou DELETE reais sem autorização explícita, ID adequado e preflight remoto. L0/L1/L2 e arquivos históricos devem continuar preservados.
