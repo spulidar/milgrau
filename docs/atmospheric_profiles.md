@@ -76,19 +76,28 @@ required UTC hours, including session-bracketing hours. A single selected
 session requests only its missing hours; a bulk run plans all pending sessions
 together, without requesting every hour of every calendar day.
 
-ERA5 CDS requests group days with **identical lists of required hours** within
-one UTC month; this prevents unintended day × time Cartesian-product
-overfetch. The initial ceiling is **80,000 CDS fields per request**
-(2 variables × the configured number of pressure levels × actual day-hour
-combinations). Requests are issued sequentially to avoid saturating CDS.
-The CDS may still reject or queue requests below this ceiling.
+ERA5 CDS requests combine sparse dates within **one UTC month**, first
+merging identical hour sets and then permitting up to **2× requested
+day-hour combinations** when doing so reduces the number of jobs. The
+planner accounts for CDS day × time Cartesian products explicitly; validated
+extra hours are cached for later use. Each job still respects the initial
+**80,000-field ceiling** (2 variables × pressure levels × all requested
+day-hour combinations), and the actual useful/extra fields are logged.
+Requests are issued sequentially to avoid saturating CDS. The service can
+still reject or queue requests under this ceiling.
 
 The validated NetCDF and JSON sidecar for each hourly profile remain under
 `.cache/era5/YYYY/MM/`. Reconstructible request metadata lives under
 `.cache/era5/requests/`; it never replaces the actual data. Missing hours
 are requested only when the cache has no validated compatible file.
 Hourly files from completed requests survive a later failed batch.
-An uncertain submitted CDS request is **not blindly resubmitted**.
+An unresolved `submitted` or `uncertain` CDS ledger blocks **new**
+requests with an actionable error containing the ledger path. This
+preflight checks the complete reconstructible request ledger, including
+requests made with older planner versions. It deliberately requires
+remote-status reconciliation; the software cannot assume an interrupted
+blocking SDK call means a queued remote job was cancelled. No old
+ledger is automatically deleted or force-reset.
 
 A strictly configured `level1.atmosphere.missing_policy` chooses
 `require_era5` (the experimental branch default: fail rather than finalize
