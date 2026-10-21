@@ -66,3 +66,34 @@ def test_header_cache_keeps_current_classification_outside_cache(tmp_path: Path)
         second = cache.header(str(raw), "dark_current", reader)
     assert first == second
     assert len(events) == 1
+
+
+def test_l0_provenance_lookup_requires_unambiguous_current_headers(
+    tmp_path: Path,
+) -> None:
+    import pytest
+    from milgrau.level0.header_cache import source_paths_from_level0
+
+    cache_dir = tmp_path / "cache"
+    raw_one = tmp_path / "a" / "raw"
+    raw_one.parent.mkdir()
+    raw_one.write_bytes(b"source1")
+    raw_two = tmp_path / "b" / "raw"
+    raw_two.parent.mkdir()
+    raw_two.write_bytes(b"source2")
+
+    def reader(_path):
+        return datetime(2020, 1, 1), datetime(2020, 1, 1, 1), 3600., 1, 1
+
+    with LicelHeaderCache(cache_dir, logging.getLogger("test.lookup")) as journal:
+        journal.header(str(raw_one), "measurements", reader)
+    assert source_paths_from_level0(cache_dir, ["raw"]) == [str(raw_one.resolve())]
+    with LicelHeaderCache(cache_dir, logging.getLogger("test.lookup")) as journal:
+        journal.header(str(raw_one), "measurements", reader)
+        journal.header(str(raw_two), "measurements", reader)
+    with pytest.raises(ValueError, match="Ambiguous"):
+        source_paths_from_level0(cache_dir, ["raw"])
+    raw_two.unlink()
+    assert source_paths_from_level0(cache_dir, ["raw"]) == [str(raw_one.resolve())]
+    raw_one.write_bytes(b"changed")
+    assert source_paths_from_level0(cache_dir, ["raw"]) is None

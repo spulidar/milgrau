@@ -15,6 +15,7 @@ from milgrau.io.era5 import (
     CDS_API_URL,
     fetch_era5_pressure_level_profile,
     prefetch_era5_pressure_level_profiles,
+    plan_era5_requests,
 )
 
 
@@ -198,3 +199,58 @@ def test_era5_prefetch_uses_one_request_per_utc_day_and_populates_hourly_cache(
     )
     assert len(available_again) == 5
     assert calls == []
+
+
+def test_sparse_monthly_request_planner_avoids_cartesian_overfetch() -> None:
+    hours = [
+        datetime(2020, 1, 7, hour, tzinfo=timezone.utc)
+        for hour in (11, 12)
+    ] + [
+        datetime(2020, 1, 8, hour, tzinfo=timezone.utc)
+        for hour in (11, 12)
+    ] + [
+        datetime(2020, 1, 9, hour, tzinfo=timezone.utc)
+        for hour in (15, 16)
+    ] + [
+        datetime(2020, 1, 10, hour, tzinfo=timezone.utc)
+        for hour in (11, 12)
+    ]
+    planned = plan_era5_requests(
+        hours, -23.5, -46.75, _settings(),
+    )
+    assert len(planned) == 2
+    assert sum(fields for _, _, _, fields in planned) == 8 * 2 * 3
+    covered = []
+    for requested_hours, _, request, fields in planned:
+        assert len(requested_hours) * 2 * 3 == fields
+        assert len(request["day"]) * len(request["time"]) * 2 * 3 == fields
+        assert fields <= 80_000
+        for day in request["day"]:
+            for time in request["time"]:
+                covered.append(f"2020-01-{day}T{time}")
+    expected = sorted(dt.strftime("%Y-%m-%dT%H:00") for dt in hours)
+    assert sorted(covered) == expected
+
+
+def test_sparse_era5_planner_splits_on_field_ceiling() -> None:
+    hours = [
+        datetime(2020, 1, day, hour, tzinfo=timezone.utc)
+        for day in (7, 8, 9) for hour in (11, 12)
+    ]
+    planned = plan_era5_requests(
+        hours, -23.5, -46.75, _settings(), max_fields=24,
+    )
+    assert len(planned) == 2
+    assert [fields for _, _, _, fields in planned] == [24, 12]
+    assert len(planned[0][2]["day"]) == 2
+    assert len(planned[1][2]["day"]) == 1
+
+
+def test_era5_planner_never_crosses_utc_month_boundary() -> None:
+    hours = [
+        datetime(2020, 1, 31, 23, tzinfo=timezone.utc),
+        datetime(2020, 2, 1, 0, tzinfo=timezone.utc),
+    ]
+    planned = plan_era5_requests(hours, -23.5, -46.75, _settings())
+    assert len(planned) == 2
+    assert [entry[2]["month"] for entry in planned] == [["01"], ["02"]]
