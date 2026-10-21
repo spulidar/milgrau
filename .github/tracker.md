@@ -357,6 +357,46 @@ milgrau-scc download
 
 **Gate 5 (parcial):** testes automatizados aprovados e nenhuma regressão científica conhecida nos cenários simulados. Comparação de amostras científicas reais antes/depois e verificação real no servidor SCC permanecem obrigatórias antes de declarar validação integral.
 
+### 5.5. Otimização de inventários e planejamento atmosférico — plano aprovado (20/10/2026)
+
+**Decisão:** implementar **antes da Fase 6**, diretamente em `scc-integration-refactor`, sem PR e sem alteração de `main`. Este item é um **plano aprovado, ainda não implementado**. O cache LIBIDS e o cache ERA5 são reconstruíveis e **não substituem** a proveniência científica L0/L1/L2 nem o journal operacional SCC. Não executar operações remotas SCC destrutivas.
+
+**Motivação observada na máquina do operador:** `milgrau-libids -i <Session_ID> --scc-reexport` leu 246.853 candidatos Licel e levou 276,9 s para inventariar seis anos antes de selecionar uma sessão (137 medições e 22 dark currents). A execução real do SCC aceitou `20200107spu1130` (configuração 565), mas o ELPP retornou `-127`, impossibilitando download; não atribuir a causa às nuvens sem diagnóstico do SCC. Pacotes históricos `awaiting_lipancora` não mudam quando `scc_policy.sounding.enabled` é desligado depois da criação. A branch local utilizada pelo operador deve ser confirmada antes de validar conclusões de regressão.
+
+#### 5.5.1. LIBIDS: cache persistente apenas de cabeçalhos Licel
+
+- [ ] Criar índice **reconstruível**, preferencialmente SQLite em `.cache/libids/inventory.sqlite`, sem torná-lo journal científico nem versioná-lo no Git.
+- [ ] Na primeira execução, examinar os cabeçalhos Licel e guardar caminho, classificação, timestamps UTC, duração, disparos, frequência e demais metadados mínimos do inventário.
+- [ ] Em execuções seguintes, fazer descoberta leve no filesystem; reutilizar cabeçalhos se caminho, tamanho, `mtime_ns` e versão do parser/esquema forem compatíveis. Ler somente novos/alterados; remover registros de arquivos excluídos. Se o índice estiver ausente/inválido, reconstruí-lo com segurança.
+- [ ] Aplicar seleções `-i` por sessão, data local ou caminho **antes** de realizar QA e processamento desnecessários; evitar reconstruir o inventário científico completo quando a seleção é restrita e resolvível.
+- [ ] Preservar exatamente a sessãoização global, travessias de dias/meses, perfis/calibrações, empates e associação de dark currents na janela configurada. Cabeçalhos podem ser cacheados, mas **sessões, QA e decisões científicas não devem ficar congelados no SQLite**.
+- [ ] Sem `-i`, processar o inventário completo a partir dos cabeçalhos indexados, atualizando apenas alterações; sem falhas silenciosas quando dados ou configuração mudarem.
+- [ ] Testar índice frio/quente, arquivos acrescentados/modificados/excluídos, mudança do parser, mudança de configuração científica, períodos de fronteira e equivalência contra o inventário completo.
+- [ ] Medir na máquina do operador tempo de descoberta, leitura de cabeçalhos, seleção e QA. Critério principal: `-i` não exige reler ~246 mil cabeçalhos inalterados.
+
+#### 5.5.2. SCC-only reexport: reutilizar L0 e índice
+
+- [ ] `milgrau-libids -i SESSION_ID --scc-reexport` deve localizar o L0 canônico existente e os arquivos Licel de origem via proveniência do L0 + índice de cabeçalhos, sem refazer a leitura integral do acervo.
+- [ ] Como o L0 atual pode registrar **nomes base** (`Source_Files`), e não caminhos absolutos, resolver nomes somente quando únicos; sinalizar ausência/ambiguidade, sem escolher um arquivo arbitrariamente.
+- [ ] Preservar QA relevante, tempos/segmentos, identidade instrumental e hashes dos L0/L1/L2. Nunca reescrever ciência canônica nem sobrescrever automaticamente inputs SCC já staged/journalled/aceitos.
+- [ ] Comparar reexport por índice versus inventário completo sobre sessões reais e sintéticas, incluindo dark currents e múltiplos arquivos com o mesmo basename.
+
+#### 5.5.3. LIPANCORA: planejar ERA5 globalmente e baixar em lote no run normal
+
+- [ ] Integrar o prefetch ao `milgrau-lipancora` existente, **sem comando adicional obrigatório**: com `-i` considerar somente L0/sessões selecionados; sem `-i` descobrir todos os L0 elegíveis e planejar os horários de uma vez, antes de processar os L1.
+- [ ] Ler períodos UTC dos L0; calcular exatamente as horas de análise requeridas pela cadência da atmosfera, inclusive horas de enquadramento e sessões que atravessam dias; deduplicar as horas de todas as sessões.
+- [ ] Criar inventário/plano reconstruível dentro de `.cache/era5` (por exemplo `inventory.json` e `requests/<hash>.json`), registrando requisição, horas esperadas, estado e resultados validados. O dado de referência são os L0 e os NetCDF horários **já existentes** no cache, não o status do plano.
+- [ ] Validar os arquivos horários existentes (integridade, configuração, coordenadas/grade, níveis e variáveis) antes de considerá-los disponíveis; baixar **somente horas ausentes** e evitar solicitar horas de L1 já atualizado, salvo necessidade explícita de recomputação científica.
+- [ ] Selecionar fragmentos de dias e horas realmente necessários, **sem presumir 24 horas por dia**. Agrupar dias que compartilham horários; tratar explicitamente o produto cartesiano de listas `year/month/day/time` do CDS e contabilizar **todos os campos efetivamente pedidos**, inclusive horas extras, se agrupamento com pequeno excesso for mais vantajoso.
+- [ ] Usar **teto inicial de 80.000 campos por request** (referência discutida: 120.000 campos, **não garantia de aceitação/capacidade**). Configuração atual: temperatura + geopotencial × 37 níveis = **74 campos por hora**; máximo matemático de 1.081 combinações hora-localização por request sob esse teto. Dividir por período/limites do CDS, tamanho estimado e produto cartesiano; evitar request único de múltiplos anos.
+- [ ] Despachar **uma solicitação ativa por vez**, com controle de saturação, esperas e retomada segura. Registrar IDs/estado de jobs quando o CDS permitir; não reabrir cegamente um pedido que continua em andamento nem criar filas massivas. Distinguir falha de capacidade, falha definitiva e resposta parcial.
+- [ ] Validar cada resposta NetCDF, extrair apenas horas correspondentes, gravar arquivos horários e sidecars de forma atômica com proveniência; reutilizar o layout `.cache/era5/YYYY/MM/` e preservar todos os arquivos já obtidos quando um batch posterior falhar.
+- [ ] Para reprocessamento histórico definitivo, definir política explícita de ausência ERA5 (preferencialmente exigir ERA5 antes de concluir um L1 definitivo). Manter USSA76 como fallback **deliberado**, com fonte registrada; não marcar como cientificamente atualizado um L1 provisório apenas porque CDS estava indisponível. Preservar resultados e física do LIPANCORA.
+- [ ] Testar horários esparsos, dias com padrões iguais/diferentes, meses/anos e UTC, deduplicação, produto cartesiano, limite de 80k, cache hit/miss, dados inválidos, retomada, throttling e equivalência de temperatura/pressão dos L1 contra perfis obtidos pelo fluxo atual.
+- [ ] Benchmark real: número de requests, campos solicitados úteis/extras, hits de cache, tempo até L1 e comportamento com CDS saturado. Não confundir limite de campos com garantia de slot disponível.
+
+**Gates de aceitação desta extensão da Fase 5:** equivalência científica e temporal comprovada, reexport não destrutivo, nenhuma dependência de estado persistente irreconstruível, seleção eficiente de sessão única, requests ERA5 apenas necessários (com overhead contabilizado), nenhum request >80k campos e CI 6/6. A validação remota SCC e a comparação L0/L1/L2 com dados reais continuam gates separados.
+
 ---
 
 ## 6. Documentação e finalização
@@ -399,12 +439,12 @@ milgrau-scc download
 | 2. Simplificação do workflow SCC | Núcleo integrado e CI do PR aprovado; revisão de estados e comandos históricos pendente |
 | 3. Remoção de código transitório | Concluída no código, CI 6/6; pacotes locais não inspecionados pela API |
 | 4. CLI e configuração | Concluída no código, CI 6/6; default de `main` reservado para Gate 7 |
-| 5. Validação e regressões | CI 6/6 e testes simulados aprovados; amostras reais e SCC remoto pendentes |
+| 5. Validação e regressões | CI 6/6 anterior; otimizações de inventário LIBIDS e prefetch ERA5 aprovadas, ainda não implementadas; validação real pendente |
 | 6. Documentação | Pendente |
 | 7. Merge final em `main` | Pendente |
 
 ### Próxima ação
 
-**Fase 5 automatizada validada no CI 6/6** (código `a3c6c211`, 726 testes no Linux/Python 3.12); evidências em `docs/scc_phase5_validation.md`. Pendem a comparação antes/depois com amostras científicas reais, a verificação de upload/sounding/download no SCC real e os dois testes operacionais da Fase 1. Nenhum POST/DELETE remoto foi realizado. A documentação final (Fase 6) pode ser revisada sem confundir isso com o fechamento do Gate 5; a configuração padrão de `main` permanece no Gate 7.
+**Próxima execução — extensão aprovada da Fase 5 (§5.5):** implementar e validar o cache de cabeçalhos/seleção do LIBIDS, o SCC-only reexport por proveniência do L0 e o planejamento/prefetch automático de ERA5 no LIPANCORA (teto inicial **80.000 campos por request**, horários esparsos, 1 request ativo por vez). **Nada disso foi implementado neste commit de planejamento.** Depois verificar equivalência e desempenho em dados reais e fechar o Gate 5 com download SCC de um ID que conclua ELPP/ELDA. CI anterior 6/6 no código `a3c6c211`; continuam pendentes a comparação científica real e os testes operacionais da Fase 1. Nenhuma operação remota SCC executada nesta atualização; `main` permanece reservada ao Gate 7.
 
 Não executar uploads, substituições ou DELETE reais sem autorização explícita, ID adequado e preflight remoto. L0/L1/L2 e arquivos históricos devem continuar preservados.
