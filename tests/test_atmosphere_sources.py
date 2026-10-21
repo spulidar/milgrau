@@ -423,3 +423,54 @@ def test_productive_radiosonde_missing_sounding_fails_without_ussa76_substitute(
             _config_with_priority("radiosonde"),
             logging.getLogger("test.radio-missing"),
         )
+
+
+def test_level1_contract_accepts_explicit_radiosonde_only_atmosphere_but_not_unmarked() -> None:
+    from milgrau.io.contracts import _validate_level1_atmosphere
+
+    alt = np.array([0., 1000., 2000.])
+    radio = xr.Dataset(
+        data_vars={
+            "Atmospheric_Temperature_K": (
+                ("atmosphere_time", "altitude"),
+                np.array([[292., 286., 279.]], dtype=float),
+            ),
+            "Atmospheric_Pressure_hPa": (
+                ("atmosphere_time", "altitude"),
+                np.array([[1000., 900., 800.]], dtype=float),
+            ),
+            "Atmospheric_Source_Type": (
+                ("atmosphere_time",), np.array(["radiosonde"], dtype=object),
+            ),
+            "Atmospheric_Source_Time_Delta_hours": (
+                ("atmosphere_time",), [0.0],
+            ),
+            "Atmospheric_USSA76_Fallback_Fraction": (
+                ("atmosphere_time",), [0.25],
+            ),
+        },
+        coords={
+            "atmosphere_time": pd.to_datetime(["2024-06-10T12:00:00"]),
+            "altitude": alt,
+        },
+        attrs={
+            "level1_atmosphere_mode": "radiosonde_only",
+            "thermodynamic_source_priority": "radiosonde",
+            "thermodynamic_profile_source_type": "time_resolved",
+            "thermodynamic_profile_available": "true",
+            "thermodynamic_profile_standard_fallback_fraction": 0.25,
+        },
+    )
+    _validate_level1_atmosphere(radio)
+    without_mode = radio.drop_attrs()
+    without_mode.attrs.update(radio.attrs)
+    without_mode.attrs.pop("level1_atmosphere_mode")
+    with pytest.raises(ValueError, match="only era5 and ussa76"):
+        _validate_level1_atmosphere(without_mode)
+    with_wrong_priority = radio.copy()
+    with_wrong_priority.attrs = {
+        **radio.attrs,
+        "thermodynamic_source_priority": "era5,ussa76",
+    }
+    with pytest.raises(ValueError, match="source priority"):
+        _validate_level1_atmosphere(with_wrong_priority)
