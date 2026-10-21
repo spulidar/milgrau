@@ -76,23 +76,34 @@ required UTC hours, including session-bracketing hours. A single selected
 session requests only its missing hours; a bulk run plans all pending sessions
 together, without requesting every hour of every calendar day.
 
-ERA5 CDS requests combine sparse dates within **one UTC month**, first
-merging identical hour sets and then permitting up to **2× requested
-day-hour combinations** when doing so reduces the number of jobs. The
-planner accounts for CDS day × time Cartesian products explicitly; validated
-extra hours are cached for later use. Each job still respects the initial
-**80,000-field ceiling** (2 variables × pressure levels × all requested
-day-hour combinations), and the actual useful/extra fields are logged.
-Requests are issued sequentially to avoid saturating CDS. The service can
-still reject or queue requests under this ceiling.
+ERA5 bulk prefetch now requests **GRIB** in **month-scoped batches**:
+one CDS job per UTC month containing missing hours, whenever the field budget
+allows. A month selects only days that have missing hours, and the **union
+of hours** needed across those days. CDS expands lists of days × hours,
+so the request counts every resulting combination, including extras.
+Even 31 days × 24 hours × 37 levels × 2 variables is only **55,056 fields**
+under the 80,000-field ceiling. Larger configurations are split safely by
+days and, if necessary, hours. The planner reports required and extra fields,
+and dispatches **one job at a time**.
+
+The native GRIB payload is decoded locally by `cfgrib` + ECMWF `ecCodes`.
+Only the actual *missing hours required by the selected L0 sessions* are
+converted into the existing hourly NetCDF + JSON sidecar cache; the GRIB
+batch file is temporary. Converted profiles have the same ERA5 temperature,
+geopotential and pressure-level values as the native response; L1 science
+and the hourly cache format remain unchanged. Optional GRIB engine index
+sidecars are disabled. Before local operations, verify the decoder with
+`python -m cfgrib selfcheck`. The CDS can still reject or queue a request
+below the field ceiling; this design does not guarantee remote throughput.
 
 The validated NetCDF and JSON sidecar for each hourly profile remain under
 `.cache/era5/YYYY/MM/`. Reconstructible request metadata lives under
 `.cache/era5/requests/`; it never replaces the actual data. Missing hours
 are requested only when the cache has no validated compatible file.
 Hourly files from completed requests survive a later failed batch.
-An unresolved `submitted` or `uncertain` CDS ledger blocks **new**
-requests with an actionable error containing the ledger path. This
+An unresolved `submitted` or `uncertain` CDS ledger from **either**
+the old NetCDF or new GRIB planner blocks **new** requests with an
+actionable error containing the ledger path. This
 preflight checks the complete reconstructible request ledger, including
 requests made with older planner versions. It deliberately requires
 remote-status reconciliation; the software cannot assume an interrupted
