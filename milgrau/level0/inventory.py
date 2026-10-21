@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from contextlib import nullcontext
+from pathlib import Path
 from time import perf_counter
 
 import numpy as np
@@ -13,6 +15,7 @@ from milgrau.io.licel import read_licel_header
 from milgrau.io.logging_utils import bind_log_context
 from milgrau.io.paths import build_session_id, station_id
 from milgrau.level0.config import resolve_level0_config, station_timezone
+from milgrau.level0.header_cache import LicelHeaderCache
 
 
 def _normalize_header_times(df_raw: pd.DataFrame) -> pd.DataFrame:
@@ -417,39 +420,50 @@ def build_session_inventory(
     last_progress = headers_started
     records = []
     progress_every = max(1000, len(file_paths) // 10)
-    for position, (filepath, file_type) in enumerate(zip(file_paths, file_types), start=1):
-        start_time_utc, stop_time, duration, n_shots, laser_freq = read_licel_header(
-            filepath,
-            logger=header_logger,
-        )
-        if start_time_utc is not None:
-            records.append(
-                {
-                    "filepath": filepath,
-                    "meas_type": file_type,
-                    "start_time_utc": start_time_utc,
-                    "stop_time": stop_time,
-                    "nshots": n_shots,
-                    "duration": duration,
-                    "laser_freq": laser_freq,
-                }
+    config_path = config.get("_config_file")
+    # A loaded config provides a stable project-local cache path. Pure library
+    # test/config callers without that path stay stateless.
+    cache_context = (
+        LicelHeaderCache(Path(config_path).resolve().parent / ".cache" / "libids", header_logger)
+        if config_path else nullcontext(None)
+    )
+    with cache_context as cache:
+        for position, (filepath, file_type) in enumerate(zip(file_paths, file_types), start=1):
+            start_time_utc, stop_time, duration, n_shots, laser_freq = (
+                cache.header(
+                    filepath, file_type,
+                    lambda path: read_licel_header(path, logger=header_logger),
+                )
+                if cache is not None else read_licel_header(filepath, logger=header_logger)
             )
-        now = perf_counter()
-        if (
-            position % progress_every == 0
-            or now - last_progress >= 20.0
-        ) and position < len(file_paths):
-            header_logger.info(
-                "read %d/%d (%.0f%%) | %d accepted | %d invalid | %.1fs",
-                position,
-                len(file_paths),
-                position * 100.0 / len(file_paths),
-                len(records),
-                position - len(records),
-                now - headers_started,
-            )
-            last_progress = now
-
+            if start_time_utc is not None:
+                records.append(
+                    {
+                        "filepath": filepath,
+                        "meas_type": file_type,
+                        "start_time_utc": start_time_utc,
+                        "stop_time": stop_time,
+                        "nshots": n_shots,
+                        "duration": duration,
+                        "laser_freq": laser_freq,
+                    }
+                )
+            now = perf_counter()
+            if (
+                position % progress_every == 0
+                or now - last_progress >= 20.0
+            ) and position < len(file_paths):
+                header_logger.info(
+                    "read %d/%d (%.0f%%) | %d accepted | %d invalid | %.1fs",
+                    position,
+                    len(file_paths),
+                    position * 100.0 / len(file_paths),
+                    len(records),
+                    position - len(records),
+                    now - headers_started,
+                )
+                last_progress = now
+    
     header_logger.info(
         "read %d/%d | %d valid | %d invalid | %.1fs",
         len(file_paths),
