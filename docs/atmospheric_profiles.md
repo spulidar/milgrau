@@ -85,24 +85,32 @@ Run `milgrau-lipancora --radiosonde-only -i SESSION_ID` to process a
 selected L0 using the **University of Wyoming radiosonde** without ever
 requesting ERA5 or waiting for CDS. Without `-i`, the same switch applies
 to every eligible L0 in the Level 1 queue. This CLI override is ephemeral:
-`config.yaml` and the canonical source order remain unchanged.
+`config.yaml` and the normal ERA5/USSA76 source priority remain unchanged.
 
 A sounding is selected **independently for each hourly L1 atmosphere time**
 using the configured synoptic hours `[0, 12]` and the **six-hour**
 nearest-sounding window. The actual sounding timestamp and its age at each
-hour are recorded. If any required hour has no valid sounding, that session
-**fails** rather than silently materializing an all-USSA76 alternative.
+hour are recorded. If any required hour has no valid sounding, the session
+**fails** rather than silently generating a full-USSA76 substitute.
 Outside the observed vertical range of a valid sounding, the established
-`external_profile_outside_coverage: ussa76` policy still extends the
-profile vertically; its fraction is recorded as before. No radiosonde
-values are fabricated or interpolated across missing sounding dates.
+`external_profile_outside_coverage: ussa76` setting extends the profile
+vertically, with the fallback fraction recorded.
 
-The output uses a separate `*_radiosonde_L1.nc` variant instead of replacing
-`*_L1.nc` built using ERA5. The regular L1 remains canonical for the
-normal ERA5-based publication pipeline. Radiosonde variants are observational
-alternatives and must not be silently treated as methodologically
-equivalent to ERA5 products. Ordinary `milgrau-lipancora` continues to
-use the original ERA5/USSA76 recipe.
+**Output naming:** the radiosonde-only run deliberately writes the **normal**
+`SESSION_ID_L1.nc` and may **replace an existing ERA5 L1**. The NetCDF
+records `level1_atmosphere_mode=radiosonde_only`,
+`thermodynamic_source_priority=radiosonde`, and
+`Atmospheric_Source_Type=radiosonde`. This is an explicitly
+**non-productive-for-L2, provisional L1** in the current workflow. The
+LEBEAR L2 pipeline rejects such input even if a pre-existing L2 would
+otherwise qualify for incremental reuse; its error instructs the operator
+to rerun ordinary `milgrau-lipancora -i SESSION_ID` without
+`--radiosonde-only`. Incremental L1 selection recognizes mode changes
+so a normal run reprocesses radio-only L1 instead of skipping it as current.
+A normal run without the flag restores ERA5/USSA76 processing, provided
+the required ERA5 data can be obtained. Check its atmospheric source
+provenance, because the normal branch also allows an explicit USSA76
+fallback during CDS outages.
 
 ## Radiosonde comparison reference
 
