@@ -115,11 +115,20 @@ Wyoming/Siphon, or both, and retains the archive basename when applicable.
 The nominal UTC hour is used to match the configured synoptic hour; the
 actual release time in IGRA2 may differ from that nominal hour.
 
-A sounding is selected **independently for each hourly L1 atmosphere time**
-using the configured synoptic hours `[0, 12]` and the **six-hour**
-nearest-sounding window. The actual sounding timestamp and its age at each
-hour are recorded. If any required hour has no valid sounding, the session
-**fails** rather than silently generating a full-USSA76 substitute.
+A sounding is selected **independently for each hourly L1 atmosphere time**.
+This explicit provisional `--radiosonde-only` mode expands the temporal
+window to **12 hours** (whereas the ordinary ERA5/QA processing retains its
+configured **six-hour** selection). Cached observations at nominal UTC 00Z
+and 12Z are searched in order of their **actual age**, not just by closest
+nominal synoptic time. This matters for historical station 83779: dates with
+only a **12Z** archived sounding can use that same real profile at **19Z**
+(age **7 hours**) instead of repeatedly requesting a nonexistent **00Z**
+launch. The actual selected timestamp and age are recorded **per hourly
+profile**. The program does **not** synthesize a missing 00Z sounding,
+pretend that 12Z is equally representative of the evening, or silently
+extend the window beyond 12 hours. If no valid local observation exists
+within the window, Wyoming/Siphon is tried; if that also fails, the session
+**fails** instead of generating a full-USSA76 substitute.
 Outside the observed vertical range of a valid sounding, the established
 `external_profile_outside_coverage: ussa76` setting extends the profile
 vertically, with the fallback fraction recorded.
