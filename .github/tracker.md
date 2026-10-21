@@ -397,6 +397,12 @@ milgrau-scc download
 - [ ] Testar horários esparsos, dias com padrões iguais/diferentes, meses/anos e UTC, deduplicação, produto cartesiano, limite de 80k, cache hit/miss, dados inválidos, retomada, throttling e equivalência de temperatura/pressão dos L1 contra perfis obtidos pelo fluxo atual.
 - [ ] Benchmark real: número de requests, campos solicitados úteis/extras, hits de cache, tempo até L1 e comportamento com CDS saturado. Não confundir limite de campos com garantia de slot disponível.
 
+**Follow-up operacional em 20/10/2026 (logs `libids(6).log` / `lipancora(2).log`):**
+
+- **LIBIDS cache real comprovado:** primeira leitura `0 reused / 246853 parsed` (~271 s de cabeçalhos) e segunda `246853 reused / 0 parsed` (~17 s), ambas identificando **575 sessões**. Benchmark real de header cache satisfeito; equivalência de variáveis científicas e custo de QA/sessão ainda não verificados integralmente.
+- **Regressão real ERA5 identificada e corrigida no código:** 552 L0 falharam no preflight global com `missing or empty Level 0 time coordinate`; os L0 nativos têm dimensão `time` e `Raw_Data_Start_Time`, mas não coordenada datetime `time` até a ingestão L1. O pré-download foi corrigido para reutilizar `_decode_level0_time_axis`, inclusive na resolução temporal do perfil da estação, com teste reproduzindo NetCDF L0 nativo sem coordenada `time`. O run anterior retornou a um request isolado de 2h/148 campos; isso **não** valida batching global nem prova erro de download CDS.
+- **Aguardando reexecução local:** confirmar `global ERA5 plan | <N> L0 files | <M> unique site-hours` no início do LIPANCORA, em vez de 552 avisos; validar número/limite dos requests enviados e comportamento do CDS. O CI testa somente mocks; não marcar o pré-download ERA5 real como aprovado antecipadamente.
+
 **Gates de aceitação desta extensão da Fase 5:** equivalência científica e temporal comprovada, reexport não destrutivo, nenhuma dependência de estado persistente irreconstruível, seleção eficiente de sessão única, requests ERA5 apenas necessários (com overhead contabilizado), nenhum request >80k campos e CI 6/6. A validação remota SCC e a comparação L0/L1/L2 com dados reais continuam gates separados.
 
 ---
