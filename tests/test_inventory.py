@@ -545,3 +545,50 @@ def test_dark_current_association_normalizes_mixed_datetime_units(
     assert matched.loc[1, "dark_current_association_delta_hours"] == pytest.approx(0.0)
     assert pd.isna(matched.loc[2, "session_id"])
     assert matched.loc[2, "association_method"] == "unassociated"
+
+
+def test_temporal_inventory_selection_preserves_scientific_session_and_dark_currents(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    from milgrau.io.selection import parse_input_selection
+
+    # Extra sessions before/after compete for the nearest dark-current match.
+    times = [
+        datetime(2020, 1, 1, 12), datetime(2020, 1, 2, 12),
+        datetime(2020, 1, 2, 12, 20), datetime(2020, 1, 3, 12),
+    ]
+    paths = [str(tmp_path / f"measurement_{i}") for i in range(4)]
+    dark_paths = [str(tmp_path / "dark_a"), str(tmp_path / "dark_b")]
+    rows = {
+        path: (at, at + pd.Timedelta(minutes=10), 600., 600, 20.)
+        for path, at in zip(paths, times)
+    }
+    rows[dark_paths[0]] = (
+        datetime(2020, 1, 2, 13), datetime(2020, 1, 2, 13, 10), 600., 600, 20.,
+    )
+    rows[dark_paths[1]] = (
+        datetime(2020, 1, 3, 10), datetime(2020, 1, 3, 10, 10), 600., 600, 20.,
+    )
+    _patch_inventory(
+        monkeypatch, paths + dark_paths,
+        ["measurements"] * len(paths) + ["dark_current"] * len(dark_paths),
+        rows,
+    )
+    cfg = _config()
+    full = build_session_inventory(str(tmp_path), cfg, logging.getLogger("test.full"))
+    desired = "spu_20200102-1200Z_20200102-1230Z"
+    selected = parse_input_selection([desired], cfg)
+    scoped = build_session_inventory(
+        str(tmp_path), cfg, logging.getLogger("test.selected"),
+        selection=selected,
+    )
+    # Restrict the reference to the exact requested session; other sessions
+    # may legitimately be retained in the safe 24-hour candidate halo.
+    expected = full[full["session_id"] == desired].reset_index(drop=True)
+    actual = scoped[scoped["session_id"] == desired].reset_index(drop=True)
+    pd.testing.assert_frame_equal(
+        expected[sorted(expected.columns)], actual[sorted(actual.columns)],
+        check_like=True,
+    )
+    assert not actual.empty
+    assert set(actual["meas_type"]) == {"measurements", "dark_current"}
