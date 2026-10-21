@@ -41,6 +41,8 @@ def _config_with_priority(*sources: str, extension: str = "ussa76") -> dict:
     atmosphere = config["level1"]["atmosphere"]
     atmosphere["source_priority"] = list(sources)
     atmosphere["external_profile_outside_coverage"] = extension
+    # Existing fallback tests explicitly exercise the operational policy.
+    atmosphere["missing_policy"] = "allow_fallback"
     if "era5" not in sources:
         atmosphere.pop("era5", None)
     return config
@@ -358,4 +360,23 @@ def test_level2_rejects_old_level1_without_time_resolved_atmosphere() -> None:
             altitude,
             {},
             target_time=np.datetime64("2024-06-10T12:30:00"),
+        )
+
+
+def test_required_era5_does_not_silently_finalize_ussa76_on_cds_failure(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "milgrau.level1.thermodynamics.prefetch_era5_pressure_level_profiles",
+        lambda *args, **kwargs: set(),
+    )
+    monkeypatch.setattr(
+        "milgrau.level1.thermodynamics.fetch_era5_pressure_level_profile",
+        lambda *args, **kwargs: None,
+    )
+    config = _config_with_priority("era5", "ussa76")
+    config["level1"]["atmosphere"]["missing_policy"] = "require_era5"
+    with pytest.raises(RuntimeError, match="ERA5 required"):
+        integrate_thermodynamics(
+            _level1_shell(), config, logging.getLogger("test-required-era5"),
         )
