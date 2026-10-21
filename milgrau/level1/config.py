@@ -91,6 +91,7 @@ class AtmosphereConfig:
     external_profile_outside_coverage: str
     radiosonde: RadiosondeConfig | None
     era5: Era5Config | None
+    missing_policy: str = "allow_fallback"
 
 
 @dataclass(frozen=True, slots=True)
@@ -291,6 +292,7 @@ def _resolve_atmosphere_config(level1: Mapping[str, Any]) -> AtmosphereConfig:
         "time_resolution_minutes",
         "source_priority",
         "external_profile_outside_coverage",
+        "missing_policy",
         "radiosonde",
         "era5",
     }
@@ -351,7 +353,18 @@ def _resolve_atmosphere_config(level1: Mapping[str, Any]) -> AtmosphereConfig:
             "Configuration level1.atmosphere.era5 is present but era5 is absent from source_priority."
         )
 
-    return AtmosphereConfig(cadence_minutes, tuple(priority), extension, radiosonde, era5)
+    missing_policy = _text(
+        atmosphere.get("missing_policy", "allow_fallback"),
+        "level1.atmosphere.missing_policy",
+    ).lower()
+    if missing_policy not in {"allow_fallback", "require_era5"}:
+        raise Level1ConfigurationError(
+            "level1.atmosphere.missing_policy must be allow_fallback or require_era5."
+        )
+    return AtmosphereConfig(
+        cadence_minutes, tuple(priority), extension, radiosonde, era5,
+        missing_policy,
+    )
 
 
 def resolve_level1_config(config: Mapping[str, Any]) -> Level1Config:

@@ -30,6 +30,7 @@ from milgrau.level1.config import (
 )
 from milgrau.level1.corrections import apply_instrumental_corrections
 from milgrau.level1.diagnostics import finalize_correction_dataset
+from milgrau.level1.era5_prefetch import prefetch_selected_level0_atmosphere
 from milgrau.level1.figures import generate_level1_figures
 from milgrau.level1.ingestion import load_and_prepare_level0
 from milgrau.level1.pbl import estimate_pbl_timeseries
@@ -566,11 +567,18 @@ def process_level_1(config: Mapping[str, Any], logger: logging.Logger) -> Execut
     bind_log_context(logger, stage="queue").info(
         "%d files to process | %d skipped", len(files_to_process), len(skipped_results)
     )
+    globally_prefetched = prefetch_selected_level0_atmosphere(
+        files_to_process, config, logger,
+    )
+    run_config = (
+        {**config, "_era5_prefetched_by_lipancora": True}
+        if globally_prefetched else config
+    )
     results = list(skipped_results)
     for file_path in files_to_process:
         session_id = logging_session_id(file_path)
         file_logger = bind_log_context(logger, session_id=session_id)
-        result = process_single_file((str(file_path), config, file_logger))
+        result = process_single_file((str(file_path), run_config, file_logger))
         if result.status is ExecutionStatus.OK:
             duration = 0.0 if result.duration_seconds is None else result.duration_seconds
             channel_count = int(result.metadata.get("channel_count", 0))

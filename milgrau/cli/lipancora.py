@@ -10,6 +10,7 @@ from milgrau.config.loader import load_config
 from milgrau.io.logging_utils import bind_log_context, setup_logger
 from milgrau.io.paths import LEVEL0_SUFFIX, LEVEL1_SUFFIX, logging_session_id
 from milgrau.io.selection import parse_input_selection, resolve_product_selection
+from milgrau.level1.era5_prefetch import prefetch_selected_level0_atmosphere
 from milgrau.level1.figures import generate_level1_figures
 from milgrau.level1.lipancora import _files_requiring_level1, process_level_1, process_single_file
 from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary
@@ -109,11 +110,16 @@ def _process_selected(args: argparse.Namespace, config: dict, logger) -> Executi
     skipped = []
     if not args.force:
         files, skipped = _files_requiring_level1(files, config, logger)
+    globally_prefetched = prefetch_selected_level0_atmosphere(files, config, logger)
+    run_config = (
+        {**config, "_era5_prefetched_by_lipancora": True}
+        if globally_prefetched else config
+    )
     results = list(skipped)
     for path in files:
         session_id = logging_session_id(path)
         file_logger = bind_log_context(logger, session_id=session_id)
-        result = process_single_file((path, config, file_logger))
+        result = process_single_file((path, run_config, file_logger))
         if result.status is ExecutionStatus.OK:
             duration = 0.0 if result.duration_seconds is None else result.duration_seconds
             bind_log_context(file_logger, stage="done").info(

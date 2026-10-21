@@ -385,13 +385,14 @@ def integrate_thermodynamics(
     if "era5" in policy.source_priority:
         if policy.era5 is None:
             raise RuntimeError("Resolved atmosphere policy lacks ERA5 settings.")
-        prefetch_era5_pressure_level_profiles(
-            [pd.Timestamp(value).to_pydatetime() for value in atmosphere_times],
-            float(station_site["latitude"]),
-            float(station_site["longitude"]),
-            bind_log_context(logger, stage="era5"),
-            settings=policy.era5.as_io_mapping(),
-        )
+        if not config.get("_era5_prefetched_by_lipancora", False):
+            prefetch_era5_pressure_level_profiles(
+                [pd.Timestamp(value).to_pydatetime() for value in atmosphere_times],
+                float(station_site["latitude"]),
+                float(station_site["longitude"]),
+                bind_log_context(logger, stage="era5"),
+                settings=policy.era5.as_io_mapping(),
+            )
         era5_prefetched = True
 
     for timestamp in atmosphere_times:
@@ -442,6 +443,15 @@ def integrate_thermodynamics(
                 break
 
             if source == "ussa76":
+                if (
+                    policy.missing_policy == "require_era5"
+                    and "era5" in policy.source_priority
+                ):
+                    raise RuntimeError(
+                        "ERA5 required for definitive Level 1 atmosphere at "
+                        f"{timestamp.strftime('%Y-%m-%d %H:%MZ')}; "
+                        "missing/unusable ERA5 cannot be silently replaced with USSA76."
+                    )
                 temperature_k, pressure_hpa = _ussa76_on_lidar_grid(
                     final_ds,
                     station_altitude_m=station_altitude_m,

@@ -89,6 +89,9 @@ level1:
     # below as an observational QA reference, not as a piecewise production source.
     time_resolution_minutes: 60
     source_priority: ["era5", "ussa76"]
+    # Do not mark a historical L1 definitive using USSA76 merely because
+    # CDS was unavailable. Explicitly set allow_fallback for operational use.
+    missing_policy: require_era5
 
     # External profiles rarely span the complete lidar altitude grid. The
     # extension behavior is explicit rather than an implicit standard-atmosphere fallback.
