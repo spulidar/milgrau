@@ -256,4 +256,7 @@ def test_scan_raw_files_missing_root_has_no_side_effects(tmp_path: Path) -> None
     assert paths == []
     assert types == []
     assert not raw_root.exists()
-    assert logger.messages == [f"ERROR: Raw data directory not found: {raw_root}"]
+    assert logger.messages == [
+        f"ERROR: Raw data directory not found: {raw_root}",
+        "INFO: raw scan | 0 Licel candidates | 0 spurious ignored",
+    ]

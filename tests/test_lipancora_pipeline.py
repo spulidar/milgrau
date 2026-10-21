@@ -50,10 +50,24 @@ def test_radiosonde_only_output_is_noncanonical_and_repeatable(tmp_path: Path) -
     config = _config(tmp_path)
     level0 = tmp_path / "external_L0.nc"
     canonical = _level1_target_path(level0, config)
-    assert canonical.name == "external_L1.nc"
+    assert canonical.name == "external_L0_L1.nc"
     alternate = _level1_target_path(
         level0, {**config, "_radiosonde_only_mode": True},
     )
-    assert alternate.name == "external_radiosonde_L1.nc"
+    assert alternate.name == "external_L0_radiosonde_L1.nc"
     assert alternate != canonical
     assert _level1_target_path(level0, config) == canonical
+
+
+def test_radiosonde_only_canonical_session_has_separate_variant(tmp_path: Path) -> None:
+    session = "spu_20240902-2100Z_20240903-0400Z"
+    config = {
+        "directories": {"processed_data": str(tmp_path)},
+        "_station_catalog": {"station": {"id": "spu"}},
+    }
+    input_path = tmp_path / (session + "_L0.nc")
+    output = _level1_target_path(
+        input_path, {**config, "_radiosonde_only_mode": True},
+    )
+    assert output.name == session + "_radiosonde_L1.nc"
+    assert output != _level1_target_path(input_path, config)
