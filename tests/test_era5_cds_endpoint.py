@@ -347,7 +347,7 @@ def test_era5_prefetch_blocks_new_cds_jobs_when_old_job_unresolved(
             calls.append(("retrieve", args))
 
     monkeypatch.setitem(sys.modules, "cdsapi", types.SimpleNamespace(Client=FakeClient))
-    with pytest.raises(RuntimeError, match="uncertain remote state"):
+    with pytest.raises(RuntimeError, match="unresolved previous ERA5"):
         prefetch_era5_pressure_level_profiles(
             [datetime(2020, 1, 7, 11, tzinfo=timezone.utc)],
             -23.5, -46.75, logging.getLogger("test.era5.pending"),
@@ -414,3 +414,50 @@ def test_grib_requires_both_temperature_and_geopotential() -> None:
             ),
             0, None,
         )
+
+
+def test_failed_local_grib_decode_keeps_payload_and_blocks_duplicate_cds_job(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    import json
+    from milgrau.io import era5 as module
+
+    calls = []
+
+    class MockCDS:
+        def __init__(self, **_kwargs):
+            pass
+
+        def retrieve(self, _dataset, request, target):
+            assert request["data_format"] == "grib"
+            calls.append(target)
+            Path(target).write_bytes(b"GRIBresponse-for-offline-inspection")
+
+    monkeypatch.setitem(sys.modules, "cdsapi", types.SimpleNamespace(Client=MockCDS))
+    monkeypatch.setattr(module, "_require_grib_decoder", lambda: None)
+    monkeypatch.setattr(
+        module, "_open_era5_grib",
+        lambda _path: (_ for _ in ()).throw(ValueError("incompatible GRIB axes")),
+    )
+    required = [datetime(2024, 6, 20, 21, tzinfo=timezone.utc)]
+    logger = logging.getLogger("test.era5.retain")
+    result = prefetch_era5_pressure_level_profiles(
+        required, -23.5607, -46.7398, logger, settings=_settings(),
+        root_dir=tmp_path,
+    )
+    assert result == set()
+    assert len(calls) == 1
+    ledgers = list((tmp_path / "cache" / "era5" / "requests").glob("*.json"))
+    assert len(ledgers) == 1
+    payload = json.loads(ledgers[0].read_text(encoding="utf-8"))
+    assert payload["status"] == "local_decode_failed"
+    assert Path(payload["retained_grib_path"]).read_bytes().startswith(b"GRIB")
+
+    # An operator can inspect/reprocess the response without silently
+    # creating a new remote request on retry.
+    with pytest.raises(RuntimeError, match="local_decode_failed"):
+        prefetch_era5_pressure_level_profiles(
+            required, -23.5607, -46.7398, logger, settings=_settings(),
+            root_dir=tmp_path,
+        )
+    assert len(calls) == 1
