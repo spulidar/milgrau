@@ -393,7 +393,9 @@ def _valid_hourly_cache(
             level_axis = _coordinate_name(dataset, ("pressure_level", "level", "isobaricInhPa"))
             levels = np.asarray(dataset[level_axis].values, dtype=np.float64)
             expected = np.asarray(cfg["pressure_levels_hpa"], dtype=np.float64)
-            if levels.shape != expected.shape or not np.array_equal(levels, expected):
+            if levels.shape != expected.shape or not np.array_equal(
+                np.sort(levels), np.sort(expected)
+            ):
                 return False
             profile = era5_profile_from_dataset(dataset, latitude, longitude)
             return not profile.empty
