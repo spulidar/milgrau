@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 import numpy as np
 import pandas as pd
 
-from milgrau.io.filesystem import scan_raw_files
+from milgrau.io.filesystem import RawFileKind, classify_raw_file, scan_raw_files
 from milgrau.io.licel import read_licel_header
 from milgrau.io.logging_utils import bind_log_context
 from milgrau.io.paths import build_session_id, session_id_parts, station_id
@@ -445,6 +445,7 @@ def build_session_inventory(
     logger: logging.Logger,
     *,
     selection: InputSelection | None = None,
+    source_paths: list[str] | None = None,
 ) -> pd.DataFrame:
     """Build the Level-0 inventory; optionally restrict to safe time candidates."""
     started = perf_counter()
@@ -455,13 +456,24 @@ def build_session_inventory(
     discovery = level0_config.discovery
 
     scan_started = perf_counter()
-    file_paths, file_types = scan_raw_files(
-        raw_dir,
-        spurious_extensions=discovery.spurious_extensions,
-        quarantine_dir=discovery.quarantine_dir,
-        raw_scan_ignore_dirs=discovery.raw_scan_ignore_dirs,
-        logger=discovery_logger,
-    )
+    if source_paths is None:
+        file_paths, file_types = scan_raw_files(
+            raw_dir,
+            spurious_extensions=discovery.spurious_extensions,
+            quarantine_dir=discovery.quarantine_dir,
+            raw_scan_ignore_dirs=discovery.raw_scan_ignore_dirs,
+            logger=discovery_logger,
+        )
+    else:
+        source_candidates = [
+            classify_raw_file(path, discovery.spurious_extensions)
+            for path in source_paths
+        ]
+        if any(item.kind is RawFileKind.SPURIOUS for item in source_candidates):
+            raise ValueError("Canonical L0 source includes an excluded raw file.")
+        file_paths = [str(item.path) for item in source_candidates]
+        file_types = [item.kind.value for item in source_candidates]
+        discovery_logger.info("L0 provenance | %d selected source files", len(file_paths))
     discovery_logger.debug("raw scan elapsed=%.2fs", perf_counter() - scan_started)
     if not file_paths:
         inventory_logger.info("inventory empty | %.1fs", perf_counter() - started)
@@ -476,7 +488,10 @@ def build_session_inventory(
     # A loaded config provides a stable project-local cache path. Pure library
     # test/config callers without that path stay stateless.
     cache_context = (
-        LicelHeaderCache(Path(config_path).resolve().parent / ".cache" / "libids", header_logger)
+        LicelHeaderCache(
+            Path(config_path).resolve().parent / ".cache" / "libids",
+            header_logger, prune=source_paths is None,
+        )
         if config_path else nullcontext(None)
     )
     with cache_context as cache:

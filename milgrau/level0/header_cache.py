@@ -20,12 +20,15 @@ Header = tuple[datetime | None, datetime | None, float | None, int | None, int |
 class LicelHeaderCache:
     """File-signature-indexed cache; a failed cache never prevents raw parsing."""
 
-    def __init__(self, directory: Path, logger: logging.Logger) -> None:
+    def __init__(
+        self, directory: Path, logger: logging.Logger, *, prune: bool = True,
+    ) -> None:
         self.logger = logger
         self.connection: sqlite3.Connection | None = None
         self.hits = 0
         self.misses = 0
         self.directory = directory
+        self.prune = prune
 
     def __enter__(self) -> "LicelHeaderCache":
         try:
@@ -121,9 +124,10 @@ class LicelHeaderCache:
                 # A complete filesystem walk supplies the set of surviving files.
                 # Do not prune on an interrupted/failed walk.
                 if _type is None:
-                    self.connection.execute(
-                        "DELETE FROM headers WHERE path NOT IN (SELECT path FROM seen)"
-                    )
+                    if self.prune:
+                        self.connection.execute(
+                            "DELETE FROM headers WHERE path NOT IN (SELECT path FROM seen)"
+                        )
                     self.connection.commit()
                 else:
                     self.connection.rollback()

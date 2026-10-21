@@ -18,6 +18,7 @@ from milgrau.io.paths import level0_output_path, raw_data_root
 from milgrau.io.selection import parse_input_selection, select_available_session_ids
 from milgrau.level0.common import incremental_enabled
 from milgrau.level0.config import resolve_level0_config, validate_level0_config
+from milgrau.level0.header_cache import source_paths_from_level0
 from milgrau.level0.inventory import build_session_inventory
 from milgrau.level0.netcdf import scc_measurement_id
 from milgrau.level0.processing import process_session_group
@@ -221,6 +222,37 @@ def _requested_session_ids(values, config: dict, df_raw) -> set[str] | None:
     return selected
 
 
+def _reexport_indexed_sources(
+    selection, config: dict, logger: logging.Logger,
+) -> list[str] | None:
+    """Use canonical L0 source names only when all resolve uniquely and unchanged."""
+    if selection.paths or selection.dates or len(selection.session_ids) != 1:
+        return None
+    config_file = config.get("_config_file")
+    if not config_file:
+        return None
+    session = next(iter(selection.session_ids))
+    canonical = level0_output_path(session, config)
+    if not _primary_output_satisfies_contract(canonical):
+        return None
+    try:
+        with xr.open_dataset(canonical, decode_times=False) as dataset:
+            raw_sources = str(dataset.attrs.get("Source_Files", ""))
+    except (OSError, ValueError, KeyError):
+        return None
+    names = [part for part in raw_sources.split(";") if part]
+    if not names:
+        return None
+    cache_dir = Path(str(config_file)).resolve().parent / ".cache" / "libids"
+    paths = source_paths_from_level0(cache_dir, names)
+    if paths is not None:
+        bind_log_context(logger, stage="scc_reexport").info(
+            "resolved %d original Licel sources from L0 + header index",
+            len(paths),
+        )
+    return paths
+
+
 def process_level_0(
     config: dict,
     logger: logging.Logger,
@@ -241,6 +273,12 @@ def process_level_0(
     selection = parse_input_selection(inputs, config)
     if selection.is_empty:
         df_raw = build_session_inventory(str(raw_dir), config, pipeline_logger)
+    elif scc_reexport:
+        sources = _reexport_indexed_sources(selection, config, pipeline_logger)
+        df_raw = build_session_inventory(
+            str(raw_dir), config, pipeline_logger, selection=selection,
+            source_paths=sources,
+        )
     else:
         df_raw = build_session_inventory(
             str(raw_dir), config, pipeline_logger, selection=selection,
