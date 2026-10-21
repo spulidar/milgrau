@@ -81,11 +81,39 @@ and are read by `cdsapi`.
 
 ## Optional productive radiosonde-only processing (main branch)
 
-Run `milgrau-lipancora --radiosonde-only -i SESSION_ID` to process a
-selected L0 using the **University of Wyoming radiosonde** without ever
-requesting ERA5 or waiting for CDS. Without `-i`, the same switch applies
-to every eligible L0 in the Level 1 queue. This CLI override is ephemeral:
-`config.yaml` and the normal ERA5/USSA76 source priority remain unchanged.
+Run `milgrau-lipancora --radiosonde-only -i SESSION_ID` to process
+a selected L0 from radiosonde observations without requesting ERA5 or
+waiting for CDS. Without `-i`, the same switch applies to every eligible L0
+in the Level 1 queue. This CLI override is ephemeral: `config.yaml` and the
+normal ERA5/USSA76 source priority remain unchanged.
+
+**Offline archive before Siphon:** place the unmodified NOAA/NCEI IGRA2
+historical data file for SPU/WMO station 83779 at:
+
+```text
+.cache/radiosonde/BRM00083779-data.txt
+```
+
+MILGRAU first checks the preexisting per-hour
+`.cache/radiosonde/YYYY/MM/radiosonde_83779_YYYYMMDD_HHZ.csv`.
+Otherwise, it locates the **exact station and nominal UTC sounding time** in
+the IGRA2 archive. The historical file is indexed once **per process**, in
+memory, using byte offsets, so repeated L1 hours do not reread the full
+multi-year text file. The IGRA2 PRESS (Pa), GPH (m ASL) and TEMP (0.1 °C)
+fields are converted to `pressure` (hPa), `height` (m) and
+`temperature` (°C). Missing `-9999` and quality-removed `-8888`
+measurements are excluded. Only a usable vertical profile is accepted.
+If no match or valid profile exists, MILGRAU **falls back to
+University of Wyoming via Siphon** using the unchanged selection policy.
+Valid IGRA2 observations are cached as hourly CSV plus JSON metadata for
+faster subsequent runs. The local archive itself is not rewritten or
+committed to Git (the repository excludes `.cache/`).
+
+A native IGRA2 archive is **not a Siphon/Wyoming download**. Scientific
+provenance records whether the radiosonde hours came from NOAA/NCEI IGRA2,
+Wyoming/Siphon, or both, and retains the archive basename when applicable.
+The nominal UTC hour is used to match the configured synoptic hour; the
+actual release time in IGRA2 may differ from that nominal hour.
 
 A sounding is selected **independently for each hourly L1 atmosphere time**
 using the configured synoptic hours `[0, 12]` and the **six-hour**
