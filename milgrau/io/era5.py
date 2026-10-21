@@ -374,6 +374,22 @@ def plan_era5_requests(
     return sorted(planned, key=lambda item: item[0][0])
 
 
+def _require_grib_decoder() -> None:
+    """Validate cfgrib/ecCodes before dispatching any remote CDS job."""
+    try:
+        import cfgrib
+        import eccodes
+
+        _ = cfgrib.__version__
+        _ = eccodes.codes_get_api_version()
+    except (ImportError, OSError, RuntimeError, AttributeError) as exc:
+        raise RuntimeError(
+            "Monthly ERA5 GRIB decoding requires working cfgrib + ecCodes. "
+            "Install the project dependencies and run "
+            "'python -m cfgrib selfcheck' before submitting CDS requests."
+        ) from exc
+
+
 def _open_era5_grib(path: Path) -> xr.Dataset:
     """Read native ECMWF GRIB without writing cfgrib index sidecars."""
     return xr.open_dataset(path, engine="cfgrib", backend_kwargs={"indexpath": ""})
@@ -539,6 +555,7 @@ def prefetch_era5_pressure_level_profiles(
             "resubmitting or starting another ERA5 batch. No new request sent."
         )
 
+    _require_grib_decoder()
     client = cdsapi.Client(url=CDS_API_URL, quiet=True)
     for hours, dataset, request, fields in requests:
         digest = sha256(
