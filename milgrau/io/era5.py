@@ -434,7 +434,7 @@ def _pending_era5_requests(cache_root: Path) -> list[tuple[Path, dict[str, Any]]
     pending = []
     for ledger in sorted(directory.glob("*.json")):
         record = _read_metadata(ledger)
-        if record.get("status") in {"submitted", "uncertain"}:
+        if record.get("status") in {"submitted", "uncertain", "local_decode_failed"}:
             pending.append((ledger, record))
     return pending
 
@@ -549,10 +549,11 @@ def prefetch_era5_pressure_level_profiles(
         first_ledger, first_record = unresolved[0]
         request_id = first_record.get("request_id", first_ledger.stem)
         raise RuntimeError(
-            f"ERA5 prefetch blocked: {len(unresolved)} previously submitted CDS "
-            f"request(s) have uncertain remote state; first={request_id} "
-            f"ledger={first_ledger}. Inspect/reconcile the remote CDS job before "
-            "resubmitting or starting another ERA5 batch. No new request sent."
+            f"ERA5 prefetch blocked: {len(unresolved)} unresolved previous ERA5 "
+            f"request(s); first={request_id}, "
+            f"status={first_record.get('status')}, ledger={first_ledger}. "
+            "Inspect/reconcile the remote CDS job or retained local GRIB "
+            "before starting another ERA5 batch. No new request sent."
         )
 
     _require_grib_decoder()
@@ -590,12 +591,14 @@ def prefetch_era5_pressure_level_profiles(
         first_cache, _ = _cache_paths(hours[0], latitude, longitude, cfg, root_dir)
         temp_batch = first_cache.parent / f"era5_{digest}.part.grib"
         _write_request_metadata(ledger, request_info)
+        downloaded_grib = False
         try:
             logger.info(
                 "ERA5 CDS monthly GRIB request %s | %d days | %d hours | %d fields",
                 digest, len(request["day"]), len(hours), fields,
             )
             client.retrieve(dataset, request, str(temp_batch))
+            downloaded_grib = True  # A local response exists; never discard after parse failure.
             with temp_batch.open("rb") as stream:
                 if stream.read(4) != b"GRIB":
                     raise ValueError("CDS response is not an unarchived GRIB file.")
@@ -655,10 +658,13 @@ def prefetch_era5_pressure_level_profiles(
             # unknown remote outcome and must never be blindly resubmitted.
             overload = request_info["error"].lower()
             request_info["status"] = (
-                "backpressure" if any(label in overload for label in (
+                "local_decode_failed" if downloaded_grib
+                else "backpressure" if any(label in overload for label in (
                     "available slots", "too many requests", "429 ", "rate limit",
                 )) else "uncertain"
             )
+            if downloaded_grib:
+                request_info["retained_grib_path"] = str(temp_batch)
             _write_request_metadata(ledger, request_info)
             logger.warning(
                 "ERA5 prefetch stopped at request %s | %s",
@@ -667,7 +673,10 @@ def prefetch_era5_pressure_level_profiles(
             logger.debug("ERA5 prefetch exception", exc_info=True)
             break  # Preserve already validated hours; never saturate CDS queue.
         finally:
-            temp_batch.unlink(missing_ok=True)
+            # Parsing failures retain the original response so it can be
+            # inspected/converter-repaired locally without a duplicate CDS job.
+            if not downloaded_grib or request_info["status"] in {"complete", "partial"}:
+                temp_batch.unlink(missing_ok=True)
     # The planner may have downloaded extra valid hours to reduce CDS jobs;
     # callers ask only for the originally requested set.
     return available.intersection(analysis_hours)
