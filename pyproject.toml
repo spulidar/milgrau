@@ -25,6 +25,8 @@ dependencies = [
   "matplotlib>=3.7.0",
   "siphon>=0.11.0",
   "cdsapi>=0.7.7",
+  # GRIB/ERA5 monthly bulk path (ecCodes binary runtime via Python package).
+  "cfgrib>=0.9.15.1",
   "tenacity>=8.2.0",
   "PyYAML>=6.0",
   "fastapi>=0.115,<1.0",
