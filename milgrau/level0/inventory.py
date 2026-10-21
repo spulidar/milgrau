@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import logging
 from contextlib import nullcontext
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from time import perf_counter
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -13,7 +15,8 @@ import pandas as pd
 from milgrau.io.filesystem import scan_raw_files
 from milgrau.io.licel import read_licel_header
 from milgrau.io.logging_utils import bind_log_context
-from milgrau.io.paths import build_session_id, station_id
+from milgrau.io.paths import build_session_id, session_id_parts, station_id
+from milgrau.io.selection import InputSelection
 from milgrau.level0.config import resolve_level0_config, station_timezone
 from milgrau.level0.header_cache import LicelHeaderCache
 
@@ -389,12 +392,61 @@ def _associate_dark_currents(
             )
     return rows
 
+def _select_temporal_candidates(
+    df_raw: pd.DataFrame,
+    selection: InputSelection | None,
+    config: dict,
+    level0_config,
+    logger: logging.Logger,
+) -> pd.DataFrame:
+    """Bound an explicit session/date to its complete local scientific context.
+
+    Include competing sessions within twice the maximum dark-current distance,
+    plus two acquisition gap lengths on both sides. This prevents selecting a
+    dark current belonging to another nearby session. Final session identity,
+    profile boundaries, QA and dark-current associations are still calculated
+    from original Licel timestamps, never from directory names.
+    """
+    if selection is None or selection.is_empty or selection.paths:
+        return df_raw
+    windows = []
+    for session_id in selection.session_ids:
+        _station, start, end = session_id_parts(session_id)
+        windows.append((pd.Timestamp(start), pd.Timestamp(end)))
+    station_zone = ZoneInfo(station_timezone(config))
+    for value in selection.dates:
+        local = datetime.strptime(value, "%Y%m%d").replace(tzinfo=station_zone)
+        start = local.astimezone(timezone.utc)
+        end = (local + timedelta(days=1)).astimezone(timezone.utc)
+        windows.append((pd.Timestamp(start), pd.Timestamp(end)))
+    if not windows:
+        return df_raw
+
+    margin = pd.Timedelta(
+        hours=2.0 * level0_config.dark_current.max_association_hours,
+        seconds=2.0 * level0_config.session.max_gap_seconds,
+    )
+    starts = df_raw["start_time_utc"]
+    ends = df_raw["stop_time"].fillna(starts)
+    mask = pd.Series(False, index=df_raw.index)
+    for start, end in windows:
+        mask |= (starts <= end + margin) & (ends >= start - margin)
+    selected = df_raw[mask].copy()
+    logger.info(
+        "early temporal selection | %d/%d headers retained | margin %.1f h",
+        len(selected), len(df_raw), margin.total_seconds() / 3600,
+    )
+    return selected
+
+
 def build_session_inventory(
     raw_dir: str,
     config: dict,
     logger: logging.Logger,
+    *,
+    selection: InputSelection | None = None,
 ) -> pd.DataFrame:
-    """Build the Level-0 inventory and group continuous Licel acquisitions into sessions."""
+    """Build the Level-0 inventory; optionally restrict to safe time candidates."""
     started = perf_counter()
     inventory_logger = bind_log_context(logger, stage="inventory")
     discovery_logger = bind_log_context(logger, stage="discovery")
@@ -484,6 +536,14 @@ def build_session_inventory(
         inventory_logger.warning("inventory has no dated headers | %.1fs", perf_counter() - started)
         return df_raw
     inventory_logger.debug("header normalization elapsed=%.2fs", perf_counter() - normalization_started)
+
+    df_raw = _select_temporal_candidates(
+        df_raw, selection, config, level0_config,
+        bind_log_context(logger, stage="selection"),
+    )
+    if df_raw.empty:
+        inventory_logger.info("no raw candidates in selected time window")
+        return pd.DataFrame()
 
     timezone_name = station_timezone(config)
     df_raw["start_time_local"] = df_raw["start_time_utc"].dt.tz_convert(timezone_name)

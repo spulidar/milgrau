@@ -238,7 +238,13 @@ def process_level_0(
     level0_config = resolve_level0_config(config)
     pipeline_logger = bind_log_context(logger, pipeline="L0")
     raw_dir = raw_data_root(config)
-    df_raw = build_session_inventory(str(raw_dir), config, pipeline_logger)
+    selection = parse_input_selection(inputs, config)
+    if selection.is_empty:
+        df_raw = build_session_inventory(str(raw_dir), config, pipeline_logger)
+    else:
+        df_raw = build_session_inventory(
+            str(raw_dir), config, pipeline_logger, selection=selection,
+        )
     if not df_raw.empty:
         requested = _requested_session_ids(inputs, config, df_raw)
         if requested is not None:
