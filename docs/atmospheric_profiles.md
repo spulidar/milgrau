@@ -79,6 +79,31 @@ network requests.
 time-resolved atmosphere backbone. CDS credentials remain outside the repository
 and are read by `cdsapi`.
 
+## Optional productive radiosonde-only processing (main branch)
+
+Run `milgrau-lipancora --radiosonde-only -i SESSION_ID` to process a
+selected L0 using the **University of Wyoming radiosonde** without ever
+requesting ERA5 or waiting for CDS. Without `-i`, the same switch applies
+to every eligible L0 in the Level 1 queue. This CLI override is ephemeral:
+`config.yaml` and the canonical source order remain unchanged.
+
+A sounding is selected **independently for each hourly L1 atmosphere time**
+using the configured synoptic hours `[0, 12]` and the **six-hour**
+nearest-sounding window. The actual sounding timestamp and its age at each
+hour are recorded. If any required hour has no valid sounding, that session
+**fails** rather than silently materializing an all-USSA76 alternative.
+Outside the observed vertical range of a valid sounding, the established
+`external_profile_outside_coverage: ussa76` policy still extends the
+profile vertically; its fraction is recorded as before. No radiosonde
+values are fabricated or interpolated across missing sounding dates.
+
+The output uses a separate `*_radiosonde_L1.nc` variant instead of replacing
+`*_L1.nc` built using ERA5. The regular L1 remains canonical for the
+normal ERA5-based publication pipeline. Radiosonde variants are observational
+alternatives and must not be silently treated as methodologically
+equivalent to ERA5 products. Ordinary `milgrau-lipancora` continues to
+use the original ERA5/USSA76 recipe.
+
 ## Radiosonde comparison reference
 
 When the station catalog defines a radiosonde station and a suitable sounding
