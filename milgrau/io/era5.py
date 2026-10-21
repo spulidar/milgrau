@@ -468,7 +468,7 @@ def prefetch_era5_pressure_level_profiles(
             continue
         # If a process died while waiting for CDS, its server-side job may
         # still exist. An unknown result cannot authorize blind resubmission.
-        if previous.get("status") == "submitted":
+        if previous.get("status") in {"submitted", "uncertain"}:
             logger.warning(
                 "ERA5 request %s may still be queued; not duplicating submission",
                 digest,
@@ -511,7 +511,8 @@ def prefetch_era5_pressure_level_profiles(
                     selected.to_netcdf(pending)
                     # Refuse malformed, incomplete and wrong-level CDS payloads.
                     if not _valid_hourly_cache(
-                        pending, Path("__unrecorded__"), latitude, longitude, cfg,
+                        pending, pending.with_suffix(".json"),
+                        latitude, longitude, cfg,
                     ):
                         pending.unlink(missing_ok=True)
                         logger.warning("ERA5 request %s invalid hour %s", digest, stamp)
@@ -539,8 +540,16 @@ def prefetch_era5_pressure_level_profiles(
                 digest, len(request_info["cached_hours_utc"]), len(hours),
             )
         except Exception as exc:
-            request_info["status"] = "uncertain"
             request_info["error"] = _compact_exception_message(exc)
+            # Explicitly rejected capacity/slot requests can be attempted
+            # during a later run. Other failures after submission have an
+            # unknown remote outcome and must never be blindly resubmitted.
+            overload = request_info["error"].lower()
+            request_info["status"] = (
+                "backpressure" if any(label in overload for label in (
+                    "available slots", "too many requests", "429 ", "rate limit",
+                )) else "uncertain"
+            )
             _write_request_metadata(ledger, request_info)
             logger.warning(
                 "ERA5 prefetch stopped at request %s | %s",
@@ -571,7 +580,9 @@ def fetch_era5_pressure_level_profile(
         measurement_dt, latitude, longitude, cfg, root_dir
     )
 
-    if cache_file.exists():
+    if _valid_hourly_cache(
+        cache_file, metadata_file, latitude, longitude, cfg,
+    ):
         try:
             with xr.open_dataset(cache_file) as ds:
                 ds.load()
