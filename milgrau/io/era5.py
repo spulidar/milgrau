@@ -514,6 +514,19 @@ def prefetch_era5_pressure_level_profiles(
         logger.warning("ERA5 unavailable | cdsapi is not installed")
         return available
 
+    requests = plan_era5_requests(missing, latitude, longitude, cfg)
+    useful_fields = len(missing) * 2 * len(cfg["pressure_levels_hpa"])
+    requested_fields = sum(item[3] for item in requests)
+    logger.info(
+        "ERA5 monthly GRIB prefetch | %d missing hours | %d requests | "
+        "%d requested fields (%d useful, %d extra)",
+        len(missing), len(requests), requested_fields,
+        useful_fields, requested_fields - useful_fields,
+    )
+
+    # Planning and reporting are read-only. Check unresolved historical jobs
+    # only *after* reporting the plan, but before creating a new CDS client or
+    # submitting any network request.
     cache_root = resolve_project_path(cfg["cache_dir"], root_dir=root_dir)
     unresolved = _pending_era5_requests(cache_root)
     if unresolved:
@@ -526,15 +539,6 @@ def prefetch_era5_pressure_level_profiles(
             "resubmitting or starting another ERA5 batch. No new request sent."
         )
 
-    requests = plan_era5_requests(missing, latitude, longitude, cfg)
-    useful_fields = len(missing) * 2 * len(cfg["pressure_levels_hpa"])
-    requested_fields = sum(item[3] for item in requests)
-    logger.info(
-        "ERA5 monthly GRIB prefetch | %d missing hours | %d requests | "
-        "%d requested fields (%d useful, %d extra)",
-        len(missing), len(requests), requested_fields,
-        useful_fields, requested_fields - useful_fields,
-    )
     client = cdsapi.Client(url=CDS_API_URL, quiet=True)
     for hours, dataset, request, fields in requests:
         digest = sha256(
