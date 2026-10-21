@@ -361,7 +361,7 @@ milgrau-scc download
 
 ### 5.5. Otimização de inventários e planejamento atmosférico — plano aprovado (20/10/2026)
 
-**Decisão:** implementação de código iniciada e integrada **antes da Fase 6**, diretamente em `scc-integration-refactor`, sem PR e sem alteração de `main`. A bateria de testes e a comparação em dados reais permanecem gates independentes. O cache LIBIDS e o cache ERA5 são reconstruíveis e **não substituem** a proveniência científica L0/L1/L2 nem o journal operacional SCC. Não executar operações remotas SCC destrutivas.
+**Decisão:** implementação de código iniciada e integrada **antes da Fase 6**, diretamente em `scc-integration-refactor`, sem PR e sem alteração de `main`. A bateria de regressão foi aprovada no código em [GitHub Actions #39529676453](https://github.com/spulidar/milgrau/actions/runs/39529676453), **6/6 jobs**, commit `77615712` (737 testes no Linux/Python 3.12). A comparação científica e benchmarks em dados reais permanecem gates independentes. O cache LIBIDS e o cache ERA5 são reconstruíveis e **não substituem** a proveniência científica L0/L1/L2 nem o journal operacional SCC. Não executar operações remotas SCC destrutivas.
 
 **Motivação observada na máquina do operador:** `milgrau-libids -i <Session_ID> --scc-reexport` leu 246.853 candidatos Licel e levou 276,9 s para inventariar seis anos antes de selecionar uma sessão (137 medições e 22 dark currents). A execução real do SCC aceitou `20200107spu1130` (configuração 565), mas o ELPP retornou `-127`, impossibilitando download; não atribuir a causa às nuvens sem diagnóstico do SCC. Pacotes históricos `awaiting_lipancora` não mudam quando `scc_policy.sounding.enabled` é desligado depois da criação. A branch local utilizada pelo operador deve ser confirmada antes de validar conclusões de regressão.
 
@@ -441,12 +441,12 @@ milgrau-scc download
 | 2. Simplificação do workflow SCC | Núcleo integrado e CI do PR aprovado; revisão de estados e comandos históricos pendente |
 | 3. Remoção de código transitório | Concluída no código, CI 6/6; pacotes locais não inspecionados pela API |
 | 4. CLI e configuração | Concluída no código, CI 6/6; default de `main` reservado para Gate 7 |
-| 5. Validação e regressões | LIBIDS cache/seleção e LIPANCORA prefetch ERA5 80k implementados; CI atual em validação, benchmark/ciência real e SCC download pendentes |
+| 5. Validação e regressões | Otimizações LIBIDS/ERA5 implementadas e CI 6/6 (737 testes); benchmark científico real e SCC download pendentes |
 | 6. Documentação | Pendente |
 | 7. Merge final em `main` | Pendente |
 
 ### Próxima ação
 
-**Extensão da Fase 5 (§5.5) implementada no código, em validação:** cache reconstruível de cabeçalhos LIBIDS e seleção temporal; SCC-only reexport com fontes L0 unívocas; prefetch automático global ERA5 com horários esparsos, teto de 80.000 campos, requests sequenciais, cache horário verificado e política científica explícita. **Ainda faltam** benchmark/avaliação em seis anos de dados reais e completar a matriz CI após as últimas mudanças. Depois verificar equivalência e desempenho em dados reais e fechar o Gate 5 com download SCC de um ID que conclua ELPP/ELDA. CI anterior 6/6 no código `a3c6c211`; continuam pendentes a comparação científica real e os testes operacionais da Fase 1. Nenhuma operação remota SCC executada nesta atualização; `main` permanece reservada ao Gate 7.
+**Extensão da Fase 5 (§5.5) implementada e validada no CI 6/6 (commit `77615712`):** cache reconstruível de cabeçalhos LIBIDS e seleção temporal; SCC-only reexport com fontes L0 unívocas; prefetch automático global ERA5 com horários esparsos, teto de 80.000 campos, requests sequenciais, cache horário verificado e política científica explícita. **Ainda faltam** benchmark no acervo de seis anos, equivalência científica L0/L1/L2 em amostras reais, download SCC de medição com ELPP/ELDA concluídos e testes operacionais restantes do Gate 1. Nenhuma operação POST/DELETE remota SCC foi executada pelo assistente. Depois verificar equivalência e desempenho em dados reais e fechar o Gate 5 com download SCC de um ID que conclua ELPP/ELDA. CI anterior 6/6 no código `a3c6c211`; continuam pendentes a comparação científica real e os testes operacionais da Fase 1. Nenhuma operação remota SCC executada nesta atualização; `main` permanece reservada ao Gate 7.
 
 Não executar uploads, substituições ou DELETE reais sem autorização explícita, ID adequado e preflight remoto. L0/L1/L2 e arquivos históricos devem continuar preservados.
