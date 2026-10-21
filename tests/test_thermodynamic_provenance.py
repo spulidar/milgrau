@@ -112,3 +112,18 @@ def test_time_resolved_full_ussa76_fallback_uses_standard_atmosphere_identity() 
             "us_standard_atmosphere/standard_atmosphere/1976"
         ),
     }
+
+
+def test_time_resolved_radiosonde_only_identifies_actual_wyoming_provider() -> None:
+    result = thermodynamic_source_provenance(
+        {
+            "thermodynamic_profile_source_type": "time_resolved",
+            "thermodynamic_sources_present": "radiosonde",
+            "thermodynamic_profile_doi": "",
+            "level1_atmosphere_mode": "radiosonde_only",
+        },
+        {},
+    )
+    assert result["thermodynamic_profile_provider"] == "university_of_wyoming"
+    assert result["thermodynamic_profile_product"] == "upper_air_sounding"
+    assert "copernicus" not in result["thermodynamic_profile_source_id"]

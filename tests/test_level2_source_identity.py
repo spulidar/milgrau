@@ -59,7 +59,7 @@ def test_level2_currentness_rejects_changed_bytes_even_when_other_checks_pass(
 ) -> None:
     source = tmp_path / "input_level1.nc"
     output = tmp_path / "output_level2.nc"
-    source.write_bytes(b"original-level1-content")
+    xr.Dataset(attrs={"thermodynamic_source_priority": "era5,ussa76"}).to_netcdf(source)
     _write_currentness_fixture(source, output)
 
     monkeypatch.setattr(
@@ -72,7 +72,10 @@ def test_level2_currentness_rejects_changed_bytes_even_when_other_checks_pass(
     assert lebear.level2_output_is_current(source, output, {})
 
     original_stat = source.stat()
-    source.write_bytes(b"changed-level1-content!")
+    xr.Dataset(attrs={
+        "thermodynamic_source_priority": "era5,ussa76",
+        "updated": "new-scientific-bytes",
+    }).to_netcdf(source)
     source.touch()
     source.chmod(original_stat.st_mode)
     # Preserve an old-enough mtime so timestamp-only reuse would not detect the change.
@@ -81,3 +84,56 @@ def test_level2_currentness_rejects_changed_bytes_even_when_other_checks_pass(
     os.utime(source, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
 
     assert not lebear.level2_output_is_current(source, output, {})
+
+
+def test_l2_rejects_radiosonde_l1_before_contract_or_retrieval(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    import logging
+    from milgrau.operations import ExecutionStatus
+
+    source = tmp_path / "spu_20240902-2100Z_20240903-0400Z_L1.nc"
+    xr.Dataset(attrs={
+        "level1_atmosphere_mode": "radiosonde_only",
+        "thermodynamic_source_priority": "radiosonde",
+        "thermodynamic_sources_present": "radiosonde",
+    }).to_netcdf(source)
+    monkeypatch.setattr(
+        lebear, "validate_level1_contract",
+        lambda _ds: __import__("pytest").fail("L2 must reject before signal validation."),
+    )
+    result = lebear.process_single_level1_file(
+        source, {}, logging.getLogger("test.l2.reject.radio"),
+    )
+    failures = [entry for entry in result.results if entry.status is ExecutionStatus.ERROR]
+    assert len(failures) == 1
+    assert failures[0].stage == "level2.validation.input"
+    assert failures[0].cause is not None
+    assert "milgrau-lipancora -i SESSION_ID" in str(failures[0].cause)
+    assert not source.with_name(source.name.replace("_L1.nc", "_L2.nc")).exists()
+
+
+def test_l2_cannot_skip_existing_current_product_if_l1_became_radio_only(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    source = tmp_path / "source_L1.nc"
+    output = tmp_path / "old_L2.nc"
+    xr.Dataset(attrs={
+        "level1_atmosphere_mode": "radiosonde_only",
+        "thermodynamic_source_priority": "radiosonde",
+    }).to_netcdf(source)
+    _write_currentness_fixture(source, output)
+    monkeypatch.setattr(lebear, "output_is_current", lambda *args, **kwargs: True)
+    assert not lebear.level2_output_is_current(source, output, {})
+
+
+def test_l2_rejects_older_radiosonde_only_file_without_new_mode_marker() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="Rerun 'milgrau-lipancora"):
+        lebear._reject_radiosonde_only_l1(
+            xr.Dataset(attrs={
+                "thermodynamic_source_priority": "radiosonde",
+                "thermodynamic_sources_present": "radiosonde",
+            })
+        )
