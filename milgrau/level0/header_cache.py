@@ -33,9 +33,24 @@ class LicelHeaderCache:
             self.connection = sqlite3.connect(self.directory / "inventory.sqlite")
             self.connection.execute(
                 "CREATE TABLE IF NOT EXISTS headers ("
-                "path TEXT PRIMARY KEY, size INTEGER NOT NULL, "
+                "path TEXT PRIMARY KEY, basename TEXT NOT NULL, size INTEGER NOT NULL, "
                 "mtime_ns INTEGER NOT NULL, ctime_ns INTEGER NOT NULL, "
                 "parser_revision INTEGER NOT NULL, payload TEXT NOT NULL)"
+            )
+            fields = {
+                row[1] for row in self.connection.execute("PRAGMA table_info(headers)")
+            }
+            if "basename" not in fields:
+                self.connection.execute(
+                    "ALTER TABLE headers ADD COLUMN basename TEXT NOT NULL DEFAULT ''"
+                )
+                for (old_path,) in self.connection.execute("SELECT path FROM headers"):
+                    self.connection.execute(
+                        "UPDATE headers SET basename=? WHERE path=?",
+                        (Path(old_path).name, old_path),
+                    )
+            self.connection.execute(
+                "CREATE INDEX IF NOT EXISTS headers_basename_idx ON headers(basename)"
             )
             self.connection.execute(
                 "CREATE TEMP TABLE seen (path TEXT PRIMARY KEY)"
@@ -91,9 +106,9 @@ class LicelHeaderCache:
             ]
             self.connection.execute(
                 "INSERT OR REPLACE INTO headers "
-                "(path,size,mtime_ns,ctime_ns,parser_revision,payload) "
-                "VALUES (?,?,?,?,?,?)",
-                (key, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns,
+                "(path,basename,size,mtime_ns,ctime_ns,parser_revision,payload) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (key, path.name, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns,
                  HEADER_PARSER_REVISION, json.dumps(fields)),
             )
         except (OSError, sqlite3.Error, TypeError, ValueError) as exc:
@@ -120,3 +135,41 @@ class LicelHeaderCache:
             "Licel header cache | %d reused | %d parsed",
             self.hits, self.misses,
         )
+
+
+def source_paths_from_level0(cache_directory: Path, names: list[str]) -> list[str] | None:
+    """Resolve L0 source basenames only when unique and still signature-current.
+
+    Return None if cache is absent/stale (allow normal inventory fallback).
+    An ambiguous basename is an explicit safety error, never auto-selected.
+    """
+    cache_file = cache_directory / "inventory.sqlite"
+    if not cache_file.is_file() or not names:
+        return None
+    with sqlite3.connect(cache_file) as connection:
+        resolved = []
+        for name in names:
+            if Path(name).name != name or not name:
+                raise ValueError(f"Unsafe scientific Source_Files entry: {name!r}.")
+            candidates = connection.execute(
+                "SELECT path,size,mtime_ns,ctime_ns FROM headers WHERE basename=?",
+                (name,),
+            ).fetchall()
+            live = []
+            for path, size, mtime, ctime in candidates:
+                try:
+                    stat = Path(path).stat()
+                except OSError:
+                    continue
+                if (stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns) == (
+                    size, mtime, ctime
+                ):
+                    live.append(path)
+            if len(live) > 1:
+                raise ValueError(
+                    f"Ambiguous L0 source filename {name!r}: multiple indexed raw files."
+                )
+            if not live:
+                return None
+            resolved.append(live[0])
+    return resolved
