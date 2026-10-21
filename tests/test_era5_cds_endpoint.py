@@ -218,8 +218,10 @@ def test_sparse_monthly_request_planner_avoids_cartesian_overfetch() -> None:
     planned = plan_era5_requests(
         hours, -23.5, -46.75, _settings(),
     )
-    assert len(planned) == 2
-    assert sum(fields for _, _, _, fields in planned) == 8 * 2 * 3
+    # Four days with two different hour sets can be merged with 2x extra
+    # hours, significantly reducing CDS submissions.
+    assert len(planned) == 1
+    assert sum(fields for _, _, _, fields in planned) == 16 * 2 * 3
     covered = []
     for requested_hours, _, request, fields in planned:
         assert len(requested_hours) * 2 * 3 == fields
@@ -228,8 +230,9 @@ def test_sparse_monthly_request_planner_avoids_cartesian_overfetch() -> None:
         for day in request["day"]:
             for time in request["time"]:
                 covered.append(f"2020-01-{day}T{time}")
-    expected = sorted(dt.strftime("%Y-%m-%dT%H:00") for dt in hours)
-    assert sorted(covered) == expected
+    expected = {dt.strftime("%Y-%m-%dT%H:00") for dt in hours}
+    assert expected.issubset(set(covered))
+    assert len(covered) <= 2 * len(expected)
 
 
 def test_sparse_era5_planner_splits_on_field_ceiling() -> None:
@@ -241,9 +244,8 @@ def test_sparse_era5_planner_splits_on_field_ceiling() -> None:
         hours, -23.5, -46.75, _settings(), max_fields=24,
     )
     assert len(planned) == 2
-    assert [fields for _, _, _, fields in planned] == [24, 12]
-    assert len(planned[0][2]["day"]) == 2
-    assert len(planned[1][2]["day"]) == 1
+    assert sorted(fields for _, _, _, fields in planned) == [12, 24]
+    assert sorted(len(entry[2]["day"]) for entry in planned) == [1, 2]
 
 
 def test_era5_planner_never_crosses_utc_month_boundary() -> None:
@@ -254,3 +256,70 @@ def test_era5_planner_never_crosses_utc_month_boundary() -> None:
     planned = plan_era5_requests(hours, -23.5, -46.75, _settings())
     assert len(planned) == 2
     assert [entry[2]["month"] for entry in planned] == [["01"], ["02"]]
+
+
+def test_era5_monthly_packing_merges_sparse_days_without_exceeding_overfetch() -> None:
+    # Thirty days with just two observation hours each: one cheap request,
+    # not 30 small requests. The CDS Cartesian selection is accounted for.
+    hours = [
+        datetime(2020, 6, day, hour, tzinfo=timezone.utc)
+        for day in range(1, 31) for hour in (11, 12)
+    ]
+    requests = plan_era5_requests(hours, -23.5, -46.75, _settings())
+    assert len(requests) == 1
+    assert requests[0][3] == 60 * 6
+    assert requests[0][3] <= 80_000
+    assert len(requests[0][2]["day"]) == 30
+    assert requests[0][2]["time"] == ["11:00", "12:00"]
+
+
+def test_era5_monthly_packing_limits_overfetch_and_field_budget() -> None:
+    hours = [
+        datetime(2020, 1, day, hour, tzinfo=timezone.utc)
+        for day in range(1, 32)
+        for hour in ((11, 12) if day % 2 else (18, 19))
+    ]
+    planned = plan_era5_requests(
+        hours, -23.5, -46.75, _settings(), max_fields=120,
+    )
+    requested = sum(fields for _, _, _, fields in planned)
+    useful = len(hours) * 6
+    assert requested <= useful * 2
+    assert all(fields <= 120 for _, _, _, fields in planned)
+    for _, _, req, fields in planned:
+        assert len(req["day"]) * len(req["time"]) * 6 == fields
+
+
+def test_era5_prefetch_blocks_new_cds_jobs_when_old_job_unresolved(
+    tmp_path, monkeypatch,
+) -> None:
+    import json
+
+    cache_root = tmp_path / "cache" / "era5"
+    ledger = cache_root / "requests" / "previous.json"
+    ledger.parent.mkdir(parents=True)
+    ledger.write_text(
+        json.dumps({
+            "status": "submitted", "request_id": "previous",
+            "expected_hours_utc": ["2020-01-07T11:00:00+00:00"],
+        }),
+        encoding="utf-8",
+    )
+    calls = []
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            calls.append(("client", kwargs))
+
+        def retrieve(self, *args):
+            calls.append(("retrieve", args))
+
+    monkeypatch.setitem(sys.modules, "cdsapi", types.SimpleNamespace(Client=FakeClient))
+    with pytest.raises(RuntimeError, match="uncertain remote state"):
+        prefetch_era5_pressure_level_profiles(
+            [datetime(2020, 1, 7, 11, tzinfo=timezone.utc)],
+            -23.5, -46.75, logging.getLogger("test.era5.pending"),
+            settings=_settings(), root_dir=tmp_path,
+        )
+    assert calls == []
+    assert json.loads(ledger.read_text(encoding="utf-8"))["status"] == "submitted"

@@ -318,48 +318,99 @@ def plan_era5_requests(
     settings: Mapping[str, Any],
     *,
     max_fields: int = ERA5_MAX_REQUEST_FIELDS,
+    max_overfetch_ratio: float = 2.0,
 ) -> list[tuple[list[datetime], str, dict[str, Any], int]]:
-    """Plan exact sparse CDS selections, grouping days with identical UTC hours.
+    """Pack sparse UTC month requests, with an explicit overfetch budget.
 
-    Every request is restricted to one UTC month. The CDS interprets lists of
-    days and times as a Cartesian product: grouping only *identical* hour sets
-    avoids paying for unrequested hours. This planner never submits a job.
+    CDS day/time lists form a Cartesian product. Within each month, merge
+    day-sets greedily where a union of requested times reduces the request
+    count without exceeding *either* the field ceiling or overfetch ratio.
+    Extra hours are genuine cached ERA5 observations, never fabricated.
     """
     cfg = era5_config(settings)
     if isinstance(max_fields, bool) or not isinstance(max_fields, int) or max_fields <= 0:
         raise ValueError("ERA5 max_fields must be a positive integer.")
-    days: dict[date, set[int]] = {}
+    if not np.isfinite(max_overfetch_ratio) or max_overfetch_ratio < 1:
+        raise ValueError("ERA5 max_overfetch_ratio must be finite and >= 1.")
+
+    month_days: dict[tuple[int, int], dict[date, set[int]]] = {}
     for stamp in missing_hours:
-        dt = nearest_era5_analysis_hour(stamp)
-        days.setdefault(dt.date(), set()).add(dt.hour)
+        analysis = nearest_era5_analysis_hour(stamp)
+        day = analysis.date()
+        month_days.setdefault((day.year, day.month), {}).setdefault(day, set()).add(
+            analysis.hour
+        )
 
-    groups: dict[tuple[int, int, tuple[int, ...]], list[date]] = {}
-    for day, hours in sorted(days.items()):
-        groups.setdefault((day.year, day.month, tuple(sorted(hours))), []).append(day)
-
-    fields_per_hour = len(cfg["pressure_levels_hpa"]) * 2
-    planned = []
-    for (_year, _month, hour_set), matching_days in sorted(groups.items()):
-        per_day_fields = len(hour_set) * fields_per_hour
-        if per_day_fields > max_fields:
+    fields_per_hour = 2 * len(cfg["pressure_levels_hpa"])
+    planned: list[tuple[list[datetime], str, dict[str, Any], int]] = []
+    for _month, day_hours in sorted(month_days.items()):
+        # A cluster contains days, the union of hours and *useful* day-hours.
+        clusters = [
+            (frozenset((day,)), frozenset(hours), len(hours))
+            for day, hours in sorted(day_hours.items())
+        ]
+        if any(len(hours) * fields_per_hour > max_fields for _, hours, _ in clusters):
             raise ValueError("ERA5 one-day requested fields exceed max_fields.")
-        days_per_request = max(1, max_fields // per_day_fields)
-        for index in range(0, len(matching_days), days_per_request):
-            chunk = matching_days[index:index + days_per_request]
-            hours = [
+        while len(clusters) > 1:
+            best = None
+            best_score = None
+            for i, (a_days, a_hours, a_useful) in enumerate(clusters):
+                for j in range(i + 1, len(clusters)):
+                    b_days, b_hours, b_useful = clusters[j]
+                    combined_days = a_days | b_days
+                    combined_hours = a_hours | b_hours
+                    combined_useful = a_useful + b_useful
+                    combos = len(combined_days) * len(combined_hours)
+                    fields = combos * fields_per_hour
+                    if (
+                        fields > max_fields
+                        or combos > max_overfetch_ratio * combined_useful
+                    ):
+                        continue
+                    # First merge identical or near-identical hour sets, then
+                    # prefer requests that cover the most useful observations.
+                    overhead = combos - combined_useful
+                    score = (overhead, -combined_useful, i, j)
+                    if best_score is None or score < best_score:
+                        best_score = score
+                        best = (i, j, (combined_days, combined_hours, combined_useful))
+            if best is None:
+                break
+            i, j, merged = best
+            clusters = [
+                cluster for k, cluster in enumerate(clusters) if k not in (i, j)
+            ] + [merged]
+
+        for days, hours, useful in clusters:
+            chosen_days = sorted(days)
+            chosen_hours = sorted(hours)
+            request_hours = [
                 datetime(day.year, day.month, day.day, hour, tzinfo=timezone.utc)
-                for day in chunk for hour in hour_set
+                for day in chosen_days for hour in chosen_hours
             ]
             dataset, request = build_era5_request_for_hours(
-                hours[:len(hour_set)], latitude, longitude, cfg,
+                request_hours[:len(chosen_hours)], latitude, longitude, cfg,
             )
-            request["day"] = [day.strftime("%d") for day in chunk]
-            requested_fields = len(chunk) * per_day_fields
-            if requested_fields > max_fields:
-                raise AssertionError("ERA5 planner exceeded field limit.")
-            planned.append((hours, dataset, request, requested_fields))
-    # Dispatch in chronological order regardless of hour-pattern grouping.
+            request["day"] = [day.strftime("%d") for day in chosen_days]
+            fields = len(request_hours) * fields_per_hour
+            if fields > max_fields or len(request_hours) > max_overfetch_ratio * useful:
+                raise AssertionError("ERA5 request exceeds field/overfetch budget.")
+            planned.append((request_hours, dataset, request, fields))
+
     return sorted(planned, key=lambda item: item[0][0])
+
+
+def _pending_era5_requests(cache_root: Path) -> list[tuple[Path, dict[str, Any]]]:
+    """Conservatively identify unresolved CDS submissions across old planners."""
+    directory = cache_root / "requests"
+    if not directory.is_dir():
+        return []
+    pending = []
+    for ledger in sorted(directory.glob("*.json")):
+        record = _read_metadata(ledger)
+        if record.get("status") in {"submitted", "uncertain"}:
+            pending.append((ledger, record))
+    return pending
 
 
 def _valid_hourly_cache(
@@ -453,13 +504,28 @@ def prefetch_era5_pressure_level_profiles(
         logger.warning("ERA5 unavailable | cdsapi is not installed")
         return available
 
+    cache_root = resolve_project_path(cfg["cache_dir"], root_dir=root_dir)
+    unresolved = _pending_era5_requests(cache_root)
+    if unresolved:
+        first_ledger, first_record = unresolved[0]
+        request_id = first_record.get("request_id", first_ledger.stem)
+        raise RuntimeError(
+            f"ERA5 prefetch blocked: {len(unresolved)} previously submitted CDS "
+            f"request(s) have uncertain remote state; first={request_id} "
+            f"ledger={first_ledger}. Inspect/reconcile the remote CDS job before "
+            "resubmitting or starting another ERA5 batch. No new request sent."
+        )
+
     requests = plan_era5_requests(missing, latitude, longitude, cfg)
+    useful_fields = len(missing) * 2 * len(cfg["pressure_levels_hpa"])
+    requested_fields = sum(item[3] for item in requests)
     logger.info(
-        "ERA5 prefetch | %d missing hours | %d requests | %d fields",
-        len(missing), len(requests), sum(item[3] for item in requests),
+        "ERA5 prefetch | %d missing hours | %d requests | "
+        "%d requested fields (%d useful, %d extra)",
+        len(missing), len(requests), requested_fields,
+        useful_fields, requested_fields - useful_fields,
     )
     client = cdsapi.Client(url=CDS_API_URL, quiet=True)
-    cache_root = resolve_project_path(cfg["cache_dir"], root_dir=root_dir)
     for hours, dataset, request, fields in requests:
         digest = sha256(
             json.dumps([dataset, request], sort_keys=True).encode("utf-8")
