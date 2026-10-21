@@ -291,3 +291,21 @@ If you use MILGRAU, cite the software using [`CITATION.cff`](CITATION.cff). The 
 ## License
 
 MILGRAU is distributed under the MIT License; see [`LICENSE`](LICENSE).
+
+## Historical L0/L1 input preflight (Phase 5 experimental branch)
+
+LIBIDS stores **rebuildable raw-header facts** in
+`.cache/libids/inventory.sqlite` to avoid re-reading an unchanged six-year
+Licel archive on every `-i` run. The cache does not define session identity;
+current station profiles, session boundaries, dark-current selection and QA
+still determine the science. An SCC-only reexport with a valid L0 can use
+its `Source_Files` and this cache to locate original raw files without
+rewriting the canonical product.
+
+LIPANCORA automatically plans the necessary ERA5 hours of the selected L0
+sessions before running Level 1. Sparse same-hour days can share one CDS
+request under an initial 80,000-field ceiling; results remain in the
+rebuildable `.cache/era5` directory. Under the branch's default
+`level1.atmosphere.missing_policy: require_era5`, temporary CDS
+unavailability does not silently produce a definitive L1 from USSA76.
+Set `allow_fallback` deliberately for operational continuation.

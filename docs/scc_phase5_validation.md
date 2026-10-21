@@ -96,3 +96,34 @@ Use the Actions run linked from `.github/tracker.md` for the exact code
 commit, Python environments and regression count. Documentation-only
 follow-up commits may create separate Actions runs; the evidence applies
 to the code SHA tested by that run.
+
+
+## 6. Phase 5 extension — raw header cache and ERA5 batch preparation
+
+The experimental branch now includes a rebuildable SQLite cache of Licel
+header facts at `.cache/libids/inventory.sqlite`. It is **not** a journal of
+scientific decisions, a replacement for raw Licel files, or part of the SCC
+submission state. A full raw filesystem walk detects changed/new/missing
+inputs; unchanged headers are reused. With explicit `-i` session/date,
+the expensive station/sessionization step considers a time-safe candidate
+halo that includes potential competing dark currents. For SCC-only reexport,
+a valid canonical L0 can resolve its listed `Source_Files` via unique,
+signature-current indexed basenames, avoiding even the full raw walk. If
+provenance is absent/stale it falls back to standard discovery; ambiguous
+basenames are refused rather than guessed.
+
+LIPANCORA now preflights selected Level 0 files and downloads missing ERA5
+hours globally using sparse day/hour groups, an initial 80,000-field ceiling,
+serial CDS requests, validated hourly caches, and reconstructible request
+metadata. Repeated per-session CDS dispatch within a single LIPANCORA
+invocation is suppressed. Missing ERA5 becomes a pipeline error under the
+experimental branch's explicit `missing_policy: require_era5`; use
+`allow_fallback` only to deliberately permit USSA76. This does not change
+the equations defining the atmospheric variables.
+
+**Local acceptance still required:** run twice on the representative historical
+session and compare total raw-header parses, elapsed time, session IDs, QA
+selection, dark-current links, source hashes and L0/L1 scientific arrays with
+a known pre-refactor baseline. For ERA5, monitor requested versus available
+hours, CDS field counts, actual API congestion, NetCDF integrity and L1
+provenance on real data. The GitHub Actions suite only simulates CDS responses.
