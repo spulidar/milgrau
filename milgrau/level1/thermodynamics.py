@@ -380,6 +380,8 @@ def integrate_thermodynamics(
     temperature_rows: list[np.ndarray] = []
     pressure_rows: list[np.ndarray] = []
     source_types: list[str] = []
+    radio_observation_sources: set[str] = set()
+    radio_archives: set[str] = set()
     source_time_delta_hours: list[float] = []
     fallback_fractions: list[float] = []
     source_min_altitude: list[float] = []
@@ -499,6 +501,11 @@ def integrate_thermodynamics(
                 temperature_rows.append(temperature_k)
                 pressure_rows.append(pressure_hpa)
                 source_types.append("radiosonde")
+                if metadata.get("historical_archive"):
+                    radio_observation_sources.add("igra2")
+                    radio_archives.add(str(metadata["historical_archive"]))
+                else:
+                    radio_observation_sources.add("wyoming_siphon")
                 source_time_delta_hours.append(float(delta_hours))
                 fallback_fractions.append(float(fallback_fraction))
                 source_min_altitude.append(float(metadata.get("source_profile_min_altitude_asl_m", np.nan)))
@@ -550,6 +557,15 @@ def integrate_thermodynamics(
         policy=policy,
         station_site=station_site,
     )
+
+    if radio_observation_sources:
+        result.attrs["thermodynamic_radiosonde_observation_sources"] = (
+            ",".join(sorted(radio_observation_sources))
+        )
+    if radio_archives:
+        result.attrs["thermodynamic_radiosonde_archives"] = (
+            ",".join(sorted(radio_archives))
+        )
 
     try:
         station_id, station_name = resolve_radiosonde_station(config)

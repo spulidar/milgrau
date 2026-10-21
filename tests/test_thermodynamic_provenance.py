@@ -127,3 +127,32 @@ def test_time_resolved_radiosonde_only_identifies_actual_wyoming_provider() -> N
     assert result["thermodynamic_profile_provider"] == "university_of_wyoming"
     assert result["thermodynamic_profile_product"] == "upper_air_sounding"
     assert "copernicus" not in result["thermodynamic_profile_source_id"]
+
+
+def test_time_resolved_igra2_radiosonde_identifies_noaa_not_wyoming() -> None:
+    result = thermodynamic_source_provenance(
+        {
+            "thermodynamic_profile_source_type": "time_resolved",
+            "thermodynamic_sources_present": "radiosonde",
+            "thermodynamic_radiosonde_observation_sources": "igra2",
+            "thermodynamic_radiosonde_archives": "BRM00083779-data.txt",
+        },
+        {},
+    )
+    assert result["thermodynamic_profile_provider"] == "noaa_ncei"
+    assert result["thermodynamic_profile_product"] == "igra2_upper_air_sounding"
+    assert result["thermodynamic_profile_source_id"].startswith("noaa_ncei/")
+    assert "BRM00083779" not in result["thermodynamic_profile_source_id"]
+
+
+def test_mixed_igra_and_wyoming_radiosonde_provenance_cannot_claim_one_provider() -> None:
+    result = thermodynamic_source_provenance(
+        {
+            "thermodynamic_profile_source_type": "time_resolved",
+            "thermodynamic_sources_present": "radiosonde",
+            "thermodynamic_radiosonde_observation_sources": "igra2,wyoming_siphon",
+        },
+        {},
+    )
+    assert result["thermodynamic_profile_provider"] == "mixed_radiosonde_providers"
+    assert result["thermodynamic_profile_product"] == "upper_air_sounding"

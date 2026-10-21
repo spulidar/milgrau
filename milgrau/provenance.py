@@ -268,9 +268,25 @@ def thermodynamic_source_provenance(
         if item.strip()
     }
     if source_type == "time_resolved" and sources_present == {"radiosonde"}:
-        provider = "university_of_wyoming"
-        product = "upper_air_sounding"
-        release = "service_unversioned"
+        observation_sources = {
+            part.strip().lower()
+            for part in str(source_attrs.get(
+                "thermodynamic_radiosonde_observation_sources", ""
+            )).split(",")
+            if part.strip()
+        }
+        if observation_sources == {"igra2"}:
+            provider = "noaa_ncei"
+            product = "igra2_upper_air_sounding"
+            release = "archived_observations"
+        elif observation_sources == {"igra2", "wyoming_siphon"}:
+            provider = "mixed_radiosonde_providers"
+            product = "upper_air_sounding"
+            release = "igra2_and_wyoming"
+        else:
+            provider = "university_of_wyoming"
+            product = "upper_air_sounding"
+            release = "service_unversioned"
         doi = ""
     elif source_type == "time_resolved" and sources_present == {"ussa76"}:
         provider = "us_standard_atmosphere"
