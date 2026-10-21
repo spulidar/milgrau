@@ -358,7 +358,8 @@ def plan_era5_requests(
             if requested_fields > max_fields:
                 raise AssertionError("ERA5 planner exceeded field limit.")
             planned.append((hours, dataset, request, requested_fields))
-    return planned
+    # Dispatch in chronological order regardless of hour-pattern grouping.
+    return sorted(planned, key=lambda item: item[0][0])
 
 
 def _valid_hourly_cache(
