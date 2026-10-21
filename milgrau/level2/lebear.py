@@ -44,6 +44,29 @@ from milgrau.level2.level2_schema import validate_level2_contract
 from milgrau.level2.time_window import subset_level1_context
 
 
+def _reject_radiosonde_only_l1(ds: xr.Dataset) -> None:
+    """Productive radiosonde L1 is intentionally not eligible for canonical L2."""
+    attrs = ds.attrs
+    source_priority = {
+        item.strip().lower()
+        for item in str(attrs.get("thermodynamic_source_priority", "")).split(",")
+    }
+    sources = {
+        item.strip().lower()
+        for item in str(attrs.get("thermodynamic_sources_present", "")).split(",")
+    }
+    if (
+        str(attrs.get("level1_atmosphere_mode", "")).strip() == "radiosonde_only"
+        or "radiosonde" in source_priority
+        or "radiosonde" in sources
+    ):
+        raise ValueError(
+            "LEBEAR cannot process an L1 generated with --radiosonde-only. "
+            "Rerun 'milgrau-lipancora -i SESSION_ID' without --radiosonde-only "
+            "to regenerate the normal L1 with ERA5, then rerun 'milgrau-lebear'."
+        )
+
+
 def level2_output_is_current(
     nc_file: str | Path,
     output_path: str | Path,
@@ -58,6 +81,13 @@ def level2_output_is_current(
     """Return whether one Level 2 output is intact and current."""
     del start_utc, stop_utc, output_tag, regime, segment_id
     output = Path(output_path)
+    try:
+        with xr.open_dataset(nc_file, cache=False) as source:
+            _reject_radiosonde_only_l1(source)
+    except (OSError, ValueError):
+        # Never skip as current if L1 has an unsupported atmosphere or is unreadable;
+        # process_single_level1_file emits an actionable Level 2 error.
+        return False
     if not output.is_file():
         return False
     requested = list(canonical_wavelengths(get_wavelengths_to_process(config)))
@@ -187,6 +217,7 @@ def process_single_level1_file(
         with xr.open_dataset(nc_path, cache=False) as ds_source:
             source_provenance = dict(ds_source.attrs)
             stage = "level2.validation.input"
+            _reject_radiosonde_only_l1(ds_source)
             validate_level1_contract(ds_source)
             stage = "level2.selection"
             ds_l1, inferred_output_tag = subset_level1_context(

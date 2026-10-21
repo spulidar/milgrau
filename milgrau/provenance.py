@@ -267,7 +267,12 @@ def thermodynamic_source_provenance(
         for item in str(source_attrs.get("thermodynamic_sources_present", "")).split(",")
         if item.strip()
     }
-    if source_type == "time_resolved" and sources_present == {"ussa76"}:
+    if source_type == "time_resolved" and sources_present == {"radiosonde"}:
+        provider = "university_of_wyoming"
+        product = "upper_air_sounding"
+        release = "service_unversioned"
+        doi = ""
+    elif source_type == "time_resolved" and sources_present == {"ussa76"}:
         provider = "us_standard_atmosphere"
         product = "standard_atmosphere"
         release = "1976"

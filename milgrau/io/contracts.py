@@ -279,9 +279,20 @@ def _validate_level1_atmosphere(ds: xr.Dataset) -> None:
         _require_exact_dims(ds[name], ("atmosphere_time",), f"Level 1 {name}")
 
     source_values = {str(value) for value in np.asarray(ds["Atmospheric_Source_Type"].values).reshape(-1)}
-    if not source_values or not source_values.issubset({"era5", "ussa76"}):
+    mode = str(ds.attrs.get("level1_atmosphere_mode", "")).strip()
+    if mode not in {"", "standard", "radiosonde_only"}:
+        raise ValueError(f"Unknown Level 1 atmosphere mode: {mode!r}.")
+    if mode == "radiosonde_only":
+        if source_values != {"radiosonde"} or str(
+            ds.attrs.get("thermodynamic_source_priority", "")
+        ).strip() != "radiosonde":
+            raise ValueError(
+                "Radiosonde-only L1 must contain only productive radiosonde "
+                "profiles and record radiosonde source priority."
+            )
+    elif not source_values or not source_values.issubset({"era5", "ussa76"}):
         raise ValueError(
-            "Level 1 Atmospheric_Source_Type may contain only productive sources era5 and ussa76."
+            "Standard Level 1 Atmospheric_Source_Type may contain only era5 and ussa76."
         )
 
     fallback = np.asarray(ds["Atmospheric_USSA76_Fallback_Fraction"].values, dtype=np.float64)

@@ -35,7 +35,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "Use radiosonde as the productive hourly atmosphere without ERA5/CDS. "
             "Fail if no sounding is valid within the configured time window. "
-            "Write separate *_radiosonde_L1.nc products; never overwrite canonical ERA5 L1."
+            "Write the normal *_L1.nc product marked radiosonde-only; "
+            "LEBEAR rejects it until Level 1 is rerun with ERA5."
         ),
     )
     parser.add_argument("--version", action="version", version=f"MILGRAU {__version__}")
@@ -163,7 +164,7 @@ def main() -> int:
     bind_log_context(logger, stage="start").info("LIPANCORA Level 1")
     if args.radiosonde_only:
         bind_log_context(logger, stage="atmosphere").info(
-            "radiosonde-only mode | no ERA5/CDS | separate _radiosonde_L1 outputs"
+            "radiosonde-only mode | no ERA5/CDS | canonical _L1 output blocked for L2"
         )
     operation = (
         (lambda: _process_figures_only(args, config, logger))

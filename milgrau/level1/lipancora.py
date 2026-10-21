@@ -17,8 +17,6 @@ from milgrau.io.filesystem import ensure_directories
 from milgrau.io.logging_utils import bind_log_context
 from milgrau.io.paths import (
     LEVEL0_SUFFIX,
-    LEVEL1_SUFFIX,
-    LEVEL1_SCC_SUFFIX,
     level1_output_path,
     logging_session_id,
     processed_data_root,
@@ -297,14 +295,26 @@ def _discover_level0_files(config: Mapping[str, Any]) -> list[Path]:
 
 
 def _level1_target_path(level0_file: str | Path, config: Mapping[str, Any]) -> Path:
-    """Keep observational radiosonde L1 separate from canonical ERA5 L1."""
-    canonical = level1_output_path(level0_file, config)
-    if not config.get("_radiosonde_only_mode", False):
-        return canonical
-    suffix = LEVEL1_SCC_SUFFIX if canonical.name.endswith(LEVEL1_SCC_SUFFIX) else LEVEL1_SUFFIX
-    return canonical.with_name(
-        canonical.name[:-len(suffix)] + "_radiosonde" + suffix
-    )
+    """Use the canonical L1 path in both modes; science provenance distinguishes them."""
+    return level1_output_path(level0_file, config)
+
+
+def _l1_mode_matches_requested(path: Path, config: Mapping[str, Any]) -> bool:
+    """A cached radiosonde L1 is never current for ERA5, or vice versa."""
+    try:
+        with xr.open_dataset(path, cache=False) as existing:
+            source_priority = str(
+                existing.attrs.get("thermodynamic_source_priority", "")
+            ).split(",")
+            stored_radiosonde = (
+                str(existing.attrs.get("level1_atmosphere_mode", "")).strip()
+                == "radiosonde_only"
+                or "radiosonde" in source_priority
+            )
+            requested_radiosonde = config.get("_radiosonde_only_mode", False) is True
+            return stored_radiosonde == requested_radiosonde
+    except (OSError, ValueError, KeyError):
+        return False
 
 
 def _files_requiring_level1(
@@ -320,12 +330,13 @@ def _files_requiring_level1(
         output_path = _level1_target_path(file_path, config)
         is_current = False
         if incremental and output_path.exists():
-            is_current = output_is_current(
-                output_path,
-                [file_path],
-                config=config,
-                integrity_check=lambda path: netcdf_satisfies_contract(path, validate_level1_contract),
-            )
+            if _l1_mode_matches_requested(output_path, config):
+                is_current = output_is_current(
+                    output_path,
+                    [file_path],
+                    config=config,
+                    integrity_check=lambda path: netcdf_satisfies_contract(path, validate_level1_contract),
+                )
         if is_current:
             file_logger = bind_log_context(logger, session_id=session_id)
             bind_log_context(file_logger, stage="skip").info("up to date | %s", output_path.name)
@@ -461,6 +472,10 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
         final_ds = integrate_thermodynamics(final_ds, config, bind_log_context(file_logger, stage="atmosphere"))
         final_ds.attrs.update(ds_raw.attrs)
         final_ds.attrs.update(_processing_metadata(nc_file))
+        final_ds.attrs["level1_atmosphere_mode"] = (
+            "radiosonde_only" if config.get("_radiosonde_only_mode", False)
+            else "standard"
+        )
         final_ds = _make_level1_netcdf_safe(final_ds)
         stage = "level1.validation"
         validate_level1_contract(final_ds)
