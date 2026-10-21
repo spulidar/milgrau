@@ -288,6 +288,7 @@ def test_apply_all_physical_corrections_persists_distinct_diagnostics() -> None:
             "atmosphere": {
                 "time_resolution_minutes": 60,
                 "source_priority": ["ussa76"],
+                "missing_policy": "allow_fallback",
                 "external_profile_outside_coverage": "ussa76",
             },
         },

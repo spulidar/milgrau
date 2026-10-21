@@ -40,6 +40,7 @@ def _level1_recipe() -> dict:
             "atmosphere": {
                 "time_resolution_minutes": 60,
                 "source_priority": ["ussa76"],
+                "missing_policy": "allow_fallback",
                 "external_profile_outside_coverage": "ussa76",
             },
         }

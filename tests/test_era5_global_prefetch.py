@@ -50,7 +50,7 @@ def test_global_prefetch_deduplicates_overlapping_sessions_and_brackets_utc(
         make_file("two.nc", ["2020-01-07T12:50:00", "2020-01-07T13:15:00"]),
     ]
     assert era5_prefetch.prefetch_selected_level0_atmosphere(
-        files, {}, logging.getLogger("test.global.prefetch"),
+        files, {"level1": {}}, logging.getLogger("test.global.prefetch"),
     )
     assert len(calls) == 1
     times, lat, lon, settings = calls[0]
@@ -70,5 +70,5 @@ def test_global_prefetch_disabled_without_era5(tmp_path: Path, monkeypatch) -> N
         )),
     )
     assert not era5_prefetch.prefetch_selected_level0_atmosphere(
-        [tmp_path / "not-needed.nc"], {}, logging.getLogger("test.global.no-era5"),
+        [tmp_path / "not-needed.nc"], {"level1": {}}, logging.getLogger("test.global.no-era5"),
     )
