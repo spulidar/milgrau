@@ -34,7 +34,8 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "Use radiosonde as the productive hourly atmosphere without ERA5/CDS. "
-            "Fail if no sounding is valid within the configured time window. "
+            "Use a 12h window for historical daily 12Z soundings; "
+            "fail if none is valid within that window. "
             "Write the normal *_L1.nc product marked radiosonde-only; "
             "LEBEAR rejects it until Level 1 is rerun with ERA5."
         ),
@@ -144,6 +145,12 @@ def _radiosonde_only_config(config: dict) -> dict:
         raise ValueError("Radiosonde-only mode requires level1.atmosphere.radiosonde configuration.")
     atmosphere["source_priority"] = ["radiosonde"]
     atmosphere.pop("era5", None)
+    # Historic SPU radiosondes are often 12Z-only. Require an *observed*
+    # sounding within 12h, without fabricating absent 00Z measurements.
+    # The ordinary ERA5/QA configuration retains its six-hour tolerance.
+    radiosonde = dict(atmosphere["radiosonde"])
+    radiosonde["max_time_delta_hours"] = 12.0
+    atmosphere["radiosonde"] = radiosonde
     return {
         **config,
         "level1": {**config["level1"], "atmosphere": atmosphere},
@@ -164,7 +171,7 @@ def main() -> int:
     bind_log_context(logger, stage="start").info("LIPANCORA Level 1")
     if args.radiosonde_only:
         bind_log_context(logger, stage="atmosphere").info(
-            "radiosonde-only mode | no ERA5/CDS | canonical _L1 output blocked for L2"
+            "radiosonde-only | 12h observed sounding window | no ERA5/CDS | L2 blocked"
         )
     operation = (
         (lambda: _process_figures_only(args, config, logger))

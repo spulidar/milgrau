@@ -107,6 +107,96 @@ def select_radiosonde_target_datetime(
     return target_dt if delta_hours <= max_delta else None
 
 
+def _synoptic_candidates_within_window(
+    measurement_dt: datetime,
+    *,
+    synoptic_hours_utc: Sequence[int],
+    selection: str,
+    max_time_delta_hours: float,
+) -> list[datetime]:
+    """Closest nominal UTC slots to inspect for *actual* cached observations."""
+    if str(selection).strip().lower() != "nearest":
+        raise ValueError("Radiosonde selection currently supports only 'nearest'.")
+    hours = list(synoptic_hours_utc)
+    if not hours or any(
+        isinstance(h, bool) or not isinstance(h, int) or h < 0 or h > 23
+        for h in hours
+    ) or len(set(hours)) != len(hours):
+        raise ValueError("Radiosonde synoptic hours must be unique integers between 0 and 23.")
+    max_delta = float(max_time_delta_hours)
+    if not math.isfinite(max_delta) or max_delta <= 0.0:
+        raise ValueError("Radiosonde max_time_delta_hours must be positive and finite.")
+    day = measurement_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_span = math.ceil(max_delta / 24.0) + 1
+    candidates = [
+        day + timedelta(days=offset, hours=hour)
+        for offset in range(-day_span, day_span + 1)
+        for hour in hours
+    ]
+    candidates = [
+        stamp for stamp in candidates
+        if abs((stamp - measurement_dt).total_seconds()) <= max_delta * 3600
+    ]
+    return sorted(
+        candidates,
+        key=lambda stamp: (abs((stamp - measurement_dt).total_seconds()), stamp),
+    )
+
+
+def _cached_sounding(
+    cache_root: Path,
+    target_dt: datetime,
+    measurement_dt: datetime,
+    station_id: str,
+    logger: logging.Logger,
+    base_metadata: Mapping[str, Any],
+) -> pd.DataFrame | None:
+    """Try validated local CSV, then IGRA2 for one nominal UTC launch."""
+    cache_path = cache_root / target_dt.strftime("%Y") / target_dt.strftime("%m")
+    cache_filename = f"radiosonde_{station_id}_{target_dt.strftime('%Y%m%d_%H')}Z.csv"
+    cache_file = cache_path / cache_filename
+    metadata_file = _metadata_file_for(cache_file)
+    metadata = {
+        **base_metadata,
+        "measurement_datetime_utc": measurement_dt.isoformat(),
+        "target_datetime_utc": target_dt.isoformat(),
+        "time_delta_hours": abs((target_dt - measurement_dt).total_seconds()) / 3600.0,
+        "csv_file": cache_file.name,
+    }
+
+    if cache_file.exists():
+        try:
+            cached = pd.read_csv(cache_file)
+            if not {"height", "temperature", "pressure"}.issubset(cached.columns):
+                raise ValueError("Required radiosonde columns missing.")
+            values = cached.dropna(subset=["height", "temperature", "pressure"])
+            if len(values) < 2:
+                raise ValueError("Insufficient valid radiosonde levels.")
+            logger.debug("radiosonde hourly CSV cache hit: %s", cache_filename)
+            sidecar = _read_metadata(metadata_file)
+            source_keys = {
+                key: sidecar[key] for key in (
+                    "source", "historical_archive", "historical_station_id",
+                    "source_type", "download_datetime_utc",
+                ) if key in sidecar
+            }
+            return _attach_metadata(cached, {**metadata, **source_keys})
+        except (OSError, ValueError, KeyError, pd.errors.ParserError) as exc:
+            logger.warning("radiosonde CSV cache unusable | %s | %s", cache_filename, exc)
+
+    historical = load_igra2_cached_sounding(cache_root, station_id, target_dt, logger)
+    if historical is None:
+        return None
+    metadata = {**metadata, **dict(historical.attrs)}
+    metadata["measurement_datetime_utc"] = measurement_dt.isoformat()
+    metadata["time_delta_hours"] = abs((target_dt - measurement_dt).total_seconds()) / 3600.0
+    cache_path.mkdir(parents=True, exist_ok=True)
+    historical.to_csv(cache_file, index=False)
+    metadata_file.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    logger.debug("IGRA2 historical radiosonde saved as hourly CSV: %s", cache_filename)
+    return _attach_metadata(historical, metadata)
+
+
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=2, max=10),
@@ -132,70 +222,48 @@ def fetch_wyoming_radiosonde(
     if not station_id:
         raise ValueError("A non-empty radiosonde station_id is required.")
 
-    target_dt = select_radiosonde_target_datetime(
+    candidates = _synoptic_candidates_within_window(
         measurement_dt,
         synoptic_hours_utc=synoptic_hours_utc,
         selection=selection,
         max_time_delta_hours=max_time_delta_hours,
     )
-    if target_dt is None:
-        logger.warning(
-            "no configured synoptic sounding within %.2f h",
-            float(max_time_delta_hours),
-        )
+    if not candidates:
+        logger.warning("no configured synoptic sounding within %.2f h", float(max_time_delta_hours))
         return None
-
     cache_root = resolve_project_path(cache_dir)
-    cache_path = cache_root / target_dt.strftime("%Y") / target_dt.strftime("%m")
-    cache_path.mkdir(parents=True, exist_ok=True)
-    cache_filename = f"radiosonde_{station_id}_{target_dt.strftime('%Y%m%d_%H')}Z.csv"
-    cache_file = cache_path / cache_filename
-    metadata_file = _metadata_file_for(cache_file)
     default_metadata = {
         "station_id": station_id,
         "measurement_datetime_utc": measurement_dt.isoformat(),
-        "target_datetime_utc": target_dt.isoformat(),
-        "time_delta_hours": abs((target_dt - measurement_dt).total_seconds()) / 3600.0,
         "temporal_selection": str(selection).strip().lower(),
         "synoptic_hours_utc": ",".join(str(int(hour)) for hour in synoptic_hours_utc),
         "max_time_delta_hours": float(max_time_delta_hours),
         "source": "University of Wyoming Upper Air via Siphon",
         "source_type": "radiosonde",
-        "csv_file": cache_file.name,
     }
 
-    if cache_file.exists():
-        try:
-            cached = pd.read_csv(cache_file)
-            if not {"height", "temperature", "pressure"}.issubset(cached.columns):
-                raise ValueError("Required radiosonde columns missing.")
-            if len(cached.dropna(subset=["height", "temperature", "pressure"])) < 2:
-                raise ValueError("Insufficient valid radiosonde levels.")
-            logger.debug("radiosonde hourly CSV cache hit: %s", cache_filename)
-            metadata = {**default_metadata, **_read_metadata(metadata_file)}
-            metadata.update({
-                "measurement_datetime_utc": measurement_dt.isoformat(),
-                "time_delta_hours": default_metadata["time_delta_hours"],
-            })
-            return _attach_metadata(cached, metadata)
-        except (OSError, ValueError, KeyError, pd.errors.ParserError) as exc:
-            logger.warning("radiosonde CSV cache unusable | %s | %s", cache_filename, exc)
-
-    historical = load_igra2_cached_sounding(
-        cache_root, station_id, target_dt, logger,
-    )
-    if historical is not None:
-        cache_metadata = {
-            **default_metadata,
-            **dict(historical.attrs),
-        }
-        historical.to_csv(cache_file, index=False)
-        metadata_file.write_text(
-            json.dumps(cache_metadata, indent=2), encoding="utf-8"
+    # SPU IGRA2 often has 12Z-only records. At 19Z, midnight tomorrow is
+    # nominally closer but may not exist; reuse the actually observed 12Z
+    # profile if it is inside the explicit temporal tolerance.
+    for candidate in candidates:
+        local = _cached_sounding(
+            cache_root, candidate, measurement_dt, station_id, logger,
+            default_metadata,
         )
-        logger.debug("IGRA2 historical radiosonde saved as hourly CSV: %s", cache_filename)
-        return _attach_metadata(historical, cache_metadata)
+        if local is not None:
+            return local
 
+    target_dt = candidates[0]
+    cache_path = cache_root / target_dt.strftime("%Y") / target_dt.strftime("%m")
+    cache_path.mkdir(parents=True, exist_ok=True)
+    cache_filename = f"radiosonde_{station_id}_{target_dt.strftime('%Y%m%d_%H')}Z.csv"
+    cache_file = cache_path / cache_filename
+    metadata_file = _metadata_file_for(cache_file)
+    default_metadata.update({
+        "target_datetime_utc": target_dt.isoformat(),
+        "time_delta_hours": abs((target_dt - measurement_dt).total_seconds()) / 3600.0,
+        "csv_file": cache_file.name,
+    })
     siphon_version = _require_current_siphon()
     logger.info(
         "radiosonde target | %sZ | station=%s | Δt=%.2f h | siphon=%s",
