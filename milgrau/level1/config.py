@@ -91,7 +91,7 @@ class AtmosphereConfig:
     external_profile_outside_coverage: str
     radiosonde: RadiosondeConfig | None
     era5: Era5Config | None
-    missing_policy: str = "allow_fallback"
+    missing_policy: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -298,7 +298,10 @@ def _resolve_atmosphere_config(level1: Mapping[str, Any]) -> AtmosphereConfig:
     }
     _allowed_keys(
         atmosphere,
-        required={"time_resolution_minutes", "source_priority", "external_profile_outside_coverage"},
+        required={
+            "time_resolution_minutes", "source_priority",
+            "external_profile_outside_coverage", "missing_policy",
+        },
         allowed=allowed,
         label="level1.atmosphere",
     )
@@ -354,7 +357,7 @@ def _resolve_atmosphere_config(level1: Mapping[str, Any]) -> AtmosphereConfig:
         )
 
     missing_policy = _text(
-        atmosphere.get("missing_policy", "allow_fallback"),
+        atmosphere["missing_policy"],
         "level1.atmosphere.missing_policy",
     ).lower()
     if missing_policy not in {"allow_fallback", "require_era5"}:

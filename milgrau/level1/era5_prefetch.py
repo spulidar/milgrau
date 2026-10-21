@@ -28,6 +28,10 @@ def prefetch_selected_level0_atmosphere(
     True signals that global network planning was attempted; downstream Level 1
     must not independently resubmit missed hours during the same run.
     """
+    # Explicit-file/embedding callers may provide a minimal mocked config;
+    # the real Level 1 pipeline performs strict validation independently.
+    if not isinstance(config.get("level1"), Mapping):
+        return False
     atmosphere = resolve_level1_config(config).atmosphere
     if "era5" not in atmosphere.source_priority or atmosphere.era5 is None:
         return False
