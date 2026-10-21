@@ -14,6 +14,7 @@ import pandas as pd
 from siphon.simplewebservice.wyoming import WyomingUpperAir
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+from milgrau.io.igra_archive import load_igra2_cached_sounding
 from milgrau.io.paths import resolve_project_path
 
 
@@ -121,8 +122,11 @@ def fetch_wyoming_radiosonde(
     selection: str,
     max_time_delta_hours: float,
 ) -> Optional[pd.DataFrame]:
-    """Fetch one Wyoming sounding using only the explicitly configured policy."""
-    siphon_version = _require_current_siphon()
+    """Get a sounding from CSV/IGRA2 local caches, then Wyoming Siphon.
+
+    Historical IGRA2 data remains an external operator-supplied cache file;
+    it is never downloaded or bundled automatically by MILGRAU.
+    """
     measurement_dt = _as_utc_datetime(measurement_dt_utc)
     station_id = str(station_id).strip()
     if not station_id:
@@ -161,10 +165,38 @@ def fetch_wyoming_radiosonde(
     }
 
     if cache_file.exists():
-        logger.debug("radiosonde cache hit: %s", cache_filename)
-        metadata = {**default_metadata, **_read_metadata(metadata_file)}
-        return _attach_metadata(pd.read_csv(cache_file), metadata)
+        try:
+            cached = pd.read_csv(cache_file)
+            if not {"height", "temperature", "pressure"}.issubset(cached.columns):
+                raise ValueError("Required radiosonde columns missing.")
+            if len(cached.dropna(subset=["height", "temperature", "pressure"])) < 2:
+                raise ValueError("Insufficient valid radiosonde levels.")
+            logger.debug("radiosonde hourly CSV cache hit: %s", cache_filename)
+            metadata = {**default_metadata, **_read_metadata(metadata_file)}
+            metadata.update({
+                "measurement_datetime_utc": measurement_dt.isoformat(),
+                "time_delta_hours": default_metadata["time_delta_hours"],
+            })
+            return _attach_metadata(cached, metadata)
+        except (OSError, ValueError, KeyError, pd.errors.ParserError) as exc:
+            logger.warning("radiosonde CSV cache unusable | %s | %s", cache_filename, exc)
 
+    historical = load_igra2_cached_sounding(
+        cache_root, station_id, target_dt, logger,
+    )
+    if historical is not None:
+        cache_metadata = {
+            **default_metadata,
+            **dict(historical.attrs),
+        }
+        historical.to_csv(cache_file, index=False)
+        metadata_file.write_text(
+            json.dumps(cache_metadata, indent=2), encoding="utf-8"
+        )
+        logger.debug("IGRA2 historical radiosonde saved as hourly CSV: %s", cache_filename)
+        return _attach_metadata(historical, cache_metadata)
+
+    siphon_version = _require_current_siphon()
     logger.info(
         "radiosonde target | %sZ | station=%s | Δt=%.2f h | siphon=%s",
         target_dt.strftime("%Y-%m-%d %H:%M"),
