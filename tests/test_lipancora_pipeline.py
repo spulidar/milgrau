@@ -7,7 +7,11 @@ from pathlib import Path
 import pandas as pd
 import xarray as xr
 
-from milgrau.level1.lipancora import _discover_level0_files, _make_level1_netcdf_safe
+from milgrau.level1.lipancora import (
+    _discover_level0_files,
+    _level1_target_path,
+    _make_level1_netcdf_safe,
+)
 
 
 def _config(tmp_path: Path) -> dict:
@@ -40,3 +44,16 @@ def test_make_level1_netcdf_safe_removes_timezone_from_time_coord() -> None:
 
     assert str(safe["time"].dtype).startswith("datetime64")
     assert pd.to_datetime(safe["time"].values).tz is None
+
+
+def test_radiosonde_only_output_is_noncanonical_and_repeatable(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    level0 = tmp_path / "external_L0.nc"
+    canonical = _level1_target_path(level0, config)
+    assert canonical.name == "external_L1.nc"
+    alternate = _level1_target_path(
+        level0, {**config, "_radiosonde_only_mode": True},
+    )
+    assert alternate.name == "external_radiosonde_L1.nc"
+    assert alternate != canonical
+    assert _level1_target_path(level0, config) == canonical

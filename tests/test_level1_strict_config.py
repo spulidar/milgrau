@@ -107,12 +107,22 @@ def test_neutral_legacy_policy_rejects_nonzero_values() -> None:
         resolve_level1_config(config)
 
 
-def test_atmosphere_policy_rejects_radiosonde_as_productive_source() -> None:
+def test_atmosphere_policy_requires_explicit_radiosonde_settings_for_productive_use() -> None:
     config = _level1_recipe()
-    config["level1"]["atmosphere"]["source_priority"] = ["radiosonde", "ussa76"]
-
-    with pytest.raises(Level1ConfigurationError, match="one of"):
+    config["level1"]["atmosphere"]["source_priority"] = ["radiosonde"]
+    with pytest.raises(Level1ConfigurationError, match="requires level1.atmosphere.radiosonde"):
         resolve_level1_config(config)
+
+    config["level1"]["atmosphere"]["radiosonde"] = {
+        "cache_dir": ".cache/radiosonde",
+        "synoptic_hours_utc": [0, 12],
+        "selection": "nearest",
+        "max_time_delta_hours": 6.0,
+    }
+    policy = resolve_level1_config(config).atmosphere
+    assert policy.source_priority == ("radiosonde",)
+    assert policy.radiosonde is not None
+    assert policy.era5 is None
 
 
 def test_atmosphere_policy_requires_complete_era5_settings_when_selected() -> None:

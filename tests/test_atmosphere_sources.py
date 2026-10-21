@@ -359,3 +359,67 @@ def test_level2_rejects_old_level1_without_time_resolved_atmosphere() -> None:
             {},
             target_time=np.datetime64("2024-06-10T12:30:00"),
         )
+
+
+def test_productive_radiosonde_mode_never_calls_cds_and_records_sounding_time(
+    monkeypatch,
+) -> None:
+    calls = []
+
+    def no_era5(*_args, **_kwargs):
+        pytest.fail("Radiosonde-only mode must never access ERA5/CDS.")
+
+    def sounding(datetime_utc, _station_id, _logger, **_kwargs):
+        calls.append(pd.Timestamp(datetime_utc))
+        frame = _profile("radiosonde", hour=12)
+        frame.attrs["target_datetime_utc"] = "2024-06-10T12:00:00+00:00"
+        frame.attrs["time_delta_hours"] = 99.0  # Stale cache sidecar must be ignored.
+        return frame
+
+    monkeypatch.setattr(
+        "milgrau.level1.thermodynamics.prefetch_era5_pressure_level_profiles",
+        no_era5,
+    )
+    monkeypatch.setattr(
+        "milgrau.level1.thermodynamics.fetch_era5_pressure_level_profile",
+        no_era5,
+    )
+    monkeypatch.setattr(
+        "milgrau.level1.thermodynamics.fetch_wyoming_radiosonde",
+        sounding,
+    )
+
+    product = integrate_thermodynamics(
+        _level1_shell(),
+        _config_with_priority("radiosonde"),
+        logging.getLogger("test.radio-only"),
+    )
+    assert len(calls) >= 3
+    assert product["Atmospheric_Source_Type"].values.tolist() == [
+        "radiosonde", "radiosonde", "radiosonde",
+    ]
+    np.testing.assert_allclose(
+        product["Atmospheric_Source_Time_Delta_hours"].values, [0., 1., 2.],
+    )
+    assert product.attrs["thermodynamic_sources_present"] == "radiosonde"
+    assert "radiosonde" in product.attrs["thermodynamic_profile_source"]
+    assert product.attrs["thermodynamic_profile_doi"] == ""
+
+
+def test_productive_radiosonde_missing_sounding_fails_without_ussa76_substitute(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "milgrau.level1.thermodynamics.fetch_wyoming_radiosonde",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "milgrau.level1.thermodynamics.prefetch_era5_pressure_level_profiles",
+        lambda *_args, **_kwargs: pytest.fail("CDS accessed in radiosonde-only mode."),
+    )
+    with pytest.raises(RuntimeError, match="source policy exhausted"):
+        integrate_thermodynamics(
+            _level1_shell(),
+            _config_with_priority("radiosonde"),
+            logging.getLogger("test.radio-missing"),
+        )
