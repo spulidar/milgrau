@@ -348,14 +348,16 @@ milgrau-scc download
 
 ### 5.4. Validação real com SCC
 
-- [ ] Executar `milgrau-scc upload --dry-run` em dados reais.
-- [ ] Verificar IDs e configurações existentes no servidor.
-- [ ] Confirmar o comportamento de upload em um único ID autorizado.
+- [x] Executar `milgrau-scc upload --dry-run` em dados reais (**1/45 pacotes válido** no lote; 44 pacotes existentes aguardando finalização LIPANCORA, não considerar todos aprovados).
+- [x] Verificar o ID `20200107spu1130` no SCC real: ausente antes do POST, presente depois, configuração 565 e intervalo UTC confirmado.
+- [x] Confirmar upload real **do ID `20200107spu1130`**, com resposta `SCC API confirmed`, journal `accepted` e status remoto `present` (testes realizados pelo operador; **não são execuções CI**).
 - [ ] Confirmar aceitação de sounding observado, quando aplicável.
 - [ ] Confirmar download e integridade dos resultados.
 - [ ] Realizar testes de substituição destrutiva somente com autorização explícita e ID de teste adequado.
 
-**Gate 5 (parcial):** testes automatizados aprovados e nenhuma regressão científica conhecida nos cenários simulados. Comparação de amostras científicas reais antes/depois e verificação real no servidor SCC permanecem obrigatórias antes de declarar validação integral.
+**Evidência operacional do operador (20/10/2026):** `upload --dry-run --id 20200107spu1130` OK (configuração 565, raw/LR/RS); `status --remote` inicialmente NOT FOUND; `upload --id 20200107spu1130 --confirm` confirmou criação no SCC; `status --remote` confirmou ID, configuração e journal `accepted`/`processing`. Após processamento o ELPP reportou **-127** e ELDA **0**; o download recusou legitimamente por não haver conclusão ELPP/ELDA. Não marcar download, sounding remoto processado com sucesso ou equivalência científica antes/depois como aprovados. Logs mostraram que L0/L1 preservaram hashes após tentativa de reexport que foi bloqueada por pacote já existente. O operador observou que inventário de `-i` percorreu ~246.853 arquivos antes de selecionar uma sessão. A saída local indicou branch `main`; confirmar HEAD local/branch antes de atribuir os resultados exclusivamente à branch experimental.
+
+**Gate 5 (parcial): testes automatizados aprovados e nenhuma regressão científica conhecida nos cenários simulados. Comparação de amostras científicas reais antes/depois e verificação real no servidor SCC permanecem obrigatórias antes de declarar validação integral.
 
 ### 5.5. Otimização de inventários e planejamento atmosférico — plano aprovado (20/10/2026)
 
