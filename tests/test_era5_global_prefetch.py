@@ -95,8 +95,6 @@ def test_global_prefetch_disabled_without_era5(tmp_path: Path, monkeypatch) -> N
 def test_global_prefetch_uses_decoded_l0_time_for_station_profile_resolution(
     tmp_path: Path, monkeypatch,
 ) -> None:
-    from milgrau.level1.ingestion import _decode_level0_time_axis
-
     native_path = tmp_path / "native_l0.nc"
     xr.Dataset(
         {
