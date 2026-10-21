@@ -314,7 +314,7 @@ def _resolve_atmosphere_config(level1: Mapping[str, Any]) -> AtmosphereConfig:
             "Configuration level1.atmosphere.time_resolution_minutes currently supports only 60."
         )
 
-    valid_sources = {"era5", "ussa76"}
+    valid_sources = {"era5", "radiosonde", "ussa76"}
     priority: list[str] = []
     for index, raw_source in enumerate(raw_priority):
         source = _text(raw_source, f"level1.atmosphere.source_priority[{index}]").lower()
@@ -341,6 +341,11 @@ def _resolve_atmosphere_config(level1: Mapping[str, Any]) -> AtmosphereConfig:
     if "radiosonde" in atmosphere:
         radiosonde = _resolve_radiosonde_config(
             _mapping(atmosphere.get("radiosonde"), "level1.atmosphere.radiosonde")
+        )
+
+    if "radiosonde" in priority and radiosonde is None:
+        raise Level1ConfigurationError(
+            "Productive radiosonde mode requires level1.atmosphere.radiosonde settings."
         )
 
     era5 = None

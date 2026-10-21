@@ -15,7 +15,14 @@ from milgrau.incremental import output_is_current
 from milgrau.io.contracts import netcdf_satisfies_contract, validate_level1_contract
 from milgrau.io.filesystem import ensure_directories
 from milgrau.io.logging_utils import bind_log_context
-from milgrau.io.paths import LEVEL0_SUFFIX, level1_output_path, logging_session_id, processed_data_root
+from milgrau.io.paths import (
+    LEVEL0_SUFFIX,
+    LEVEL1_SUFFIX,
+    LEVEL1_SCC_SUFFIX,
+    level1_output_path,
+    logging_session_id,
+    processed_data_root,
+)
 from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary
 from milgrau.level1.common import (
     diagnostic_vector,
@@ -289,6 +296,17 @@ def _discover_level0_files(config: Mapping[str, Any]) -> list[Path]:
     return discovered
 
 
+def _level1_target_path(level0_file: str | Path, config: Mapping[str, Any]) -> Path:
+    """Keep observational radiosonde L1 separate from canonical ERA5 L1."""
+    canonical = level1_output_path(level0_file, config)
+    if not config.get("_radiosonde_only_mode", False):
+        return canonical
+    suffix = LEVEL1_SCC_SUFFIX if canonical.name.endswith(LEVEL1_SCC_SUFFIX) else LEVEL1_SUFFIX
+    return canonical.with_name(
+        canonical.name[:-len(suffix)] + "_radiosonde" + suffix
+    )
+
+
 def _files_requiring_level1(
     files: list[Path],
     config: Mapping[str, Any],
@@ -299,7 +317,7 @@ def _files_requiring_level1(
     skipped_results: list[ExecutionResult] = []
     for file_path in files:
         session_id = logging_session_id(file_path)
-        output_path = level1_output_path(file_path, config)
+        output_path = _level1_target_path(file_path, config)
         is_current = False
         if incremental and output_path.exists():
             is_current = output_is_current(
@@ -424,7 +442,7 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
         stage = "level1.configuration"
         validate_level1_config(config)
         stage = "level1.output_path"
-        save_path = level1_output_path(nc_file, config)
+        save_path = _level1_target_path(nc_file, config)
         stage = "level1.ingestion"
         ds_raw, z_arr = load_and_prepare_level0(
             nc_file,

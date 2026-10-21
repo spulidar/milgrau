@@ -29,6 +29,15 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Reprocess Level 1, or regenerate all figures when used with --figures-only.",
     )
+    parser.add_argument(
+        "--radiosonde-only",
+        action="store_true",
+        help=(
+            "Use radiosonde as the productive hourly atmosphere without ERA5/CDS. "
+            "Fail if no sounding is valid within the configured time window. "
+            "Write separate *_radiosonde_L1.nc products; never overwrite canonical ERA5 L1."
+        ),
+    )
     parser.add_argument("--version", action="version", version=f"MILGRAU {__version__}")
     return parser
 
@@ -127,12 +136,35 @@ def _process_selected(args: argparse.Namespace, config: dict, logger) -> Executi
     return ExecutionSummary.from_results(results)
 
 
+def _radiosonde_only_config(config: dict) -> dict:
+    """CLI-only observational alternative, leaving config.yaml untouched."""
+    atmosphere = dict(config["level1"]["atmosphere"])
+    if not isinstance(atmosphere.get("radiosonde"), dict):
+        raise ValueError("Radiosonde-only mode requires level1.atmosphere.radiosonde configuration.")
+    atmosphere["source_priority"] = ["radiosonde"]
+    atmosphere.pop("era5", None)
+    return {
+        **config,
+        "level1": {**config["level1"], "atmosphere": atmosphere},
+        "_radiosonde_only_mode": True,
+    }
+
+
 def main() -> int:
     """Run LIPANCORA from the command line."""
-    args = _build_parser().parse_args()
+    parser = _build_parser()
+    args = parser.parse_args()
+    if args.radiosonde_only and args.figures_only:
+        parser.error("--radiosonde-only cannot be combined with --figures-only.")
     config = load_config()
+    if args.radiosonde_only:
+        config = _radiosonde_only_config(config)
     logger = bind_log_context(setup_logger("LIPANCORA", config=config), pipeline="L1")
     bind_log_context(logger, stage="start").info("LIPANCORA Level 1")
+    if args.radiosonde_only:
+        bind_log_context(logger, stage="atmosphere").info(
+            "radiosonde-only mode | no ERA5/CDS | separate _radiosonde_L1 outputs"
+        )
     operation = (
         (lambda: _process_figures_only(args, config, logger))
         if args.figures_only

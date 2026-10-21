@@ -265,7 +265,13 @@ def _write_time_resolved_atmosphere(
         {
             "thermodynamic_profile_available": "true",
             "thermodynamic_profile_source_type": "time_resolved",
-            "thermodynamic_profile_source": "hourly ERA5 with explicit USSA76 fallback",
+            "thermodynamic_profile_source": (
+                "hourly radiosonde with configured vertical extension"
+                if "radiosonde" in source_set else
+                "hourly ERA5 with explicit USSA76 fallback"
+                if "era5" in source_set else
+                "hourly US Standard Atmosphere 1976"
+            ),
             "thermodynamic_profile_doi": ERA5_DOI if "era5" in source_set else "",
             "thermodynamic_profile_standard_fallback_fraction": float(np.mean(fallback_fraction)),
             "thermodynamic_profile_grid": "atmosphere_time x Level 1 lidar altitude",
@@ -433,6 +439,67 @@ def integrate_thermodynamics(
                 pressure_rows.append(pressure_hpa)
                 source_types.append("era5")
                 source_time_delta_hours.append(float(metadata.get("time_delta_hours", 0.0)))
+                fallback_fractions.append(float(fallback_fraction))
+                source_min_altitude.append(float(metadata.get("source_profile_min_altitude_asl_m", np.nan)))
+                source_max_altitude.append(float(metadata.get("source_profile_max_altitude_asl_m", np.nan)))
+                cpt_rows.append(float(cpt))
+                lrt_rows.append(float(lrt))
+                resolved = True
+                break
+
+            if source == "radiosonde":
+                if policy.radiosonde is None:
+                    raise RuntimeError("Resolved atmosphere policy lacks radiosonde settings.")
+                station_id, _station_name = resolve_radiosonde_station(config)
+                try:
+                    profile = fetch_wyoming_radiosonde(
+                        timestamp.to_pydatetime(),
+                        station_id,
+                        bind_log_context(logger, stage="radiosonde"),
+                        **policy.radiosonde.as_io_mapping(),
+                    )
+                except Exception as exc:
+                    logger.warning("radiosonde unavailable at %s | %s", timestamp, _compact_error(exc))
+                    logger.debug("radiosonde productive retrieval failure", exc_info=True)
+                    continue
+                if profile is None or profile.empty:
+                    logger.warning(
+                        "radiosonde missing within %.1f h | %s",
+                        policy.radiosonde.max_time_delta_hours,
+                        timestamp.strftime("%Y-%m-%d %H:%MZ"),
+                    )
+                    continue
+                try:
+                    temperature_k, pressure_hpa, metadata, fallback_fraction = (
+                        _profile_on_lidar_grid(
+                            final_ds,
+                            profile,
+                            station_altitude_m=station_altitude_m,
+                            source_type="radiosonde",
+                            source_name="University of Wyoming Upper Air via Siphon",
+                            outside_coverage_policy=policy.external_profile_outside_coverage,
+                        )
+                    )
+                    # Radiosonde CSV cache is shared across hourly measurements.
+                    # Calculate each hour's offset from the *actual* sounding.
+                    sounding_time = pd.Timestamp(metadata["target_datetime_utc"])
+                    if sounding_time.tzinfo is None:
+                        sounding_time = sounding_time.tz_localize("UTC")
+                    else:
+                        sounding_time = sounding_time.tz_convert("UTC")
+                    delta_hours = abs((sounding_time - timestamp).total_seconds()) / 3600.0
+                    if delta_hours > policy.radiosonde.max_time_delta_hours:
+                        raise ValueError("Cached sounding exceeds temporal selection tolerance.")
+                except Exception as exc:
+                    logger.warning("radiosonde profile unusable at %s | %s", timestamp, _compact_error(exc))
+                    logger.debug("radiosonde productive profile failure", exc_info=True)
+                    continue
+
+                cpt, lrt = _source_tropopause(profile)
+                temperature_rows.append(temperature_k)
+                pressure_rows.append(pressure_hpa)
+                source_types.append("radiosonde")
+                source_time_delta_hours.append(float(delta_hours))
                 fallback_fractions.append(float(fallback_fraction))
                 source_min_altitude.append(float(metadata.get("source_profile_min_altitude_asl_m", np.nan)))
                 source_max_altitude.append(float(metadata.get("source_profile_max_altitude_asl_m", np.nan)))
