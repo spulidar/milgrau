@@ -190,3 +190,109 @@ def test_igra_missing_or_qc_removed_levels_are_excluded(tmp_path: Path) -> None:
     assert profile is not None
     assert np.isfinite(profile[["height", "temperature", "pressure"]].values).all()
     assert profile["height"].to_list() == [762., 3147., 5860.]
+
+
+def test_12z_archive_used_at_19z_when_midnight_launch_absent(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    cache = tmp_path / "radiosonde"
+    _write_archive(cache, day=7)
+
+    def no_network(*_args, **_kwargs):
+        raise AssertionError("Must use valid existing 12Z sounding, not missing 00Z.")
+
+    monkeypatch.setattr(radiosonde.WyomingUpperAir, "request_data", no_network)
+    monkeypatch.setattr(radiosonde, "_require_current_siphon", no_network)
+    selection = radiosonde.fetch_wyoming_radiosonde(
+        _date(7, 19), "83779", logging.getLogger("test.radio.19z"),
+        cache_dir=cache, synoptic_hours_utc=[0, 12],
+        selection="nearest", max_time_delta_hours=12.0,
+    )
+    assert selection is not None
+    assert selection.attrs["target_datetime_utc"] == _date(7, 12).isoformat()
+    assert selection.attrs["time_delta_hours"] == 7.0
+    assert selection.attrs["historical_archive"] == "BRM00083779-data.txt"
+    # Same physical profile at 20Z, but an independently correct 8h age.
+    again = radiosonde.fetch_wyoming_radiosonde(
+        _date(7, 20), "83779", logging.getLogger("test.radio.20z"),
+        cache_dir=cache, synoptic_hours_utc=[0, 12],
+        selection="nearest", max_time_delta_hours=12.0,
+    )
+    assert again is not None
+    assert again.attrs["time_delta_hours"] == 8.0
+    assert again.attrs["target_datetime_utc"] == _date(7, 12).isoformat()
+
+
+def test_12z_archive_used_at_next_day_00z_at_twelve_hour_boundary(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    cache = tmp_path / "radiosonde"
+    _write_archive(cache, day=7)
+    monkeypatch.setattr(
+        radiosonde, "_require_current_siphon",
+        lambda: (_ for _ in ()).throw(AssertionError("Unneeded Siphon.")),
+    )
+    profile = radiosonde.fetch_wyoming_radiosonde(
+        _date(8, 0), "83779", logging.getLogger("test.radio.midnight"),
+        cache_dir=cache, synoptic_hours_utc=[0, 12],
+        selection="nearest", max_time_delta_hours=12.0,
+    )
+    assert profile is not None
+    assert profile.attrs["target_datetime_utc"] == _date(7, 12).isoformat()
+    assert profile.attrs["time_delta_hours"] == 12.0
+
+
+def test_six_hour_policy_not_silently_broadened_for_era5_qa(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    cache = tmp_path / "radiosonde"
+    _write_archive(cache, day=7)
+    called = []
+
+    class FakeWyoming:
+        @staticmethod
+        def request_data(requested, station):
+            called.append((requested, station))
+            return pd.DataFrame({
+                "height": [760., 3000.], "temperature": [22., 10.],
+                "pressure": [930., 700.],
+            })
+
+    monkeypatch.setattr(radiosonde, "_require_current_siphon", lambda: "0.11.0")
+    monkeypatch.setattr(radiosonde, "WyomingUpperAir", FakeWyoming)
+    # The prior day's 12Z is *seven* hours old and must not be
+    # reused under the standard six-hour policy.
+    result = radiosonde.fetch_wyoming_radiosonde(
+        _date(7, 19), "83779", logging.getLogger("test.radio.strict"),
+        cache_dir=cache, synoptic_hours_utc=[0, 12],
+        selection="nearest", max_time_delta_hours=6.0,
+    )
+    assert result is not None
+    assert called == [(_date(8, 0), "83779")]
+    assert result.attrs["time_delta_hours"] == 5.0
+
+
+def test_nearest_available_csv_outranks_older_igra2_sounding(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    cache = tmp_path / "radiosonde"
+    _write_archive(cache, day=7)
+    csv = cache / "2020" / "01" / "radiosonde_83779_20200108_00Z.csv"
+    csv.parent.mkdir(parents=True)
+    pd.DataFrame({
+        "height": [760.0, 3000.0],
+        "temperature": [21.0, 10.0],
+        "pressure": [930.0, 700.0],
+    }).to_csv(csv, index=False)
+    monkeypatch.setattr(
+        radiosonde, "_require_current_siphon",
+        lambda: (_ for _ in ()).throw(AssertionError("Unneeded Siphon.")),
+    )
+    profile = radiosonde.fetch_wyoming_radiosonde(
+        _date(7, 19), "83779", logging.getLogger("test.radio.nearest"),
+        cache_dir=cache, synoptic_hours_utc=[0, 12],
+        selection="nearest", max_time_delta_hours=12.0,
+    )
+    assert profile is not None
+    assert profile.attrs["target_datetime_utc"] == _date(8, 0).isoformat()
+    assert profile.attrs["time_delta_hours"] == 5.0

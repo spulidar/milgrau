@@ -176,3 +176,22 @@ def test_lipancora_radiosonde_only_cli_keeps_default_config_unchanged() -> None:
     assert resolve_level1_config(selected).atmosphere.era5 is None
     assert resolve_level1_config(canonical).atmosphere.source_priority == ("era5", "ussa76")
     assert canonical["level1"]["atmosphere"]["era5"]  # Never edit recipe in place.
+
+
+def test_radiosonde_only_overrides_12h_only_not_normal_qa_policy() -> None:
+    from milgrau.config.loader import load_config
+
+    ordinary = load_config("config.yaml")
+    original_max = ordinary["level1"]["atmosphere"]["radiosonde"][
+        "max_time_delta_hours"
+    ]
+    radio = lipancora._radiosonde_only_config(ordinary)
+    assert original_max == 6.0
+    assert radio["level1"]["atmosphere"]["radiosonde"][
+        "max_time_delta_hours"
+    ] == 12.0
+    assert ordinary["level1"]["atmosphere"]["radiosonde"][
+        "max_time_delta_hours"
+    ] == 6.0
+    assert radio["level1"]["atmosphere"]["source_priority"] == ["radiosonde"]
+    assert ordinary["level1"]["atmosphere"]["source_priority"] == ["era5", "ussa76"]
