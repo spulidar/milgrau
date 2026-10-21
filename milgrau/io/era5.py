@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+from hashlib import sha256
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Final, Mapping, Optional
@@ -307,6 +308,106 @@ def _era5_time_coordinate(ds: xr.Dataset) -> str:
     return _coordinate_name(ds, ("valid_time", "time"))
 
 
+ERA5_MAX_REQUEST_FIELDS = 80_000
+
+
+def plan_era5_requests(
+    missing_hours: list[datetime],
+    latitude: float,
+    longitude: float,
+    settings: Mapping[str, Any],
+    *,
+    max_fields: int = ERA5_MAX_REQUEST_FIELDS,
+) -> list[tuple[list[datetime], str, dict[str, Any], int]]:
+    """Plan exact sparse CDS selections, grouping days with identical UTC hours.
+
+    Every request is restricted to one UTC month. The CDS interprets lists of
+    days and times as a Cartesian product: grouping only *identical* hour sets
+    avoids paying for unrequested hours. This planner never submits a job.
+    """
+    cfg = era5_config(settings)
+    if isinstance(max_fields, bool) or not isinstance(max_fields, int) or max_fields <= 0:
+        raise ValueError("ERA5 max_fields must be a positive integer.")
+    days: dict[date, set[int]] = {}
+    for stamp in missing_hours:
+        dt = nearest_era5_analysis_hour(stamp)
+        days.setdefault(dt.date(), set()).add(dt.hour)
+
+    groups: dict[tuple[int, int, tuple[int, ...]], list[date]] = {}
+    for day, hours in sorted(days.items()):
+        groups.setdefault((day.year, day.month, tuple(sorted(hours))), []).append(day)
+
+    fields_per_hour = len(cfg["pressure_levels_hpa"]) * 2
+    planned = []
+    for (_year, _month, hour_set), matching_days in sorted(groups.items()):
+        per_day_fields = len(hour_set) * fields_per_hour
+        if per_day_fields > max_fields:
+            raise ValueError("ERA5 one-day requested fields exceed max_fields.")
+        days_per_request = max(1, max_fields // per_day_fields)
+        for index in range(0, len(matching_days), days_per_request):
+            chunk = matching_days[index:index + days_per_request]
+            hours = [
+                datetime(day.year, day.month, day.day, hour, tzinfo=timezone.utc)
+                for day in chunk for hour in hour_set
+            ]
+            dataset, request = build_era5_request_for_hours(
+                hours[:len(hour_set)], latitude, longitude, cfg,
+            )
+            request["day"] = [day.strftime("%d") for day in chunk]
+            requested_fields = len(chunk) * per_day_fields
+            if requested_fields > max_fields:
+                raise AssertionError("ERA5 planner exceeded field limit.")
+            planned.append((hours, dataset, request, requested_fields))
+    return planned
+
+
+def _valid_hourly_cache(
+    cache_file: Path,
+    metadata_file: Path,
+    latitude: float,
+    longitude: float,
+    cfg: Mapping[str, Any],
+) -> bool:
+    """Reject incomplete or incompatible hourly cache files before reuse."""
+    if not cache_file.is_file() or cache_file.stat().st_size == 0:
+        return False
+    metadata = _read_metadata(metadata_file)
+    if metadata and (
+        metadata.get("dataset", cfg["dataset"]) != cfg["dataset"]
+        or float(metadata.get("requested_latitude", latitude)) != latitude
+        or float(metadata.get("requested_longitude", longitude)) != longitude
+        or (
+            "request_grid_deg" in metadata
+            and float(metadata["request_grid_deg"]) != cfg["grid_deg"]
+        )
+        or (
+            "request_area_half_width_deg" in metadata
+            and float(metadata["request_area_half_width_deg"])
+            != cfg["area_half_width_deg"]
+        )
+    ):
+        return False
+    try:
+        with xr.open_dataset(cache_file) as dataset:
+            level_axis = _coordinate_name(dataset, ("pressure_level", "level", "isobaricInhPa"))
+            levels = np.asarray(dataset[level_axis].values, dtype=np.float64)
+            expected = np.asarray(cfg["pressure_levels_hpa"], dtype=np.float64)
+            if levels.shape != expected.shape or not np.array_equal(levels, expected):
+                return False
+            profile = era5_profile_from_dataset(dataset, latitude, longitude)
+            return not profile.empty
+    except (OSError, ValueError, KeyError, TypeError, IndexError):
+        return False
+
+
+def _write_request_metadata(path: Path, payload: dict[str, Any]) -> None:
+    """Atomic, reconstructible request metadata; never contains CDS credentials."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_suffix(".part.json")
+    temp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temp.replace(path)
+
+
 def prefetch_era5_pressure_level_profiles(
     measurement_times_utc: list[datetime | pd.Timestamp],
     latitude: float,
@@ -316,130 +417,139 @@ def prefetch_era5_pressure_level_profiles(
     settings: Mapping[str, Any],
     root_dir: str | Path | None = None,
 ) -> set[datetime]:
-    """Populate missing hourly ERA5 caches using one CDS request per UTC day.
+    """Prefetch deduplicated sparse hours in bounded month-scoped CDS requests.
 
-    Existing hourly cache files are reused. Downloaded daily batches are split
-    back into the same per-hour cache layout used by the single-profile API, so
-    adjacent sessions retain fine-grained cache reuse.
+    Only validated hourly cache files count as available. The request ledger
+    under .cache/era5/requests is reconstructible; it does not replace science
+    provenance or the authoritative NetCDF files.
     """
     cfg = era5_config(settings)
-    analysis_hours = sorted(
-        {
-            nearest_era5_analysis_hour(value)
-            for value in measurement_times_utc
-        }
-    )
+    analysis_hours = sorted({
+        nearest_era5_analysis_hour(value) for value in measurement_times_utc
+    })
     if not analysis_hours:
         return set()
 
     available: set[datetime] = set()
-    missing: list[datetime] = []
-    for analysis_dt in analysis_hours:
-        cache_file, _metadata_file = _cache_paths(
-            analysis_dt,
-            latitude,
-            longitude,
-            cfg,
-            root_dir,
+    missing = []
+    for stamp in analysis_hours:
+        cache_file, metadata_file = _cache_paths(
+            stamp, latitude, longitude, cfg, root_dir,
         )
-        if cache_file.exists():
-            available.add(analysis_dt)
+        if _valid_hourly_cache(cache_file, metadata_file, latitude, longitude, cfg):
+            available.add(stamp)
         else:
-            missing.append(analysis_dt)
+            missing.append(stamp)
 
     if not missing:
-        logger.debug("ERA5 batch prefetch | all %d hourly caches present", len(analysis_hours))
+        logger.debug("ERA5 prefetch | all %d hourly caches valid", len(analysis_hours))
         return available
-
     try:
         import cdsapi  # type: ignore[import-not-found]
     except ImportError:
         logger.warning("ERA5 unavailable | cdsapi is not installed")
         return available
 
-    groups: dict[date, list[datetime]] = {}
-    for analysis_dt in missing:
-        groups.setdefault(analysis_dt.date(), []).append(analysis_dt)
-
+    requests = plan_era5_requests(missing, latitude, longitude, cfg)
+    logger.info(
+        "ERA5 prefetch | %d missing hours | %d requests | %d fields",
+        len(missing), len(requests), sum(item[3] for item in requests),
+    )
     client = cdsapi.Client(url=CDS_API_URL, quiet=True)
-    for day, hours in sorted(groups.items()):
-        dataset, request = build_era5_request_for_hours(
-            hours,
-            latitude,
-            longitude,
-            cfg,
-        )
+    cache_root = resolve_project_path(cfg["cache_dir"], root_dir=root_dir)
+    for hours, dataset, request, fields in requests:
+        digest = sha256(
+            json.dumps([dataset, request], sort_keys=True).encode("utf-8")
+        ).hexdigest()[:24]
+        ledger = cache_root / "requests" / f"{digest}.json"
+        previous = _read_metadata(ledger)
+        needed = [hour for hour in hours if hour not in available]
+        if not needed:
+            continue
+        # If a process died while waiting for CDS, its server-side job may
+        # still exist. An unknown result cannot authorize blind resubmission.
+        if previous.get("status") == "submitted":
+            logger.warning(
+                "ERA5 request %s may still be queued; not duplicating submission",
+                digest,
+            )
+            break
+        request_info = {
+            "schema_version": 1,
+            "dataset": dataset,
+            "request": request,
+            "request_id": digest,
+            "expected_hours_utc": [hour.isoformat() for hour in hours],
+            "fields": fields,
+            "status": "submitted",
+        }
         first_cache, _ = _cache_paths(hours[0], latitude, longitude, cfg, root_dir)
-        temporary_file = first_cache.parent / (
-            f"era5_pressure_levels_{day.strftime('%Y%m%d')}_batch.part.nc"
-        )
+        temp_batch = first_cache.parent / f"era5_{digest}.part.nc"
+        _write_request_metadata(ledger, request_info)
         try:
             logger.info(
-                "ERA5 batch request | %s | %d hour(s): %s",
-                day.isoformat(),
-                len(hours),
-                ",".join(value.strftime("%H") for value in hours),
+                "ERA5 CDS request %s | %d days | %d hours | %d fields",
+                digest, len(request["day"]), len(hours), fields,
             )
-            client.retrieve(dataset, request, str(temporary_file))
-            with xr.open_dataset(temporary_file) as ds:
-                time_coord = _era5_time_coordinate(ds)
-                source_times = np.asarray(ds[time_coord].values).astype("datetime64[ns]").reshape(-1)
-                for analysis_dt in hours:
-                    target = np.datetime64(
-                        analysis_dt.replace(tzinfo=None),
-                        "ns",
-                    )
-                    matches = np.where(source_times == target)[0]
-                    if matches.size != 1:
-                        logger.warning(
-                            "ERA5 batch missing requested hour | %s",
-                            analysis_dt.strftime("%Y-%m-%d %H:%MZ"),
-                        )
+            client.retrieve(dataset, request, str(temp_batch))
+            with xr.open_dataset(temp_batch) as batch:
+                time_coord = _era5_time_coordinate(batch)
+                source_times = np.asarray(
+                    batch[time_coord].values
+                ).astype("datetime64[ns]").reshape(-1)
+                for stamp in needed:
+                    target = np.datetime64(stamp.replace(tzinfo=None), "ns")
+                    matches = np.flatnonzero(source_times == target)
+                    if len(matches) != 1:
+                        logger.warning("ERA5 request %s missing hour %s", digest, stamp)
                         continue
-                    selected = ds.isel({time_coord: int(matches[0])})
+                    selected = batch.isel({time_coord: int(matches[0])})
                     cache_file, metadata_file = _cache_paths(
-                        analysis_dt,
-                        latitude,
-                        longitude,
-                        cfg,
-                        root_dir,
+                        stamp, latitude, longitude, cfg, root_dir,
                     )
-                    selected.to_netcdf(cache_file)
+                    pending = cache_file.with_suffix(".part.nc")
+                    selected.to_netcdf(pending)
+                    # Refuse malformed, incomplete and wrong-level CDS payloads.
+                    if not _valid_hourly_cache(
+                        pending, Path("__unrecorded__"), latitude, longitude, cfg,
+                    ):
+                        pending.unlink(missing_ok=True)
+                        logger.warning("ERA5 request %s invalid hour %s", digest, stamp)
+                        continue
+                    pending.replace(cache_file)
                     metadata = _metadata_for_profile(
-                        analysis_dt,
-                        analysis_dt,
-                        latitude,
-                        longitude,
-                        dataset,
-                        cache_file,
+                        stamp, stamp, latitude, longitude, dataset, cache_file,
                     )
-                    metadata["batch_request_day_utc"] = day.isoformat()
-                    metadata["batch_request_hour_count"] = len(hours)
-                    metadata_file.write_text(
-                        json.dumps(metadata, indent=2),
-                        encoding="utf-8",
-                    )
-                    available.add(analysis_dt)
+                    metadata["request_id"] = digest
+                    metadata["request_grid_deg"] = cfg["grid_deg"]
+                    metadata["request_area_half_width_deg"] = cfg["area_half_width_deg"]
+                    metadata["request_pressure_levels_hpa"] = cfg["pressure_levels_hpa"]
+                    _write_request_metadata(metadata_file, metadata)
+                    available.add(stamp)
+            request_info["status"] = (
+                "complete" if all(hour in available for hour in hours)
+                else "partial"
+            )
+            request_info["cached_hours_utc"] = [
+                stamp.isoformat() for stamp in hours if stamp in available
+            ]
+            _write_request_metadata(ledger, request_info)
             logger.info(
-                "ERA5 batch cached | %s | %d/%d hour(s)",
-                day.isoformat(),
-                sum(hour in available for hour in hours),
-                len(hours),
+                "ERA5 request %s cached | %d/%d expected hours",
+                digest, len(request_info["cached_hours_utc"]), len(hours),
             )
         except Exception as exc:
+            request_info["status"] = "uncertain"
+            request_info["error"] = _compact_exception_message(exc)
+            _write_request_metadata(ledger, request_info)
             logger.warning(
-                "ERA5 batch unavailable | %s | %s",
-                day.isoformat(),
-                _compact_exception_message(exc),
+                "ERA5 prefetch stopped at request %s | %s",
+                digest, request_info["error"],
             )
-            logger.debug("ERA5 batch retrieval failure", exc_info=True)
+            logger.debug("ERA5 prefetch exception", exc_info=True)
+            break  # Preserve already validated hours; never saturate CDS queue.
         finally:
-            try:
-                if temporary_file.exists():
-                    temporary_file.unlink()
-            except OSError:
-                pass
-
+            temp_batch.unlink(missing_ok=True)
     return available
 
 
