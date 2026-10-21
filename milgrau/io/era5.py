@@ -628,7 +628,9 @@ def prefetch_era5_pressure_level_profiles(
             break  # Preserve already validated hours; never saturate CDS queue.
         finally:
             temp_batch.unlink(missing_ok=True)
-    return available
+    # The planner may have downloaded extra valid hours to reduce CDS jobs;
+    # callers ask only for the originally requested set.
+    return available.intersection(analysis_hours)
 
 
 def fetch_era5_pressure_level_profile(

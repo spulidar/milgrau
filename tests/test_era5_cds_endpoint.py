@@ -112,7 +112,7 @@ def test_era5_failure_warning_is_one_operator_line(tmp_path: Path, monkeypatch, 
 
 
 
-def test_era5_prefetch_uses_one_request_per_utc_day_and_populates_hourly_cache(
+def test_era5_prefetch_groups_adjacent_days_with_bounded_overfetch_and_populates_cache(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -128,9 +128,9 @@ def test_era5_prefetch_uses_one_request_per_utc_day_and_populates_hourly_cache(
             pressure = np.array([1000.0, 500.0, 100.0])
             hours = [
                 np.datetime64(
-                    f"{request['year'][0]}-{request['month'][0]}-{request['day'][0]}T{raw[:2]}:00:00"
+                    f"{request['year'][0]}-{request['month'][0]}-{day}T{raw[:2]}:00:00"
                 )
-                for raw in request["time"]
+                for day in request["day"] for raw in request["time"]
             ]
             n_time = len(hours)
             temperature = np.tile(
@@ -180,14 +180,12 @@ def test_era5_prefetch_uses_one_request_per_utc_day_and_populates_hourly_cache(
         root_dir=tmp_path,
     )
 
-    assert len(calls) == 2
-    assert calls[0]["day"] == ["20"]
-    assert calls[0]["time"] == ["21:00", "22:00", "23:00"]
-    assert calls[1]["day"] == ["21"]
-    assert calls[1]["time"] == ["00:00", "01:00"]
-    assert len(available) == 5
+    assert len(calls) == 1
+    assert calls[0]["day"] == ["20", "21"]
+    assert calls[0]["time"] == ["00:00", "01:00", "21:00", "22:00", "23:00"]
+    assert len(available) == 5  # Return only the originally requested hours.
     cached = list((tmp_path / "cache" / "era5").rglob("era5_pressure_levels_*Z_*.nc"))
-    assert len(cached) == 5
+    assert len(cached) == 10  # Extra validated hours are also cached for reuse.
 
     calls.clear()
     available_again = prefetch_era5_pressure_level_profiles(
