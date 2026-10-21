@@ -112,11 +112,12 @@ def test_era5_failure_warning_is_one_operator_line(tmp_path: Path, monkeypatch, 
 
 
 
-def test_era5_prefetch_groups_adjacent_days_with_bounded_overfetch_and_populates_cache(
+def test_era5_prefetch_monthly_grib_caches_only_required_hours(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     calls: list[dict] = []
+    decoded: dict[str, xr.Dataset] = {}
 
     class FakeClient:
         def __init__(self, *, url: str, quiet: bool) -> None:
@@ -124,8 +125,11 @@ def test_era5_prefetch_groups_adjacent_days_with_bounded_overfetch_and_populates
             assert quiet is True
 
         def retrieve(self, dataset: str, request: dict, target: str) -> None:
+            assert dataset == "reanalysis-era5-pressure-levels"
+            assert request["data_format"] == "grib"
+            assert request["download_format"] == "unarchived"
             calls.append(request)
-            pressure = np.array([1000.0, 500.0, 100.0])
+            # CDS returns all Cartesian day-hour combinations in GRIB.
             hours = [
                 np.datetime64(
                     f"{request['year'][0]}-{request['month'][0]}-{day}T{raw[:2]}:00:00"
@@ -142,27 +146,31 @@ def test_era5_prefetch_groups_adjacent_days_with_bounded_overfetch_and_populates
                 (geopotential_height * 9.80665)[None, :, None, None],
                 (n_time, 1, 1, 1),
             )
-            ds = xr.Dataset(
+            decoded[target] = xr.Dataset(
                 data_vars={
                     "t": (
-                        ("valid_time", "pressure_level", "latitude", "longitude"),
+                        ("time", "isobaricInhPa", "latitude", "longitude"),
                         temperature,
                     ),
                     "z": (
-                        ("valid_time", "pressure_level", "latitude", "longitude"),
+                        ("time", "isobaricInhPa", "latitude", "longitude"),
                         geopotential,
                     ),
                 },
                 coords={
-                    "valid_time": np.asarray(hours, dtype="datetime64[ns]"),
-                    "pressure_level": pressure,
+                    "time": np.asarray(hours, dtype="datetime64[ns]"),
+                    "valid_time": ("time", np.asarray(hours, dtype="datetime64[ns]")),
+                    "isobaricInhPa": np.array([1000., 500., 100.]),
                     "latitude": np.array([-23.5]),
                     "longitude": np.array([-46.75]),
                 },
             )
-            ds.to_netcdf(target)
+            Path(target).write_bytes(b"GRIBsynthetic")
+
 
     monkeypatch.setitem(sys.modules, "cdsapi", types.SimpleNamespace(Client=FakeClient))
+    from milgrau.io import era5 as era5_module
+    monkeypatch.setattr(era5_module, "_open_era5_grib", lambda path: decoded[str(path)])
     requested = [
         datetime(2024, 6, 20, 21, tzinfo=timezone.utc),
         datetime(2024, 6, 20, 22, tzinfo=timezone.utc),
@@ -181,11 +189,12 @@ def test_era5_prefetch_groups_adjacent_days_with_bounded_overfetch_and_populates
     )
 
     assert len(calls) == 1
+    assert calls[0]["data_format"] == "grib"
     assert calls[0]["day"] == ["20", "21"]
     assert calls[0]["time"] == ["00:00", "01:00", "21:00", "22:00", "23:00"]
     assert len(available) == 5  # Return only the originally requested hours.
     cached = list((tmp_path / "cache" / "era5").rglob("era5_pressure_levels_*Z_*.nc"))
-    assert len(cached) == 10  # Extra validated hours are also cached for reuse.
+    assert len(cached) == 5  # Unneeded Cartesian hours are NOT kept locally.
 
     calls.clear()
     available_again = prefetch_era5_pressure_level_profiles(
@@ -200,7 +209,7 @@ def test_era5_prefetch_groups_adjacent_days_with_bounded_overfetch_and_populates
     assert calls == []
 
 
-def test_sparse_monthly_request_planner_avoids_cartesian_overfetch() -> None:
+def test_monthly_grib_planner_counts_cartesian_fields() -> None:
     hours = [
         datetime(2020, 1, 7, hour, tzinfo=timezone.utc)
         for hour in (11, 12)
@@ -217,8 +226,8 @@ def test_sparse_monthly_request_planner_avoids_cartesian_overfetch() -> None:
     planned = plan_era5_requests(
         hours, -23.5, -46.75, _settings(),
     )
-    # Four days with two different hour sets can be merged with 2x extra
-    # hours, significantly reducing CDS submissions.
+    # Days in same UTC month use a single GRIB request, counting all
+    # Cartesian day-hour combinations under the 80k-field ceiling.
     assert len(planned) == 1
     assert sum(fields for _, _, _, fields in planned) == 16 * 2 * 3
     covered = []
@@ -226,6 +235,7 @@ def test_sparse_monthly_request_planner_avoids_cartesian_overfetch() -> None:
         assert len(requested_hours) * 2 * 3 == fields
         assert len(request["day"]) * len(request["time"]) * 2 * 3 == fields
         assert fields <= 80_000
+        assert request["data_format"] == "grib"
         for day in request["day"]:
             for time in request["time"]:
                 covered.append(f"2020-01-{day}T{time}")
@@ -257,7 +267,7 @@ def test_era5_planner_never_crosses_utc_month_boundary() -> None:
     assert [entry[2]["month"] for entry in planned] == [["01"], ["02"]]
 
 
-def test_era5_monthly_packing_merges_sparse_days_without_exceeding_overfetch() -> None:
+def test_era5_monthly_packing_merges_sparse_days_with_grib() -> None:
     # Thirty days with just two observation hours each: one cheap request,
     # not 30 small requests. The CDS Cartesian selection is accounted for.
     hours = [
@@ -272,21 +282,44 @@ def test_era5_monthly_packing_merges_sparse_days_without_exceeding_overfetch() -
     assert requests[0][2]["time"] == ["11:00", "12:00"]
 
 
-def test_era5_monthly_packing_limits_overfetch_and_field_budget() -> None:
+def test_era5_monthly_grib_splits_under_field_ceiling() -> None:
     hours = [
         datetime(2020, 1, day, hour, tzinfo=timezone.utc)
         for day in range(1, 32)
         for hour in ((11, 12) if day % 2 else (18, 19))
     ]
+    # Two-hour patterns differ but one month request uses the union.
+    request = plan_era5_requests(hours, -23.5, -46.75, _settings())
+    assert len(request) == 1
+    assert request[0][3] == 31 * 4 * 6
+    assert request[0][2]["data_format"] == "grib"
+
     planned = plan_era5_requests(
         hours, -23.5, -46.75, _settings(), max_fields=120,
     )
-    requested = sum(fields for _, _, _, fields in planned)
-    useful = len(hours) * 6
-    assert requested <= useful * 2
     assert all(fields <= 120 for _, _, _, fields in planned)
+    assert len(planned) == 7
     for _, _, req, fields in planned:
         assert len(req["day"]) * len(req["time"]) * 6 == fields
+        assert req["data_format"] == "grib"
+
+
+def test_era5_monthly_37_levels_all_days_all_hours_fit_80k() -> None:
+    from calendar import monthrange
+
+    cfg = dict(_settings())
+    cfg["pressure_levels_hpa"] = list(range(1, 38))
+    hours = [
+        datetime(2024, 10, day, hour, tzinfo=timezone.utc)
+        for day in range(1, monthrange(2024, 10)[1] + 1)
+        for hour in range(24)
+    ]
+    planned = plan_era5_requests(hours, -23.5, -46.75, cfg)
+    assert len(planned) == 1
+    assert planned[0][3] == 31 * 24 * 74 == 55_056
+    assert planned[0][2]["data_format"] == "grib"
+    assert len(planned[0][2]["time"]) == 24
+    assert len(planned[0][2]["day"]) == 31
 
 
 def test_era5_prefetch_blocks_new_cds_jobs_when_old_job_unresolved(
