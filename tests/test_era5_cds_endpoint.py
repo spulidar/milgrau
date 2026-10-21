@@ -355,3 +355,62 @@ def test_era5_prefetch_blocks_new_cds_jobs_when_old_job_unresolved(
         )
     assert calls == []
     assert json.loads(ledger.read_text(encoding="utf-8"))["status"] == "submitted"
+
+
+def test_grib_reader_disables_index_sidecars(monkeypatch, tmp_path: Path) -> None:
+    from milgrau.io import era5 as era5_module
+
+    captured = {}
+
+    def fake_open_dataset(path, *, engine, backend_kwargs):
+        captured["path"] = path
+        captured["engine"] = engine
+        captured["backend_kwargs"] = backend_kwargs
+        return xr.Dataset()
+
+    monkeypatch.setattr(era5_module.xr, "open_dataset", fake_open_dataset)
+    grib = tmp_path / "download.part.grib"
+    era5_module._open_era5_grib(grib)
+    assert captured == {
+        "path": grib,
+        "engine": "cfgrib",
+        "backend_kwargs": {"indexpath": ""},
+    }
+
+
+def test_grib_single_analysis_time_and_pressure_normalization() -> None:
+    from milgrau.io.era5 import _era5_grib_hour_to_netcdf, _era5_grib_hours
+
+    dataset = xr.Dataset(
+        {
+            "t": ("isobaricInhPa", np.array([290., 255., 215.])),
+            "z": ("isobaricInhPa", np.array([981., 9_810., 19_620.])),
+        },
+        coords={
+            "isobaricInhPa": [1000, 500, 100],
+            "time": np.datetime64("2020-01-07T11:00:00"),
+            "step": np.timedelta64(0, "h"),
+            "valid_time": np.datetime64("2020-01-07T11:00:00"),
+        },
+    )
+    hours, axis = _era5_grib_hours(dataset)
+    assert axis is None
+    assert hours.shape == (1,)
+    converted = _era5_grib_hour_to_netcdf(dataset, 0, axis)
+    assert set(converted.data_vars) == {"t", "z"}
+    assert converted["pressure_level"].values.tolist() == [1000, 500, 100]
+    assert "valid_time" not in converted.coords
+    np.testing.assert_array_equal(converted["t"].values, dataset["t"].values)
+
+
+def test_grib_requires_both_temperature_and_geopotential() -> None:
+    from milgrau.io.era5 import _era5_grib_hour_to_netcdf
+
+    with pytest.raises(ValueError, match="temperature/geopotential"):
+        _era5_grib_hour_to_netcdf(
+            xr.Dataset(
+                {"t": ("isobaricInhPa", [290., 255.])},
+                coords={"isobaricInhPa": [1000, 500]},
+            ),
+            0, None,
+        )
