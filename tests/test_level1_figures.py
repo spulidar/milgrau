@@ -9,6 +9,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import pytest
 import xarray as xr
 
 from milgrau.level1 import figures as level1_figures
@@ -370,3 +371,60 @@ def test_streaming_mean_matches_full_resolution_reference() -> None:
         err.values,
         np.sqrt((error.values.astype(np.float64) ** 2).sum(axis=0)) / 6.0,
     )
+
+
+@pytest.mark.parametrize("altitude", [[0.5], [0.5, 1.0, 1.5]])
+def test_quicklook_renders_single_observed_profile_as_narrow_heatmap(
+    tmp_path: Path, altitude: list[float],
+) -> None:
+    """A one-profile publication window must not dispatch to xarray.line()."""
+    times = pd.to_datetime(["2024-01-01T00:02:00"])
+    data = xr.DataArray(
+        np.ones((1, len(altitude)), dtype=np.float32),
+        dims=("time", "altitude"),
+        coords={"time": times, "altitude": altitude},
+    )
+    scientific_before = data.copy(deep=True)
+    display = quicklooks._single_profile_display_context(data)
+    assert display.sizes["time"] == 3
+    assert display.sizes["altitude"] == len(altitude)
+    np.testing.assert_array_equal(display.isel(time=1).values, data.isel(time=0).values)
+    assert np.isnan(display.isel(time=0).values).all()
+    assert np.isnan(display.isel(time=2).values).all()
+    np.testing.assert_array_equal(
+        display["time"].values,
+        np.array([
+            "2024-01-01T00:01:00",
+            "2024-01-01T00:02:00",
+            "2024-01-01T00:03:00",
+        ], dtype="datetime64[ns]"),
+    )
+
+    result = quicklooks.plot_quicklook(
+        data_slice=data,
+        error_slice=data * 0.05,
+        max_altitude=1.5,
+        channel_name="532.AN",
+        ds=xr.Dataset(coords={"time": times}),
+        output_folder=tmp_path,
+        file_name_prefix="20240101_spu_00",
+        config=_config(["532.AN"]),
+        root_dir=tmp_path,
+        time_range_utc=(
+            pd.Timestamp("2024-01-01T00:00:00"),
+            pd.Timestamp("2024-01-01T06:00:00"),
+        ),
+    )
+    assert result.is_file()
+    assert result.stat().st_size > 0
+    xr.testing.assert_identical(data, scientific_before)
+
+
+def test_quicklook_sparse_display_context_keeps_multiple_profiles_unchanged() -> None:
+    times = pd.to_datetime(["2024-01-01T00:02:00", "2024-01-01T00:05:00"])
+    data = xr.DataArray(
+        np.ones((2, 3), dtype=float),
+        dims=("time", "altitude"),
+        coords={"time": times, "altitude": [0.5, 1.0, 1.5]},
+    )
+    assert quicklooks._single_profile_display_context(data) is data
