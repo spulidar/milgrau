@@ -86,7 +86,7 @@ def test_level2_currentness_rejects_changed_bytes_even_when_other_checks_pass(
     assert not lebear.level2_output_is_current(source, output, {})
 
 
-def test_l2_rejects_radiosonde_l1_before_contract_or_retrieval(
+def test_l2_radiosonde_input_reaches_normal_contract_validation(
     tmp_path: Path, monkeypatch,
 ) -> None:
     import logging
@@ -98,42 +98,83 @@ def test_l2_rejects_radiosonde_l1_before_contract_or_retrieval(
         "thermodynamic_source_priority": "radiosonde",
         "thermodynamic_sources_present": "radiosonde",
     }).to_netcdf(source)
-    monkeypatch.setattr(
-        lebear, "validate_level1_contract",
-        lambda _ds: __import__("pytest").fail("L2 must reject before signal validation."),
-    )
+
+    reached_validation = []
+
+    def check_contract(_ds: xr.Dataset) -> None:
+        reached_validation.append(True)
+        raise ValueError("contract validation reached")
+
+    monkeypatch.setattr(lebear, "validate_level1_contract", check_contract)
     result = lebear.process_single_level1_file(
-        source, {}, logging.getLogger("test.l2.reject.radio"),
+        source, {}, logging.getLogger("test.l2.radio.allowed"),
     )
     failures = [entry for entry in result.results if entry.status is ExecutionStatus.ERROR]
+    assert reached_validation == [True]
     assert len(failures) == 1
     assert failures[0].stage == "level2.validation.input"
-    assert failures[0].cause is not None
-    assert "milgrau-lipancora -i SESSION_ID" in str(failures[0].cause)
+    assert "contract validation reached" in str(failures[0].cause)
     assert not source.with_name(source.name.replace("_L1.nc", "_L2.nc")).exists()
 
 
-def test_l2_cannot_skip_existing_current_product_if_l1_became_radio_only(
+def test_l2_can_reuse_current_radio_only_product_with_matching_l1_hash(
     tmp_path: Path, monkeypatch,
 ) -> None:
     source = tmp_path / "source_L1.nc"
-    output = tmp_path / "old_L2.nc"
+    output = tmp_path / "current_L2.nc"
     xr.Dataset(attrs={
         "level1_atmosphere_mode": "radiosonde_only",
         "thermodynamic_source_priority": "radiosonde",
+        "thermodynamic_sources_present": "radiosonde",
     }).to_netcdf(source)
     _write_currentness_fixture(source, output)
+    monkeypatch.setattr(lebear, "validate_level2_contract", lambda _ds: None)
+    monkeypatch.setattr(lebear, "get_wavelengths_to_process", lambda _config: [532])
+    monkeypatch.setattr(lebear, "get_kfs_mode", lambda _config: "two_sided")
     monkeypatch.setattr(lebear, "output_is_current", lambda *args, **kwargs: True)
-    assert not lebear.level2_output_is_current(source, output, {})
+    assert lebear.level2_output_is_current(source, output, {})
 
 
-def test_l2_rejects_older_radiosonde_only_file_without_new_mode_marker() -> None:
-    import pytest
+def test_l2_records_actual_radiosonde_atmosphere_and_mode() -> None:
+    ds = xr.Dataset(
+        data_vars={"Atmospheric_Source_Type": (
+            ("atmosphere_time",), np.array(["radiosonde", "radiosonde"])
+        )},
+        attrs={
+            "level1_atmosphere_mode": "radiosonde_only",
+            "thermodynamic_source_priority": "radiosonde",
+            "thermodynamic_sources_present": "radiosonde",
+        },
+    )
+    attrs = lebear._level2_atmosphere_provenance(ds)
+    assert attrs["level2_atmospheric_profile_source"] == "radiosonde"
+    assert attrs["source_level1_atmosphere_mode"] == "radiosonde_only"
+    assert attrs["source_thermodynamic_source_priority"] == "radiosonde"
+    assert attrs["source_thermodynamic_sources_present"] == "radiosonde"
 
-    with pytest.raises(ValueError, match="Rerun 'milgrau-lipancora"):
-        lebear._reject_radiosonde_only_l1(
-            xr.Dataset(attrs={
-                "thermodynamic_source_priority": "radiosonde",
-                "thermodynamic_sources_present": "radiosonde",
-            })
-        )
+
+def test_l2_records_standard_era5_source_without_changing_preference() -> None:
+    ds = xr.Dataset(
+        data_vars={"Atmospheric_Source_Type": (
+            ("atmosphere_time",), np.array(["era5", "ussa76"])
+        )},
+        attrs={
+            "level1_atmosphere_mode": "standard",
+            "thermodynamic_source_priority": "era5,ussa76",
+            "thermodynamic_sources_present": "era5,ussa76",
+        },
+    )
+    attrs = lebear._level2_atmosphere_provenance(ds)
+    assert attrs["level2_atmospheric_profile_source"] == "era5,ussa76"
+    assert attrs["source_level1_atmosphere_mode"] == "standard"
+    assert attrs["source_thermodynamic_source_priority"] == "era5,ussa76"
+
+
+def test_l2_supports_older_radiosonde_provenance_without_mode_marker() -> None:
+    ds = xr.Dataset(attrs={
+        "thermodynamic_source_priority": "radiosonde",
+        "thermodynamic_sources_present": "radiosonde",
+    })
+    attrs = lebear._level2_atmosphere_provenance(ds)
+    assert attrs["level2_atmospheric_profile_source"] == "radiosonde"
+    assert attrs["source_level1_atmosphere_mode"] == "unspecified"
