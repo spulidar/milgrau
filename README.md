@@ -8,7 +8,7 @@ MILGRAU is a Python processing suite for atmospheric elastic/Raman lidar data, d
 ## Processing path
 
 ```mermaid
-flowchart TD
+flowchart LR
     R[Raw Licel] --> L0[LIBIDS\nLevel 0]
     L0 --> N0[Standardized raw NetCDF]
     N0 --> L1[LIPANCORA\nLevel 1]
