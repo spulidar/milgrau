@@ -11,8 +11,10 @@ For continuous sessions the Level 1 atmosphere used by MILGRAU is time resolved:
 - **US Standard Atmosphere 1976 (USSA76)** is the explicit vertical extension
   outside external-profile coverage and the full fallback for an hour when ERA5
   is unavailable.
-- **Radiosonde** is retained as a local observational comparison/QA reference.
-  It does not replace isolated ERA5 hours in the productive time series.
+- **Radiosonde** is retained as a local observational comparison/QA reference
+  in standard processing; it does not replace isolated ERA5 hours in that
+  workflow. The explicit `milgrau-lipancora --radiosonde-only` option instead
+  makes observational profiles the productive L1 atmosphere for that run.
 
 The productive source order is explicit in `config.yaml`. The current
 repository recipe uses:
@@ -137,17 +139,34 @@ vertically, with the fallback fraction recorded.
 `SESSION_ID_L1.nc` and may **replace an existing ERA5 L1**. The NetCDF
 records `level1_atmosphere_mode=radiosonde_only`,
 `thermodynamic_source_priority=radiosonde`, and
-`Atmospheric_Source_Type=radiosonde`. This is an explicitly
-**non-productive-for-L2, provisional L1** in the current workflow. The
-LEBEAR L2 pipeline rejects such input even if a pre-existing L2 would
-otherwise qualify for incremental reuse; its error instructs the operator
-to rerun ordinary `milgrau-lipancora -i SESSION_ID` without
-`--radiosonde-only`. Incremental L1 selection recognizes mode changes
-so a normal run reprocesses radio-only L1 instead of skipping it as current.
-A normal run without the flag restores ERA5/USSA76 processing, provided
-the required ERA5 data can be obtained. Check its atmospheric source
-provenance, because the normal branch also allows an explicit USSA76
-fallback during CDS outages.
+`Atmospheric_Source_Type=radiosonde`.
+
+**Level 2 support:** LEBEAR now accepts this Level 1 for its regular
+molecular-atmosphere interpolation and optical inversion, without any special
+LEBEAR flag. The Level 2 NetCDF retains the source identity explicitly:
+`source_level1_atmosphere_mode=radiosonde_only`,
+`level2_atmospheric_profile_source=radiosonde`,
+`source_thermodynamic_sources_present=radiosonde`, and
+`source_thermodynamic_source_priority=radiosonde`, alongside the provider
+provenance inherited from Level 1. The normal L2 filename is used; a new
+product replaces an older L2 when the source Level 1 bytes change.
+
+**Scientific caveat:** these are radiosonde-derived Level 2 products, **not**
+ERA5-derived products. Observations selected within the 12-hour allowed
+window may not represent short-timescale atmospheric changes. Always inspect
+the L1 sounding age and profile vertical coverage/USSA76 fallback fractions
+when interpreting L2 aerosol retrievals.
+
+Incremental L1 selection recognizes mode changes, so changing between
+radiosonde-only and standard runs regenerates the appropriate Level 1 rather
+than silently reusing another atmosphere mode. The L2 exact Level 1 SHA-256
+identity also invalidates old results when source data changes.
+
+A normal LIPANCORA run **without** `--radiosonde-only` still uses the
+unchanged production priority `era5, ussa76`; this LEBEAR change does not
+change the atmospheric source policy or `config.yaml`. The normal branch can
+also explicitly fall back to USSA76 during CDS outages, and source provenance
+must be inspected rather than assuming ERA5 was always available.
 
 ## Radiosonde comparison reference
 
