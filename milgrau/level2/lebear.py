@@ -44,27 +44,33 @@ from milgrau.level2.level2_schema import validate_level2_contract
 from milgrau.level2.time_window import subset_level1_context
 
 
-def _reject_radiosonde_only_l1(ds: xr.Dataset) -> None:
-    """Productive radiosonde L1 is intentionally not eligible for canonical L2."""
-    attrs = ds.attrs
-    source_priority = {
-        item.strip().lower()
-        for item in str(attrs.get("thermodynamic_source_priority", "")).split(",")
+def _level2_atmosphere_provenance(ds: xr.Dataset) -> dict[str, str]:
+    """Record the actual Level 1 atmosphere used by the Level 2 inversion.
+
+    An explicit --radiosonde-only Level 1 is a valid scientific input, but its
+    molecular reference must never be mistaken for the default ERA5 workflow.
+    """
+    sources = []
+    if "Atmospheric_Source_Type" in ds:
+        sources = sorted({
+            value.strip().lower()
+            for value in np.asarray(ds["Atmospheric_Source_Type"].values).astype(str).reshape(-1)
+            if value.strip()
+        })
+    present = str(ds.attrs.get("thermodynamic_sources_present", "")).strip()
+    return {
+        "source_level1_atmosphere_mode": (
+            str(ds.attrs.get("level1_atmosphere_mode", "")).strip() or "unspecified"
+        ),
+        "level2_atmospheric_profile_source": (
+            ",".join(sources) or present or "unspecified"
+        ),
+        "source_thermodynamic_sources_present": present or "unspecified",
+        "source_thermodynamic_source_priority": (
+            str(ds.attrs.get("thermodynamic_source_priority", "")).strip()
+            or "unspecified"
+        ),
     }
-    sources = {
-        item.strip().lower()
-        for item in str(attrs.get("thermodynamic_sources_present", "")).split(",")
-    }
-    if (
-        str(attrs.get("level1_atmosphere_mode", "")).strip() == "radiosonde_only"
-        or "radiosonde" in source_priority
-        or "radiosonde" in sources
-    ):
-        raise ValueError(
-            "LEBEAR cannot process an L1 generated with --radiosonde-only. "
-            "Rerun 'milgrau-lipancora -i SESSION_ID' without --radiosonde-only "
-            "to regenerate the normal L1 with ERA5, then rerun 'milgrau-lebear'."
-        )
 
 
 def level2_output_is_current(
@@ -81,13 +87,6 @@ def level2_output_is_current(
     """Return whether one Level 2 output is intact and current."""
     del start_utc, stop_utc, output_tag, regime, segment_id
     output = Path(output_path)
-    try:
-        with xr.open_dataset(nc_file, cache=False) as source:
-            _reject_radiosonde_only_l1(source)
-    except (OSError, ValueError):
-        # Never skip as current if L1 has an unsupported atmosphere or is unreadable;
-        # process_single_level1_file emits an actionable Level 2 error.
-        return False
     if not output.is_file():
         return False
     requested = list(canonical_wavelengths(get_wavelengths_to_process(config)))
@@ -210,6 +209,7 @@ def process_single_level1_file(
     output_path: Path | None = None
     stage = "level2.ingestion"
     source_provenance: dict[str, Any] = {}
+    atmosphere_provenance: dict[str, str] = {}
     source_level1_sha256 = ""
     kfs_cfg: dict[str, Any] = {}
     try:
@@ -217,8 +217,8 @@ def process_single_level1_file(
         with xr.open_dataset(nc_path, cache=False) as ds_source:
             source_provenance = dict(ds_source.attrs)
             stage = "level2.validation.input"
-            _reject_radiosonde_only_l1(ds_source)
             validate_level1_contract(ds_source)
+            atmosphere_provenance = _level2_atmosphere_provenance(ds_source)
             stage = "level2.selection"
             ds_l1, inferred_output_tag = subset_level1_context(
                 ds_source,
@@ -262,6 +262,7 @@ def process_single_level1_file(
                 config,
                 file_logger,
             )
+            ds_l2.attrs.update(atmosphere_provenance)
             stage = "level2.validation.output"
             validate_level2_contract(ds_l2)
 
@@ -279,6 +280,7 @@ def process_single_level1_file(
             source_attrs=source_provenance,
             extra_attrs={
                 "source_level1_sha256": source_level1_sha256,
+                **atmosphere_provenance,
                 "level2_product_schema_version": LEVEL2_PRODUCT_SCHEMA_VERSION,
                 "monte_carlo_random_seed": int(kfs_cfg["random_seed"]),
                 "monte_carlo_iterations": int(kfs_cfg["monte_carlo_iterations"]),
