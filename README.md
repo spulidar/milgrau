@@ -16,8 +16,8 @@ flowchart TD
     L1 --> N1[Corrected signal + Range Corrected Signal + Atmosphere]
     N1 --> L2[LEBEAR\nLevel 2]
     L2 --> N2[Klett-Fernald-Sasano \n Attenuation + Backscatter + Scattering Ratio]
-    N1 --> F1[LIPANCORA figures\nRCS / MeanRCS / Atmosphere]
-    N2 --> F2[LEBEAR figures\nOptical / Molecular / Gluing]
+    L1 --> F1[LIPANCORA figures\nRCS / MeanRCS / Atmosphere]
+    L2 --> F2[LEBEAR figures\nOptical / Molecular / Gluing]
     N1 --> V[Explorer\nInteractive inspection]
     N2 --> V
 ```
