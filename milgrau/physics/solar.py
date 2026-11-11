@@ -52,7 +52,9 @@ def solar_elevation_deg(
         raise ValueError("longitude_deg must be finite and within [-180, 180].")
 
     times = _as_utc_index(times_utc)
-    unix_seconds = times.asi8.astype(np.float64) / 1.0e9
+    # .asi8 follows the underlying pandas datetime unit (us or ns).
+    # Convert explicitly to ns before deriving Julian day from Unix seconds.
+    unix_seconds = times.as_unit("ns").asi8.astype(np.float64) / 1.0e9
     julian_day = unix_seconds / 86400.0 + 2440587.5
     century = (julian_day - 2451545.0) / 36525.0
 
