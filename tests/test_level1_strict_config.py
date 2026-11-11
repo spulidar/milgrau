@@ -61,7 +61,7 @@ def test_repository_level1_recipe_is_explicit_and_removed_physics_alias_stays_ab
     assert resolved.missing_channel_calibration.bin_shift_bins == 0
     assert resolved.missing_channel_calibration.background_offset == 0.0
     assert resolved.atmosphere.time_resolution_minutes == 60
-    assert resolved.atmosphere.source_priority == ("era5", "ussa76")
+    assert resolved.atmosphere.source_priority == ("era5", "radiosonde", "ussa76")
     assert resolved.atmosphere.external_profile_outside_coverage == "ussa76"
     assert resolved.atmosphere.radiosonde is not None
     assert resolved.atmosphere.radiosonde.synoptic_hours_utc == (0, 12)
