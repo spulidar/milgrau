@@ -175,7 +175,10 @@ def _apply_cds_queue_policy(config: dict, args: argparse.Namespace, logger) -> d
         return config
     if args.cds_queue_threshold < 0:
         raise ValueError("--cds-queue-threshold must be nonnegative.")
-    atmosphere = config["level1"]["atmosphere"]
+    level1 = config.get("level1")
+    if not isinstance(level1, dict) or not isinstance(level1.get("atmosphere"), dict):
+        return config
+    atmosphere = level1["atmosphere"]
     if "era5" not in atmosphere["source_priority"]:
         return config
     try:
