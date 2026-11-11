@@ -284,6 +284,8 @@ def _validate_level1_atmosphere(ds: xr.Dataset) -> None:
         raise ValueError(f"Unknown Level 1 atmosphere mode: {mode!r}.")
     if not source_values or not source_values.issubset({"era5", "radiosonde", "ussa76"}):
         raise ValueError("Unsupported Level 1 atmospheric source type.")
+    if mode == "" and "radiosonde" in source_values:
+        raise ValueError("Unmarked Level 1 radiosonde requires explicit mode/provenance.")
     if mode == "radiosonde_only":
         # Strictly no ERA5, but allow a declared USSA76 final fallback.
         priority = str(ds.attrs.get("thermodynamic_source_priority", "")).strip()
