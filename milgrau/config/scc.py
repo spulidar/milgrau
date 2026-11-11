@@ -29,8 +29,8 @@ def _validate_scc_policy(
         raise ValueError("scc_policy.sounding has unknown keys.")
     if not isinstance(sounding.get("enabled", False), bool):
         raise ValueError("scc_policy.sounding.enabled must be boolean.")
-    if sounding.get("source", "cached_wyoming") != "cached_wyoming":
-        raise ValueError("scc_policy.sounding.source must be cached_wyoming.")
+    if sounding.get("source", "cached_observation") not in {"cached_observation", "cached_wyoming"}:
+        raise ValueError("scc_policy.sounding.source must be cached_observation or cached_wyoming.")
     if sounding.get("missing_policy", "skip") not in {"skip", "fail"}:
         raise ValueError("scc_policy.sounding.missing_policy must be skip or fail.")
     lr_policy = _mapping(policy["lr_input"], "scc_policy.lr_input")
