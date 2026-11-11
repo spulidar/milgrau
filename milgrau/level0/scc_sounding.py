@@ -80,6 +80,7 @@ def stage_cached_sounding(
     *, observed_target_utc: str | None = None,
     observed_origin: str | None = None,
     observed_cache_csv_name: str | None = None,
+    expected_cache_sha256: str | None = None,
     validated_max_time_delta_hours: float | None = None,
     measurement_stop_utc: Any | None = None,
 ) -> Path | None:
@@ -201,6 +202,8 @@ def stage_cached_sounding(
         actual_source = "Observed sounding from legacy cache, original provider unknown"
     if observed_origin is not None and actual_origin != observed_origin:
         raise ValueError("SCC sounding provenance contradicts LIPANCORA observation origin.")
+    if expected_cache_sha256 is not None and file_sha256(cache) != expected_cache_sha256:
+        raise ValueError("SCC observed source CSV SHA-256 mismatch against LIPANCORA verification.")
     df = pd.read_csv(cache)
     columns = {"height", "temperature", "pressure"}
     if not columns.issubset(df):
