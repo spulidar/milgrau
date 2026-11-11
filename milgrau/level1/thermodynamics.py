@@ -384,6 +384,7 @@ def integrate_thermodynamics(
     hourly_observation_sources: list[str] = []
     radio_observation_sources: set[str] = set()
     radio_archives: set[str] = set()
+    missed_wyoming_targets: set[datetime] = set()
     source_time_delta_hours: list[float] = []
     fallback_fractions: list[float] = []
     source_min_altitude: list[float] = []
@@ -471,6 +472,7 @@ def integrate_thermodynamics(
                         bind_log_context(logger, stage="radiosonde"),
                         **policy.radiosonde.as_io_mapping(),
                         prefer_wyoming=True,
+                        missed_targets=missed_wyoming_targets,
                     )
                 except Exception as exc:
                     logger.warning("radiosonde unavailable at %s | %s", timestamp, _compact_error(exc))
