@@ -267,6 +267,8 @@ def _write_time_resolved_atmosphere(
             "thermodynamic_profile_available": "true",
             "thermodynamic_profile_source_type": "time_resolved",
             "thermodynamic_profile_source": (
+                "mixed hourly atmosphere: " + ",".join(sorted(source_set))
+                if len(source_set) > 1 else
                 "hourly radiosonde with configured vertical extension"
                 if "radiosonde" in source_set else
                 "hourly ERA5 with explicit USSA76 fallback"
@@ -335,7 +337,7 @@ def _attach_radiosonde_qa(
             profile,
             station_altitude_m=station_altitude_m,
             source_type="radiosonde",
-            source_name="University of Wyoming Upper Air via Siphon",
+            source_name=str(profile.attrs.get("source", "observed radiosonde")),
             outside_coverage_policy=policy.external_profile_outside_coverage,
         )
     except Exception as exc:
@@ -354,6 +356,10 @@ def _attach_radiosonde_qa(
                 metadata.get("target_datetime_utc", metadata.get("analysis_datetime_utc", ""))
             ),
             "radiosonde_qa_time_delta_hours": float(metadata.get("time_delta_hours", np.nan)),
+            "radiosonde_qa_observation_source": (
+                "igra2" if metadata.get("historical_archive") else "wyoming_siphon"
+            ),
+            "radiosonde_qa_archive": str(metadata.get("historical_archive", "")),
             "radiosonde_qa_source_profile_min_altitude_asl_m": float(
                 metadata.get("source_profile_min_altitude_asl_m", np.nan)
             ),
