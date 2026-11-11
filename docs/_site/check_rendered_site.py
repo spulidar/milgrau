@@ -68,9 +68,10 @@ def check() -> None:
         ("processing/level-1/lipancora", "processing/level-0/level0_validation_workbook", "processing/level-1/level1_schema"),
     ):
         page = (PUBLIC / "docs" / current / "index.html").read_text(encoding="utf-8")
-        match = re.search(r'<nav\\b[^>]*\\bid=["\\x27]?doc-nav\\b', page)
-        assert match, f"No documentation navigation on {current}"
-        nav = page[match.start():]
+        marker = 'id="doc-nav"' if 'id="doc-nav"' in page else 'id=doc-nav'
+        position = page.find(marker)
+        assert position >= 0, f"No documentation navigation on {current}"
+        nav = page[position:]
         nav = nav.split("</nav>", 1)[0]
         assert following and following in nav, f"Wrong next page for {current}: {following}"
         if previous:
