@@ -1,4 +1,4 @@
-"""Optional SCC sounding ancillary from observed, locally cached Wyoming profiles.
+"""Optional SCC sounding ancillary from observed Wyoming or NOAA IGRA2 caches.
 
 No network IO in LIBIDS. No ERA5 or USSA76 substitution for observed sounding.
 The radiosonde launch site differs from SPU; heights are above the launch site.
@@ -78,11 +78,14 @@ def stage_cached_sounding(
     staging: Path, identity: str, measurement_start_utc: Any,
     config: Mapping[str, Any],
     *, observed_target_utc: str | None = None,
+    observed_origin: str | None = None,
+    observed_cache_csv_name: str | None = None,
+    validated_max_time_delta_hours: float | None = None,
     measurement_stop_utc: Any | None = None,
 ) -> Path | None:
     """Stage an SCC rs_YYYYMMDDcccNN.nc from existing observation cache, if opted in.
 
-    Missing/invalid Wyoming observations are not replaced with model profiles.
+    Missing/invalid observations are never replaced with modelled ERA5/USSA76 profiles.
     Called only while a new SCC package is being built in an atomic staging
     directory. Never mutate existing journalled/uncertain pending packages.
     """
@@ -92,8 +95,8 @@ def stage_cached_sounding(
     )
     if not policy.get("enabled", False):
         return None
-    if policy.get("source", "cached_wyoming") != "cached_wyoming":
-        raise ValueError("SCC sounding only supports cached_wyoming.")
+    if policy.get("source", "cached_observation") not in {"cached_observation", "cached_wyoming"}:
+        raise ValueError("SCC sounding requires an explicitly configured observation cache.")
     missing = policy.get("missing_policy", "skip")
     if missing not in {"skip", "fail"}:
         raise ValueError("Invalid SCC sounding missing_policy.")
@@ -114,44 +117,90 @@ def stage_cached_sounding(
         if stop < start:
             raise ValueError("SCC sounding measurement interval is inverted.")
         reference_time = start + (stop - start) / 2
-    target = select_radiosonde_target_datetime(
-        reference_time,
-        synoptic_hours_utc=settings["synoptic_hours_utc"],
-        selection=settings["selection"],
-        max_time_delta_hours=float(settings["max_time_delta_hours"]),
+    tolerance = (
+        float(validated_max_time_delta_hours)
+        if validated_max_time_delta_hours is not None
+        else float(settings["max_time_delta_hours"])
     )
-    if target is not None and observed_target_utc is not None:
-        # Only accept the same observed launch already selected and verified
-        # by LIPANCORA. No silently different nearby sounding may be staged.
-        observed_time = pd.Timestamp(observed_target_utc)
-        if observed_time.tzinfo is None:
+    if not math.isfinite(tolerance) or not 0 < tolerance <= 24:
+        raise ValueError("SCC observed sounding tolerance must be finite and in (0, 24] hours.")
+    if observed_origin is not None and observed_origin not in {"wyoming_siphon", "igra2"}:
+        raise ValueError("SCC sounding observation origin is not a verified provider.")
+    if observed_target_utc is not None:
+        # Trust the actual LIPANCORA-validated observed launch, *not* a
+        # recalculated nominal nearest slot. At 19Z a valid 12Z launch may
+        # be the closest real observation while 00Z has no measurement.
+        target = pd.Timestamp(observed_target_utc)
+        if target.tzinfo is None:
             raise ValueError("LIPANCORA sounding target must be timezone-aware UTC.")
-        if observed_time.tz_convert("UTC") != pd.Timestamp(target):
+        target = target.tz_convert("UTC")
+        if (
+            target.minute != 0 or target.second != 0
+            or target.hour not in settings["synoptic_hours_utc"]
+        ):
+            raise ValueError("LIPANCORA observed target is not a configured nominal UTC sounding.")
+        if abs((target - reference_time.tz_convert("UTC")).total_seconds()) > tolerance * 3600:
             target = None
+    else:
+        target = select_radiosonde_target_datetime(
+            reference_time,
+            synoptic_hours_utc=settings["synoptic_hours_utc"],
+            selection=settings["selection"],
+            max_time_delta_hours=tolerance,
+        )
     if target is None:
         if missing == "fail":
-            raise ValueError(
-                "No matching LIPANCORA-verified synoptic sounding within "
-                "configured SCC time tolerance."
-            )
+            raise ValueError("No matching LIPANCORA observed sounding within configured SCC time tolerance.")
         return None
     root = resolve_project_path(settings["cache_dir"])
-    cache = (
-        root / target.strftime("%Y") / target.strftime("%m")
-        / f"radiosonde_{station['station_id']}_{target.strftime('%Y%m%d_%H')}Z.csv"
-    )
+    basename = f"radiosonde_{station['station_id']}_{target.strftime('%Y%m%d_%H')}Z.csv"
+    folder = root / target.strftime("%Y") / target.strftime("%m")
+    ordinary = folder / basename
+    wyoming = ordinary.with_name(ordinary.stem + "_wyoming.csv")
+    if observed_cache_csv_name:
+        if (
+            Path(observed_cache_csv_name).name != observed_cache_csv_name
+            or observed_cache_csv_name not in {ordinary.name, wyoming.name}
+        ):
+            raise ValueError("SCC sounding selected cache filename does not match the verified launch.")
+        candidates = [folder / observed_cache_csv_name]
+    elif observed_origin == "wyoming_siphon":
+        candidates = [wyoming, ordinary]
+    else:
+        # Historical/unspecified L1 staging keeps the legacy hourly CSV
+        # unless an explicitly selected Wyoming suffix was recorded.
+        candidates = [ordinary]
+    cache = next((item for item in candidates if item.is_file()), candidates[0])
     meta_file = cache.with_suffix(".json")
-    if not cache.is_file() or not meta_file.is_file() or cache.is_symlink():
+    if (
+        not cache.is_file() or not meta_file.is_file()
+        or cache.is_symlink() or meta_file.is_symlink()
+    ):
         if missing == "fail":
-            raise ValueError(f"Observed Wyoming sounding/cache metadata missing: {cache}.")
+            raise ValueError(f"Observed sounding/cache metadata missing: {cache}.")
         return None
     provenance = json.loads(meta_file.read_text(encoding="utf-8"))
+    nominal = pd.Timestamp(provenance["target_datetime_utc"])
+    if nominal.tzinfo is None or nominal.tz_convert("UTC") != target:
+        raise ValueError("Cached sounding provenance does not match observed UTC launch.")
     if (
         str(provenance.get("station_id")) != str(station["station_id"])
-        or pd.Timestamp(provenance["target_datetime_utc"]).tz_convert("UTC") != pd.Timestamp(target)
         or provenance.get("source_type") != "radiosonde"
     ):
-        raise ValueError("Cached sounding provenance does not match selected observation.")
+        raise ValueError("Cached sounding station/source provenance does not match selection.")
+    if provenance.get("historical_archive") or "igra" in str(provenance.get("source", "")).lower():
+        actual_origin = "igra2"
+        actual_source = "NOAA NCEI IGRA2 historical sounding archive"
+    elif "wyoming" in str(provenance.get("source", "")).lower():
+        actual_origin = "wyoming_siphon"
+        actual_source = "University of Wyoming Upper Air via Siphon"
+    else:
+        # Legacy valid CSVs did not always record their provider. Retain the
+        # uncertainty, rather than claiming Wyoming without evidence.
+        actual_origin = "unattributed_legacy"
+        actual_source = "Observed sounding from legacy cache, original provider unknown"
+    if observed_origin is not None and actual_origin != observed_origin:
+        raise ValueError("SCC sounding provenance contradicts LIPANCORA observation origin.")
     df = pd.read_csv(cache)
     columns = {"height", "temperature", "pressure"}
     if not columns.issubset(df):
@@ -197,10 +246,11 @@ def stage_cached_sounding(
             "WMO_Station_Number": str(station["station_id"]),
             "Sounding_Start_Date": target.strftime("%Y%m%d"),
             "Sounding_Start_Time_UT": target.strftime("%H%M%S"),
-            "Source_Observation": "University of Wyoming Upper Air",
+            "Source_Observation": actual_source,
+            "Source_Observation_Provider": actual_origin,
             "Source_CSV_SHA256": file_sha256(cache),
             "Selection_Time_Delta_hours": (
-                abs((pd.Timestamp(target) - reference_time.tz_convert("UTC")).total_seconds()) / 3600
+                abs((target - reference_time.tz_convert("UTC")).total_seconds()) / 3600
             ),
         })
     validate_sounding(output, identity=identity)
