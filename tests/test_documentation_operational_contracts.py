@@ -117,3 +117,41 @@ def test_solar_threshold_and_return_to_day_are_contiguous_not_one_global_regime(
     assert labels.tolist() == ["seg00", "seg01", "seg01", "seg02", "seg03"]
     assert [part.regime for part in segments] == ["night", "day", "night", "day"]
     assert segments[-1].start_time_utc == starts[-1]
+
+
+def test_solar_ephemeris_is_independent_of_pandas_datetime_storage_unit() -> None:
+    # In pandas >= 3, a DatetimeIndex may use microseconds even when timestamps
+    # represent the same UTC instants. Julian day requires explicit ns scaling.
+    values = pd.DatetimeIndex([
+        pd.Timestamp("2025-03-20T12:00:00Z"),
+        pd.Timestamp("2025-06-21T15:00:00Z"),
+        pd.Timestamp("2025-12-21T16:00:00Z"),
+    ])
+    ns = solar_elevation_deg(values.as_unit("ns"), -23.5615, -46.7383)
+    us = solar_elevation_deg(values.as_unit("us"), -23.5615, -46.7383)
+    np.testing.assert_allclose(ns, us, atol=1e-8, rtol=0)
+
+
+def test_nearest_scc_weather_hour_uses_compatible_datetime_units() -> None:
+    from milgrau.level0.processing import _weather_for_measurement_rows
+
+    data = {
+        "weather_time": np.array([
+            "2025-01-01T00:00:00",
+            "2025-01-01T04:00:00",
+        ], dtype="datetime64[us]"),
+        "temperature_c": [20.0, 25.0],
+        "pressure_hpa": [1002.0, 1001.0],
+        "relative_humidity_percent": [50.0, 60.0],
+        "cloud_cover_percent": [20.0, 10.0],
+        "wind_speed_kmh": [3.0, 4.0],
+    }
+    rows = pd.DataFrame({
+        "segment_id": ["seg00"],
+        "start_time_utc": pd.DatetimeIndex(["2025-01-01T01:10:00Z"]).as_unit("us"),
+        "stop_time": pd.DatetimeIndex(["2025-01-01T01:20:00Z"]).as_unit("us"),
+    })
+    result = _weather_for_measurement_rows(data, rows)
+    assert result["temperature_c"].tolist() == [20.0]
+    assert result["pressure_hpa"].tolist() == [1002.0]
+    assert result["weather_time"][0] == np.datetime64("2025-01-01T00:00:00")
