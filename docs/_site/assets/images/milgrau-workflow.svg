@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 510" width="760" height="510" style="display:block;width:100%;height:auto" role="img" aria-label="Conceptual signal processing diagram from Level 0 to Level 2. This is an illustration, not measured data.">
+  <defs>
+    <linearGradient id="mil-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#12233d"/>
+      <stop offset="100%" stop-color="#0a1426"/>
+    </linearGradient>
+    <linearGradient id="mil-flow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4c82ee"/>
+      <stop offset="50%" stop-color="#31b9d0"/>
+      <stop offset="100%" stop-color="#6ee1b6"/>
+    </linearGradient>
+    <linearGradient id="mil-fill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#46b4e9" stop-opacity=".35"/>
+      <stop offset="100%" stop-color="#46b4e9" stop-opacity=".01"/>
+    </linearGradient>
+    <filter id="mil-glow"><feGaussianBlur stdDeviation="8"/></filter>
+  </defs>
+  <rect x="8" y="8" width="744" height="494" rx="25" fill="url(#mil-bg)" stroke="#39516d" stroke-width="1.3"/>
+  <circle cx="42" cy="43" r="5" fill="#6ee1b6"/>
+  <text x="60" y="48" fill="#b4c7dc" font-family="Inter,system-ui,sans-serif" font-size="14" letter-spacing="1.8">SCIENTIFIC PROCESSING FLOW</text>
+  <text x="705" y="48" text-anchor="end" fill="#6689a8" font-family="Inter,system-ui,sans-serif" font-size="13">CONCEPTUAL</text>
+  <path d="M35 70H723" stroke="#30435b" stroke-width="1"/>
+  <g stroke="#30425a" stroke-width="1" stroke-dasharray="4 7" opacity=".7">
+    <path d="M236 101V416M340 101V416M444 101V416M548 101V416M652 101V416"/>
+  </g>
+  <g font-family="Inter,system-ui,sans-serif" font-size="14" letter-spacing=".8">
+    <text x="40" y="132" fill="#a4b9d0">01</text><text x="75" y="132" fill="#dbe9f7" font-weight="700">LIBIDS</text>
+    <text x="40" y="245" fill="#a4b9d0">02</text><text x="75" y="245" fill="#dbe9f7" font-weight="700">LIPANCORA</text>
+    <text x="40" y="358" fill="#a4b9d0">03</text><text x="75" y="358" fill="#dbe9f7" font-weight="700">LEBEAR</text>
+  </g>
+  <g opacity=".28">
+    <path d="M235 157L250 150L262 166L275 137L288 175L301 140L313 163L330 133L343 176L358 132L372 171L385 142L400 166L418 131L431 162L446 141L460 163L477 142L492 161L507 146L520 168L535 131L552 167L566 135L581 159L593 149L609 168L621 141L638 158L650 144L665 162L680 152L703 156" stroke="#4a89e5" stroke-width="14" fill="none" stroke-linecap="round" filter="url(#mil-glow)"/>
+  </g>
+  <path d="M235 157L250 150L262 166L275 137L288 175L301 140L313 163L330 133L343 176L358 132L372 171L385 142L400 166L418 131L431 162L446 141L460 163L477 142L492 161L507 146L520 168L535 131L552 167L566 135L581 159L593 149L609 168L621 141L638 158L650 144L665 162L680 152L703 156" stroke="#5b9cf4" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M235 265C263 263 272 252 291 255S330 279 355 258S391 252 417 260S452 246 481 258S515 258 546 257S589 263 620 254S665 257 703 257" stroke="#42c6d8" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+  <path d="M235 385C266 385 279 380 299 371C328 357 351 350 383 360C405 367 422 381 450 375C478 369 490 341 521 340C546 340 560 357 583 366C610 377 655 384 703 384" fill="none" stroke="#74ddbb" stroke-width="4" stroke-linecap="round"/>
+  <path d="M235 385C266 385 279 380 299 371C328 357 351 350 383 360C405 367 422 381 450 375C478 369 490 341 521 340C546 340 560 357 583 366C610 377 655 384 703 384L703 410L235 410Z" fill="url(#mil-fill)" opacity=".7"/>
+  <g font-family="Inter,system-ui,sans-serif" font-size="12" fill="#88a7c0">
+    <text x="76" y="154">raw measurements</text>
+    <text x="76" y="267">corrected signal</text>
+    <text x="76" y="380">aerosol products</text>
+  </g>
+  <path d="M35 424H723" stroke="#30435b" stroke-width="1"/>
+  <g font-family="Inter,system-ui,sans-serif" font-size="13">
+    <text x="42" y="463" fill="#91adc9">ACQUISITION</text>
+    <path d="M174 457H244" stroke="url(#mil-flow)" stroke-width="2" stroke-linecap="round"/>
+    <path d="M237 452L245 457L237 462" stroke="#6bcddd" stroke-width="2" fill="none"/>
+    <text x="268" y="463" fill="#91adc9">CORRECTION</text>
+    <path d="M404 457H475" stroke="url(#mil-flow)" stroke-width="2" stroke-linecap="round"/>
+    <path d="M468 452L476 457L468 462" stroke="#6bcddd" stroke-width="2" fill="none"/>
+    <text x="497" y="463" fill="#cceee6">INTERPRETATION</text>
+  </g>
+</svg>

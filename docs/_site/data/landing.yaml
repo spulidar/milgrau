@@ -3,44 +3,68 @@ hero:
   weight: 10
   template: hero
   badge:
-    text: "Open scientific processing"
+    text: "Open-source atmospheric lidar science"
     color: primary
     pill: true
     soft: true
   title: "MILGRAU"
-  subtitle: "**Traceable atmospheric lidar science.** From raw Licel acquisitions through corrected signals to conditional aerosol optical retrievals, with explicit quality, uncertainty and provenance."
+  subtitle: "**Multi-Indexed LALINET GeneRAlized and Unified Algorithm.** A transparent processing workflow from original Licel acquisitions to corrected signals and conditional aerosol optical products."
+  image:
+    path: "images"
+    filename: "milgrau-workflow.svg"
+    alt: "Conceptual three-stage lidar processing diagram: Level 0 acquisitions, Level 1 corrected signals and Level 2 aerosol optical retrieval"
   ctaButton:
-    icon: menu_book
-    btnText: "Explore documentation"
-    url: "docs/"
+    icon: rocket_launch
+    btnText: "Get started"
+    url: "docs/getting-started/getting_started/"
   cta2Button:
-    icon: code
-    btnText: "Source on GitHub"
-    url: "https://github.com/spulidar/milgrau"
-  info: "Scientific Levels 0 · 1 · 2 | SPU-Lidar · IPEN/USP"
+    icon: menu_book
+    btnText: "Explore the science"
+    url: "docs/"
+  info: "SPU-Lidar · IPEN/USP, São Paulo · Scientific methods and limitations are documented explicitly."
 
 featureGrid:
   enable: true
   weight: 20
   template: "feature grid"
-  title: "Explore the scientific workflow"
-  subtitle: "Transparent methods, traceable observations and honest limitations."
+  title: "One observation, three scientific levels"
+  subtitle: "Every stage preserves the continuous session identity while adding the information needed to evaluate its scientific validity."
   items:
-    - title: "Level 0 · LIBIDS"
-      icon: database
-      description: "Organize and validate Licel measurements, dark currents and continuous scientific sessions."
+    - title: "01 — LIBIDS"
+      icon: dataset
+      description: "**Level 0 · Acquisition.** Read Licel data, verify acquisition quality, associate dark currents and preserve instrument provenance."
       ctaLink:
-        text: "Explore Level 0"
+        text: "Level 0 methodology"
         url: "docs/processing/level-0/libids/"
-    - title: "Level 1 · LIPANCORA"
-      icon: query_stats
-      description: "Apply instrument corrections, quantify uncertainty and build a time-resolved molecular atmosphere."
+    - title: "02 — LIPANCORA"
+      icon: monitoring
+      description: "**Level 1 · Correction.** Correct analog and photon-counting signals, propagate uncertainty and characterize the molecular atmosphere."
       ctaLink:
-        text: "Explore Level 1"
+        text: "Level 1 methodology"
         url: "docs/processing/level-1/lipancora/"
-    - title: "Level 2 · LEBEAR"
-      icon: show_chart
-      description: "Retrieve aerosol optical properties with explicit reference and quality diagnostics."
+    - title: "03 — LEBEAR"
+      icon: stacked_line_chart
+      description: "**Level 2 · Retrieval.** Estimate aerosol backscatter and conditional extinction with reference, uncertainty and validity diagnostics."
       ctaLink:
-        text: "Explore Level 2"
+        text: "Level 2 methodology"
         url: "docs/processing/level-2/lebear/"
+
+scienceValues:
+  enable: true
+  weight: 30
+  template: "science values"
+  title: "Built for scientific scrutiny"
+  subtitle: "A successful processing run is a starting point for interpretation — not a certificate of physical validity."
+  items:
+    - icon: "fact_check"
+      title: "Traceable observations"
+      description: "Keep acquisition times, historical channel configuration and input identity connected to each product."
+    - icon: "air"
+      title: "Explicit atmosphere"
+      description: "Distinguish ERA5 reanalysis, observed radiosondes and USSA76 fallback at the relevant time and height."
+    - icon: "query_stats"
+      title: "Visible uncertainty"
+      description: "Inspect masks, instrumental assumptions, quality warnings and supported altitude ranges."
+  cta:
+    text: "Read the scientific quality guide"
+    url: "docs/scientific-validation/scientific_quality/"

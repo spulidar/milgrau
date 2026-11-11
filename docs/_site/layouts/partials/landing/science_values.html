@@ -1,0 +1,34 @@
+{{ $sectionTitle := .Scratch.Get "sectionTitle" }}
+{{ with (index .Site.Data.landing $sectionTitle) }}
+{{ if .enable }}
+<section id="science-values" class="my-5 py-5">
+  <div class="container">
+    <div class="rounded-4 p-4 p-md-5" style="background:linear-gradient(135deg,#132842,#102039 60%,#102f3f);border:1px solid #28445f;box-shadow:0 14px 48px rgba(8,20,41,.15)">
+      <div class="row align-items-end g-4 mb-4">
+        <div class="col-lg-8">
+          <p class="text-uppercase fw-bold mb-2" style="color:#79d9d5;letter-spacing:.14em;font-size:.75rem">Method · Provenance · Quality</p>
+          <h2 class="mb-2 text-white fw-bold">{{ .title }}</h2>
+          <p class="mb-0" style="color:#c2d5e4;max-width:40rem">{{ .subtitle }}</p>
+        </div>
+        {{ with .cta }}
+        <div class="col-lg-4 text-lg-end">
+          <a href="{{ relLangURL .url }}" class="btn btn-outline-light">{{ .text }} <i class="material-icons align-middle" aria-hidden="true">arrow_forward</i></a>
+        </div>
+        {{ end }}
+      </div>
+      <div class="row g-3">
+        {{ range .items }}
+        <div class="col-md-4">
+          <div class="h-100 rounded-3 p-4" style="background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.11)">
+            <span class="material-icons mb-3" style="color:#75ddcb;font-size:30px" aria-hidden="true">{{ .icon }}</span>
+            <h3 class="h5 text-white">{{ .title }}</h3>
+            <p class="mb-0 small" style="color:#c7d7e6">{{ .description }}</p>
+          </div>
+        </div>
+        {{ end }}
+      </div>
+    </div>
+  </div>
+</section>
+{{ end }}
+{{ end }}
