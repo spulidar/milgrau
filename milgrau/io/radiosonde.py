@@ -165,29 +165,40 @@ def _cached_sounding(
         "csv_file": cache_file.name,
     }
 
-    if cache_file.exists():
+    # Keep a later Wyoming fetch separate from a previously cached IGRA2
+    # observation. They must not overwrite one another or lose sidecars.
+    candidates = [cache_file]
+    if not allow_igra:
+        candidates.insert(0, cache_file.with_name(cache_file.stem + "_wyoming.csv"))
+    for candidate_file in candidates:
+        if not candidate_file.exists():
+            continue
         try:
-            cached = pd.read_csv(cache_file)
+            cached = pd.read_csv(candidate_file)
             if not {"height", "temperature", "pressure"}.issubset(cached.columns):
                 raise ValueError("Required radiosonde columns missing.")
             values = cached.dropna(subset=["height", "temperature", "pressure"])
             if len(values) < 2:
                 raise ValueError("Insufficient valid radiosonde levels.")
-            logger.debug("radiosonde hourly CSV cache hit: %s", cache_filename)
-            sidecar = _read_metadata(metadata_file)
-            if allow_igra or (
-                sidecar and not sidecar.get("historical_archive")
+            sidecar = _read_metadata(_metadata_file_for(candidate_file))
+            is_wyoming = (
+                bool(sidecar)
+                and not sidecar.get("historical_archive")
                 and "igra" not in str(sidecar.get("source", "")).lower()
-            ):
+            )
+            if allow_igra or is_wyoming:
+                logger.debug("radiosonde hourly CSV cache hit: %s", candidate_file.name)
                 source_keys = {
                     key: sidecar[key] for key in (
                         "source", "historical_archive", "historical_station_id",
                         "source_type", "download_datetime_utc",
                     ) if key in sidecar
                 }
-                return _attach_metadata(cached, {**metadata, **source_keys})
+                return _attach_metadata(
+                    cached, {**metadata, "csv_file": candidate_file.name, **source_keys}
+                )
         except (OSError, ValueError, KeyError, pd.errors.ParserError) as exc:
-            logger.warning("radiosonde CSV cache unusable | %s | %s", cache_filename, exc)
+            logger.warning("radiosonde CSV cache unusable | %s | %s", candidate_file.name, exc)
 
     if not allow_igra:
         return None
@@ -219,6 +230,7 @@ def fetch_wyoming_radiosonde(
     selection: str,
     max_time_delta_hours: float,
     prefer_wyoming: bool = False,
+    missed_targets: set[datetime] | None = None,
 ) -> Optional[pd.DataFrame]:
     """Get an observed sounding, optionally preferring Wyoming over IGRA2.
 
@@ -264,6 +276,8 @@ def fetch_wyoming_radiosonde(
         # to historical IGRA2. Failed network attempts do not trigger retries
         # of the entire source chain.
         for candidate in candidates:
+            if missed_targets is not None and candidate in missed_targets:
+                continue
             try:
                 _require_current_siphon()
                 received = WyomingUpperAir.request_data(candidate, station_id)
@@ -272,12 +286,19 @@ def fetch_wyoming_radiosonde(
                     or len(usable.dropna(subset=["height", "temperature", "pressure"])) < 2):
                     raise ValueError("Wyoming sounding has insufficient valid vertical levels.")
             except Exception as exc:
+                if missed_targets is not None:
+                    missed_targets.add(candidate)
                 logger.warning("Wyoming unavailable at %s | %s", candidate.isoformat(), exc)
                 continue
             root = cache_root / candidate.strftime("%Y") / candidate.strftime("%m")
             root.mkdir(parents=True, exist_ok=True)
             name = f"radiosonde_{station_id}_{candidate.strftime('%Y%m%d_%H')}Z.csv"
             output = root / name
+            if output.exists():
+                prior = _read_metadata(_metadata_file_for(output))
+                if prior.get("historical_archive"):
+                    output = output.with_name(output.stem + "_wyoming.csv")
+                    name = output.name
             metadata = {
                 **default_metadata,
                 "target_datetime_utc": candidate.isoformat(),
