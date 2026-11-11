@@ -37,6 +37,8 @@ jobs:
   build:
     name: Build Lotus Docs documentation
     runs-on: ubuntu-latest
+    outputs:
+      pages_enabled: ${{ steps.pages-check.outputs.enabled }}
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -76,15 +78,36 @@ jobs:
           name: milgrau-documentation-html
           path: public/
           retention-days: 7
-      - name: Upload Pages deployment artifact
+      - name: Check whether GitHub Pages is enabled
+        id: pages-check
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          status=$(curl --silent --show-error --location --output /dev/null --write-out '%{http_code}' \
+            --header 'Accept: application/vnd.github+json' \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/pages")
+          if [[ "$status" == "200" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$status" == "404" ]]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::GitHub Pages is not enabled. Set Settings > Pages > Source to GitHub Actions, then run this workflow again."
+          else
+            echo "::error::Unable to inspect Pages configuration (HTTP $status)"
+            exit 1
+          fi
+      - name: Upload Pages deployment artifact
+        if: steps.pages-check.outputs.enabled == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: public/
 
   deploy:
     name: Publish to GitHub Pages
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/main' && needs.build.outputs.pages_enabled == 'true'
     needs: build
     runs-on: ubuntu-latest
     permissions:
