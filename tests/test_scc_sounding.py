@@ -161,3 +161,81 @@ def test_sounding_filename_follows_scc_two_digit_suffix(tmp_path) -> None:
     assert scc_sounding_name("20241220spu0414") == "rs_20241220spu04.nc"
     with pytest.raises(ValueError, match="Unsafe"):
         scc_sounding_name("../fake")
+
+
+def test_igra_uses_actual_validated_launch_even_when_nominal_nearest_differs(tmp_path) -> None:
+    cfg = config(tmp_path)
+    csv = cached_csv(cfg)
+    sidecar = json.loads(csv.with_suffix(".json").read_text())
+    sidecar["source"] = "NOAA NCEI IGRA2 historical sounding archive"
+    sidecar["historical_archive"] = "BRM00083779-data.txt"
+    csv.with_suffix(".json").write_text(json.dumps(sidecar))
+    output_dir = tmp_path / "igra_selected"
+    output_dir.mkdir()
+    result = stage_cached_sounding(
+        output_dir, ID, "2024-09-13T19:00:00+00:00", cfg,
+        observed_target_utc="2024-09-13T12:00:00+00:00",
+        observed_origin="igra2",
+        observed_cache_csv_name=csv.name,
+        validated_max_time_delta_hours=12.0,
+    )
+    assert result is not None
+    with nc.Dataset(result) as ds:
+        assert ds.getncattr("Source_Observation_Provider") == "igra2"
+        assert "NOAA" in ds.getncattr("Source_Observation")
+        assert ds.getncattr("Sounding_Start_Time_UT") == "120000"
+        assert ds.getncattr("Selection_Time_Delta_hours") == 7.0
+
+
+def test_scc_selects_wyoming_suffix_when_igra_and_wyoming_coexist(tmp_path) -> None:
+    cfg = config(tmp_path)
+    igra_csv = cached_csv(cfg)
+    old_sidecar = json.loads(igra_csv.with_suffix(".json").read_text())
+    old_sidecar.update({
+        "source": "NOAA NCEI IGRA2 historical sounding archive",
+        "historical_archive": "BRM00083779-data.txt",
+    })
+    igra_csv.with_suffix(".json").write_text(json.dumps(old_sidecar))
+    wyoming_csv = igra_csv.with_name(igra_csv.stem + "_wyoming.csv")
+    pd.read_csv(igra_csv).to_csv(wyoming_csv, index=False)
+    wyoming_sidecar = dict(old_sidecar)
+    wyoming_sidecar.pop("historical_archive")
+    wyoming_sidecar["source"] = "University of Wyoming Upper Air via Siphon"
+    wyoming_sidecar["csv_file"] = wyoming_csv.name
+    wyoming_csv.with_suffix(".json").write_text(json.dumps(wyoming_sidecar))
+
+    stage = tmp_path / "choose_wyoming"
+    stage.mkdir()
+    result = stage_cached_sounding(
+        stage, ID, START, cfg,
+        observed_target_utc=TARGET, observed_origin="wyoming_siphon",
+        observed_cache_csv_name=wyoming_csv.name,
+    )
+    assert result is not None
+    with nc.Dataset(result) as ds:
+        assert ds.getncattr("Source_Observation_Provider") == "wyoming_siphon"
+        assert ds.getncattr("Source_CSV_SHA256") == __import__(
+            "hashlib"
+        ).sha256(wyoming_csv.read_bytes()).hexdigest()
+    assert old_sidecar["historical_archive"] == "BRM00083779-data.txt"
+    assert json.loads(igra_csv.with_suffix(".json").read_text()) == old_sidecar
+
+
+def test_scc_refuses_mislabeled_igra_cache_as_wyoming(tmp_path) -> None:
+    cfg = config(tmp_path)
+    csv = cached_csv(cfg)
+    sidecar = json.loads(csv.with_suffix(".json").read_text())
+    sidecar.update({
+        "source": "NOAA NCEI IGRA2 historical sounding archive",
+        "historical_archive": "BRM00083779-data.txt",
+    })
+    csv.with_suffix(".json").write_text(json.dumps(sidecar))
+    stage = tmp_path / "reject_mismatch"
+    stage.mkdir()
+    with pytest.raises(ValueError, match="contradicts LIPANCORA"):
+        stage_cached_sounding(
+            stage, ID, START, cfg,
+            observed_target_utc=TARGET, observed_origin="wyoming_siphon",
+            observed_cache_csv_name=csv.name,
+        )
+    assert list(stage.iterdir()) == []
