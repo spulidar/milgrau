@@ -1,0 +1,5 @@
+# Hugo output only; source documentation remains in docs/.
+/.hugo-content/
+/public/
+/resources/_gen/
+/.hugo_build.lock

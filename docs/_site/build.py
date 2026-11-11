@@ -10,7 +10,7 @@ import shutil
 from pathlib import Path
 from urllib.parse import unquote
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 GROUPS = {
     "getting-started": ["getting_started.md", "operating_milgrau.md", "configuration_reference.md", "terminology_units.md", "processing_levels.md"],
     "processing/level-0": ["libids.md", "level0_schema.md", "solar_regimes.md", "level0_validation_workbook.md"],
@@ -92,10 +92,13 @@ def links(body: str, relative: Path, routes: dict[Path, Path], root: Path) -> st
 def build(root: Path = ROOT, output: Path | None = None) -> int:
     root = root.resolve()
     docs = root / "docs"
-    dest = output.resolve() if output else root / ".hugo-content"
+    dest = output.resolve() if output else root / "docs" / "_site" / ".hugo-content"
     if not docs.is_dir():
         raise FileNotFoundError(f"No docs source: {docs}")
-    if dest == root or dest == docs or docs in dest.parents:
+    # Allow only the transient build folder inside docs/_site; all other
+    # documentation and site infrastructure is protected.
+    allowed_site_output = docs / "_site" / ".hugo-content"
+    if dest in (root, docs) or (docs in dest.parents and dest != allowed_site_output):
         raise ValueError("Refusing to overwrite source documentation.")
     if dest.exists():
         if not (dest / MARKER).is_file():
@@ -103,7 +106,11 @@ def build(root: Path = ROOT, output: Path | None = None) -> int:
         shutil.rmtree(dest)
     dest.mkdir(parents=True)
     (dest / MARKER).write_text("Generated from docs/; never edit.\n", encoding="utf-8")
-    files = sorted(x for x in docs.rglob("*.md") if x.is_file())
+    # Ignore website build tooling and any previously generated Hugo Markdown.
+    files = sorted(
+        x for x in docs.rglob("*.md")
+        if x.is_file() and x.relative_to(docs).parts[0] != "_site"
+    )
     routes = {p.relative_to(docs): target(p.relative_to(docs)) for p in files}
     if len(set(routes.values())) != len(routes):
         raise ValueError("Duplicate site destinations")
@@ -130,7 +137,8 @@ def build(root: Path = ROOT, output: Path | None = None) -> int:
         where.parent.mkdir(parents=True, exist_ok=True)
         where.write_text(meta(title, description, icon, weight) + links(raw.lstrip("\n"), rel, routes, root), encoding="utf-8")
     for source in docs.rglob("*"):
-        if source.is_file() and source.suffix.lower() != ".md":
+        if (source.is_file() and source.suffix.lower() != ".md"
+                and source.relative_to(docs).parts[0] != "_site"):
             where = dest / "docs" / source.relative_to(docs)
             where.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, where)
