@@ -13,7 +13,7 @@ scc_policy:
   # Set enabled: false to use immediate raw+LR uploads without LIPANCORA.
   sounding:
     enabled: true
-    source: cached_wyoming
+    source: cached_observation
     missing_policy: skip
   lr_input:
     # External LR is applied only to eligible elastic_backscatter products.
