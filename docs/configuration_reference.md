@@ -101,3 +101,75 @@ The SPU lidar-ratio climatology is in `station.yaml`, not duplicated in the norm
 ## Before changing a scientific setting
 
 Record the setting's original and proposed values, physical justification, affected sessions, expected changes in uncertainty/valid range, the NetCDF/provenance used to compare results, and whether L1/L2 must be regenerated. A numerical setting is part of the scientific method, not only a user preference.
+
+
+## Detailed Level 2 options in the distributed recipe
+
+The following settings are *scientific analysis choices*. Their configured values are not inferred from the current aerosol observation.
+
+| Key suffix under `inversion` | Distributed value | Purpose |
+| --- | --- | --- |
+| `products.save_glued_signal` | `true` | Preserve selected/glued input for retrieval review |
+| `products.save_molecular_profile` | `true` | Save Rayleigh/molecular terms |
+| `products.save_scattering_ratio` | `false` | Save this optional diagnostic only if requested |
+| `products.save_aerosol_backscatter` | `true` | Write aerosol β |
+| `products.save_aerosol_extinction` | `true` | Write conditional aerosol α |
+| `products.save_uncertainty` | `true` | Preserve uncertainty products |
+| `products.save_quality_flags` | `true` | Retain scientific masks and retrieval status |
+| `retrieval.residual_aerosol_fractions` | `[0.0]` | Tested residual-aerosol fractions at the reference |
+| `retrieval.uncertainty_mode` | `independent` | Explicit uncertainty aggregation semantics |
+| `molecular_fit.ref_alt_min_m / ref_alt_max_m` | `5000 / 25000` | Molecular-reference search support |
+| `molecular_fit.ref_window_m` | `1000` | Width of reference candidate |
+| `molecular_fit.max_relative_slope` | `0.25` | Screening criterion for trend |
+| `molecular_fit.max_relative_variance` | `0.50` | Screening criterion for fluctuations |
+| `molecular_fit.min_valid_fraction` | `0.50` | Minimum candidate support |
+| `gluing.window_length_bins` | `120` | Local analog/PC fit window |
+| `gluing.correlation_threshold` | `0.95` | Minimum correlation |
+| `gluing.intercept_threshold` | `5.0` | Fit intercept screening |
+| `gluing.minmax_threshold` | `0.05` | Ratio of dynamic signal extrema |
+| `gluing.max_relative_rmse` | `0.08` | Maximum fit error |
+| `gluing.max_relative_bias` | `0.05` | Maximum relative bias |
+| `gluing.min_valid_fraction` | `0.80` | Minimum usable gluing samples |
+| `gluing.max_saturation_fraction` | `0.20` | Limit for candidate gluing |
+| `gluing.invalid_saturation_fraction` | `1.0` | Explicit invalid-saturation behavior |
+| `gluing.search_min_idx / search_max_idx` | `150 / 1200` | Candidate bin search interval |
+| `gluing.allow_single_channel_fallback` | `true` | Use eligible single channel when gluing fails |
+| `gluing.single_channel_priority` | `photon_counting` | Preference for fallback channel |
+| `cloud_screening.enabled` | `false` | Preliminary method is disabled in the standard recipe |
+
+The progressive altitude grid from the distributed `inversion.retrieval.progressive_grid_schedule` has bin widths 7.5 m (at low altitude), 15 m from 6 km, 30 m from 10 km, 60 m from 15 km and 100 m from 25 km. These are configured **numerical sampling** steps, not claims of independent instrument-resolved information at those heights.
+
+### Plot settings
+
+The distributed `visualization` section uses `output_format: webp`, `dpi: 120`, plotted altitude ranges `[5, 15, 30]` km and selected channels (1064, 532 and 355 nm) as applicable. The `quicklook` presentation controls include `show_pbl`, `show_tropopause`, `mean_profile_smooth_bins: 20`, maximum time gap of 10 minutes for display, 720 time samples and 1,200 altitude bins.
+
+Atmospheric plots have a maximum plotted height of 30 km and use the configured comparison altitude bands (0–3, 3–10 and 10–20 km). Level 2 plots additionally control optional gluing, reference, Monte Carlo and optical-profile panels. Display downsampling and palettes **do not** change the values in the saved scientific NetCDF.
+
+### Station history and valid scientific context
+
+The distributed SPU station file currently identifies the following *dated catalog periods*. They are descriptive catalog entries, **not independent proof that every historical calibration has been experimentally verified**.
+
+| Station profile | Catalog period |
+| --- | --- |
+| `spu-legacy` | 2000-01-01 through 2017-03-07 |
+| `spu-apel-2017` | 2017-03-08 through 2018-03-18 |
+| `spu-raman-2018` | 2018-03-19 through 2024-09-09 |
+| `spu-merionc-2024` | From 2024-09-10 |
+
+Profile selection uses the station's local civil dates. `station.yaml` also distinguishes lidar site coordinates, separate radiosonde-launch coordinates, calibration IDs, nominal laser configuration, and overlap-model uncertainty/status. Historical calibration fields may be estimated, provisional or not characterized; the corresponding scientific limitation should remain visible.
+
+### SCC operator policy (optional)
+
+The distributed `scc.enabled` default is `false`; `scc.config_file` points to `scc.yaml`, and `scc.state_dir` to `.state/scc` (a **persistent remote-submission journal**, not disposable cache). HTTP settings specify a 60-second timeout and two safe GET retries; upload/delete POST operations are **not** automatically retried.
+
+With SCC enabled, `scc.yaml` defines the endpoint, SCC configuration/product IDs and channel maps by historical station profile and solar regime. Its `scc_policy.sounding.source: cached_observation` permits **verified Wyoming or IGRA2 only**, with `missing_policy: skip` for absent observations. Standard USSA76 or ERA5 atmospheric profiles are not fabricated into a measured SCC sounding.
+
+The SCC catalog and the scientific instrument `station.yaml` have different meanings; a server product ID is not evidence of detector calibration.
+
+See [SCC operator guide](scc_batch_operator_guide.md) and [Lidar-ratio provenance](lidar_ratio_climatology_provenance.md).
+
+## Valid ranges and invalid settings
+
+MILGRAU's Level 0 configuration resolver explicitly validates required sections, type, finite/positive numeric values, station fields and supported enum options. Level 1 and Level 2 have their own strict validators. **Do not assume that arbitrary percentages, new mode names or missing fields will be silently accepted.** Use the documented default keys, `--help` and program validation output; do not mix values from an older experimental YAML branch into the current recipe.
+
+For a scientifically meaningful parameter-sensitivity study, save the original YAML, record a specific hypothesis for each change and review its consequences in the Level 1/Level 2 uncertainties and validity masks.

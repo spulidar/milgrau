@@ -7,8 +7,9 @@ MILGRAU turns atmospheric lidar observations into progressively more interpreted
 1. [Getting started](getting_started.md) — install MILGRAU, supply scientific settings, process one session and inspect results.
 2. [Operating MILGRAU](operating_milgrau.md) — exact selectors, stage commands, reprocessing and comparison safety.
 3. [Scientific configuration reference](configuration_reference.md) — current operator parameters and their scientific effects.
-4. [Processing levels](processing_levels.md) — understand what Level 0, Level 1 and Level 2 mean.
-5. [Scientific quality and interpretation](scientific_quality.md) — check whether a result is scientifically supported before using it.
+4. [Terminology and units](terminology_units.md) — consistent scientific names, times and physical units.
+5. [Processing levels](processing_levels.md) — understand what Level 0, Level 1 and Level 2 mean.
+6. [Scientific quality and interpretation](scientific_quality.md) — check whether a result is scientifically supported before using it.
 
 ## Processing and interpretation
 
