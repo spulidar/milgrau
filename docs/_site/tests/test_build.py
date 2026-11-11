@@ -138,6 +138,7 @@ class SiteDocumentationTests(unittest.TestCase):
             MODULE.build(root)
             page = (root / "docs/_site/.hugo-content/_index.md").read_text(encoding="utf-8")
             self.assertIn("A science pipeline for lidar", page)
+            self.assertNotIn("\n# MILGRAU\n", page)
             self.assertIn("LIBIDS, LIPANCORA and LEBEAR", page)
             self.assertIn("Quality diagnostics are necessary", page)
             self.assertIn('relref "docs/getting-started/getting_started.md"', page)

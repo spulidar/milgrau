@@ -158,7 +158,7 @@ def build(root: Path = ROOT, output: Path | None = None) -> int:
             return re.split(r"(?m)^## ", block, maxsplit=1)[0].strip()
 
         introduction = readme.split("## Scientific processing workflow", 1)[0]
-        introduction = re.sub(r"(?m)^# MILGRAU\\s*\n", "", introduction).strip()
+        introduction = introduction.removeprefix("# MILGRAU\n").strip()
         workflow = extract_section("Scientific processing workflow")
         workflow = workflow.split("### Processing pathway at a glance", 1)[0]
         # Preserve only the README's explanatory lead and level overview
