@@ -15,6 +15,7 @@ MILGRAU turns atmospheric lidar observations into progressively more interpreted
 | Guide | What it answers |
 | --- | --- |
 | [LIBIDS / Level 0](libids.md) | Which measurements were included? Which instrument and dark-current data were associated? |
+| [Level 0 variables](level0_schema.md) | What are the dimensions, units, availability and provenance rules of a Level 0 NetCDF? |
 | [LIPANCORA / Level 1](lipancora.md) | How were signals corrected, uncertainties estimated and molecular atmosphere represented? |
 | [Atmospheric profiles](atmospheric_profiles.md) | When does MILGRAU use ERA5, Wyoming, IGRA2 or USSA76, and what was actually used? |
 | [LEBEAR / Level 2](lebear.md) | How are aerosol optical coefficients retrieved, with what assumptions and valid support? |
@@ -32,6 +33,6 @@ MILGRAU turns atmospheric lidar observations into progressively more interpreted
 
 ## Supporting development, operations and historical records
 
-The following are useful to maintainers or for rare troubleshooting, but are **not required to follow the normal scientific workflow**: [scientific configuration guide](configuration_ownership.md), [code inventory](code_inventory.md), [SCC protocol details](scc_native_client.md), [SCC Level 0 interoperability](scc_level0_interoperability.md), [SCC validation evidence](scc_phase5_validation.md), [integration gates](scc_integration_merge_plan.md), [archived SCC development history](history/scc_integration_development_tracker.md) and [publication integration](publication_integration.md).
+The following are useful to maintainers or for rare troubleshooting, but are **not required to follow the normal scientific workflow**: [scientific configuration guide](configuration_ownership.md), [code inventory](code_inventory.md), [SCC protocol details](scc_native_client.md), [SCC Level 0 interoperability](scc_level0_interoperability.md), [SCC validation evidence](scc_phase5_validation.md), [integration gates](scc_integration_merge_plan.md), [archived SCC development history](history/scc_integration_development_tracker.md), [cleanup review candidates](cleanup_review.md) and [publication integration](publication_integration.md).
 
 The [project tracker](../.github/tracker.md) records open scientific validation tasks and future documentation work. A checked item indicates a documented/reviewed task, not proof that a physical or scientific uncertainty is resolved.
