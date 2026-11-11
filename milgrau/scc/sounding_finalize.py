@@ -51,6 +51,9 @@ def finalize_session_soundings(
     with nc.Dataset(level1_path) as ds:
         available = str(getattr(ds, "radiosonde_available", "false")).lower() == "true"
         qa_target = str(getattr(ds, "radiosonde_qa_target_datetime_utc", ""))
+        qa_origin = str(getattr(ds, "radiosonde_qa_observation_source", ""))
+        qa_cache_name = str(getattr(ds, "radiosonde_qa_cache_csv_name", ""))
+        qa_max_time_delta_hours = getattr(ds, "radiosonde_qa_max_time_delta_hours", None)
         l1_session = str(getattr(ds, "Session_ID", ""))
     packets = level0_path.parent / "scc" / "scc-inputs"
     if not packets.is_dir():
@@ -83,7 +86,9 @@ def finalize_session_soundings(
         if manifest.get("sounding_stage") != "awaiting_lipancora":
             continue
         result = _finalize_one(
-            config, path, available=available, qa_target=qa_target, logger=logger,
+            config, path, available=available, qa_target=qa_target,
+            qa_origin=qa_origin, qa_cache_name=qa_cache_name,
+            qa_max_time_delta_hours=qa_max_time_delta_hours, logger=logger,
         )
         results.append(result)
     return results
@@ -92,6 +97,8 @@ def finalize_session_soundings(
 def _finalize_one(
     config: Mapping[str, Any], path: Path, *,
     available: bool, qa_target: str, logger: logging.Logger,
+    qa_origin: str = "", qa_cache_name: str = "",
+    qa_max_time_delta_hours: float | None = None,
 ) -> str:
     identity = path.name
     root = state_root(config)
@@ -136,6 +143,9 @@ def _finalize_one(
                 sounding = stage_cached_sounding(
                     temp, identity, manifest["measurement_start_utc"], config,
                     observed_target_utc=qa_target,
+                    observed_origin=qa_origin or None,
+                    observed_cache_csv_name=qa_cache_name or None,
+                    validated_max_time_delta_hours=qa_max_time_delta_hours,
                     measurement_stop_utc=manifest["measurement_stop_utc"],
                 )
             if sounding is None and missing == "fail":
@@ -159,7 +169,9 @@ def _finalize_one(
                     "size_bytes": sounding.stat().st_size,
                 }
                 revised["sounding_stage"] = "ready"
-                revised["sounding_source"] = "lipancora_wyoming_observation"
+                with nc.Dataset(sounding, "r") as sounding_ds:
+                    recorded_origin = str(sounding_ds.getncattr("Source_Observation"))
+                revised["sounding_source"] = recorded_origin
             else:
                 revised["sounding_stage"] = "skipped_missing"
             (temp / "manifest.json").write_text(
