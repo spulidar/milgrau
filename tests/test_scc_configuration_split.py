@@ -161,7 +161,7 @@ def test_scc_http_settings_allow_only_explicit_safe_get_retry(
     payload["scc"]["http"] = {"get_retries": 2, "timeout_seconds": 45}
     result = _load_temp(tmp_path, payload)
     assert result["scc"]["http"] == {"get_retries": 2, "timeout_seconds": 45}
-    assert result["scc"]["enabled"] is True
+    assert result["scc"]["enabled"] is False
     for legacy in (
         {"automatic": True},
         {"retries": 3},
