@@ -76,7 +76,7 @@ def links(body: str, relative: Path, routes: dict[Path, Path], root: Path) -> st
             return f"[{label}]({GITHUB}{repo_file.as_posix()}{sep}{fragment})"
         if rel_source in routes:
             route = routes[rel_source].as_posix()
-            return f'[{label}]({{{{< relref "{route}" >}}}}}{sep}{fragment})'
+            return "[" + label + "]({{< relref \"" + route + "\" >}}" + sep + fragment + ")"
         return match.group(0)
 
     output, fenced = [], False
