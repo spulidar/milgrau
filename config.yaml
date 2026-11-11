@@ -7,7 +7,7 @@ station_config: "station.yaml"
 
 # Optional external SCC interoperability; no scc.yaml dependency when disabled.
 scc:
-  enabled: true
+  enabled: false
   config_file: "scc.yaml"
   # Persistent SCC submission journal and pre-replacement archive (never cache).
   state_dir: ".state/scc"
@@ -84,14 +84,10 @@ level1:
       background_offset: 0.0
 
   atmosphere:
-    # The canonical Level 1 atmosphere is hourly. ERA5 is the temporal backbone;
-    # USSA76 is an explicit fallback/vertical extension. Radiosonde is retained
-    # below as an observational QA reference, not as a piecewise production source.
+    # Productive priority: ERA5 (including validated cache) -> Wyoming observed
+    # radiosonde -> locally archived NOAA IGRA2 -> explicit USSA76 fallback.
     time_resolution_minutes: 60
-    source_priority: ["era5", "ussa76"]
-    # Do not mark a historical L1 definitive using USSA76 merely because
-    # CDS was unavailable. Explicitly set allow_fallback for operational use.
-    missing_policy: require_era5
+    source_priority: ["era5", "radiosonde", "ussa76"]
 
     # External profiles rarely span the complete lidar altitude grid. The
     # extension behavior is explicit rather than an implicit standard-atmosphere fallback.
