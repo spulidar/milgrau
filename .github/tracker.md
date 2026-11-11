@@ -97,19 +97,35 @@ historical scientific equivalence.
 
 ## C. LIPANCORA — Level 1
 
-- [ ] Explain scientific objectives and required input quality.
-- [ ] Document each applicable instrumental correction and where historical parameters come from.
-- [ ] Explain analog and photon-counting treatment and channel alignment.
-- [ ] Describe dead-time assumptions, bin shifts and the limits of saturation characterization.
-- [ ] Explain robust background estimation (range, MAD, outliers, count and uncertainty diagnostics).
-- [ ] Document propagation of corrected-signal/RCS uncertainty and unsupported cases.
-- [ ] Provide the range-corrected-signal derivation, definitions and unit conventions.
-- [ ] Document PBL/tropopause diagnostics and their failure/availability semantics.
-- [ ] Explain hourly molecular atmosphere materialization and altitude/time reference.
-- [ ] Document and interpret every Level 1 figure and diagnostic.
-- [ ] Produce the full Level 1 NetCDF dictionary with units, flags and relevant provenance.
+- [x] Explain scientific objectives and required input quality.
+- [x] Document each applicable instrumental correction and where historical parameters come from.
+- [x] Explain analog and photon-counting treatment and channel alignment.
+- [x] Describe dead-time assumptions, bin shifts and the limits of saturation characterization.
+- [x] Explain robust background estimation (range, MAD, outliers, count and uncertainty diagnostics).
+- [x] Document propagation of corrected-signal/RCS uncertainty and unsupported cases.
+- [x] Provide the range-corrected-signal derivation, definitions and unit conventions.
+- [x] Document PBL/tropopause diagnostics and their failure/availability semantics.
+- [x] Explain hourly molecular atmosphere materialization and altitude/time reference.
+- [x] Document and interpret every Level 1 figure and diagnostic.
+- [x] Produce the full Level 1 NetCDF dictionary with units, flags and relevant provenance.
 - [ ] Provide a reproducible, scientifically annotated real Level 1 example.
 - [ ] Assess instrumental edge cases and scientific differences across historical station profiles.
+
+**Block C documentation (11 November 2026):** The [expanded LIPANCORA
+scientific guide](../docs/lipancora.md) now documents productive correction
+order, per-channel native grid, dark-current statistics, analog/PC uncertainty,
+numerical dead-time clipping versus characterized physical saturation, robust
+background, RCS, PBL/tropopause, atmospheric provenance and interpretation of
+figure outputs. The [Level 1 variable dictionary](../docs/level1_schema.md)
+covers field dimensions, units, quality flags and optional source data. The
+[Level 1 real-data validation workbook](../docs/level1_validation_workbook.md)
+states the required input files, comparison method and acceptance worksheet.
+
+The checked items are **code-reviewed documentation**, not empirical
+certification of the SPU detector, dark-current correction sequence or
+historical instrument performance. A real-data annotated session and instrument
+edge-case comparisons remain **unchecked**. Do not present uncharacterized PC
+saturation as measured detector behavior.
 
 ## D. Molecular atmosphere and meteorological sources
 
