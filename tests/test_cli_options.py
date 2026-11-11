@@ -172,9 +172,9 @@ def test_lipancora_radiosonde_only_cli_keeps_default_config_unchanged() -> None:
     canonical = load_config("config.yaml")
     selected = lipancora._radiosonde_only_config(canonical)
     assert selected["_radiosonde_only_mode"] is True
-    assert resolve_level1_config(selected).atmosphere.source_priority == ("radiosonde",)
+    assert resolve_level1_config(selected).atmosphere.source_priority == ("radiosonde", "ussa76")
     assert resolve_level1_config(selected).atmosphere.era5 is None
-    assert resolve_level1_config(canonical).atmosphere.source_priority == ("era5", "ussa76")
+    assert resolve_level1_config(canonical).atmosphere.source_priority == ("era5", "radiosonde", "ussa76")
     assert canonical["level1"]["atmosphere"]["era5"]  # Never edit recipe in place.
 
 
@@ -193,5 +193,5 @@ def test_radiosonde_only_overrides_12h_only_not_normal_qa_policy() -> None:
     assert ordinary["level1"]["atmosphere"]["radiosonde"][
         "max_time_delta_hours"
     ] == 6.0
-    assert radio["level1"]["atmosphere"]["source_priority"] == ["radiosonde"]
-    assert ordinary["level1"]["atmosphere"]["source_priority"] == ["era5", "ussa76"]
+    assert radio["level1"]["atmosphere"]["source_priority"] == ["radiosonde", "ussa76"]
+    assert ordinary["level1"]["atmosphere"]["source_priority"] == ["era5", "radiosonde", "ussa76"]
