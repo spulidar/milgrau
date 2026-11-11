@@ -182,9 +182,10 @@ def _cached_sounding(
                 raise ValueError("Insufficient valid radiosonde levels.")
             sidecar = _read_metadata(_metadata_file_for(candidate_file))
             is_wyoming = (
-                bool(sidecar)
+                sidecar.get("source_type") == "radiosonde"
+                and str(sidecar.get("station_id")) == str(station_id)
                 and not sidecar.get("historical_archive")
-                and "igra" not in str(sidecar.get("source", "")).lower()
+                and "wyoming" in str(sidecar.get("source", "")).lower()
             )
             if allow_igra or is_wyoming:
                 logger.debug("radiosonde hourly CSV cache hit: %s", candidate_file.name)
