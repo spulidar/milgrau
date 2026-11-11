@@ -81,11 +81,18 @@ def _create_stage(config: dict, tmp_path: Path) -> tuple[Path, Path, Path]:
     return pending_scc_package(config, ID), l0, l1
 
 
-def _l1(path: Path, *, available: bool, target="2024-09-13T12:00:00+00:00") -> None:
+def _l1(
+    path: Path, *, available: bool, target="2024-09-13T12:00:00+00:00",
+    origin: str | None = None, cache_name: str | None = None,
+) -> None:
     with nc.Dataset(path, "w") as ds:
         ds.setncattr("Session_ID", SESSION)
         ds.setncattr("radiosonde_available", str(available).lower())
         ds.setncattr("radiosonde_qa_target_datetime_utc", target)
+        if origin:
+            ds.setncattr("radiosonde_qa_observation_source", origin)
+        if cache_name:
+            ds.setncattr("radiosonde_qa_cache_csv_name", cache_name)
 
 
 def _cached(cfg: dict) -> None:
@@ -194,3 +201,24 @@ def test_legacy_not_requested_sounding_is_never_implicitly_backfilled(tmp_path: 
         )
     assert "already finalized" in result
     assert list(staged.iterdir()) == []
+
+
+def test_finalize_scc_igra_origin_from_l1_qa_is_preserved(tmp_path) -> None:
+    cfg = _config(tmp_path)
+    path, l0, l1 = _create_stage(cfg, tmp_path)
+    _cached(cfg)
+    cache = Path(cfg["level1"]["atmosphere"]["radiosonde"]["cache_dir"])
+    cache /= "2024/09/radiosonde_83779_20240913_12Z.csv"
+    meta = json.loads(cache.with_suffix(".json").read_text())
+    meta["source"] = "NOAA NCEI IGRA2 historical sounding archive"
+    meta["historical_archive"] = "BRM00083779-data.txt"
+    cache.with_suffix(".json").write_text(json.dumps(meta))
+    _l1(l1, available=True, origin="igra2", cache_name=cache.name)
+
+    result = finalize_session_soundings(l0, l1, cfg, logging.getLogger(__name__))
+    assert result == [f"{ID}: observed sounding attached"]
+    manifest = validate_upload_package(path)
+    assert manifest["sounding_source"] == "igra2"
+    with nc.Dataset(path / f"rs_{ID[:13]}.nc") as ds:
+        assert ds.getncattr("Source_Observation_Provider") == "igra2"
+        assert "NOAA" in ds.getncattr("Source_Observation")
