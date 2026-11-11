@@ -347,3 +347,37 @@ def test_wyoming_failure_falls_back_to_igra_with_true_provenance(
     assert profile is not None
     assert profile.attrs["historical_archive"] == "BRM00083779-data.txt"
     assert profile.attrs["source"] == "NOAA NCEI IGRA2 historical sounding archive"
+
+
+def test_new_wyoming_cache_does_not_overwrite_preexisting_igra_csv(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    cache = tmp_path / "radiosonde"
+    _write_archive(cache)
+    historical = _fetch(cache, _date(7, 13))
+    assert historical is not None and historical.attrs.get("historical_archive")
+    original = cache / "2020" / "01" / "radiosonde_83779_20200107_12Z.csv"
+    old_bytes = original.read_bytes()
+    old_sidecar = original.with_suffix(".json").read_bytes()
+
+    class Wyoming:
+        @staticmethod
+        def request_data(_target, _station):
+            return pd.DataFrame({
+                "height": [762., 3147.],
+                "temperature": [24., 7.],
+                "pressure": [925., 700.],
+            })
+
+    monkeypatch.setattr(radiosonde, "_require_current_siphon", lambda: "0.11.0")
+    monkeypatch.setattr(radiosonde, "WyomingUpperAir", Wyoming)
+    selected = radiosonde.fetch_wyoming_radiosonde(
+        _date(7, 13), "83779", logging.getLogger("test.cache-preservation"),
+        cache_dir=cache, synoptic_hours_utc=[0, 12],
+        selection="nearest", max_time_delta_hours=6.0, prefer_wyoming=True,
+    )
+    assert selected is not None
+    assert not selected.attrs.get("historical_archive")
+    assert original.read_bytes() == old_bytes
+    assert original.with_suffix(".json").read_bytes() == old_sidecar
+    assert original.with_name(original.stem + "_wyoming.csv").exists()
