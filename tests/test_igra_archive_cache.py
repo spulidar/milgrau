@@ -381,3 +381,44 @@ def test_new_wyoming_cache_does_not_overwrite_preexisting_igra_csv(
     assert original.read_bytes() == old_bytes
     assert original.with_suffix(".json").read_bytes() == old_sidecar
     assert original.with_name(original.stem + "_wyoming.csv").exists()
+
+
+def test_unattributed_legacy_csv_is_not_mislabeled_as_wyoming(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    cache = tmp_path / "radiosonde"
+    csv = cache / "2020/01/radiosonde_83779_20200107_12Z.csv"
+    csv.parent.mkdir(parents=True)
+    pd.DataFrame({
+        "height": [760., 3000.], "temperature": [21., 9.],
+        "pressure": [930., 700.],
+    }).to_csv(csv, index=False)
+    csv.with_suffix(".json").write_text(json.dumps({
+        "station_id": "83779", "source_type": "radiosonde",
+        "target_datetime_utc": _date(7).isoformat(),
+    }))
+    original = csv.read_bytes()
+    calls = []
+
+    class RealWyoming:
+        @staticmethod
+        def request_data(dt, station):
+            calls.append((dt, station))
+            return pd.DataFrame({
+                "height": [760., 3000.], "temperature": [20., 8.],
+                "pressure": [930., 700.],
+            })
+
+    monkeypatch.setattr(radiosonde, "_require_current_siphon", lambda: "0.11.0")
+    monkeypatch.setattr(radiosonde, "WyomingUpperAir", RealWyoming)
+    result = radiosonde.fetch_wyoming_radiosonde(
+        _date(7, 13), "83779", logging.getLogger("test.legacy.unknown"),
+        cache_dir=cache, synoptic_hours_utc=[0, 12],
+        selection="nearest", max_time_delta_hours=6.0,
+        prefer_wyoming=True,
+    )
+    assert calls == [(_date(7), "83779")]
+    assert result is not None
+    assert result.attrs["source"] == "University of Wyoming Upper Air via Siphon"
+    assert result.attrs["csv_file"].endswith("_wyoming.csv")
+    assert csv.read_bytes() == original
