@@ -39,6 +39,18 @@ def check() -> None:
     assert "One observation, three scientific levels" not in home
     assert "Built for scientific scrutiny" not in home
     assert "git clone" in home, "The homepage is not presenting README installation content"
+    # The published landing page must never leak examples bundled with the
+    # Lotus Docs theme, even when the upstream theme adds new demo sections.
+    for sample in (
+        "Customise The Lotus Docs Appearance",
+        "Much of Lotus Docs",
+        "Custom Fonts",
+        "Accent Color",
+        "What is DocSearch?",
+    ):
+        assert sample not in home, f"Theme demo content leaked into homepage: {sample}"
+    assert 'id="mil-process-title"' in home or "id=mil-process-title" in home
+    assert "Scientific quality and interpretation" in home
 
     assert "katex" in l1.lower(), "No KaTeX assets in the Level 1 page"
     assert re.search(r'class=["\']?math-display', l1), (
