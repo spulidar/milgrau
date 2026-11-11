@@ -465,7 +465,7 @@ def test_level1_contract_accepts_explicit_radiosonde_only_atmosphere_but_not_unm
     without_mode = radio.drop_attrs()
     without_mode.attrs.update(radio.attrs)
     without_mode.attrs.pop("level1_atmosphere_mode")
-    with pytest.raises(ValueError, match="only era5 and ussa76"):
+    with pytest.raises(ValueError, match="explicit mode"):
         _validate_level1_atmosphere(without_mode)
     with_wrong_priority = radio.copy()
     with_wrong_priority.attrs = {
