@@ -296,3 +296,54 @@ def test_nearest_available_csv_outranks_older_igra2_sounding(
     assert profile is not None
     assert profile.attrs["target_datetime_utc"] == _date(8, 0).isoformat()
     assert profile.attrs["time_delta_hours"] == 5.0
+
+
+def test_wyoming_first_outranks_existing_igra_archive(tmp_path: Path, monkeypatch) -> None:
+    cache = tmp_path / "radiosonde"
+    _write_archive(cache)
+    hits = []
+
+    class AvailableWyoming:
+        @staticmethod
+        def request_data(target, station):
+            hits.append((target, station))
+            return pd.DataFrame({
+                "height": [760.0, 3000.0],
+                "temperature": [24.0, 8.0],
+                "pressure": [930.0, 700.0],
+            })
+
+    monkeypatch.setattr(radiosonde, "_require_current_siphon", lambda: "0.11.0")
+    monkeypatch.setattr(radiosonde, "WyomingUpperAir", AvailableWyoming)
+    profile = radiosonde.fetch_wyoming_radiosonde(
+        _date(7, 13), "83779", logging.getLogger("test.wyoming_first"),
+        cache_dir=cache, synoptic_hours_utc=[0, 12], selection="nearest",
+        max_time_delta_hours=6.0, prefer_wyoming=True,
+    )
+    assert profile is not None
+    assert hits[0] == (_date(7, 12), "83779")
+    assert profile.attrs["source"] == "University of Wyoming Upper Air via Siphon"
+    assert "historical_archive" not in profile.attrs
+
+
+def test_wyoming_failure_falls_back_to_igra_with_true_provenance(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    cache = tmp_path / "radiosonde"
+    _write_archive(cache)
+
+    class UnavailableWyoming:
+        @staticmethod
+        def request_data(_target, _station):
+            raise RuntimeError("Wyoming temporarily unavailable")
+
+    monkeypatch.setattr(radiosonde, "_require_current_siphon", lambda: "0.11.0")
+    monkeypatch.setattr(radiosonde, "WyomingUpperAir", UnavailableWyoming)
+    profile = radiosonde.fetch_wyoming_radiosonde(
+        _date(7, 13), "83779", logging.getLogger("test.igra_fallback"),
+        cache_dir=cache, synoptic_hours_utc=[0, 12], selection="nearest",
+        max_time_delta_hours=6.0, prefer_wyoming=True,
+    )
+    assert profile is not None
+    assert profile.attrs["historical_archive"] == "BRM00083779-data.txt"
+    assert profile.attrs["source"] == "NOAA NCEI IGRA2 historical sounding archive"
