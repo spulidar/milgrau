@@ -179,7 +179,13 @@ Remote uploads require an explicit operator command; scientific processing never
 Start with the [Documentation guide](docs/README.md). Dedicated user and scientific guides cover:
 
 - [Installation and first processing run](docs/getting_started.md).
+- [Operational commands and selectors](docs/operating_milgrau.md).
+- [Scientific configuration reference](docs/configuration_reference.md).
+- [Scientific terminology and units](docs/terminology_units.md).
 - [Level 0 — LIBIDS](docs/libids.md).
+- [Level 0 NetCDF variable dictionary](docs/level0_schema.md).
+- [Solar regime interpretation](docs/solar_regimes.md).
+- [Level 0 validation and historical audit](docs/level0_validation_workbook.md).
 - [Level 1 — LIPANCORA](docs/lipancora.md).
 - [Level 2 — LEBEAR](docs/lebear.md).
 - [Atmospheric sources and provenance](docs/atmospheric_profiles.md).

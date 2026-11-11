@@ -47,12 +47,14 @@ No remotely destructive SCC action or new CDS download is implied by any uncheck
 - [x] Create a documentation index and a first-run guide.
 - [x] Publish a code-reviewed operational command/selection guide for the current main branch.
 - [x] Publish a first-pass scientific configuration reference with current distributed values and cautions.
+- [x] Verify editable package installation and six console-script `--help` commands in clean Linux/Windows development CI; retain the test contract.
 - [ ] Verify installation and first-run instructions on a clean environment and representative workstation.
-- [ ] Document all operator-relevant configuration choices with scientific meanings and valid settings.
+- [x] Document all operator-relevant configuration choices with scientific meanings and valid settings.
 - [ ] Review complete-session, single-session, local-date and file-selection examples against real data.
 - [ ] Document incremental reuse, forced reprocessing and figure-only operation with before/after evidence.
 - [ ] Verify output folder layout and NetCDF file naming across instrument periods and SCC modes.
-- [ ] Standardize scientific terms, symbols, units, times (UTC/local) and missing-value terminology.
+- [x] Standardize scientific terms, symbols, units, times (UTC/local) and missing-value terminology.
+- [x] Check local relative links across 32 main Markdown documentation files, with no missing targets.
 - [ ] Review accessibility, cross-links and examples across all main guides.
 
 ## B. LIBIDS — Level 0
@@ -63,21 +65,35 @@ No remotely destructive SCC action or new CDS download is implied by any uncheck
 - [x] Explain dark-current association, time tolerance, rejected cases and propagation of source identity.
 - [x] Describe all acquisition-quality tests, rejection criteria, and quarantined-input handling.
 - [x] Explain dated instrument configuration and historical channel/calibration provenance.
-- [ ] Verify solar elevation, day/night classification and contiguous segment interpretation.
+- [x] Verify solar elevation, day/night classification and contiguous segment interpretation.
 - [x] Document surface-weather data sources, available measurements and missing-data semantics.
 - [x] Produce the full Level 0 NetCDF dictionary: coordinates, variables, units, flags and global attributes.
+- [x] Document a reproducible **synthetic** Licel analog/PC sample and its expected physical conversion; provide offline fixture commands.
+- [x] Provide a read-only historical Level 0 solar audit and a real-data evidence/sign-off template.
 - [ ] Provide a reproducible, scientifically annotated real Level 0 processing example.
 - [ ] Compare Level 0 output and runtime performance against a validated historical baseline.
 
-**Block A/B documentation batch (11 November 2026):** Added
+**A/B documentation and verification batch (11 November 2026):** Published
 [operating commands](../docs/operating_milgrau.md),
-[scientific configuration reference](../docs/configuration_reference.md),
-[expanded LIBIDS guide](../docs/libids.md) and the
-[Level 0 NetCDF dictionary](../docs/level0_schema.md).
-Completed B items above mean **code-verified descriptions**, not real-data
-experimental validation. Clean-environment execution, all-era sample runs,
-independent solar numerical checks, baseline equivalence/performance and
-cross-guide editorial acceptance remain unchecked.
+[scientific configuration](../docs/configuration_reference.md),
+[terminology/units](../docs/terminology_units.md),
+[expanded LIBIDS](../docs/libids.md),
+[Level 0 dictionary](../docs/level0_schema.md),
+[independently checked solar geometry](../docs/solar_regimes.md) and the
+[synthetic + historical verification workbook](../docs/level0_validation_workbook.md).
+Automated tests include clean CI installation/CLI help, a NOAA approximation,
+datetime microsecond/nanosecond equivalence and SCC-weather nearest-hour
+selection. **A timestamp unit error affecting solar geometry was corrected
+without changing the solar equations.** It may alter historical L0 solar
+labels and downstream selected L2/SCC partitions; inspect affected products
+without silently rewriting them.
+
+**Unfinished acceptance evidence:** a clean user-workstation installation,
+real-data session/file/date selection examples, side-by-side incremental/reprocess
+cases, cross-era directory/SCC product validation, manual accessibility review,
+a real Level 0 example and independently approved historical equivalence/runtime
+measurements. These tasks remain unchecked; synthetic CI is not proof of
+historical scientific equivalence.
 
 ## C. LIPANCORA — Level 1
 
@@ -167,6 +183,18 @@ A section should be marked complete only after it provides, where appropriate:
 **Status:** first-pass guides and revised README written; extensive validation, detailed variable dictionaries and real-data worked examples remain pending.
 
 ---
+
+## Numerical-science regression discovered during documentation
+
+- [x] Identify pandas datetime-unit dependence in `milgrau.physics.solar`
+  and correct Julian-day conversion by explicit nanosecond normalization.
+- [x] Add independent NOAA-approximation checks, plus pandas-us/ns invariance
+  and a regression test for nearest SCC surface-weather hour selection.
+- [ ] Audit historical L0/L1/L2 and SCC-derived partitions to identify
+  whether previous microsecond-backed processing affected published results;
+  preserve source and product hashes before any reprocessing.
+- [ ] Validate solar thresholds with actual SPU observation midpoints and an
+  independent ephemeris on a representative transition night.
 
 ## Cleanup and deprecation review (non-destructive)
 
