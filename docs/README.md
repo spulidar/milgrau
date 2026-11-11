@@ -21,6 +21,7 @@ MILGRAU turns atmospheric lidar observations into progressively more interpreted
 | [L0 verification workbook](level0_validation_workbook.md) | Which synthetic checks pass and how will historical real-data comparison be documented? |
 | [LIPANCORA / Level 1](lipancora.md) | How were signals corrected, uncertainties estimated and molecular atmosphere represented? |
 | [Level 1 variables](level1_schema.md) | Which L1 correction, detector, atmosphere and quality fields are saved? |
+| [Level 1 validation workbook](level1_validation_workbook.md) | What input data and evidence are needed for historical signal/atmosphere validation? |
 | [Atmospheric profiles](atmospheric_profiles.md) | When does MILGRAU use ERA5, Wyoming, IGRA2 or USSA76, and what was actually used? |
 | [LEBEAR / Level 2](lebear.md) | How are aerosol optical coefficients retrieved, with what assumptions and valid support? |
 | [Level 2 variables](level2_schema.md) | What does each dimension, diagnostic and product field mean? |

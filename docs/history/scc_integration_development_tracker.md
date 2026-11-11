@@ -1,5 +1,8 @@
 # MILGRAU — SCC Refactor & Main Integration Tracker
 
+> **Historical development record.** This file describes earlier branches, pending decisions and a pre-merge state. The SCC/atmosphere integration was merged into `main` on 11 November 2026. Use the [current scientific tracker](../../.github/tracker.md) and [SCC operator guide](../scc_batch_operator_guide.md) for today's requirements; do not execute archived instructions as a current runbook.
+
+
 > **Integration status — 11/11/2026.** This tracker preserves the historical
 > SCC development phases. The active integration candidate is
 > `integration/scc-atmosphere-20261111`, combining the SCC staging/journal
