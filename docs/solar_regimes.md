@@ -74,7 +74,14 @@ The global attributes `Solar_Day_Night_Threshold_deg` and `Solar_Position_Algori
 - `tests/test_documentation_operational_contracts.py` compares MILGRAU's solar elevations at equinox/solstice times and multiple latitudes to a **separately implemented** NOAA fractional-year approximation. The 2° test tolerance reflects differences between these approximate methods and does not establish sub-degree astronomical accuracy.
 - The same added test checks that `seg00/01/02/03` represent successive contiguous regimes, including returns to a previous regime.
 
-**Remaining field-validation task:** select a real, dated SPU measurement spanning the configured solar transition, inspect acquisition midpoints and station-profile selection, compare against an independent solar ephemeris and record the numerical discrepancy. This requires actual source observations and is not closed by automated synthetic tests.
+**Pandas-unit regression discovered during this review.** The current code now normalizes
+`DatetimeIndex` to nanoseconds before deriving Julian day; the first
+independent tests revealed errors of many degrees for microsecond-backed
+timestamps. The physical solar model and the configured −3° regime threshold
+were not changed. An earlier product may have recorded different segment
+labels, depending on how its pandas datetime index was represented.
+
+**Remaining field-validation task:** select a real, dated SPU measurement spanning the configured solar transition, inspect acquisition midpoints and station-profile selection, compare against an independent solar ephemeris and record the numerical discrepancy. Use the [read-only historical audit procedure](level0_validation_workbook.md#d-read-only-check-for-historical-solar-labels) before considering reprocessing. This requires actual source observations and is not closed by automated synthetic tests.
 
 ## Potential duplicate utilities
 
