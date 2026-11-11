@@ -269,7 +269,10 @@ def test_incremental_level1_remains_skipped_when_optional_scc_staging_fails(
 ) -> None:
     l0 = tmp_path / "spu_20240101-0000Z_20240101-0100Z_L0.nc"
     l1 = tmp_path / "spu_20240101-0000Z_20240101-0100Z_L1.nc"
-    l1.touch()
+    xr.Dataset(attrs={
+        "level1_atmosphere_mode": "standard",
+        "thermodynamic_source_priority": "era5,radiosonde,ussa76",
+    }).to_netcdf(l1)
     monkeypatch.setattr(lipancora, "level1_output_path", lambda *_args: l1)
     monkeypatch.setattr(lipancora, "incremental_enabled", lambda *_args: True)
     monkeypatch.setattr(lipancora, "output_is_current", lambda *_args, **_kwargs: True)
