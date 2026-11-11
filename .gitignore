@@ -41,3 +41,9 @@ logs/
 # Security & Credentials (CRITICAL)
 # ==========================================
 credentials.py
+
+# Hugo site: generated exclusively from docs/; never commit build output
+.hugo-content/
+public/
+resources/_gen/
+.hugo_build.lock

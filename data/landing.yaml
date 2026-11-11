@@ -1,0 +1,46 @@
+hero:
+  enable: true
+  weight: 10
+  template: hero
+  badge:
+    text: "Open scientific processing"
+    color: primary
+    pill: true
+    soft: true
+  title: "MILGRAU"
+  subtitle: "**Traceable atmospheric lidar science.** From raw Licel acquisitions through corrected signals to conditional aerosol optical retrievals, with explicit quality, uncertainty and provenance."
+  ctaButton:
+    icon: menu_book
+    btnText: "Explore documentation"
+    url: "docs/"
+  cta2Button:
+    icon: code
+    btnText: "Source on GitHub"
+    url: "https://github.com/spulidar/milgrau"
+  info: "Scientific Levels 0 · 1 · 2 | SPU-Lidar · IPEN/USP"
+
+featureGrid:
+  enable: true
+  weight: 20
+  template: "feature grid"
+  title: "Explore the scientific workflow"
+  subtitle: "Transparent methods, traceable observations and honest limitations."
+  items:
+    - title: "Level 0 · LIBIDS"
+      icon: database
+      description: "Organize and validate Licel measurements, dark currents and continuous scientific sessions."
+      ctaLink:
+        text: "Explore Level 0"
+        url: "docs/processing/level-0/libids/"
+    - title: "Level 1 · LIPANCORA"
+      icon: query_stats
+      description: "Apply instrument corrections, quantify uncertainty and build a time-resolved molecular atmosphere."
+      ctaLink:
+        text: "Explore Level 1"
+        url: "docs/processing/level-1/lipancora/"
+    - title: "Level 2 · LEBEAR"
+      icon: show_chart
+      description: "Retrieve aerosol optical properties with explicit reference and quality diagnostics."
+      ctaLink:
+        text: "Explore Level 2"
+        url: "docs/processing/level-2/lebear/"
