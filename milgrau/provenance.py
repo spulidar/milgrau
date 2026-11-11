@@ -267,7 +267,35 @@ def thermodynamic_source_provenance(
         for item in str(source_attrs.get("thermodynamic_sources_present", "")).split(",")
         if item.strip()
     }
-    if source_type == "time_resolved" and sources_present == {"ussa76"}:
+    if source_type == "time_resolved" and sources_present == {"radiosonde"}:
+        observation_sources = {
+            part.strip().lower()
+            for part in str(source_attrs.get(
+                "thermodynamic_radiosonde_observation_sources", ""
+            )).split(",")
+            if part.strip()
+        }
+        if observation_sources == {"igra2"}:
+            provider = "noaa_ncei"
+            product = "igra2_upper_air_sounding"
+            release = "archived_observations"
+        elif observation_sources == {"igra2", "wyoming_siphon"}:
+            provider = "mixed_radiosonde_providers"
+            product = "upper_air_sounding"
+            release = "igra2_and_wyoming"
+        else:
+            provider = "university_of_wyoming"
+            product = "upper_air_sounding"
+            release = "service_unversioned"
+        doi = ""
+    elif source_type == "time_resolved" and len(sources_present) > 1:
+        # A mixed L1 must never claim ERA5, NOAA or Wyoming as its sole
+        # provider; the exact per-hour identity is recorded separately.
+        provider = "mixed_atmospheric_sources"
+        product = "hourly_molecular_atmosphere"
+        release = "_".join(sorted(sources_present))
+        doi = ""
+    elif source_type == "time_resolved" and sources_present == {"ussa76"}:
         provider = "us_standard_atmosphere"
         product = "standard_atmosphere"
         release = "1976"

@@ -33,7 +33,10 @@ def test_level2_incremental_rejects_stale_schema_or_gluing_metadata(
 ) -> None:
     input_path = tmp_path / "level1.nc"
     product_path = tmp_path / "level2.nc"
-    input_path.write_text("synthetic source", encoding="utf-8")
+    xr.Dataset(attrs={
+        "level1_atmosphere_mode": "standard",
+        "thermodynamic_source_priority": "era5,ussa76",
+    }).to_netcdf(input_path)
 
     metadata = elastic_inversion_algorithm_metadata()
     gluing_metadata = gluing_selection_score_metadata()

@@ -279,10 +279,31 @@ def _validate_level1_atmosphere(ds: xr.Dataset) -> None:
         _require_exact_dims(ds[name], ("atmosphere_time",), f"Level 1 {name}")
 
     source_values = {str(value) for value in np.asarray(ds["Atmospheric_Source_Type"].values).reshape(-1)}
-    if not source_values or not source_values.issubset({"era5", "ussa76"}):
-        raise ValueError(
-            "Level 1 Atmospheric_Source_Type may contain only productive sources era5 and ussa76."
+    mode = str(ds.attrs.get("level1_atmosphere_mode", "")).strip()
+    if mode not in {"", "standard", "radiosonde_only"}:
+        raise ValueError(f"Unknown Level 1 atmosphere mode: {mode!r}.")
+    if not source_values or not source_values.issubset({"era5", "radiosonde", "ussa76"}):
+        raise ValueError("Unsupported Level 1 atmospheric source type.")
+    if mode == "" and "radiosonde" in source_values:
+        raise ValueError("Unmarked Level 1 radiosonde requires explicit mode/provenance.")
+    if mode == "radiosonde_only":
+        # Strictly no ERA5, but allow a declared USSA76 final fallback.
+        priority = str(ds.attrs.get("thermodynamic_source_priority", "")).strip()
+        if "era5" in source_values or priority not in {"radiosonde", "radiosonde,ussa76"}:
+            raise ValueError(
+                "Radiosonde-only L1 must have no ERA5 and record radiosonde source priority."
+            )
+    if "Atmospheric_Observation_Source" in ds:
+        observation = ds["Atmospheric_Observation_Source"]
+        _require_exact_dims(
+            observation, ("atmosphere_time",), "Level 1 Atmospheric_Observation_Source"
         )
+        origin_values = [str(v) for v in np.asarray(observation.values).reshape(-1)]
+        kinds = [str(v) for v in np.asarray(ds["Atmospheric_Source_Type"].values).reshape(-1)]
+        for kind, origin in zip(kinds, origin_values, strict=True):
+            allowed = {"wyoming_siphon", "igra2"} if kind == "radiosonde" else {"none"}
+            if origin not in allowed:
+                raise ValueError("Level 1 observation origin contradicts the atmospheric source.")
 
     fallback = np.asarray(ds["Atmospheric_USSA76_Fallback_Fraction"].values, dtype=np.float64)
     if not np.all(np.isfinite(fallback)) or np.any((fallback < 0.0) | (fallback > 1.0)):

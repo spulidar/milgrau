@@ -229,6 +229,40 @@ def _insert_time_gap_markers(data_slice: xr.DataArray, config: dict[str, Any]) -
     return result
 
 
+def _single_profile_display_context(data: xr.DataArray) -> xr.DataArray:
+    """Keep a one-profile RCS heatmap genuinely two-dimensional.
+
+    xarray's generic .plot() squeezes singleton dimensions and switches to a
+    line plot. The additional time columns here are *all NaN*: they are only
+    visual padding, not fabricated observations or scientific NetCDF samples.
+    With centers one minute apart, the actual profile occupies a one-minute
+    display stripe at its original UTC timestamp rather than falsely filling
+    the entire six-hour publication window.
+    """
+    if "time" not in data.dims or "altitude" not in data.dims:
+        return data
+    if data.sizes["time"] != 1:
+        return data
+
+    original = data.transpose("time", "altitude")
+    center = np.asarray(original["time"].values).astype("datetime64[ns]")[0]
+    time_values = np.array(
+        [center - np.timedelta64(1, "m"), center, center + np.timedelta64(1, "m")],
+        dtype="datetime64[ns]",
+    )
+    observed = np.asarray(original.values[0], dtype=np.float64)
+    empty = np.full(observed.shape, np.nan, dtype=np.float64)
+    result = xr.DataArray(
+        np.stack((empty, observed, empty.copy()), axis=0),
+        dims=("time", "altitude"),
+        coords={"time": time_values, "altitude": original["altitude"].values},
+        attrs=original.attrs,
+        name=original.name,
+    )
+    result["altitude"].attrs.update(original["altitude"].attrs)
+    return result
+
+
 def _quicklook_colormap(config: dict[str, Any]):
     """Return the explicitly configured colormap and missing-data color."""
     quicklook = resolve_visualization_config(config).quicklook
@@ -264,12 +298,16 @@ def plot_quicklook(
         _decimate_for_display(data_slice, config),
         config,
     )
+    one_profile = "time" in display_data.dims and display_data.sizes["time"] == 1
+    display_data = _single_profile_display_context(display_data)
 
     fig = plt.figure(figsize=(15, 7.5))
     gs = gridspec.GridSpec(1, 2, width_ratios=[4, 1], wspace=0.03)
 
     ax0 = plt.subplot(gs[0])
-    plot = display_data.plot(
+    # Always render a time/altitude heatmap, even with one altitude bin.
+    # Generic DataArray.plot() squeezes singleton dimensions into a line plot.
+    plot = display_data.plot.pcolormesh(
         x="time",
         y="altitude",
         cmap=_quicklook_colormap(config),
@@ -306,6 +344,13 @@ def plot_quicklook(
         fontweight="bold",
         loc="center",
     )
+    if one_profile:
+        observed_utc = pd.Timestamp(data_slice["time"].values[0]).strftime("%H:%M:%S")
+        ax0.text(
+            0.98, 0.98, f"Single observed profile: {observed_utc} UTC",
+            transform=ax0.transAxes, ha="right", va="top",
+            fontsize=9, bbox={"facecolor": "white", "alpha": 0.8, "edgecolor": "none"},
+        )
     ax0.set_xlabel("Time (UTC)", fontsize=13, fontweight="bold")
     ax0.set_ylabel("Altitude (km a.g.l.)", fontsize=13, fontweight="bold")
     ax0.set_ylim(lower_altitude, max_altitude)

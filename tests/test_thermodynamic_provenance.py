@@ -112,3 +112,74 @@ def test_time_resolved_full_ussa76_fallback_uses_standard_atmosphere_identity() 
             "us_standard_atmosphere/standard_atmosphere/1976"
         ),
     }
+
+
+def test_time_resolved_radiosonde_only_identifies_actual_wyoming_provider() -> None:
+    result = thermodynamic_source_provenance(
+        {
+            "thermodynamic_profile_source_type": "time_resolved",
+            "thermodynamic_sources_present": "radiosonde",
+            "thermodynamic_profile_doi": "",
+            "level1_atmosphere_mode": "radiosonde_only",
+        },
+        {},
+    )
+    assert result["thermodynamic_profile_provider"] == "university_of_wyoming"
+    assert result["thermodynamic_profile_product"] == "upper_air_sounding"
+    assert "copernicus" not in result["thermodynamic_profile_source_id"]
+
+
+def test_time_resolved_igra2_radiosonde_identifies_noaa_not_wyoming() -> None:
+    result = thermodynamic_source_provenance(
+        {
+            "thermodynamic_profile_source_type": "time_resolved",
+            "thermodynamic_sources_present": "radiosonde",
+            "thermodynamic_radiosonde_observation_sources": "igra2",
+            "thermodynamic_radiosonde_archives": "BRM00083779-data.txt",
+        },
+        {},
+    )
+    assert result["thermodynamic_profile_provider"] == "noaa_ncei"
+    assert result["thermodynamic_profile_product"] == "igra2_upper_air_sounding"
+    assert result["thermodynamic_profile_source_id"].startswith("noaa_ncei/")
+    assert "BRM00083779" not in result["thermodynamic_profile_source_id"]
+
+
+def test_mixed_igra_and_wyoming_radiosonde_provenance_cannot_claim_one_provider() -> None:
+    result = thermodynamic_source_provenance(
+        {
+            "thermodynamic_profile_source_type": "time_resolved",
+            "thermodynamic_sources_present": "radiosonde",
+            "thermodynamic_radiosonde_observation_sources": "igra2,wyoming_siphon",
+        },
+        {},
+    )
+    assert result["thermodynamic_profile_provider"] == "mixed_radiosonde_providers"
+    assert result["thermodynamic_profile_product"] == "upper_air_sounding"
+
+
+def test_mixed_era5_radio_and_model_cannot_claim_single_cds_provider() -> None:
+    result = thermodynamic_source_provenance(
+        {
+            "thermodynamic_profile_source_type": "time_resolved",
+            "thermodynamic_sources_present": "era5,radiosonde,ussa76",
+            "thermodynamic_radiosonde_observation_sources": "igra2",
+            "thermodynamic_profile_doi": "10.24381/cds.bd0915c6",
+        },
+        {"level1": {"atmosphere": {"era5": {"dataset": "reanalysis-era5-pressure-levels"}}}},
+    )
+    assert result["thermodynamic_profile_provider"] == "mixed_atmospheric_sources"
+    assert result["thermodynamic_profile_source_id"].endswith("era5_radiosonde_ussa76")
+    assert "thermodynamic_profile_doi" not in result
+
+
+def test_radiosonde_plus_ussa76_fallback_never_claims_copernicus() -> None:
+    result = thermodynamic_source_provenance(
+        {
+            "thermodynamic_profile_source_type": "time_resolved",
+            "thermodynamic_sources_present": "radiosonde,ussa76",
+            "thermodynamic_radiosonde_observation_sources": "igra2",
+        },
+        {},
+    )
+    assert result["thermodynamic_profile_provider"] == "mixed_atmospheric_sources"

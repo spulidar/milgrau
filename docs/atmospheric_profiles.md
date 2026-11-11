@@ -11,8 +11,10 @@ For continuous sessions the Level 1 atmosphere used by MILGRAU is time resolved:
 - **US Standard Atmosphere 1976 (USSA76)** is the explicit vertical extension
   outside external-profile coverage and the full fallback for an hour when ERA5
   is unavailable.
-- **Radiosonde** is retained as a local observational comparison/QA reference.
-  It does not replace isolated ERA5 hours in the productive time series.
+- **Radiosonde** is retained as a local observational comparison/QA reference
+  in standard processing; it does not replace isolated ERA5 hours in that
+  workflow. The explicit `milgrau-lipancora --radiosonde-only` option instead
+  makes observational profiles the productive L1 atmosphere for that run.
 
 The productive source order is explicit in `config.yaml`. The current
 repository recipe uses:
@@ -60,65 +62,102 @@ Outside external-profile coverage, USSA76 is used when
 `external_profile_outside_coverage: "ussa76"`. The fraction of each hourly
 profile supplied by USSA76 is stored explicitly.
 
-If ERA5 is unavailable for a required hour and `ussa76` is present in
-`source_priority`, the complete hourly profile is materialized from USSA76.
+If ERA5 is unavailable for a required hour, an observed Wyoming sounding is
+preferred, followed by a local NOAA IGRA2 observation when available. When
+neither is available and `ussa76` is configured, the complete hourly profile
+is materialized from USSA76.
 No synthetic surface temperature/pressure constants are invented.
 
-## ERA5 IO, global prefetch and reconstructible cache
+## ERA5 IO and cache
 
 ERA5 requests use the configured CDS pressure-level dataset and request only the
 molecular-atmosphere fields required by MILGRAU: temperature and geopotential.
 
 The downloaded NetCDF and JSON sidecar are IO cache artifacts. The Level 1
-NetCDF is the scientific product. LIPANCORA preflights **all pending Level 0 files selected by the current
-invocation** before processing any Level 1 file. It deduplicates only the
-required UTC hours, including session-bracketing hours. A single selected
-session requests only its missing hours; a bulk run plans all pending sessions
-together, without requesting every hour of every calendar day.
-
-ERA5 bulk prefetch now requests **GRIB** in **month-scoped batches**:
-one CDS job per UTC month containing missing hours, whenever the field budget
-allows. A month selects only days that have missing hours, and the **union
-of hours** needed across those days. CDS expands lists of days × hours,
-so the request counts every resulting combination, including extras.
-Even 31 days × 24 hours × 37 levels × 2 variables is only **55,056 fields**
-under the 80,000-field ceiling. Larger configurations are split safely by
-days and, if necessary, hours. The planner reports required and extra fields,
-and dispatches **one job at a time**.
-
-The native GRIB payload is decoded locally by `cfgrib` + ECMWF `ecCodes`.
-Only the actual *missing hours required by the selected L0 sessions* are
-converted into the existing hourly NetCDF + JSON sidecar cache; the GRIB
-batch file is temporary. Converted profiles have the same ERA5 temperature,
-geopotential and pressure-level values as the native response; L1 science
-and the hourly cache format remain unchanged. Optional GRIB engine index
-sidecars are disabled. Before local operations, verify the decoder with
-`python -m cfgrib selfcheck`. The CDS can still reject or queue a request
-below the field ceiling; this design does not guarantee remote throughput.
-
-The validated NetCDF and JSON sidecar for each hourly profile remain under
-`.cache/era5/YYYY/MM/`. Reconstructible request metadata lives under
-`.cache/era5/requests/`; it never replaces the actual data. Missing hours
-are requested only when the cache has no validated compatible file.
-Hourly files from completed requests survive a later failed batch.
-An unresolved `submitted` or `uncertain` CDS ledger from **either**
-the old NetCDF or new GRIB planner blocks **new** requests with an
-actionable error containing the ledger path. This
-preflight checks the complete reconstructible request ledger, including
-requests made with older planner versions. It deliberately requires
-remote-status reconciliation; the software cannot assume an interrupted
-blocking SDK call means a queued remote job was cancelled. No old
-ledger is automatically deleted or force-reset.
-
-A strictly configured `level1.atmosphere.missing_policy` chooses
-`require_era5` (the experimental branch default: fail rather than finalize
-scientific L1 with missing ERA5) or `allow_fallback` (explicitly use the
-configured USSA76 source if ERA5 is unavailable). The fallback source is
-always recorded in the science output.
+NetCDF is the scientific product. Missing hours are requested from CDS in
+UTC-day batches, then split back into hour-indexed cache files. Adjacent
+sessions therefore reuse the same downloaded ERA5 hours without repeating
+network requests.
 
 `cdsapi` is a core MILGRAU dependency because ERA5 is the productive
 time-resolved atmosphere backbone. CDS credentials remain outside the repository
 and are read by `cdsapi`.
+
+## Operational source preference, CDS queue and radiosonde-only mode
+
+The normal productive Level 1 preference is **ERA5 → Wyoming → NOAA IGRA2
+archive → USSA76**. This order is per hourly atmospheric profile. A missing
+external source is never represented as an actual observation. ERA5 cached hours
+are preferred even if the CDS global queue is congested.
+
+### Public CDS queue: best-effort signal
+
+Before normal CLI processing, MILGRAU tries one short read of the public CDS
+dashboard at https://cds.climate.copernicus.eu/live. It extracts the global
+"Queued requests" metric, which is **not** an official machine-readable queue
+API and does **not** indicate an individual job's wait time.
+
+The heuristic threshold defaults to **8,000 queued requests** and can be
+adjusted with `--cds-queue-threshold N`; this is an operational starting value,
+not a scientifically validated queue-performance cutoff. Above that count,
+MILGRAU skips **new** CDS requests while retaining access to validated cached
+ERA5 hours. Missing hours then use Wyoming, IGRA2 or USSA76. The high-queue
+path permits observed soundings up to 12 hours from their nominal UTC launch.
+The original six-hour window remains in the ordinary low-queue setting.
+
+The public dashboard may change or become unavailable. If its metric cannot be
+read, the log records **unknown queue**, and the normal ERA5 path is retained;
+unknown is never reported as a low queue. Disable this experimental observation
+with `--no-cds-queue-check`. Existing submitted/uncertain CDS requests are not
+cancelled, retried or silently resubmitted because of this check. The queue
+decision is captured in L1 provenance.
+
+### Explicit no-CDS mode
+
+`milgrau-lipancora --radiosonde-only -i SESSION_ID` always disables ERA5/CDS
+and uses **Wyoming → IGRA2 → USSA76** for the hourly atmosphere. The 12-hour
+observational selection tolerance is explicit. If neither observational source
+is usable, USSA76 is a declared model fallback, not an observed sounding.
+This flag does not change the persisted configuration. LEBEAR accepts the
+resulting L1 and propagates atmospheric source provenance to L2.
+
+Historical SPU IGRA2 source data may be installed at:
+
+```text
+.cache/radiosonde/BRM00083779-data.txt
+```
+
+This operator-supplied archive is never downloaded automatically or rewritten.
+The NOAA fixed-width profiles are quality filtered and may be cached as hourly
+CSV and JSON sidecars with their genuine observation source. A successful
+Wyoming retrieval never overwrites a previous IGRA2 cache: when both exist
+for the same nominal launch, a separate `*_wyoming.csv` is retained.
+
+The observations are searched within the explicit time tolerance; absent
+00Z profiles are not fabricated. A valid 12Z observation can be used for a
+19Z profile under the 12-hour high-queue or no-CDS policy, with its seven-hour
+offset recorded.
+
+### Source identity and incremental processing
+
+The Level 1 NetCDF stores `Atmospheric_Source_Type(atmosphere_time)` as
+`era5`, `radiosonde` or `ussa76`. For radiosonde hours it additionally
+stores `Atmospheric_Observation_Source(atmosphere_time)` as
+`wyoming_siphon` or `igra2`, and stores the exact observational archive in
+provenance where applicable. Queue status, selection reason and whether ERA5
+network IO was permitted are retained as metadata. USSA76 vertical extension
+fractions remain explicit and must not be confused with fully observed profiles.
+
+A previous high-queue L1 may be upgraded on a later ordinary run when new ERA5
+downloads are permitted. Explicit radio-only and normal processing keep the
+canonical filename `SESSION_ID_L1.nc`, so preserve baseline files in separate
+folders when conducting scientific comparisons. L2 products identify their
+source L1 by exact file hash and carry the selected observation-origin metadata.
+
+This operational fallback is not evidence that ERA5, radiosonde and USSA76
+are scientifically interchangeable. Always inspect observation age, station,
+vertical coverage and the adopted atmosphere before interpreting aerosol
+retrievals.
 
 ## Radiosonde comparison reference
 

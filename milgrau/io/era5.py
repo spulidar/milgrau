@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import logging
-from hashlib import sha256
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Final, Mapping, Optional
@@ -308,186 +307,6 @@ def _era5_time_coordinate(ds: xr.Dataset) -> str:
     return _coordinate_name(ds, ("valid_time", "time"))
 
 
-ERA5_MAX_REQUEST_FIELDS = 80_000
-
-
-def plan_era5_requests(
-    missing_hours: list[datetime],
-    latitude: float,
-    longitude: float,
-    settings: Mapping[str, Any],
-    *,
-    max_fields: int = ERA5_MAX_REQUEST_FIELDS,
-) -> list[tuple[list[datetime], str, dict[str, Any], int]]:
-    """Plan one GRIB CDS request per UTC month of *active days*, when possible.
-
-    A month uses the union of required hours across its active days. The CDS
-    returns a day x hour Cartesian product; count every combination under the
-    80k-field ceiling, and retain only required hours in the local NetCDF cache.
-
-    When a request would exceed max_fields, split its active days first, and
-    split hours within a single day if necessary. No request spans two months.
-    """
-    cfg = era5_config(settings)
-    if isinstance(max_fields, bool) or not isinstance(max_fields, int) or max_fields <= 0:
-        raise ValueError("ERA5 max_fields must be a positive integer.")
-
-    month_days: dict[tuple[int, int], dict[date, set[int]]] = {}
-    for stamp in missing_hours:
-        hour = nearest_era5_analysis_hour(stamp)
-        day = hour.date()
-        month_days.setdefault((day.year, day.month), {}).setdefault(day, set()).add(
-            hour.hour
-        )
-
-    fields_per_hour = 2 * len(cfg["pressure_levels_hpa"])
-    if fields_per_hour > max_fields:
-        raise ValueError("ERA5 one hour exceeds the configured field limit.")
-    max_combinations = max_fields // fields_per_hour
-    planned: list[tuple[list[datetime], str, dict[str, Any], int]] = []
-
-    for _, active_days in sorted(month_days.items()):
-        days = sorted(active_days)
-        hours = sorted({hour for day_hours in active_days.values() for hour in day_hours})
-        # For the production 37 levels and 2 variables, one 31-day month at
-        # 24h/day is 55,056 fields: a single request even in the worst case.
-        for hour_start in range(0, len(hours), max_combinations):
-            hours_chunk = hours[hour_start:hour_start + max_combinations]
-            days_per_request = max(1, max_combinations // len(hours_chunk))
-            for day_start in range(0, len(days), days_per_request):
-                chosen_days = days[day_start:day_start + days_per_request]
-                request_hours = [
-                    datetime(day.year, day.month, day.day, hour, tzinfo=timezone.utc)
-                    for day in chosen_days for hour in hours_chunk
-                ]
-                dataset, request = build_era5_request_for_hours(
-                    request_hours[:len(hours_chunk)], latitude, longitude, cfg,
-                )
-                request["day"] = [day.strftime("%d") for day in chosen_days]
-                request["data_format"] = "grib"
-                request["download_format"] = "unarchived"
-                fields = len(request_hours) * fields_per_hour
-                if fields > max_fields:
-                    raise AssertionError("ERA5 monthly GRIB planner exceeded field limit.")
-                planned.append((request_hours, dataset, request, fields))
-
-    return sorted(planned, key=lambda item: item[0][0])
-
-
-def _require_grib_decoder() -> None:
-    """Validate cfgrib/ecCodes before dispatching any remote CDS job."""
-    try:
-        import cfgrib
-        import eccodes
-
-        _ = cfgrib.__version__
-        _ = eccodes.codes_get_api_version()
-    except (ImportError, OSError, RuntimeError, AttributeError) as exc:
-        raise RuntimeError(
-            "Monthly ERA5 GRIB decoding requires working cfgrib + ecCodes. "
-            "Install the project dependencies and run "
-            "'python -m cfgrib selfcheck' before submitting CDS requests."
-        ) from exc
-
-
-def _open_era5_grib(path: Path) -> xr.Dataset:
-    """Read native ECMWF GRIB without writing cfgrib index sidecars."""
-    return xr.open_dataset(path, engine="cfgrib", backend_kwargs={"indexpath": ""})
-
-
-def _era5_grib_hours(ds: xr.Dataset) -> tuple[np.ndarray, str | None]:
-    """Return UTC analysis hours and the dimension used to select a record."""
-    coordinate = _era5_time_coordinate(ds)
-    raw = ds[coordinate]
-    if raw.ndim > 1:
-        raise ValueError("ERA5 GRIB has an unsupported multidimensional time coordinate.")
-    times = np.asarray(raw.values).astype("datetime64[ns]").reshape(-1)
-    if times.size == 0 or np.isnat(times).any():
-        raise ValueError("ERA5 GRIB has missing or invalid analysis times.")
-    if raw.ndim == 0:
-        return times, None
-    return times, raw.dims[0]
-
-
-def _era5_grib_hour_to_netcdf(ds: xr.Dataset, index: int, axis: str | None) -> xr.Dataset:
-    """Normalize one GRIB analysis time into the established hourly NetCDF schema."""
-    selected = ds.isel({axis: index}) if axis is not None else ds
-    if "isobaricInhPa" in selected.dims:
-        selected = selected.rename({"isobaricInhPa": "pressure_level"})
-    elif "level" in selected.dims:
-        selected = selected.rename({"level": "pressure_level"})
-    if not {"t", "z"}.issubset(selected.data_vars):
-        raise ValueError("GRIB ERA5 payload is missing temperature/geopotential fields.")
-    if "pressure_level" not in selected.dims:
-        raise ValueError("GRIB ERA5 payload is missing isobaric pressure levels.")
-    # Drop scalar forecast reference times, valid_time and step once a single
-    # valid analysis time has been selected; preserve spatial grid and levels.
-    result = selected[["t", "z"]].reset_coords(drop=True)
-    return result
-
-
-def _pending_era5_requests(cache_root: Path) -> list[tuple[Path, dict[str, Any]]]:
-    """Conservatively identify unresolved CDS submissions across old planners."""
-    directory = cache_root / "requests"
-    if not directory.is_dir():
-        return []
-    pending = []
-    for ledger in sorted(directory.glob("*.json")):
-        record = _read_metadata(ledger)
-        if record.get("status") in {"submitted", "uncertain", "local_decode_failed"}:
-            pending.append((ledger, record))
-    return pending
-
-
-def _valid_hourly_cache(
-    cache_file: Path,
-    metadata_file: Path,
-    latitude: float,
-    longitude: float,
-    cfg: Mapping[str, Any],
-) -> bool:
-    """Reject incomplete or incompatible hourly cache files before reuse."""
-    if not cache_file.is_file() or cache_file.stat().st_size == 0:
-        return False
-    metadata = _read_metadata(metadata_file)
-    if metadata and (
-        metadata.get("dataset", cfg["dataset"]) != cfg["dataset"]
-        or float(metadata.get("requested_latitude", latitude)) != latitude
-        or float(metadata.get("requested_longitude", longitude)) != longitude
-        or (
-            "request_grid_deg" in metadata
-            and float(metadata["request_grid_deg"]) != cfg["grid_deg"]
-        )
-        or (
-            "request_area_half_width_deg" in metadata
-            and float(metadata["request_area_half_width_deg"])
-            != cfg["area_half_width_deg"]
-        )
-    ):
-        return False
-    try:
-        with xr.open_dataset(cache_file) as dataset:
-            level_axis = _coordinate_name(dataset, ("pressure_level", "level", "isobaricInhPa"))
-            levels = np.asarray(dataset[level_axis].values, dtype=np.float64)
-            expected = np.asarray(cfg["pressure_levels_hpa"], dtype=np.float64)
-            if levels.shape != expected.shape or not np.array_equal(
-                np.sort(levels), np.sort(expected)
-            ):
-                return False
-            profile = era5_profile_from_dataset(dataset, latitude, longitude)
-            return not profile.empty
-    except (OSError, ValueError, KeyError, TypeError, IndexError):
-        return False
-
-
-def _write_request_metadata(path: Path, payload: dict[str, Any]) -> None:
-    """Atomic, reconstructible request metadata; never contains CDS credentials."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_suffix(".part.json")
-    temp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    temp.replace(path)
-
-
 def prefetch_era5_pressure_level_profiles(
     measurement_times_utc: list[datetime | pd.Timestamp],
     latitude: float,
@@ -497,189 +316,131 @@ def prefetch_era5_pressure_level_profiles(
     settings: Mapping[str, Any],
     root_dir: str | Path | None = None,
 ) -> set[datetime]:
-    """Prefetch via month-scoped GRIB downloads; cache only needed NetCDF hours.
+    """Populate missing hourly ERA5 caches using one CDS request per UTC day.
 
-    Only validated hourly cache files count as available. The request ledger
-    under .cache/era5/requests is reconstructible; it does not replace science
-    provenance or the authoritative NetCDF files.
+    Existing hourly cache files are reused. Downloaded daily batches are split
+    back into the same per-hour cache layout used by the single-profile API, so
+    adjacent sessions retain fine-grained cache reuse.
     """
     cfg = era5_config(settings)
-    analysis_hours = sorted({
-        nearest_era5_analysis_hour(value) for value in measurement_times_utc
-    })
+    analysis_hours = sorted(
+        {
+            nearest_era5_analysis_hour(value)
+            for value in measurement_times_utc
+        }
+    )
     if not analysis_hours:
         return set()
 
     available: set[datetime] = set()
-    missing = []
-    for stamp in analysis_hours:
-        cache_file, metadata_file = _cache_paths(
-            stamp, latitude, longitude, cfg, root_dir,
+    missing: list[datetime] = []
+    for analysis_dt in analysis_hours:
+        cache_file, _metadata_file = _cache_paths(
+            analysis_dt,
+            latitude,
+            longitude,
+            cfg,
+            root_dir,
         )
-        if _valid_hourly_cache(cache_file, metadata_file, latitude, longitude, cfg):
-            available.add(stamp)
+        if cache_file.exists():
+            available.add(analysis_dt)
         else:
-            missing.append(stamp)
+            missing.append(analysis_dt)
 
     if not missing:
-        logger.debug("ERA5 prefetch | all %d hourly caches valid", len(analysis_hours))
+        logger.debug("ERA5 batch prefetch | all %d hourly caches present", len(analysis_hours))
         return available
+
     try:
         import cdsapi  # type: ignore[import-not-found]
     except ImportError:
         logger.warning("ERA5 unavailable | cdsapi is not installed")
         return available
 
-    requests = plan_era5_requests(missing, latitude, longitude, cfg)
-    useful_fields = len(missing) * 2 * len(cfg["pressure_levels_hpa"])
-    requested_fields = sum(item[3] for item in requests)
-    logger.info(
-        "ERA5 monthly GRIB prefetch | %d missing hours | %d requests | "
-        "%d requested fields (%d useful, %d extra)",
-        len(missing), len(requests), requested_fields,
-        useful_fields, requested_fields - useful_fields,
-    )
+    groups: dict[date, list[datetime]] = {}
+    for analysis_dt in missing:
+        groups.setdefault(analysis_dt.date(), []).append(analysis_dt)
 
-    # Planning and reporting are read-only. Check unresolved historical jobs
-    # only *after* reporting the plan, but before creating a new CDS client or
-    # submitting any network request.
-    cache_root = resolve_project_path(cfg["cache_dir"], root_dir=root_dir)
-    unresolved = _pending_era5_requests(cache_root)
-    if unresolved:
-        first_ledger, first_record = unresolved[0]
-        request_id = first_record.get("request_id", first_ledger.stem)
-        raise RuntimeError(
-            f"ERA5 prefetch blocked: {len(unresolved)} unresolved previous ERA5 "
-            f"request(s); first={request_id}, "
-            f"status={first_record.get('status')}, ledger={first_ledger}. "
-            "Inspect/reconcile the remote CDS job or retained local GRIB "
-            "before starting another ERA5 batch. No new request sent."
-        )
-
-    _require_grib_decoder()
     client = cdsapi.Client(url=CDS_API_URL, quiet=True)
-    for hours, dataset, request, fields in requests:
-        digest = sha256(
-            json.dumps([dataset, request], sort_keys=True).encode("utf-8")
-        ).hexdigest()[:24]
-        ledger = cache_root / "requests" / f"{digest}.json"
-        previous = _read_metadata(ledger)
-        # Monthly day x hour selection may contain intentional extra hours,
-        # but only hours required by the currently selected L0 are retained.
-        needed = [hour for hour in hours if hour in missing and hour not in available]
-        if not needed:
-            continue
-        # If a process died while waiting for CDS, its server-side job may
-        # still exist. An unknown result cannot authorize blind resubmission.
-        if previous.get("status") in {"submitted", "uncertain"}:
-            logger.warning(
-                "ERA5 request %s may still be queued; not duplicating submission",
-                digest,
-            )
-            break
-        request_info = {
-            "schema_version": 1,
-            "dataset": dataset,
-            "request": request,
-            "request_id": digest,
-            "expected_hours_utc": [hour.isoformat() for hour in needed],
-            "requested_hours_utc": [hour.isoformat() for hour in hours],
-            "fields": fields,
-            "download_format": "grib",
-            "status": "submitted",
-        }
+    for day, hours in sorted(groups.items()):
+        dataset, request = build_era5_request_for_hours(
+            hours,
+            latitude,
+            longitude,
+            cfg,
+        )
         first_cache, _ = _cache_paths(hours[0], latitude, longitude, cfg, root_dir)
-        temp_batch = first_cache.parent / f"era5_{digest}.part.grib"
-        _write_request_metadata(ledger, request_info)
-        downloaded_grib = False
+        temporary_file = first_cache.parent / (
+            f"era5_pressure_levels_{day.strftime('%Y%m%d')}_batch.part.nc"
+        )
         try:
             logger.info(
-                "ERA5 CDS monthly GRIB request %s | %d days | %d hours | %d fields",
-                digest, len(request["day"]), len(hours), fields,
+                "ERA5 batch request | %s | %d hour(s): %s",
+                day.isoformat(),
+                len(hours),
+                ",".join(value.strftime("%H") for value in hours),
             )
-            client.retrieve(dataset, request, str(temp_batch))
-            downloaded_grib = True  # A local response exists; never discard after parse failure.
-            with temp_batch.open("rb") as stream:
-                if stream.read(4) != b"GRIB":
-                    raise ValueError("CDS response is not an unarchived GRIB file.")
-            with _open_era5_grib(temp_batch) as batch:
-                source_times, time_axis = _era5_grib_hours(batch)
-                for stamp in needed:
-                    target = np.datetime64(stamp.replace(tzinfo=None), "ns")
-                    matches = np.flatnonzero(source_times == target)
-                    if len(matches) != 1:
-                        logger.warning("ERA5 request %s missing hour %s", digest, stamp)
-                        continue
-                    selected = _era5_grib_hour_to_netcdf(
-                        batch, int(matches[0]), time_axis,
+            client.retrieve(dataset, request, str(temporary_file))
+            with xr.open_dataset(temporary_file) as ds:
+                time_coord = _era5_time_coordinate(ds)
+                source_times = np.asarray(ds[time_coord].values).astype("datetime64[ns]").reshape(-1)
+                for analysis_dt in hours:
+                    target = np.datetime64(
+                        analysis_dt.replace(tzinfo=None),
+                        "ns",
                     )
-                    cache_file, metadata_file = _cache_paths(
-                        stamp, latitude, longitude, cfg, root_dir,
-                    )
-                    pending = cache_file.with_suffix(".part.nc")
-                    try:
-                        selected.to_netcdf(pending)
-                        # Refuse malformed, incomplete and wrong-level GRIB.
-                        if not _valid_hourly_cache(
-                            pending, pending.with_suffix(".json"),
-                            latitude, longitude, cfg,
-                        ):
-                            logger.warning("ERA5 request %s invalid hour %s", digest, stamp)
-                            continue
-                        pending.replace(cache_file)
-                        metadata = _metadata_for_profile(
-                            stamp, stamp, latitude, longitude, dataset, cache_file,
+                    matches = np.where(source_times == target)[0]
+                    if matches.size != 1:
+                        logger.warning(
+                            "ERA5 batch missing requested hour | %s",
+                            analysis_dt.strftime("%Y-%m-%d %H:%MZ"),
                         )
-                        metadata["request_id"] = digest
-                        metadata["download_format"] = "grib"
-                        metadata["request_grid_deg"] = cfg["grid_deg"]
-                        metadata["request_area_half_width_deg"] = cfg["area_half_width_deg"]
-                        metadata["request_pressure_levels_hpa"] = cfg["pressure_levels_hpa"]
-                        _write_request_metadata(metadata_file, metadata)
-                        available.add(stamp)
-                    finally:
-                        pending.unlink(missing_ok=True)
-            request_info["status"] = (
-                "complete" if all(hour in available for hour in needed)
-                else "partial"
-            )
-            request_info["cached_hours_utc"] = [
-                stamp.isoformat() for stamp in needed if stamp in available
-            ]
-            _write_request_metadata(ledger, request_info)
+                        continue
+                    selected = ds.isel({time_coord: int(matches[0])})
+                    cache_file, metadata_file = _cache_paths(
+                        analysis_dt,
+                        latitude,
+                        longitude,
+                        cfg,
+                        root_dir,
+                    )
+                    selected.to_netcdf(cache_file)
+                    metadata = _metadata_for_profile(
+                        analysis_dt,
+                        analysis_dt,
+                        latitude,
+                        longitude,
+                        dataset,
+                        cache_file,
+                    )
+                    metadata["batch_request_day_utc"] = day.isoformat()
+                    metadata["batch_request_hour_count"] = len(hours)
+                    metadata_file.write_text(
+                        json.dumps(metadata, indent=2),
+                        encoding="utf-8",
+                    )
+                    available.add(analysis_dt)
             logger.info(
-                "ERA5 GRIB request %s cached | %d/%d required hours",
-                digest, len(request_info["cached_hours_utc"]), len(needed),
+                "ERA5 batch cached | %s | %d/%d hour(s)",
+                day.isoformat(),
+                sum(hour in available for hour in hours),
+                len(hours),
             )
         except Exception as exc:
-            request_info["error"] = _compact_exception_message(exc)
-            # Explicitly rejected capacity/slot requests can be attempted
-            # during a later run. Other failures after submission have an
-            # unknown remote outcome and must never be blindly resubmitted.
-            overload = request_info["error"].lower()
-            request_info["status"] = (
-                "local_decode_failed" if downloaded_grib
-                else "backpressure" if any(label in overload for label in (
-                    "available slots", "too many requests", "429 ", "rate limit",
-                )) else "uncertain"
-            )
-            if downloaded_grib:
-                request_info["retained_grib_path"] = str(temp_batch)
-            _write_request_metadata(ledger, request_info)
             logger.warning(
-                "ERA5 prefetch stopped at request %s | %s",
-                digest, request_info["error"],
+                "ERA5 batch unavailable | %s | %s",
+                day.isoformat(),
+                _compact_exception_message(exc),
             )
-            logger.debug("ERA5 prefetch exception", exc_info=True)
-            break  # Preserve already validated hours; never saturate CDS queue.
+            logger.debug("ERA5 batch retrieval failure", exc_info=True)
         finally:
-            # Parsing failures retain the original response so it can be
-            # inspected/converter-repaired locally without a duplicate CDS job.
-            if not downloaded_grib or request_info["status"] in {"complete", "partial"}:
-                temp_batch.unlink(missing_ok=True)
-    # The planner may have downloaded extra valid hours to reduce CDS jobs;
-    # callers ask only for the originally requested set.
-    return available.intersection(analysis_hours)
+            try:
+                if temporary_file.exists():
+                    temporary_file.unlink()
+            except OSError:
+                pass
+
+    return available
 
 
 def fetch_era5_pressure_level_profile(
@@ -700,9 +461,7 @@ def fetch_era5_pressure_level_profile(
         measurement_dt, latitude, longitude, cfg, root_dir
     )
 
-    if _valid_hourly_cache(
-        cache_file, metadata_file, latitude, longitude, cfg,
-    ):
+    if cache_file.exists():
         try:
             with xr.open_dataset(cache_file) as ds:
                 ds.load()

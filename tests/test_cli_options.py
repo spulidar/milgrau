@@ -159,3 +159,39 @@ def test_lipancora_exposes_figures_only_recovery_mode() -> None:
     forced = parser.parse_args(["--figures-only", "--force"])
     assert forced.figures_only is True
     assert forced.force is True
+
+
+def test_lipancora_radiosonde_only_cli_keeps_default_config_unchanged() -> None:
+    from milgrau.config.loader import load_config
+    from milgrau.level1.config import resolve_level1_config
+
+    args = lipancora._build_parser().parse_args(
+        ["--radiosonde-only", "-i", "spu_20251107-0900Z_20251107-1500Z"]
+    )
+    assert args.radiosonde_only
+    canonical = load_config("config.yaml")
+    selected = lipancora._radiosonde_only_config(canonical)
+    assert selected["_radiosonde_only_mode"] is True
+    assert resolve_level1_config(selected).atmosphere.source_priority == ("radiosonde", "ussa76")
+    assert resolve_level1_config(selected).atmosphere.era5 is None
+    assert resolve_level1_config(canonical).atmosphere.source_priority == ("era5", "radiosonde", "ussa76")
+    assert canonical["level1"]["atmosphere"]["era5"]  # Never edit recipe in place.
+
+
+def test_radiosonde_only_overrides_12h_only_not_normal_qa_policy() -> None:
+    from milgrau.config.loader import load_config
+
+    ordinary = load_config("config.yaml")
+    original_max = ordinary["level1"]["atmosphere"]["radiosonde"][
+        "max_time_delta_hours"
+    ]
+    radio = lipancora._radiosonde_only_config(ordinary)
+    assert original_max == 6.0
+    assert radio["level1"]["atmosphere"]["radiosonde"][
+        "max_time_delta_hours"
+    ] == 12.0
+    assert ordinary["level1"]["atmosphere"]["radiosonde"][
+        "max_time_delta_hours"
+    ] == 6.0
+    assert radio["level1"]["atmosphere"]["source_priority"] == ["radiosonde", "ussa76"]
+    assert ordinary["level1"]["atmosphere"]["source_priority"] == ["era5", "radiosonde", "ussa76"]

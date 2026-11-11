@@ -8,7 +8,7 @@ MILGRAU is a Python processing suite for atmospheric elastic/Raman lidar data, d
 ## Processing path
 
 ```mermaid
-flowchart TD
+flowchart LR
     R[Raw Licel] --> L0[LIBIDS\nLevel 0]
     L0 --> N0[Standardized raw NetCDF]
     N0 --> L1[LIPANCORA\nLevel 1]
@@ -16,8 +16,8 @@ flowchart TD
     L1 --> N1[Corrected signal + Range Corrected Signal + Atmosphere]
     N1 --> L2[LEBEAR\nLevel 2]
     L2 --> N2[Klett-Fernald-Sasano \n Attenuation + Backscatter + Scattering Ratio]
-    N1 --> F1[LIPANCORA figures\nRCS / MeanRCS / Atmosphere]
-    N2 --> F2[LEBEAR figures\nOptical / Molecular / Gluing]
+    L1 --> F1[LIPANCORA figures\nRCS / MeanRCS / Atmosphere]
+    L2 --> F2[LEBEAR figures\nOptical / Molecular / Gluing]
     N1 --> V[Explorer\nInteractive inspection]
     N2 --> V
 ```
@@ -127,10 +127,11 @@ times remain in the NetCDF metadata. A session may cross midnight or any former
 six-hour site boundary without being split. A true acquisition gap or a change in station profile/calibration starts a
 new session. Inside one session, MILGRAU stores geometric solar elevation,
 classifies each profile as `day` or `night` using the configured threshold,
-and assigns contiguous `segXX` scientific segments. When explicitly enabled,
-SCC submission derivatives are independently grouped by solar regime and UTC
-calendar month under `.cache/scc/pending/<Measurement_ID>/`. The original
-scientific session and its segment IDs remain unchanged.
+and assigns contiguous `segXX` scientific segments. SCC interoperability
+derivatives are grouped by solar regime, so repeated `day` or `night`
+segments are combined into one `SESSION_day_L0_scc.nc` or
+`SESSION_night_L0_scc.nc` while retaining their original segment identities
+inside the file.
 
 Products are grouped by the UTC month in which the session starts:
 
@@ -143,57 +144,10 @@ Products are grouped by the UTC month in which the session starts:
           spu_20250511-0012Z_20250511-0737Z_L0.nc
           spu_20250511-0012Z_20250511-0737Z_L1.nc
           spu_20250511-0012Z_20250511-0737Z_L2.nc
+          spu_20250511-0012Z_20250511-0737Z_day_L0_scc.nc   # when day SCC export applies
+          spu_20250511-0012Z_20250511-0737Z_night_L0_scc.nc # when night SCC export applies
           figures/
 ```
-
-SCC integration is disabled by default (`config.yaml: scc.enabled: false`).
-When enabled, LIBIDS can stage an upload-ready `<Measurement_ID>.nc`, optional
-`lr_<Measurement_ID>.nc` and checksum `manifest.json` in
-`.cache/scc/pending/<Measurement_ID>/`:
-
-```bash
-# SCC-only re-export of an already scientifically processed session:
-milgrau-libids -i spu_20250511-0012Z_20250511-0737Z --scc-reexport
-```
-
-This command requires the archived raw measurements and a valid existing
-canonical L0 but **does not rewrite that L0**. Normal incremental processing
-does not regenerate deleted SCC inputs. Existing `*_L0_scc.nc` files from
-older runs are retained without modification.
-
-Phase 12.4 provides an **optional native SCC client** (no dependency on the
-historic scc_access package). Install and validate session-local inputs offline:
-
-```bash
-python -m pip install -e ".[scc]"
-milgrau-scc upload --dry-run
-milgrau-scc status
-milgrau-scc download
-```
-
-Remote SCC submissions are always explicitly operator-authorized:
-`milgrau-scc upload --confirm` processes staged inputs sequentially and skips
-remote-existing IDs; `--replace-existing --confirm` permits same-ID replacement
-with an explicitly recorded **no-backup waiver**. A remote backup remains
-available separately using `milgrau-scc status --id ID --remote --backup`.
-Choose `--id MEASUREMENT_ID` for a single targeted operation and inspect its
-remote state before considering any destructive replacement. Uncertain POST
-or DELETE outcomes never trigger automatic retries.
-
-The SCC operational journal and optional remote archives are held under
-`.state/scc/`, independently of the **persistent session inputs** under
-`<Session_ID>/scc/scc-inputs/<Measurement_ID>/`. Verified external SCC
-results live under the session's separate
-`scc-results/<Measurement_ID>/generations/` hierarchy. Upload, status and
-download do **not** remove staged inputs, even after a successful download.
-The `milgrau-scc cleanup` subcommand, `download --keep-cache` flag and
-`scc.cleanup.policy` were removed. The operator may manage files manually
-only after reviewing remote state, journal uncertainty and evidence needs.
-Never manually delete `.state/scc/`, results, canonical L0/L1/L2 or figures
-as part of SCC input housekeeping.
-
-See the [SCC operator guide](docs/scc_batch_operator_guide.md) and
-[client architecture](docs/scc_native_client.md) for validation and recovery.
 
 The primary CLIs accept a session ID, a station-local civil date, or an
 explicit file/directory path. A date selects sessions that intersect that local day.
@@ -291,21 +245,3 @@ If you use MILGRAU, cite the software using [`CITATION.cff`](CITATION.cff). The 
 ## License
 
 MILGRAU is distributed under the MIT License; see [`LICENSE`](LICENSE).
-
-## Historical L0/L1 input preflight (Phase 5 experimental branch)
-
-LIBIDS stores **rebuildable raw-header facts** in
-`.cache/libids/inventory.sqlite` to avoid re-reading an unchanged six-year
-Licel archive on every `-i` run. The cache does not define session identity;
-current station profiles, session boundaries, dark-current selection and QA
-still determine the science. An SCC-only reexport with a valid L0 can use
-its `Source_Files` and this cache to locate original raw files without
-rewriting the canonical product.
-
-LIPANCORA automatically plans the necessary ERA5 hours of the selected L0
-sessions before running Level 1. Sparse same-hour days can share one CDS
-request under an initial 80,000-field ceiling; results remain in the
-rebuildable `.cache/era5` directory. Under the branch's default
-`level1.atmosphere.missing_policy: require_era5`, temporary CDS
-unavailability does not silently produce a definitive L1 from USSA76.
-Set `allow_fallback` deliberately for operational continuation.

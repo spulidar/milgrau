@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [milgraumaxxing, scc-integration-refactor]
+    branches: [main, milgraumaxxing]
   pull_request:
 
 permissions:

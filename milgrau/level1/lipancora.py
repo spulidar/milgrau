@@ -15,7 +15,12 @@ from milgrau.incremental import output_is_current
 from milgrau.io.contracts import netcdf_satisfies_contract, validate_level1_contract
 from milgrau.io.filesystem import ensure_directories
 from milgrau.io.logging_utils import bind_log_context
-from milgrau.io.paths import LEVEL0_SUFFIX, level1_output_path, logging_session_id, processed_data_root
+from milgrau.io.paths import (
+    LEVEL0_SUFFIX,
+    level1_output_path,
+    logging_session_id,
+    processed_data_root,
+)
 from milgrau.operations import ExecutionResult, ExecutionStatus, ExecutionSummary
 from milgrau.level1.common import (
     diagnostic_vector,
@@ -30,7 +35,6 @@ from milgrau.level1.config import (
 )
 from milgrau.level1.corrections import apply_instrumental_corrections
 from milgrau.level1.diagnostics import finalize_correction_dataset
-from milgrau.level1.era5_prefetch import prefetch_selected_level0_atmosphere
 from milgrau.level1.figures import generate_level1_figures
 from milgrau.level1.ingestion import load_and_prepare_level0
 from milgrau.level1.pbl import estimate_pbl_timeseries
@@ -290,36 +294,37 @@ def _discover_level0_files(config: Mapping[str, Any]) -> list[Path]:
     return discovered
 
 
-def _finalize_scc_after_level1(
-    source_level0: Path, level1_file: Path,
-    config: Mapping[str, Any], logger: logging.Logger,
-) -> list[str]:
-    """Finalize SCC staging only after science L1 succeeded or was verified current."""
-    if (
-        config.get("scc", {}).get("enabled") is not True
-        or config.get("_scc_catalog", {}).get("scc_policy", {})
-        .get("sounding", {}).get("enabled") is not True
-    ):
-        return []
-    from milgrau.scc.sounding_finalize import finalize_session_soundings
-
-    return finalize_session_soundings(source_level0, level1_file, config, logger)
+def _level1_target_path(level0_file: str | Path, config: Mapping[str, Any]) -> Path:
+    """Use the canonical L1 path in both modes; science provenance distinguishes them."""
+    return level1_output_path(level0_file, config)
 
 
-def _optional_scc_sounding_issue(
-    source_level0: Path, level1_file: Path,
-    config: Mapping[str, Any], logger: logging.Logger,
-) -> str | None:
-    """Report an SCC staging issue without invalidating an already valid scientific L1."""
+def _l1_mode_matches_requested(path: Path, config: Mapping[str, Any]) -> bool:
+    """A cached radiosonde L1 is never current for ERA5, or vice versa."""
     try:
-        _finalize_scc_after_level1(source_level0, level1_file, config, logger)
-    except Exception as exc:
-        logger.error(
-            "SCC sounding not upload-ready; scientific L1 remains valid: %s",
-            exc, exc_info=True,
-        )
-        return f"{type(exc).__name__}: {exc}"
-    return None
+        with xr.open_dataset(path, cache=False) as existing:
+            source_priority = str(
+                existing.attrs.get("thermodynamic_source_priority", "")
+            ).split(",")
+            explicit_mode = str(existing.attrs.get("level1_atmosphere_mode", "")).strip()
+            stored_radiosonde = (
+                explicit_mode == "radiosonde_only"
+                if explicit_mode else ("radiosonde" in source_priority and "era5" not in source_priority)
+            )
+            requested_radiosonde = config.get("_radiosonde_only_mode", False) is True
+            if stored_radiosonde != requested_radiosonde:
+                return False
+            # An opportunistic queue fallback is a valid L1, but a normal
+            # ERA5-enabled run should be able to upgrade it when CDS recovers.
+            if (
+                not requested_radiosonde
+                and config.get("_era5_network_allowed", True)
+                and str(existing.attrs.get("cds_queue_state", "")) == "high"
+            ):
+                return False
+            return True
+    except (OSError, ValueError, KeyError):
+        return False
 
 
 def _files_requiring_level1(
@@ -332,32 +337,26 @@ def _files_requiring_level1(
     skipped_results: list[ExecutionResult] = []
     for file_path in files:
         session_id = logging_session_id(file_path)
-        output_path = level1_output_path(file_path, config)
+        output_path = _level1_target_path(file_path, config)
         is_current = False
         if incremental and output_path.exists():
-            is_current = output_is_current(
-                output_path,
-                [file_path],
-                config=config,
-                integrity_check=lambda path: netcdf_satisfies_contract(path, validate_level1_contract),
-            )
+            if _l1_mode_matches_requested(output_path, config):
+                is_current = output_is_current(
+                    output_path,
+                    [file_path],
+                    config=config,
+                    integrity_check=lambda path: netcdf_satisfies_contract(path, validate_level1_contract),
+                )
         if is_current:
             file_logger = bind_log_context(logger, session_id=session_id)
             bind_log_context(file_logger, stage="skip").info("up to date | %s", output_path.name)
-            scc_issue = _optional_scc_sounding_issue(
-                file_path, output_path, config,
-                bind_log_context(file_logger, stage="scc_sounding"),
-            )
-            metadata = {"pipeline": "L1", "session_id": session_id}
-            if scc_issue is not None:
-                metadata["scc_staging_error"] = scc_issue
             skipped_results.append(
                 ExecutionResult.skipped(
                     "level1.incremental",
                     "Level 1 is up to date",
                     input_path=file_path,
                     output_path=output_path,
-                    metadata=metadata,
+                    metadata={"pipeline": "L1", "session_id": session_id},
                 )
             )
             config_file = config.get("_config_file")
@@ -464,7 +463,7 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
         stage = "level1.configuration"
         validate_level1_config(config)
         stage = "level1.output_path"
-        save_path = level1_output_path(nc_file, config)
+        save_path = _level1_target_path(nc_file, config)
         stage = "level1.ingestion"
         ds_raw, z_arr = load_and_prepare_level0(
             nc_file,
@@ -483,6 +482,10 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
         final_ds = integrate_thermodynamics(final_ds, config, bind_log_context(file_logger, stage="atmosphere"))
         final_ds.attrs.update(ds_raw.attrs)
         final_ds.attrs.update(_processing_metadata(nc_file))
+        final_ds.attrs["level1_atmosphere_mode"] = (
+            "radiosonde_only" if config.get("_radiosonde_only_mode", False)
+            else "standard"
+        )
         final_ds = _make_level1_netcdf_safe(final_ds)
         stage = "level1.validation"
         validate_level1_contract(final_ds)
@@ -516,25 +519,18 @@ def process_single_file(args: tuple[str | Path, Mapping[str, Any], logging.Logge
             bind_log_context(file_logger, stage="figures"),
             root_dir=figure_root,
         )
-        scc_issue = _optional_scc_sounding_issue(
-            nc_file, save_path, config,
-            bind_log_context(file_logger, stage="scc_sounding"),
-        )
-        metadata = {
-            "pipeline": "L1",
-            "session_id": session_id,
-            "channel_count": final_ds.sizes.get("channel", 0),
-            "figure_status": figure_result.status.value,
-        }
-        if scc_issue is not None:
-            metadata["scc_staging_error"] = scc_issue
         return ExecutionResult.success(
             "level1.complete",
             "Level 1 generated",
             input_path=nc_file,
             output_path=save_path,
             duration_seconds=time.perf_counter() - started_at,
-            metadata=metadata,
+            metadata={
+                "pipeline": "L1",
+                "session_id": session_id,
+                "channel_count": final_ds.sizes.get("channel", 0),
+                "figure_status": figure_result.status.value,
+            },
         )
     except Exception as exc:
         return ExecutionResult.failure(
@@ -567,18 +563,11 @@ def process_level_1(config: Mapping[str, Any], logger: logging.Logger) -> Execut
     bind_log_context(logger, stage="queue").info(
         "%d files to process | %d skipped", len(files_to_process), len(skipped_results)
     )
-    globally_prefetched = prefetch_selected_level0_atmosphere(
-        files_to_process, config, logger,
-    )
-    run_config = (
-        {**config, "_era5_prefetched_by_lipancora": True}
-        if globally_prefetched else config
-    )
     results = list(skipped_results)
     for file_path in files_to_process:
         session_id = logging_session_id(file_path)
         file_logger = bind_log_context(logger, session_id=session_id)
-        result = process_single_file((str(file_path), run_config, file_logger))
+        result = process_single_file((str(file_path), config, file_logger))
         if result.status is ExecutionStatus.OK:
             duration = 0.0 if result.duration_seconds is None else result.duration_seconds
             channel_count = int(result.metadata.get("channel_count", 0))

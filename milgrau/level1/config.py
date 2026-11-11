@@ -91,7 +91,6 @@ class AtmosphereConfig:
     external_profile_outside_coverage: str
     radiosonde: RadiosondeConfig | None
     era5: Era5Config | None
-    missing_policy: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -292,16 +291,12 @@ def _resolve_atmosphere_config(level1: Mapping[str, Any]) -> AtmosphereConfig:
         "time_resolution_minutes",
         "source_priority",
         "external_profile_outside_coverage",
-        "missing_policy",
         "radiosonde",
         "era5",
     }
     _allowed_keys(
         atmosphere,
-        required={
-            "time_resolution_minutes", "source_priority",
-            "external_profile_outside_coverage", "missing_policy",
-        },
+        required={"time_resolution_minutes", "source_priority", "external_profile_outside_coverage"},
         allowed=allowed,
         label="level1.atmosphere",
     )
@@ -319,7 +314,7 @@ def _resolve_atmosphere_config(level1: Mapping[str, Any]) -> AtmosphereConfig:
             "Configuration level1.atmosphere.time_resolution_minutes currently supports only 60."
         )
 
-    valid_sources = {"era5", "ussa76"}
+    valid_sources = {"era5", "radiosonde", "ussa76"}
     priority: list[str] = []
     for index, raw_source in enumerate(raw_priority):
         source = _text(raw_source, f"level1.atmosphere.source_priority[{index}]").lower()
@@ -348,6 +343,11 @@ def _resolve_atmosphere_config(level1: Mapping[str, Any]) -> AtmosphereConfig:
             _mapping(atmosphere.get("radiosonde"), "level1.atmosphere.radiosonde")
         )
 
+    if "radiosonde" in priority and radiosonde is None:
+        raise Level1ConfigurationError(
+            "Productive radiosonde mode requires level1.atmosphere.radiosonde settings."
+        )
+
     era5 = None
     if "era5" in priority:
         era5 = _resolve_era5_config(_mapping(atmosphere.get("era5"), "level1.atmosphere.era5"))
@@ -356,18 +356,7 @@ def _resolve_atmosphere_config(level1: Mapping[str, Any]) -> AtmosphereConfig:
             "Configuration level1.atmosphere.era5 is present but era5 is absent from source_priority."
         )
 
-    missing_policy = _text(
-        atmosphere["missing_policy"],
-        "level1.atmosphere.missing_policy",
-    ).lower()
-    if missing_policy not in {"allow_fallback", "require_era5"}:
-        raise Level1ConfigurationError(
-            "level1.atmosphere.missing_policy must be allow_fallback or require_era5."
-        )
-    return AtmosphereConfig(
-        cadence_minutes, tuple(priority), extension, radiosonde, era5,
-        missing_policy,
-    )
+    return AtmosphereConfig(cadence_minutes, tuple(priority), extension, radiosonde, era5)
 
 
 def resolve_level1_config(config: Mapping[str, Any]) -> Level1Config:

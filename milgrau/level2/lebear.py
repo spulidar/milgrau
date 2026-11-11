@@ -44,6 +44,51 @@ from milgrau.level2.level2_schema import validate_level2_contract
 from milgrau.level2.time_window import subset_level1_context
 
 
+def _level2_atmosphere_provenance(ds: xr.Dataset) -> dict[str, str]:
+    """Record the actual Level 1 atmosphere used by the Level 2 inversion.
+
+    An explicit --radiosonde-only Level 1 is a valid scientific input, but its
+    molecular reference must never be mistaken for the default ERA5 workflow.
+    """
+    sources = []
+    if "Atmospheric_Source_Type" in ds:
+        sources = sorted({
+            value.strip().lower()
+            for value in np.asarray(ds["Atmospheric_Source_Type"].values).astype(str).reshape(-1)
+            if value.strip()
+        })
+    present = str(ds.attrs.get("thermodynamic_sources_present", "")).strip()
+    return {
+        "source_level1_atmosphere_mode": (
+            str(ds.attrs.get("level1_atmosphere_mode", "")).strip() or "unspecified"
+        ),
+        "level2_atmospheric_profile_source": (
+            ",".join(sources) or present or "unspecified"
+        ),
+        "source_thermodynamic_sources_present": present or "unspecified",
+        "source_thermodynamic_source_priority": (
+            str(ds.attrs.get("thermodynamic_source_priority", "")).strip()
+            or "unspecified"
+        ),
+        "source_radiosonde_observation_origins": (
+            str(ds.attrs.get("thermodynamic_radiosonde_observation_sources", "")).strip()
+            or "none"
+        ),
+        "source_radiosonde_archives": (
+            str(ds.attrs.get("thermodynamic_radiosonde_archives", "")).strip()
+            or "none"
+        ),
+        "source_atmosphere_selection_reason": (
+            str(ds.attrs.get("atmosphere_selection_reason", "")).strip()
+            or "unspecified"
+        ),
+        "source_cds_queue_state": (
+            str(ds.attrs.get("cds_queue_state", "")).strip()
+            or "not_checked"
+        ),
+    }
+
+
 def level2_output_is_current(
     nc_file: str | Path,
     output_path: str | Path,
@@ -180,6 +225,7 @@ def process_single_level1_file(
     output_path: Path | None = None
     stage = "level2.ingestion"
     source_provenance: dict[str, Any] = {}
+    atmosphere_provenance: dict[str, str] = {}
     source_level1_sha256 = ""
     kfs_cfg: dict[str, Any] = {}
     try:
@@ -188,6 +234,7 @@ def process_single_level1_file(
             source_provenance = dict(ds_source.attrs)
             stage = "level2.validation.input"
             validate_level1_contract(ds_source)
+            atmosphere_provenance = _level2_atmosphere_provenance(ds_source)
             stage = "level2.selection"
             ds_l1, inferred_output_tag = subset_level1_context(
                 ds_source,
@@ -231,6 +278,7 @@ def process_single_level1_file(
                 config,
                 file_logger,
             )
+            ds_l2.attrs.update(atmosphere_provenance)
             stage = "level2.validation.output"
             validate_level2_contract(ds_l2)
 
@@ -248,6 +296,7 @@ def process_single_level1_file(
             source_attrs=source_provenance,
             extra_attrs={
                 "source_level1_sha256": source_level1_sha256,
+                **atmosphere_provenance,
                 "level2_product_schema_version": LEVEL2_PRODUCT_SCHEMA_VERSION,
                 "monte_carlo_random_seed": int(kfs_cfg["random_seed"]),
                 "monte_carlo_iterations": int(kfs_cfg["monte_carlo_iterations"]),
