@@ -295,10 +295,10 @@ def fetch_wyoming_radiosonde(
             name = f"radiosonde_{station_id}_{candidate.strftime('%Y%m%d_%H')}Z.csv"
             output = root / name
             if output.exists():
-                prior = _read_metadata(_metadata_file_for(output))
-                if prior.get("historical_archive"):
-                    output = output.with_name(output.stem + "_wyoming.csv")
-                    name = output.name
+                # Preserve any prior CSV/sidecar, including legacy files that
+                # lack a readable source marker.
+                output = output.with_name(output.stem + "_wyoming.csv")
+                name = output.name
             metadata = {
                 **default_metadata,
                 "target_datetime_utc": candidate.isoformat(),
