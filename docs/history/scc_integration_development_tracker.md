@@ -19,7 +19,7 @@
 > `require_era5` policy below are historical, not merge requirements.
 > The separate `scc.yaml` catalog remains authoritative for SCC mappings;
 > station.yaml continues to own the scientific instrument/station metadata.
-> Current checklist: [SCC integration merge gates](../docs/scc_integration_merge_plan.md).
+> Current checklist: [SCC integration merge gates](scc_integration_merge_plan.md).
 
 
 **Branch de trabalho:** `scc-integration-refactor`  
@@ -329,7 +329,7 @@ milgrau-scc download
 ## 5. Validação e regressões
 
 **Fase 5 — CI e cenários simulados validados em 20/10/2026:**
-[GitHub Actions #39497902391](https://github.com/spulidar/milgrau/actions/runs/39497902391) aprovou **6/6 jobs** no código `a3c6c211`, incluindo **726 testes aprovados no Linux/Python 3.12**. Também foi reforçada a confirmação pós-upload: configuração SCC divergente ou ausência de `creation_date` mantém o journal `uncertain`, sem retry. A matriz e o procedimento de validação real estão em [`docs/scc_phase5_validation.md`](../docs/scc_phase5_validation.md).
+[GitHub Actions #39497902391](https://github.com/spulidar/milgrau/actions/runs/39497902391) aprovou **6/6 jobs** no código `a3c6c211`, incluindo **726 testes aprovados no Linux/Python 3.12**. Também foi reforçada a confirmação pós-upload: configuração SCC divergente ou ausência de `creation_date` mantém o journal `uncertain`, sem retry. A matriz e o procedimento de validação real estão em [`docs/scc_phase5_validation.md`](scc_phase5_validation.md).
 
 **Limite do gate:** testes em CI utilizam mocks e arquivos científicos sintéticos. Nenhum pacote de dados reais do operador foi comparado antes/depois, nenhuma API SCC real foi acionada, nenhum upload/DELETE remoto foi realizado. Portanto o Gate 5 completo continua pendente, embora a parte automatizada esteja aprovada.
 

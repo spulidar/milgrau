@@ -202,21 +202,21 @@ The [cleanup review register](../docs/cleanup_review.md) is maintained alongside
 documentation. Do **not** delete code merely because a module is unused by
 the current CLI: it may be a supported scientific API or retained method.
 
-- [ ] Determine whether `milgrau/level0/solar.py` duplicates the productive
-  solar/segment logic, including all imports and downstream compatibility.
+- [x] Check all repository references and retire unused `milgrau/level0/solar.py`;
+  keep `milgrau.physics.solar` and productive midpoint-based segment logic.
 - [ ] Determine whether preliminary `level2.cloud_screening` should remain
   an explicitly disabled research API, be integrated or be retired.
-- [ ] Review historical SCC/ERA5/GRIB documentation links and maintain
-  archived scientific provenance rather than deleting the history.
+- [x] Archive superseded SCC phase-5/merge planning in `docs/history/`,
+  preserve historical records, remove duplicate configuration guide and fix active links.
 - [ ] Review `Processing_level` attribute wording for canonical L0 versus SCC
   interoperability while preserving product-reader compatibility.
 - [ ] Check any classification ambiguity caused by raw paths containing
   the string `dark` before changing the observed data-selection behavior.
-- [ ] Prepare any code cleanup as a separate, test-backed change with explicit
-  approval; no remote SCC records, raw data or provenance archives removed.
+- [x] Apply explicitly approved CI/unused-solar/documentation cleanup with automated checks;
+  no SCC remote records, raw data or provenance archives removed.
 
 ## Historical development evidence
 
 The October SCC refactor chronology and superseded GRIB/CDS experiments have been retained **unchanged** in the [archived tracker](../docs/history/scc_integration_development_tracker.md). They are historical records, not the current user runbook or active atmospheric policy.
 
-The [historical integration merge plan](../docs/scc_integration_merge_plan.md) records the former merge gates. Remaining **real-data scientific and SCC validation** gates stay active here even though the code is now on `main`.
+The [historical integration merge plan](../docs/history/scc_integration_merge_plan.md) records the former merge gates. Remaining **real-data scientific and SCC validation** gates stay active here even though the code is now on `main`.

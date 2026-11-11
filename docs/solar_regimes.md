@@ -83,10 +83,10 @@ labels, depending on how its pandas datetime index was represented.
 
 **Remaining field-validation task:** select a real, dated SPU measurement spanning the configured solar transition, inspect acquisition midpoints and station-profile selection, compare against an independent solar ephemeris and record the numerical discrepancy. Use the [read-only historical audit procedure](level0_validation_workbook.md#d-read-only-check-for-historical-solar-labels) before considering reprocessing. This requires actual source observations and is not closed by automated synthetic tests.
 
-## Potential duplicate utilities
+## Canonical solar calculation
 
-The production path constructs solar context in `milgrau/level0/processing.py::_annotate_solar_context`. A separate `milgrau/level0/solar.py` defines similar helpers that appear unused by the current repository callers. Importantly, the separate helper evaluates solar elevation at the **start** rather than the **midpoint** of an acquisition.
+The productive solar-context calculation is `milgrau/level0/processing.py::_annotate_solar_context`, which uses the physical solar-position functions in `milgrau/physics/solar.py` and the **acquisition midpoint**. A former unreferenced duplicate, `milgrau/level0/solar.py`, computed elevation at the acquisition **start**; it was retired during the November 2026 cleanup.
 
-The cleanup register treats this as a **candidate to retire after compatibility review**, not an independent, interchangeable implementation of the same science. No Level 0 solar routine has been removed or replaced in the documentation batch.
+The removal of that unused alternative does **not** change the productive solar equations, its midpoint convention or its −3° threshold. The separate pandas microsecond/nanosecond correction is documented above and **can** affect historical outputs.
 
 See [LIBIDS](libids.md), [Level 0 variables](level0_schema.md) and [Cleanup review](cleanup_review.md).

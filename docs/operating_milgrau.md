@@ -11,7 +11,7 @@ git switch main
 python -m pip install -e .
 ~~~
 
-Use Python 3.12 or newer. Confirm `config.yaml` points to the correct Licel raw-data tree (normally `01-data`), a writable processed-data tree (normally `02-processed_data`) and a historically correct `station.yaml`. Refer to [Configuration](configuration_ownership.md) for the scientific effect of each setting.
+Use Python 3.12 or newer. Confirm `config.yaml` points to the correct Licel raw-data tree (normally `01-data`), a writable processed-data tree (normally `02-processed_data`) and a historically correct `station.yaml`. Refer to [Scientific configuration](configuration_reference.md) for the scientific effect of each setting.
 
 Inspect help before applying a destructive reprocessing flag:
 

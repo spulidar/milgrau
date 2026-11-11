@@ -1,3 +1,5 @@
+> **Archived after integration to `main` (11 November 2026).** This is a historical plan, not a current runbook. The active scientific/operational acceptance gates are in [the tracker](../../.github/tracker.md).
+
 # MILGRAU SCC + atmosphere: temporary integration and merge gates
 
 **Work branch:** `integration/scc-atmosphere-20261111`  

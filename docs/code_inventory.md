@@ -31,8 +31,8 @@ only through Git history.
 | --- | --- |
 | Licel parsing | `milgrau.io.licel` |
 | continuous session grouping | `milgrau.level0.inventory` |
-| acquisition filtering | `milgrau.level0.filtering` |
-| SCC-compatible NetCDF construction | `milgrau.level0.netcdf` |
+| acquisition filtering | `milgrau.level0.quality` |
+| canonical and optional SCC-compatible NetCDF construction | `milgrau.level0.netcdf` |
 | end-to-end orchestration | `milgrau.level0.processing` |
 
 ## Level 1

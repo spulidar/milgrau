@@ -2,9 +2,9 @@
 
 **Historical technical record.** This file describes previous SCC refactor
 and experimental ERA5/GRIB work. It is **not** the current operator runbook
-or today's productive ERA5 policy. Consult [the SCC operator guide](scc_batch_operator_guide.md),
-[Atmospheric profiles](atmospheric_profiles.md) and the
-[current scientific tracker](../.github/tracker.md) for active status.
+or today's productive ERA5 policy. Consult [the SCC operator guide](../scc_batch_operator_guide.md),
+[Atmospheric profiles](../atmospheric_profiles.md) and the
+[current scientific tracker](../../.github/tracker.md) for active status.
 
 The evidence below distinguishes automated/mock tests from verification with
 real lidar data and authorized remote SCC operations.
