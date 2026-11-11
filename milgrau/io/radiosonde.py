@@ -150,6 +150,7 @@ def _cached_sounding(
     station_id: str,
     logger: logging.Logger,
     base_metadata: Mapping[str, Any],
+    *, allow_igra: bool = True,
 ) -> pd.DataFrame | None:
     """Try validated local CSV, then IGRA2 for one nominal UTC launch."""
     cache_path = cache_root / target_dt.strftime("%Y") / target_dt.strftime("%m")
@@ -174,16 +175,22 @@ def _cached_sounding(
                 raise ValueError("Insufficient valid radiosonde levels.")
             logger.debug("radiosonde hourly CSV cache hit: %s", cache_filename)
             sidecar = _read_metadata(metadata_file)
-            source_keys = {
-                key: sidecar[key] for key in (
-                    "source", "historical_archive", "historical_station_id",
-                    "source_type", "download_datetime_utc",
-                ) if key in sidecar
-            }
-            return _attach_metadata(cached, {**metadata, **source_keys})
+            if allow_igra or (
+                sidecar and not sidecar.get("historical_archive")
+                and "igra" not in str(sidecar.get("source", "")).lower()
+            ):
+                source_keys = {
+                    key: sidecar[key] for key in (
+                        "source", "historical_archive", "historical_station_id",
+                        "source_type", "download_datetime_utc",
+                    ) if key in sidecar
+                }
+                return _attach_metadata(cached, {**metadata, **source_keys})
         except (OSError, ValueError, KeyError, pd.errors.ParserError) as exc:
             logger.warning("radiosonde CSV cache unusable | %s | %s", cache_filename, exc)
 
+    if not allow_igra:
+        return None
     historical = load_igra2_cached_sounding(cache_root, station_id, target_dt, logger)
     if historical is None:
         return None
@@ -211,8 +218,9 @@ def fetch_wyoming_radiosonde(
     synoptic_hours_utc: Sequence[int],
     selection: str,
     max_time_delta_hours: float,
+    prefer_wyoming: bool = False,
 ) -> Optional[pd.DataFrame]:
-    """Get a sounding from CSV/IGRA2 local caches, then Wyoming Siphon.
+    """Get an observed sounding, optionally preferring Wyoming over IGRA2.
 
     Historical IGRA2 data remains an external operator-supplied cache file;
     it is never downloaded or bundled automatically by MILGRAU.
@@ -242,6 +250,54 @@ def fetch_wyoming_radiosonde(
         "source_type": "radiosonde",
     }
 
+    if prefer_wyoming:
+        # Prefer a previously validated Wyoming CSV, never a cached IGRA2
+        # sidecar disguised as a Wyoming response.
+        for candidate in candidates:
+            local = _cached_sounding(
+                cache_root, candidate, measurement_dt, station_id, logger,
+                default_metadata, allow_igra=False,
+            )
+            if local is not None:
+                return local
+        # Try each nominal launch within the policy window before resorting
+        # to historical IGRA2. Failed network attempts do not trigger retries
+        # of the entire source chain.
+        for candidate in candidates:
+            try:
+                _require_current_siphon()
+                received = WyomingUpperAir.request_data(candidate, station_id)
+                usable = received.drop_duplicates(subset=["height"], keep="first").sort_values("height")
+                if (not {"height", "temperature", "pressure"}.issubset(usable.columns)
+                    or len(usable.dropna(subset=["height", "temperature", "pressure"])) < 2):
+                    raise ValueError("Wyoming sounding has insufficient valid vertical levels.")
+            except Exception as exc:
+                logger.warning("Wyoming unavailable at %s | %s", candidate.isoformat(), exc)
+                continue
+            root = cache_root / candidate.strftime("%Y") / candidate.strftime("%m")
+            root.mkdir(parents=True, exist_ok=True)
+            name = f"radiosonde_{station_id}_{candidate.strftime('%Y%m%d_%H')}Z.csv"
+            output = root / name
+            metadata = {
+                **default_metadata,
+                "target_datetime_utc": candidate.isoformat(),
+                "time_delta_hours": abs((candidate - measurement_dt).total_seconds()) / 3600.0,
+                "csv_file": name,
+                "download_datetime_utc": datetime.now(timezone.utc).isoformat(),
+            }
+            usable.to_csv(output, index=False)
+            _metadata_file_for(output).write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+            return _attach_metadata(usable, metadata)
+        for candidate in candidates:
+            historical = _cached_sounding(
+                cache_root, candidate, measurement_dt, station_id, logger,
+                default_metadata, allow_igra=True,
+            )
+            if historical is not None and historical.attrs.get("historical_archive"):
+                return historical
+        return None
+
+    # Legacy cache-first path remains for existing direct integrations.
     # SPU IGRA2 often has 12Z-only records. At 19Z, midnight tomorrow is
     # nominally closer but may not exist; reuse the actually observed 12Z
     # profile if it is inside the explicit temporal tolerance.
