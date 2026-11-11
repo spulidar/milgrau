@@ -176,6 +176,8 @@ Remote uploads require an explicit operator command; scientific processing never
 
 ## Documentation
 
+The same scientific Markdown in [`docs/`](docs/) powers the [Lotus Docs + Hugo website](docs/site_hugo.md). Generated website files are temporary and are not a second documentation source. Publication is automated through GitHub Pages when enabled.
+
 Start with the [Documentation guide](docs/README.md). Dedicated user and scientific guides cover:
 
 - [Installation and first processing run](docs/getting_started.md).

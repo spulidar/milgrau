@@ -36,6 +36,10 @@ MILGRAU turns atmospheric lidar observations into progressively more interpreted
 - [Raman-channel evidence](spu_raman_channel_provenance.md): channel identification and outstanding instrument facts.
 - [NetCDF metadata policy](netcdf_metadata_policy.md): provenance and metadata conventions.
 
+## Documentation website
+
+[Lotus Docs / Hugo setup and GitHub Pages publishing](site_hugo.md) — single-source build, preview and deployment instructions.
+
 ## Supporting development, operations and historical records
 
 The following are useful to maintainers or for rare troubleshooting, but are **not required to follow the normal scientific workflow**: [code inventory](code_inventory.md), [SCC protocol details](scc_native_client.md), [SCC Level 0 interoperability](scc_level0_interoperability.md), [archived SCC validation evidence](history/scc_phase5_validation.md), [archived integration plan](history/scc_integration_merge_plan.md), [archived SCC development history](history/scc_integration_development_tracker.md), [cleanup review candidates](cleanup_review.md) and [publication integration](publication_integration.md).
