@@ -45,6 +45,8 @@ No remotely destructive SCC action or new CDS download is implied by any uncheck
 
 - [x] Reorganize the README around scientific use and processing workflow.
 - [x] Create a documentation index and a first-run guide.
+- [x] Publish a code-reviewed operational command/selection guide for the current main branch.
+- [x] Publish a first-pass scientific configuration reference with current distributed values and cautions.
 - [ ] Verify installation and first-run instructions on a clean environment and representative workstation.
 - [ ] Document all operator-relevant configuration choices with scientific meanings and valid settings.
 - [ ] Review complete-session, single-session, local-date and file-selection examples against real data.
@@ -55,17 +57,27 @@ No remotely destructive SCC action or new CDS download is implied by any uncheck
 
 ## B. LIBIDS — Level 0
 
-- [ ] Fully describe Licel input measurements, structure and acquisition fields.
-- [ ] Explain channel identification, detector modes and standardized channel mapping.
-- [ ] Document continuous-session construction, actual gap thresholds and date-boundary cases.
-- [ ] Explain dark-current association, time tolerance, rejected cases and propagation of source identity.
-- [ ] Describe all acquisition-quality tests, rejection criteria, and quarantined-input handling.
-- [ ] Explain dated instrument configuration and historical channel/calibration provenance.
+- [x] Fully describe Licel input measurements, structure and acquisition fields.
+- [x] Explain channel identification, detector modes and standardized channel mapping.
+- [x] Document continuous-session construction, actual gap thresholds and date-boundary cases.
+- [x] Explain dark-current association, time tolerance, rejected cases and propagation of source identity.
+- [x] Describe all acquisition-quality tests, rejection criteria, and quarantined-input handling.
+- [x] Explain dated instrument configuration and historical channel/calibration provenance.
 - [ ] Verify solar elevation, day/night classification and contiguous segment interpretation.
-- [ ] Document surface-weather data sources, available measurements and missing-data semantics.
-- [ ] Produce the full Level 0 NetCDF dictionary: coordinates, variables, units, flags and global attributes.
+- [x] Document surface-weather data sources, available measurements and missing-data semantics.
+- [x] Produce the full Level 0 NetCDF dictionary: coordinates, variables, units, flags and global attributes.
 - [ ] Provide a reproducible, scientifically annotated real Level 0 processing example.
 - [ ] Compare Level 0 output and runtime performance against a validated historical baseline.
+
+**Block A/B documentation batch (11 November 2026):** Added
+[operating commands](../docs/operating_milgrau.md),
+[scientific configuration reference](../docs/configuration_reference.md),
+[expanded LIBIDS guide](../docs/libids.md) and the
+[Level 0 NetCDF dictionary](../docs/level0_schema.md).
+Completed B items above mean **code-verified descriptions**, not real-data
+experimental validation. Clean-environment execution, all-era sample runs,
+independent solar numerical checks, baseline equivalence/performance and
+cross-guide editorial acceptance remain unchecked.
 
 ## C. LIPANCORA — Level 1
 
@@ -155,6 +167,25 @@ A section should be marked complete only after it provides, where appropriate:
 **Status:** first-pass guides and revised README written; extensive validation, detailed variable dictionaries and real-data worked examples remain pending.
 
 ---
+
+## Cleanup and deprecation review (non-destructive)
+
+The [cleanup review register](../docs/cleanup_review.md) is maintained alongside
+documentation. Do **not** delete code merely because a module is unused by
+the current CLI: it may be a supported scientific API or retained method.
+
+- [ ] Determine whether `milgrau/level0/solar.py` duplicates the productive
+  solar/segment logic, including all imports and downstream compatibility.
+- [ ] Determine whether preliminary `level2.cloud_screening` should remain
+  an explicitly disabled research API, be integrated or be retired.
+- [ ] Review historical SCC/ERA5/GRIB documentation links and maintain
+  archived scientific provenance rather than deleting the history.
+- [ ] Review `Processing_level` attribute wording for canonical L0 versus SCC
+  interoperability while preserving product-reader compatibility.
+- [ ] Check any classification ambiguity caused by raw paths containing
+  the string `dark` before changing the observed data-selection behavior.
+- [ ] Prepare any code cleanup as a separate, test-backed change with explicit
+  approval; no remote SCC records, raw data or provenance archives removed.
 
 ## Historical development evidence
 
