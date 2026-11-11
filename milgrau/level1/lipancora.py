@@ -306,13 +306,23 @@ def _l1_mode_matches_requested(path: Path, config: Mapping[str, Any]) -> bool:
             source_priority = str(
                 existing.attrs.get("thermodynamic_source_priority", "")
             ).split(",")
+            explicit_mode = str(existing.attrs.get("level1_atmosphere_mode", "")).strip()
             stored_radiosonde = (
-                str(existing.attrs.get("level1_atmosphere_mode", "")).strip()
-                == "radiosonde_only"
-                or "radiosonde" in source_priority
+                explicit_mode == "radiosonde_only"
+                if explicit_mode else ("radiosonde" in source_priority and "era5" not in source_priority)
             )
             requested_radiosonde = config.get("_radiosonde_only_mode", False) is True
-            return stored_radiosonde == requested_radiosonde
+            if stored_radiosonde != requested_radiosonde:
+                return False
+            # An opportunistic queue fallback is a valid L1, but a normal
+            # ERA5-enabled run should be able to upgrade it when CDS recovers.
+            if (
+                not requested_radiosonde
+                and config.get("_era5_network_allowed", True)
+                and str(existing.attrs.get("cds_queue_state", "")) == "high"
+            ):
+                return False
+            return True
     except (OSError, ValueError, KeyError):
         return False
 
