@@ -128,10 +128,17 @@ def build(root: Path = ROOT, output: Path | None = None) -> int:
         if rel == Path("README.md"):
             group, weight, title = "reference", 1, "MILGRAU documentation"
         elif rel.parts[0] == "history":
-            group, weight = "history", 100
+            group = "history"
+            weight = SECTIONS[group][3] * 100 + 10 * (1 + files.index(source))
         else:
             group = GROUP_OF.get(rel.name, "reference")
-            weight = (GROUPS.get(group, []).index(rel.name) + 1) * 10 if rel.name in GROUPS.get(group, []) else 500
+            # Globally distinct weights matter: Lotus Docs' default next/prev
+            # navigation can otherwise jump between sections sharing weight 10.
+            # Each themed group has a stable block; pages follow GROUPS order.
+            base = SECTIONS[group][3] * 100
+            in_group = GROUPS.get(group, [])
+            position = in_group.index(rel.name) + 1 if rel.name in in_group else 90 + files.index(source)
+            weight = base + 10 * position
         _, description, icon, _ = SECTIONS[group]
         where = dest / routes[rel]
         where.parent.mkdir(parents=True, exist_ok=True)

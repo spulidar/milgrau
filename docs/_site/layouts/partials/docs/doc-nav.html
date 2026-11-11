@@ -1,0 +1,57 @@
+{{- /* Explicit reading order for MILGRAU documentation. */ -}}
+{{- $current := . -}}
+{{- $pages := where site.RegularPages "Section" $current.Section -}}
+{{- $pages = $pages.ByWeight -}}
+{{- $previous := false -}}
+{{- $following := false -}}
+{{- range $i, $page := $pages -}}
+    {{- if eq $page.RelPermalink $current.RelPermalink -}}
+        {{- if gt $i 0 -}}
+            {{- $previous = index $pages (sub $i 1) -}}
+        {{- end -}}
+        {{- if lt (add $i 1) (len $pages) -}}
+            {{- $following = index $pages (add $i 1) -}}
+        {{- end -}}
+    {{- end -}}
+{{- end -}}
+{{- if or $previous $following -}}
+<hr class="doc-hr">
+<nav id="doc-nav" class="d-print-none" aria-label="Documentation pagination">
+    <div class="row flex-xl-nowrap">
+        <div class="col-sm-6 pt-2 doc-next">
+            {{- with $previous -}}
+            <a href="{{ .RelPermalink }}" aria-label="Previous: {{ .Title }}">
+                <div class="card h-100 my-1">
+                    <div class="card-body py-2">
+                        <p class="card-title fs-5 fw-semibold lh-base mb-0">
+                            <i class="material-icons align-middle" aria-hidden="true">navigate_before</i>
+                            {{ .Title }}
+                        </p>
+                        {{- if site.Params.docs.navDesc -}}
+                        <p class="card-text ms-2">{{ .Description | truncate (site.Params.docs.navDescTrunc | default 65) }}</p>
+                        {{- end -}}
+                    </div>
+                </div>
+            </a>
+            {{- end -}}
+        </div>
+        <div class="col-sm-6 pt-2 doc-prev">
+            {{- with $following -}}
+            <a href="{{ .RelPermalink }}" aria-label="Next: {{ .Title }}">
+                <div class="card h-100 my-1 text-end">
+                    <div class="card-body py-2">
+                        <p class="card-title fs-5 fw-semibold lh-base mb-0">
+                            {{ .Title }}
+                            <i class="material-icons align-middle" aria-hidden="true">navigate_next</i>
+                        </p>
+                        {{- if site.Params.docs.navDesc -}}
+                        <p class="card-text me-2">{{ .Description | truncate (site.Params.docs.navDescTrunc | default 65) }}</p>
+                        {{- end -}}
+                    </div>
+                </div>
+            </a>
+            {{- end -}}
+        </div>
+    </div>
+</nav>
+{{- end -}}

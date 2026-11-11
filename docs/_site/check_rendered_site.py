@@ -59,6 +59,23 @@ def check() -> None:
     assert not re.search(r'\\\\(?:frac|sigma|Delta|tfrac|mathrm|tau)', math_only), (
         "Doubly escaped LaTeX command found inside a math container"
     )
+    # Verify the doc footer follows the editorial sequence rather than the
+    # default Hugo title ordering (which used to jump to LEBEAR).
+    for current, previous, following in (
+        ("getting-started/getting_started", None, "getting-started/operating_milgrau"),
+        ("getting-started/operating_milgrau", "getting-started/getting_started", "getting-started/configuration_reference"),
+        ("processing/level-0/libids", "getting-started/processing_levels", "processing/level-0/level0_schema"),
+        ("processing/level-1/lipancora", "processing/level-0/level0_validation_workbook", "processing/level-1/level1_schema"),
+    ):
+        page = (PUBLIC / "docs" / current / "index.html").read_text(encoding="utf-8")
+        match = re.search(r'<nav\\b[^>]*\\bid=["\\x27]?doc-nav\\b', page)
+        assert match, f"No documentation navigation on {current}"
+        nav = page[match.start():]
+        nav = nav.split("</nav>", 1)[0]
+        assert following and following in nav, f"Wrong next page for {current}: {following}"
+        if previous:
+            assert previous in nav, f"Wrong previous page for {current}: {previous}"
+
     print("Homepage, Level 1 math delimiters and KaTeX assets: OK")
 
 

@@ -82,5 +82,36 @@ class SiteDocumentationTests(unittest.TestCase):
             self.assertEqual((site / "hugo.toml").read_text(), "Original config")
 
 
+    def test_reading_order_is_global_and_follows_group_sequence(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            docs = root / "docs"
+            docs.mkdir()
+            for filename in (
+                "README.md", "getting_started.md", "operating_milgrau.md",
+                "libids.md", "level0_schema.md", "lipancora.md", "lebear.md",
+            ):
+                (docs / filename).write_text("# " + filename + "\n", encoding="utf-8")
+            self.assertEqual(MODULE.build(root), 7)
+            output = root / "docs/_site/.hugo-content/docs"
+            routes = [
+                "getting-started/getting_started.md",
+                "getting-started/operating_milgrau.md",
+                "processing/level-0/libids.md",
+                "processing/level-0/level0_schema.md",
+                "processing/level-1/lipancora.md",
+                "processing/level-2/lebear.md",
+            ]
+            weights = []
+            for relative in routes:
+                body = (output / relative).read_text(encoding="utf-8")
+                weight = next(
+                    int(line.split(": ", 1)[1])
+                    for line in body.splitlines() if line.startswith("weight: ")
+                )
+                weights.append(weight)
+            self.assertEqual(weights, sorted(set(weights)))
+
+
 if __name__ == "__main__":
     unittest.main()
