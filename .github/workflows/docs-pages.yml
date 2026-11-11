@@ -1,0 +1,99 @@
+name: Documentation — Lotus Docs / Hugo / GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'README.md'
+      - 'scripts/build_docs_site.py'
+      - 'tests/test_hugo_docs_generator.py'
+      - 'hugo.toml'
+      - 'go.mod'
+      - 'data/landing.yaml'
+      - 'layouts/**'
+      - '.github/workflows/docs-pages.yml'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'README.md'
+      - 'scripts/build_docs_site.py'
+      - 'tests/test_hugo_docs_generator.py'
+      - 'hugo.toml'
+      - 'go.mod'
+      - 'data/landing.yaml'
+      - 'layouts/**'
+      - '.github/workflows/docs-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build Lotus Docs documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test single-source generator
+        run: python -m unittest discover -s tests -p 'test_hugo_docs_generator.py' -v
+      - name: Generate ephemeral Hugo pages from docs/
+        run: python scripts/build_docs_site.py
+      - name: Set up Go for Hugo modules
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+          cache: false
+      - name: Set up Hugo Extended
+        uses: peaceiris/actions-hugo@v3
+        with:
+          hugo-version: "0.152.2"
+          extended: true
+      - name: Build documentation website
+        env:
+          HUGO_ENVIRONMENT: production
+        run: hugo --gc --minify --baseURL "https://spulidar.github.io/milgrau/"
+      - name: Verify scientific pages exist
+        shell: bash
+        run: |
+          test -s public/index.html
+          test -s public/docs/index.html
+          test -s public/docs/processing/level-0/libids/index.html
+          test -s public/docs/processing/level-1/lipancora/index.html
+          test -s public/docs/processing/level-1/atmospheric_profiles/index.html
+          test -s public/docs/processing/level-2/lebear/index.html
+      - name: Upload preview HTML artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: milgrau-documentation-html
+          path: public/
+          retention-days: 7
+      - name: Upload Pages deployment artifact
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public/
+
+  deploy:
+    name: Publish to GitHub Pages
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy published documentation
+        id: deployment
+        uses: actions/deploy-pages@v4
