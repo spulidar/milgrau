@@ -7,6 +7,7 @@ from pathlib import Path
 
 from milgrau.cli.common import add_input_argument, finish_cli, run_guarded
 from milgrau.config.loader import load_config
+from milgrau.io.cds_queue import read_cds_queue
 from milgrau.io.logging_utils import bind_log_context, setup_logger
 from milgrau.io.paths import LEVEL0_SUFFIX, LEVEL1_SUFFIX, logging_session_id
 from milgrau.io.selection import parse_input_selection, resolve_product_selection
@@ -35,10 +36,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "Use radiosonde as the productive hourly atmosphere without ERA5/CDS. "
             "Use a 12h window for historical daily 12Z soundings; "
-            "fail if none is valid within that window. "
-            "Write the normal *_L1.nc product marked radiosonde-only; "
-            "LEBEAR rejects it until Level 1 is rerun with ERA5."
+            "fall back to explicit USSA76 if neither Wyoming nor IGRA2 is available. "
+            "Write the normal *_L1.nc with source provenance; LEBEAR accepts it."
         ),
+    )
+    parser.add_argument(
+        "--cds-queue-threshold", type=int, default=8000,
+        help="Heuristic threshold for public CDS queued requests (default: 8000). "
+             "Above it, read cached ERA5 only and use radiosonde/USSA76 for missing hours.",
+    )
+    parser.add_argument(
+        "--no-cds-queue-check", action="store_true",
+        help="Do not inspect the experimental public CDS dashboard; use normal ERA5.",
     )
     parser.add_argument("--version", action="version", version=f"MILGRAU {__version__}")
     return parser
@@ -143,10 +152,10 @@ def _radiosonde_only_config(config: dict) -> dict:
     atmosphere = dict(config["level1"]["atmosphere"])
     if not isinstance(atmosphere.get("radiosonde"), dict):
         raise ValueError("Radiosonde-only mode requires level1.atmosphere.radiosonde configuration.")
-    atmosphere["source_priority"] = ["radiosonde"]
+    atmosphere["source_priority"] = ["radiosonde", "ussa76"]
     atmosphere.pop("era5", None)
-    # Historic SPU radiosondes are often 12Z-only. Require an *observed*
-    # sounding within 12h, without fabricating absent 00Z measurements.
+    # Historic SPU radiosondes are often 12Z-only. Seek observations within
+    # 12h, falling back to identified USSA76 where neither source has coverage.
     # The ordinary ERA5/QA configuration retains its six-hour tolerance.
     radiosonde = dict(atmosphere["radiosonde"])
     radiosonde["max_time_delta_hours"] = 12.0
@@ -155,7 +164,47 @@ def _radiosonde_only_config(config: dict) -> dict:
         **config,
         "level1": {**config["level1"], "atmosphere": atmosphere},
         "_radiosonde_only_mode": True,
+        "_era5_network_allowed": False,
+        "_atmosphere_selection_reason": "explicit_radiosonde_only",
     }
+
+
+def _apply_cds_queue_policy(config: dict, args: argparse.Namespace, logger) -> dict:
+    """Only disable new CDS downloads; validated cached ERA5 remains first."""
+    if args.figures_only or args.radiosonde_only or args.no_cds_queue_check:
+        return config
+    if args.cds_queue_threshold < 0:
+        raise ValueError("--cds-queue-threshold must be nonnegative.")
+    atmosphere = config["level1"]["atmosphere"]
+    if "era5" not in atmosphere["source_priority"]:
+        return config
+    try:
+        snapshot = read_cds_queue()
+    except (OSError, ValueError, TimeoutError) as exc:
+        logger.warning("CDS global queue unknown (%s): keep standard ERA5 policy", exc)
+        return {**config, "_cds_queue_state": "unknown"}
+    high = snapshot.queued_requests > args.cds_queue_threshold
+    logger.info(
+        "CDS global queued requests=%d | threshold=%d | %s",
+        snapshot.queued_requests, args.cds_queue_threshold,
+        "cache-only ERA5" if high else "standard ERA5",
+    )
+    selected = {
+        **config,
+        "_cds_queue_state": "high" if high else "normal",
+        "_cds_queue_requests": snapshot.queued_requests,
+        "_cds_queue_threshold": args.cds_queue_threshold,
+        "_era5_network_allowed": not high,
+        "_atmosphere_selection_reason": "cds_queue_high" if high else "cds_queue_normal",
+    }
+    if high:
+        # 12Z-only historical SPU soundings can cover evening observations.
+        updated = dict(atmosphere)
+        radio = dict(updated["radiosonde"])
+        radio["max_time_delta_hours"] = max(12.0, float(radio["max_time_delta_hours"]))
+        updated["radiosonde"] = radio
+        selected["level1"] = {**config["level1"], "atmosphere": updated}
+    return selected
 
 
 def main() -> int:
@@ -171,8 +220,10 @@ def main() -> int:
     bind_log_context(logger, stage="start").info("LIPANCORA Level 1")
     if args.radiosonde_only:
         bind_log_context(logger, stage="atmosphere").info(
-            "radiosonde-only | 12h observed sounding window | no ERA5/CDS | L2 blocked"
+            "radiosonde-only | 12h observed window | Wyoming -> IGRA2 -> USSA76 | no CDS"
         )
+    else:
+        config = _apply_cds_queue_policy(config, args, logger)
     operation = (
         (lambda: _process_figures_only(args, config, logger))
         if args.figures_only
