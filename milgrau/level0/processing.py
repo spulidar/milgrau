@@ -318,9 +318,8 @@ def _weather_for_measurement_rows(
         target = pd.to_datetime(
             measurement_rows["start_time_utc"], utc=True
         ).min()
-        # Timestamp integer values use their dtype's unit in pandas 3.x.
-    # Normalize to nanoseconds before comparing to Unix seconds / Timestamp.value.
-    nearest = int(np.argmin(np.abs(times.as_unit("ns").asi8 - target.value)))
+        # Pandas may retain microseconds; compare both timestamps in ns.
+        nearest = int(np.argmin(np.abs(times.as_unit("ns").asi8 - target.value)))
         indices = np.asarray([nearest], dtype=np.int64)
 
     result = dict(weather_data)
