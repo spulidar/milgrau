@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, milgraumaxxing]
+    branches: [main, milgraumaxxing, integration/scc-atmosphere-20261111]
   pull_request:
 
 permissions:
