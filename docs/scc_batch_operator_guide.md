@@ -1,119 +1,20 @@
-# SCC operator guide — session-local inputs and explicit uploads
+# SCC operator guide — preparing and comparing external lidar processing
 
-The SCC is an **optional external service**, disabled by default on the
-integration branch. Explicitly set `scc.enabled: true` in `config.yaml` to
-stage SCC packets. No LIBIDS/LIPANCORA call uploads to SCC.
+The **Single Calculus Chain (SCC)** is an optional external processing system. MILGRAU can prepare SCC-compatible lidar input packages, monitor processing and download completed products for comparison.
 
-## Filesystem layout
+**MILGRAU Level 0/1/2 scientific NetCDFs are independent of the SCC.** Processing a session with LIBIDS/LIPANCORA does not upload it to an external server.
 
-A continuous scientific session can contain several day/night or UTC-month
-SCC Measurement_IDs. The canonical science products remain independent.
+## 1. Enable the optional workflow
 
-```text
-02-processed_data/spu/YYYY/MM/spu_.../
-├── spu_..._L0.nc
-├── spu_..._L1.nc
-├── spu_..._L2.nc
-├── figures/
-└── scc/
-    ├── scc-inputs/
-    │   ├── 20240913spu1549/
-    │   │   ├── 20240913spu1549.nc
-    │   │   ├── lr_20240913spu15.nc
-    │   │   └── manifest.json
-    │   └── <other Measurement_ID>/
-    └── scc-results/
-        └── <Measurement_ID>/generations/remote-<hash>/
-            ├── elpp.archive
-            ├── elda.archive
-            └── results.json
-```
+Install the additional SCC HTTP client only if needed:
 
-An optional `rs_YYYYMMDDcccNN.nc` sounding file can also be in each input.
-The input directory is session-local, not `.cache/scc/pending/`.
-The append-only SQLite operations journal and explicit remote archives remain
-in `.state/scc/`, ignored by Git. Scientific processing does not depend on it.
+~~~bash
+python -m pip install -e ".[scc]"
+~~~
 
-**Existing legacy `.cache/scc/pending/` packages are not moved or erased
-automatically.** Re-export from the canonical sessions or move verified
-packages after checking manifest identity, hashes and the destination. Keep
-the original local evidence until reconciled.
+In `config.yaml`:
 
-## Standard, non-destructive operations
-
-```bash
-milgrau-libids
-milgrau-lipancora
-milgrau-scc upload --dry-run
-milgrau-scc status
-milgrau-scc status --remote
-milgrau-scc download
-
-# Exact SCC ID:
-milgrau-scc status --id MEASUREMENT_ID --remote
-milgrau-scc download --id MEASUREMENT_ID
-
-# Send one new ID; never silently replace existing remote IDs:
-milgrau-scc upload --id MEASUREMENT_ID --confirm
-
-# Send all staged absent IDs, skipping remote-existing ones:
-milgrau-scc upload --confirm
-```
-
-Bulk status/download examines locally staged and journalled IDs; it does
-not enumerate every record held by the remote SCC. Bulk download only
-fetches remotely completed ELPP and ELDA (both status code 127).
-
-## Explicit same-ID replacement — backup is OPTIONAL
-
-```bash
-# Inspect the remote ID (read-only):
-milgrau-scc status --id MEASUREMENT_ID --remote
-
-# Optional: manually preserve a remote snapshot before replacement:
-milgrau-scc status --id MEASUREMENT_ID --remote --backup
-
-# Intentionally delete and re-upload without requiring a remote backup:
-milgrau-scc upload --id MEASUREMENT_ID --replace-existing --confirm
-```
-
-`--confirm` paired with `--replace-existing` explicitly waives the
-pre-deletion backup requirement. **Existing remote inputs/results can be
-irreversibly lost.** This is not an atomic operation: DELETE may succeed
-and the subsequent POST may fail. Remote identity, fingerprint, staged
-file checksums and durable event recording still apply.
-
-With no `--id`, `upload --confirm --replace-existing` can replace
-**every staged ID also present remotely**. Use a single ID first if
-that is not what you intend.
-
-A response lost after DELETE or POST is *uncertain*, not proof of
-success/failure. Ordinary `--confirm` does not silently clear a prior
-uncertain journal entry or retry its destructive operation. In
-particular, an interrupted **DELETE** can be reconciled without a backup
-*only* if the same journal revision records the explicit no-backup waiver,
-its remote fingerprint and the uncertain DELETE outcome. After independently
-checking the SCC portal and confirming API absence for that ID, use:
-
-```bash
-milgrau-scc upload --id MEASUREMENT_ID --resume-after-delete --confirm
-```
-
-This does **not** repeat DELETE; it performs at most one new POST and verifies
-the resulting remote record. If the ID is present, staged hashes differ,
-the waiver/audit trail is missing or the SCC lookup fails, it aborts without
-uploading. Any uncertain POST remains blocked; never repeat `upload --confirm`
-to guess the outcome. The historical second-POST repair options have been
-removed; an uncertain POST must be independently investigated rather
-than resubmitted through a generic retry switch.
-
-## Simplified SCC CLI and HTTP configuration
-
-The three supported commands are `upload`, `status`, and `download`.
-For remote HTTP requests, `config.yaml` has an explicit read-only retry
-configuration:
-
-```yaml
+~~~yaml
 scc:
   enabled: true
   config_file: "scc.yaml"
@@ -121,43 +22,135 @@ scc:
   http:
     timeout_seconds: 60
     get_retries: 2
-```
+~~~
 
-`get_retries` applies **only to GET**, not to login, upload, or DELETE
-POSTs. `scc.upload.automatic`, `scc.upload.retries` and
-`--continue-on-error` have been removed. Every batch stops on its
-first operational SCC/journal error. Local input validation still checks
-each staged package before making remote requests.
+The default is `enabled: false`. The separate `scc.yaml` contains SCC server, product and channel identifiers; check it against the actual instrument era and remotely configured SCC products. It contains **no credentials**. Authentication is supplied separately through the supported environment-based mechanism.
 
-## Soundings and operational input retention
+The SCC input file identity is not the same as the MILGRAU continuous session identifier. A long session may span solar regimes or months and produce several SCC `Measurement_ID` packages.
 
-New packets are finalized automatically after LIPANCORA when observed
-radiosondes are enabled in `scc.yaml`. Filenames must match SCC's
-`lr_YYYYMMDDcccNN.nc` and `rs_YYYYMMDDcccNN.nc` formats.
-Only independently verified observations from Wyoming or NOAA IGRA2 may be
-included, preserving the true provider and observed launch. Neither ERA5
-nor USSA76 may be fabricated as a measured sounding.
+## 2. Prepare scientific data locally
 
-There are three main commands: `upload`, `status`, and `download`.
-The former `sounding`, `sounding-repair`, `upload --migrate-cache`,
-`upload --repair-lr-cache` and incident-only retry options are removed.
-Use `milgrau-scc upload --dry-run` for a read-only validation of the
-current session inputs. Only `upload --id ID --resume-after-delete --confirm`
-remains as guarded reconciliation of a genuinely uncertain DELETE;
-uncertain POST outcomes never trigger automatic retries.
+Process the selected session as usual:
 
-Inputs in `<Session_ID>/scc/scc-inputs/<Measurement_ID>/` are now
-**persistent**, not cache. The SCC CLI never deletes them after upload
-or download, and neither `cleanup` nor `download --keep-cache` exists.
+~~~bash
+milgrau-libids -i SESSION_ID
+milgrau-lipancora -i SESSION_ID
+~~~
 
-If local disk space requires manual input removal, identify the **exact**
-session and Measurement_ID, confirm the remote status and full journal
-(including any uncertain POST/DELETE), and preserve any needed hashes,
-manifest, scientific provenance and historical evidence first. Do not
-delete an input needed for retry/reexport/reconciliation. Only the
-operator may remove that specific `scc-inputs/<Measurement_ID>/` directory.
-Never treat `.state/scc/`, `scc-results/`, canonical L0/L1/L2, figures or
-raw Licel measurements as removable SCC input cache.
+If SCC was enabled only after a valid canonical Level 0 already existed, reexport the SCC inputs without rewriting the canonical scientific Level 0:
 
-See [technical SCC details](scc_native_client.md) for rare recovery and
-legacy migration procedures.
+~~~bash
+milgrau-libids -i SESSION_ID --scc-reexport
+~~~
+
+Do not combine `--scc-reexport` with `--force`. SCC reexport is an interoperability operation, not a new scientific acquisition or a license to modify the original Level 0.
+
+The local package can contain:
+
+| SCC member | Meaning |
+| --- | --- |
+| `MEASUREMENT_ID.nc` | SCC-compatible raw lidar measurement |
+| `lr_YYYYMMDDcccNN.nc` | Lidar-ratio ancillary input where applicable |
+| `rs_YYYYMMDDcccNN.nc` | Observed radiosonde ancillary input, when available and validated |
+| `manifest.json` | Local package identity, source and file checksums |
+
+The selected SCC configuration/product identifiers and available instrument channels determine which files can be prepared.
+
+## 3. Soundings: observation only
+
+An SCC sounding is **not** synthesized from ERA5 or USSA76. If observational sounding use is enabled in `scc.yaml`, its preparation is finalized after LIPANCORA verifies the appropriate observation.
+
+The preferred observational sequence is **Wyoming → local NOAA IGRA2**. The SCC ancillary retains the actual observed launch time, station identity and provider. It is linked to the observation used by Level 1 QA, including verified cache identity; a changed/mismatched observation is rejected rather than silently substituted.
+
+When no eligible observed sounding exists, the configured SCC missing-sounding policy applies. A normal MILGRAU Level 1 that used USSA76 is **not** evidence that a measured sounding exists for SCC.
+
+## 4. Inspect and validate local SCC inputs
+
+Run a fully local preflight first:
+
+~~~bash
+milgrau-scc upload --dry-run
+milgrau-scc upload --id MEASUREMENT_ID --dry-run
+milgrau-scc status
+~~~
+
+The dry run validates staged packages **without contacting the SCC server**. Local status shows the known staged/journal records; it is not a complete inventory of all remotely hosted SCC measurements.
+
+Local packages remain in the scientific session directory:
+
+~~~text
+02-processed_data/spu/YYYY/MM/SESSION_ID/
+  SESSION_ID_L0.nc
+  SESSION_ID_L1.nc
+  SESSION_ID_L2.nc
+  scc/
+    scc-inputs/
+      MEASUREMENT_ID/
+        MEASUREMENT_ID.nc
+        lr_YYYYMMDDcccNN.nc
+        rs_YYYYMMDDcccNN.nc   # if an observed sounding was validated
+        manifest.json
+    scc-results/
+      MEASUREMENT_ID/
+        generations/
+~~~
+
+Not every package contains all optional ancillaries. A prepared package does **not** prove that SCC has received or processed it.
+
+## 5. Remote status, explicit upload and results
+
+Remote interaction requires authorized credentials and a correctly configured SCC endpoint.
+
+Read-only checks:
+
+~~~bash
+milgrau-scc status --id MEASUREMENT_ID --remote
+~~~
+
+Upload **one** validated measurement only after confirming the remote ID and authorizing the action:
+
+~~~bash
+milgrau-scc upload --id MEASUREMENT_ID --confirm
+~~~
+
+A batch upload without `--id` may act on all eligible staged packages; do not use it as a substitute for first checking one ID.
+
+Once the SCC has completed its required processing stages, download available results:
+
+~~~bash
+milgrau-scc download --id MEASUREMENT_ID
+~~~
+
+Downloaded results and their provenance are stored under the session's `scc/scc-results/` directory. Successful transport/processing status does not automatically establish numerical agreement with MILGRAU.
+
+The SCC includes stages such as ELPP (preprocessing) and ELDA (optical retrieval). A remote record may be present without both stages having completed successfully.
+
+## 6. Protect remote and local records
+
+- An SCC upload is **explicit**, never triggered by ordinary LIBIDS/LIPANCORA/LEBEAR processing.
+- Do not replace an existing remote ID simply because a new local file has the same name. Replacement may delete existing inputs/results and cannot be assumed reversible.
+- A network interruption during POST or DELETE may leave the outcome uncertain. Inspect the remote state and recorded evidence before any recovery.
+- Do not manually remove local journals, historical archives or canonical L0/L1/L2 as if they were disposable caches.
+- Keep SCC input manifests and downloaded generations when they support scientific comparisons or operational recovery.
+
+The advanced [SCC protocol and incident reference](scc_native_client.md) documents rare replacement and uncertain-state recovery. Those actions should not be used in a routine scientific workflow.
+
+## 7. Comparing MILGRAU and SCC scientifically
+
+A valid comparison should document:
+
+1. The same raw observation and time interval.
+2. The SCC configuration and channel/product mapping.
+3. Dark current, background and instrument correction assumptions.
+4. Actual atmospheric source, observation date and sounding height coverage.
+5. Lidar ratio, molecular reference and extinction assumptions.
+6. Wavelength, temporal averaging, vertical resolution and supported altitude.
+7. Both products' uncertainty and quality flags.
+
+SCC and MILGRAU do not necessarily implement identical reductions or inversion assumptions. Differences are scientific questions to investigate, not automatically software failures.
+
+## Before reporting successful SCC validation
+
+Confirm that the relevant ELPP/ELDA stages completed for the selected remote ID, downloaded files are present and interpretable, and source/manifest identities match the intended observation. A local dry run or a remote upload acknowledgement alone does not close this validation.
+
+See [Processing levels](processing_levels.md), [Scientific quality](scientific_quality.md) and the [SCC interoperability reference](scc_level0_interoperability.md).
