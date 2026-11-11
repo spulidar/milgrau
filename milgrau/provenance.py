@@ -288,6 +288,13 @@ def thermodynamic_source_provenance(
             product = "upper_air_sounding"
             release = "service_unversioned"
         doi = ""
+    elif source_type == "time_resolved" and len(sources_present) > 1:
+        # A mixed L1 must never claim ERA5, NOAA or Wyoming as its sole
+        # provider; the exact per-hour identity is recorded separately.
+        provider = "mixed_atmospheric_sources"
+        product = "hourly_molecular_atmosphere"
+        release = "_".join(sorted(sources_present))
+        doi = ""
     elif source_type == "time_resolved" and sources_present == {"ussa76"}:
         provider = "us_standard_atmosphere"
         product = "standard_atmosphere"
