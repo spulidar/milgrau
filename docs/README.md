@@ -16,6 +16,8 @@ MILGRAU turns atmospheric lidar observations into progressively more interpreted
 | --- | --- |
 | [LIBIDS / Level 0](libids.md) | Which measurements were included? Which instrument and dark-current data were associated? |
 | [Level 0 variables](level0_schema.md) | What are the dimensions, units, availability and provenance rules of a Level 0 NetCDF? |
+| [Solar regime validation](solar_regimes.md) | How is geometric solar elevation checked and how are contiguous segments interpreted? |
+| [L0 verification workbook](level0_validation_workbook.md) | Which synthetic checks pass and how will historical real-data comparison be documented? |
 | [LIPANCORA / Level 1](lipancora.md) | How were signals corrected, uncertainties estimated and molecular atmosphere represented? |
 | [Atmospheric profiles](atmospheric_profiles.md) | When does MILGRAU use ERA5, Wyoming, IGRA2 or USSA76, and what was actually used? |
 | [LEBEAR / Level 2](lebear.md) | How are aerosol optical coefficients retrieved, with what assumptions and valid support? |
