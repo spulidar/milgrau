@@ -53,6 +53,7 @@ def finalize_session_soundings(
         qa_target = str(getattr(ds, "radiosonde_qa_target_datetime_utc", ""))
         qa_origin = str(getattr(ds, "radiosonde_qa_observation_source", ""))
         qa_cache_name = str(getattr(ds, "radiosonde_qa_cache_csv_name", ""))
+        qa_cache_sha256 = str(getattr(ds, "radiosonde_qa_cache_csv_sha256", ""))
         qa_max_time_delta_hours = getattr(ds, "radiosonde_qa_max_time_delta_hours", None)
         l1_session = str(getattr(ds, "Session_ID", ""))
     packets = level0_path.parent / "scc" / "scc-inputs"
@@ -88,6 +89,7 @@ def finalize_session_soundings(
         result = _finalize_one(
             config, path, available=available, qa_target=qa_target,
             qa_origin=qa_origin, qa_cache_name=qa_cache_name,
+            qa_cache_sha256=qa_cache_sha256,
             qa_max_time_delta_hours=qa_max_time_delta_hours, logger=logger,
         )
         results.append(result)
@@ -98,7 +100,7 @@ def _finalize_one(
     config: Mapping[str, Any], path: Path, *,
     available: bool, qa_target: str, logger: logging.Logger,
     qa_origin: str = "", qa_cache_name: str = "",
-    qa_max_time_delta_hours: float | None = None,
+    qa_cache_sha256: str = "", qa_max_time_delta_hours: float | None = None,
 ) -> str:
     identity = path.name
     root = state_root(config)
@@ -145,6 +147,7 @@ def _finalize_one(
                     observed_target_utc=qa_target,
                     observed_origin=qa_origin or None,
                     observed_cache_csv_name=qa_cache_name or None,
+                    expected_cache_sha256=qa_cache_sha256 or None,
                     validated_max_time_delta_hours=qa_max_time_delta_hours,
                     measurement_stop_utc=manifest["measurement_stop_utc"],
                 )
