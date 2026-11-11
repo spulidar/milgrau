@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import re
 import shutil
@@ -76,7 +77,8 @@ def links(body: str, relative: Path, routes: dict[Path, Path], root: Path) -> st
             return f"[{label}]({GITHUB}{repo_file.as_posix()}{sep}{fragment})"
         if rel_source in routes:
             route = routes[rel_source].as_posix()
-            return "[" + label + "]({{< relref \"" + route + "\" >}}" + sep + fragment + ")"
+            href = '{{< relref "' + route + '" >}}' + (sep + fragment if sep else "")
+            return '<a href="' + href + '">' + html.escape(label) + '</a>'
         return match.group(0)
 
     output, fenced = [], False
