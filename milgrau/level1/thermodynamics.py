@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Mapping
 
 import numpy as np
@@ -16,6 +17,7 @@ from milgrau.io.era5 import (
     prefetch_era5_pressure_level_profiles,
 )
 from milgrau.io.logging_utils import bind_log_context
+from milgrau.io.paths import resolve_project_path
 from milgrau.io.radiosonde import fetch_wyoming_radiosonde
 from milgrau.level1.common import finite_or_fill
 from milgrau.level1.config import (
@@ -26,6 +28,7 @@ from milgrau.level1.config import (
 )
 from milgrau.level1.tropopause import calculate_tropopause_heights
 from milgrau.physics.atmosphere import get_standard_atmosphere
+from milgrau.provenance import file_sha256
 
 
 def _clean_profile(df: pd.DataFrame) -> pd.DataFrame:
@@ -345,6 +348,23 @@ def _attach_radiosonde_qa(
         logger.debug("radiosonde QA profile failure", exc_info=True)
         return final_ds
 
+    # Bind the SCC ancillary to the *bytes* verified by LIPANCORA, not
+    # only a provider name/time: a shared cache may change between stages.
+    qa_cache_sha256 = ""
+    csv_name = str(metadata.get("csv_file", ""))
+    target_raw = metadata.get("target_datetime_utc")
+    if csv_name and Path(csv_name).name == csv_name and target_raw is not None:
+        launch = pd.Timestamp(target_raw)
+        if launch.tzinfo is not None:
+            launch = launch.tz_convert("UTC")
+            cache_path = (
+                resolve_project_path(policy.radiosonde.cache_dir)
+                / launch.strftime("%Y")
+                / launch.strftime("%m")
+                / csv_name
+            )
+            if cache_path.is_file() and not cache_path.is_symlink():
+                qa_cache_sha256 = file_sha256(cache_path)
     final_ds["Radiosonde_QA_Temperature_K"] = (("altitude",), temperature_k)
     final_ds["Radiosonde_QA_Pressure_hPa"] = (("altitude",), pressure_hpa)
     final_ds["Radiosonde_QA_Temperature_K"].attrs["units"] = "K"
@@ -360,7 +380,8 @@ def _attach_radiosonde_qa(
                 "igra2" if metadata.get("historical_archive") else "wyoming_siphon"
             ),
             "radiosonde_qa_archive": str(metadata.get("historical_archive", "")),
-            "radiosonde_qa_cache_csv_name": str(metadata.get("csv_file", "")),
+            "radiosonde_qa_cache_csv_name": csv_name,
+            "radiosonde_qa_cache_csv_sha256": qa_cache_sha256,
             "radiosonde_qa_max_time_delta_hours": float(policy.radiosonde.max_time_delta_hours),
             "radiosonde_qa_source_profile_min_altitude_asl_m": float(
                 metadata.get("source_profile_min_altitude_asl_m", np.nan)
