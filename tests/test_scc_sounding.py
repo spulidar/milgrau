@@ -239,3 +239,18 @@ def test_scc_refuses_mislabeled_igra_cache_as_wyoming(tmp_path) -> None:
             observed_cache_csv_name=csv.name,
         )
     assert list(stage.iterdir()) == []
+
+
+def test_scc_refuses_cache_bytes_changed_since_lipancora(tmp_path) -> None:
+    cfg = config(tmp_path)
+    csv = cached_csv(cfg)
+    staging = tmp_path / "cache_hash_mismatch"
+    staging.mkdir()
+    with pytest.raises(ValueError, match="SHA-256 mismatch"):
+        stage_cached_sounding(
+            staging, ID, START, cfg,
+            observed_target_utc=TARGET,
+            observed_cache_csv_name=csv.name,
+            expected_cache_sha256="0" * 64,
+        )
+    assert list(staging.iterdir()) == []
