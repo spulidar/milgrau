@@ -360,6 +360,8 @@ def _attach_radiosonde_qa(
                 "igra2" if metadata.get("historical_archive") else "wyoming_siphon"
             ),
             "radiosonde_qa_archive": str(metadata.get("historical_archive", "")),
+            "radiosonde_qa_cache_csv_name": str(metadata.get("csv_file", "")),
+            "radiosonde_qa_max_time_delta_hours": float(policy.radiosonde.max_time_delta_hours),
             "radiosonde_qa_source_profile_min_altitude_asl_m": float(
                 metadata.get("source_profile_min_altitude_asl_m", np.nan)
             ),
