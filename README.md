@@ -1,250 +1,198 @@
-# MILGRAU 🌩️
+# MILGRAU
 
-**Multi-Indexed LALINET GeneRAlized and Unified algorithm**
+**Multi-Indexed LALINET GeneRAlized and Unified Algorithm**
 
-MILGRAU is a Python processing suite for atmospheric elastic/Raman lidar data, developed around the long-term SPU-Lidar record operated by IPEN/USP in São Paulo, Brazil. It converts raw Licel acquisitions into traceable Level 0, Level 1 and elastic Level 2 scientific products while keeping instrument history, atmospheric state, retrieval assumptions, uncertainty semantics and provenance visible.
+*Scientific processing of atmospheric lidar observations.*
 
+MILGRAU is a scientific processing suite developed for atmospheric lidar measurements, with emphasis on the historical SPU-Lidar dataset operated by IPEN/USP in São Paulo, Brazil.
 
-## Processing path
+The software processes raw Licel acquisitions into standardized measurements, corrected lidar signals, and aerosol optical products, preserving the information needed to interpret and reproduce the scientific results.
 
-```mermaid
-flowchart LR
-    R[Raw Licel] --> L0[LIBIDS\nLevel 0]
-    L0 --> N0[Standardized raw NetCDF]
-    N0 --> L1[LIPANCORA\nLevel 1]
-    M[ERA5 / Radiosonde / USSA76\n Atmospheric input] --> L1
-    L1 --> N1[Corrected signal + Range Corrected Signal + Atmosphere]
-    N1 --> L2[LEBEAR\nLevel 2]
-    L2 --> N2[Klett-Fernald-Sasano \n Attenuation + Backscatter + Scattering Ratio]
-    L1 --> F1[LIPANCORA figures\nRCS / MeanRCS / Atmosphere]
-    L2 --> F2[LEBEAR figures\nOptical / Molecular / Gluing]
-    N1 --> V[Explorer\nInteractive inspection]
-    N2 --> V
-```
+## Scientific processing workflow
 
-| Stage | Command | Main product |
+MILGRAU has three main processing levels:
+
+| Level | Program | Scientific purpose |
 | --- | --- | --- |
-| Level 0 | `milgrau-libids` | standardized raw acquisition NetCDF |
-| Level 1 | `milgrau-lipancora` | corrected signal/RCS, uncertainty and canonical atmosphere |
-| Level 1 figures | `milgrau-lipancora` | RCS quicklooks, MeanRCS and atmospheric comparison |
-| Level 2 | `milgrau-lebear` | selected/glued signal, molecular fields and elastic aerosol optical products |
-| Web Explorer | `milgrau-explorer` | local read-only Level 1 signal inspection (Phase 1) |
+| Level 0 | LIBIDS | Organize, validate and standardize lidar measurements |
+| Level 1 | LIPANCORA | Apply instrumental corrections and characterize the molecular atmosphere |
+| Level 2 | LEBEAR | Retrieve aerosol optical properties using elastic lidar measurements |
 
-See [`docs/processing_levels.md`](docs/processing_levels.md) for the stable contract of each stage.
+Each processing level produces a NetCDF dataset containing scientific results, relevant quality diagnostics and provenance information.
 
-## Current Level 2 scientific baseline
+### Level 0 — LIBIDS
 
-The Level 2 uses **two-sided elastic Klett–Fernald–Sasano** retrieval for configured elastic wavelengths. It preserves the validated backward branch below the selected molecular reference and retrieves forward only while contiguous measured support and the Fernald numerics remain valid. Current method includes:
+LIBIDS reads raw Licel measurements and organizes them into continuous observation sessions.
 
-- one common support mask for signal means and their reported uncertainties;
-- missing signal uncertainty is unsupported, never silently converted to zero Monte Carlo noise;
-- molecular calculations use the complete pressure/temperature atmosphere materialized at Level 1;
-- Rayleigh reference diagnostics plus backward/forward KFS validity and endpoints are explicit;
-- aggregate optical uncertainty does not treat mixed lidar-ratio/reference nuisance terms as independent noise;
-- elastic extinction is conditional on the assumed aerosol lidar ratio;
-- unsupported optical bins remain `NaN`; the method does not pad or promise a fixed retrieval top.
+Its main tasks include:
 
-The current product and uncertainty policy are documented in [`docs/level2_schema.md`](docs/level2_schema.md). The mapping from scientific claims to code, tests, product metadata and primary literature is in [`docs/scientific_traceability.md`](docs/scientific_traceability.md).
+- Identifying measurements and their acquisition periods.
+- Applying acquisition-quality checks.
+- Associating appropriate dark-current measurements.
+- Identifying the instrument configuration and available channels.
+- Recording observation times and solar conditions.
+- Preserving raw signals and their measurement context.
+
+**Scientific output:** a standardized Level 0 NetCDF dataset that preserves the measurement information required for subsequent processing.
+
+### Level 1 — LIPANCORA
+
+LIPANCORA converts Level 0 measurements into instrumentally corrected lidar signals.
+
+Processing includes instrumental corrections, background estimation, uncertainty propagation and range correction.
+
+It also constructs time-resolved temperature and pressure profiles on the lidar altitude grid.
+
+**Scientific output:** corrected signals, range-corrected signals (RCS), measurement uncertainties, atmospheric profiles and quality diagnostics.
+
+### Level 2 — LEBEAR
+
+LEBEAR uses corrected signals and the molecular atmosphere to retrieve aerosol optical properties.
+
+The current method uses a two-sided elastic Klett–Fernald–Sasano inversion, with explicit molecular-reference selection and uncertainty evaluation.
+
+The main scientific products include:
+
+- Aerosol backscatter coefficients.
+- Aerosol extinction coefficients conditional on the assumed lidar ratio.
+- Scattering ratio.
+- Molecular backscatter and extinction.
+- Retrieval validity and uncertainty diagnostics.
+
+**Scientific output:** time- and altitude-resolved aerosol optical products, including their assumptions, uncertainty information and valid retrieval coverage.
+
+## Atmospheric information
+
+The molecular atmosphere used in lidar inversion is determined during Level 1 processing.
+
+The configured source preference is:
+
+**ERA5 → Wyoming radiosonde → NOAA IGRA2 → US Standard Atmosphere 1976 (USSA76).**
+
+ERA5 is preferred. Validated ERA5 data already in cache remain usable even during CDS congestion.
+
+MILGRAU can inspect the public CDS queue indicator before requesting missing ERA5 data. When the reported queue is high, it avoids new CDS requests and uses available observational or standard-atmosphere fallbacks.
+
+The `--radiosonde-only` option bypasses ERA5 and uses Wyoming, followed by IGRA2 and USSA76 if required.
+
+The scientific products record the actual atmospheric source, radiosonde provider, temporal information and standard-atmosphere contribution. See [Atmospheric profiles](docs/atmospheric_profiles.md) for selection criteria and scientific limitations.
 
 ## Installation
 
 MILGRAU requires **Python 3.12 or newer**.
 
-```bash
+Clone the repository and select the desired version. For the current integration branch:
+
+~~~bash
 git clone https://github.com/spulidar/milgrau.git
 cd milgrau
-git checkout milgraumaxxing
-python -m venv .venv
-```
+git checkout integration/scc-atmosphere-20261111
+python -m pip install -e .
+~~~
 
-Activate the environment and install the package:
+Optional remote SCC support:
 
-```bash
-pip install .
-```
+~~~bash
+python -m pip install -e ".[scc]"
+~~~
 
-For editable development/testing:
+Configure `config.yaml` and `station.yaml` before processing. See [Getting started](docs/getting_started.md).
 
-```bash
-pip install -e ".[dev,explorer,web]"
-```
+## Running MILGRAU
 
-For a shared MILGRAU + `spulidar/measurements` workspace, use `pip install -e ".[web]"`.
-The `web` extra adds the publisher's optional cloud SDK (`boto3`); it does
-**not** move website logic into MILGRAU. The `explorer` selector is intentionally
-empty because Explorer dependencies are already in core. During development
-of `measurements/publication-v2`, run only `--stage-only`: do not access
-the production R2 bucket or modify `measurements/main`. See
-[`docs/publication_integration.md`](docs/publication_integration.md).
+### Process all available measurements
 
-ERA5 support is installed with the core package because it is the productive
-Level 1 atmospheric backbone. Credentials are not stored in MILGRAU YAML or
-NetCDF provenance; use the normal provider-supported `cdsapi` credential
-mechanism.
+Run the programs in order:
 
-The Web Explorer is included in the **core installation**, with FastAPI,
-Uvicorn and Plotly; Streamlit and an optional explorer extra are no longer used.
-Start the read-only local browser interface with `milgrau-explorer` from the
-project directory containing `config.yaml`, then open http://127.0.0.1:8765.
-See [`docs/explorer.md`](docs/explorer.md) for scope and API details.
-
-## Quick start
-
-With `config.yaml` and `station.yaml` resolved for the project:
-
-```bash
+~~~bash
 milgrau-libids
 milgrau-lipancora
 milgrau-lebear
-```
+~~~
 
-If Level 1 already exists and only figures need to be generated or repaired:
+### Process one observation session
 
-```bash
-milgrau-lipancora --figures-only -i spu_20250511-0012Z_20250511-0737Z
-```
+For example, `spu_20250511-0012Z_20250511-0737Z`:
 
-Without `--force`, only missing/outdated figures are rendered. Add
-`--force` to regenerate every Level 1 figure. Re-running normal
-`milgrau-lipancora` also checks/repairs figures when the scientific L1 is
-already current.
-
-Level 1 heatmaps use plot-only display decimation and chunked mean-profile
-statistics to keep memory bounded on long sessions; the scientific NetCDF
-remains full resolution.
-
-MILGRAU identifies scientific acquisitions as **continuous sessions**, not civil-time
-publication windows. The canonical session ID is:
-
-`station_YYYYMMDD-HHMMZ_YYYYMMDD-HHMMZ`
-
-For example:
-
-`spu_20250511-0012Z_20250511-0737Z`
-
-The timestamps are UTC and use minute precision in the identifier. Exact acquisition
-times remain in the NetCDF metadata. A session may cross midnight or any former
-six-hour site boundary without being split. A true acquisition gap or a change in station profile/calibration starts a
-new session. Inside one session, MILGRAU stores geometric solar elevation,
-classifies each profile as `day` or `night` using the configured threshold,
-and assigns contiguous `segXX` scientific segments. SCC interoperability
-derivatives are grouped by solar regime, so repeated `day` or `night`
-segments are combined into one `SESSION_day_L0_scc.nc` or
-`SESSION_night_L0_scc.nc` while retaining their original segment identities
-inside the file.
-
-Products are grouped by the UTC month in which the session starts:
-
-```text
-02-processed_data/
-  spu/
-    2025/
-      05/
-        spu_20250511-0012Z_20250511-0737Z/
-          spu_20250511-0012Z_20250511-0737Z_L0.nc
-          spu_20250511-0012Z_20250511-0737Z_L1.nc
-          spu_20250511-0012Z_20250511-0737Z_L2.nc
-          spu_20250511-0012Z_20250511-0737Z_day_L0_scc.nc   # when day SCC export applies
-          spu_20250511-0012Z_20250511-0737Z_night_L0_scc.nc # when night SCC export applies
-          figures/
-```
-
-The primary CLIs accept a session ID, a station-local civil date, or an
-explicit file/directory path. A date selects sessions that intersect that local day.
-For inspection, the simplest form is positional:
-
-```bash
-milgrau-inspect 20240620
-```
-
-Processing selectors remain available through `-i`:
-
-```bash
-milgrau-libids -i spu_20250511-0012Z_20250511-0737Z --force
-milgrau-lipancora -i 20250510
+~~~bash
+milgrau-libids -i spu_20250511-0012Z_20250511-0737Z
+milgrau-lipancora -i spu_20250511-0012Z_20250511-0737Z
 milgrau-lebear -i spu_20250511-0012Z_20250511-0737Z
-milgrau-lebear -i spu_20250511-0012Z_20250511-0737Z --regime night
-milgrau-lebear -i spu_20250511-0012Z_20250511-0737Z --segment seg01
-```
+~~~
 
-The solar selectors are scientific subsets of the same session, not new session
-identities. `--regime night` may include more than one disjoint night segment
-if a long session contains them; `--segment seg01` selects exactly one
-contiguous segment. Either selector may be intersected with
-`--time-window-utc`.
+### Use Level 1 without ERA5
 
-LIPANCORA generates Level 1 figures automatically for the complete scientific
-session, including RCS/MeanRCS plus two atmospheric views:
-`AtmosphericProfile` (ERA5/USSA76 source used versus radiosonde reference) and
-`AtmosphericEvolution` (hourly temperature and molecular-state evolution).
-LEBEAR likewise maintains Level 2 figures beside the Level 2 product.
-Visualization is therefore a responsibility of the processing level that owns
-the underlying scientific product, not a separate pipeline.
+~~~bash
+milgrau-lipancora -i SESSION_ID --radiosonde-only
+~~~
 
-Explicit UTC subsetting remains available for derived Level 2 products:
+### Regenerate Level 1 figures without recalculating scientific data
 
-```bash
-milgrau-lebear -i spu_20250511-0012Z_20250511-0737Z --time-window-utc 01:00 03:00
-milgrau-lebear -i spu_20250511-0012Z_20250511-0737Z --regime night --time-window-utc 01:00 03:00
-```
+~~~bash
+milgrau-lipancora --figures-only -i SESSION_ID
+~~~
 
-Public-site windows such as 00–06, 06–12, 12–18 and 18–24 are publication views
-and are intentionally not MILGRAU session identities.
+### Inspect observations
 
-Shell status is deliberately operational. Scientific QA belongs in the NetCDF
-diagnostics rather than being compressed into an exit code.
+~~~bash
+milgrau-inspect SESSION_ID
+milgrau-explorer
+~~~
 
-## Configuration 
+The Explorer offers read-only visualization of processed observations, atmospheric profiles and available scientific products.
 
-MILGRAU keeps responsibilities separate:
+## Scientific products and organization
 
-- **`config.yaml`** — processing/scientific recipe: how the run should be processed;
-- **`station.yaml`** — observational reality: station/instrument history, calibration identity and station-derived information;
-- **`scc.yaml`** — separate SCC product/channel catalog, loaded only after explicitly setting `scc.enabled: true` in `config.yaml` (disabled by default in this integration).
+Outputs are organized by station, year, month and continuous observation session. A typical session contains:
 
-Institutional logos for **all Matplotlib Level 1 and Level 2 figures** are
-controlled by `visualization.logos` in `config.yaml`. The default selects
-`img/LEAEL_LOGO.png` alongside the CC and LALINET marks. Replace a path to use
-your own PNG/JPEG/WebP, reorder entries, change `height`, or use `logos: []`
-to hide them completely. For example:
+- `SESSION_L0.nc` — standardized lidar acquisition.
+- `SESSION_L1.nc` — corrected lidar signals and atmospheric state.
+- `SESSION_L2.nc` — aerosol optical products.
+- `figures/` — scientific and diagnostic visualizations.
+- `scc/` — optional SCC input packages and downloaded results.
 
-```yaml
-visualization:
-  logos:
-    - path: "img/my_institute_logo.png"
-      height: 0.065
-```
+The original session identity is maintained across processing levels. An acquisition may cross midnight; fixed publication windows do not define scientific sessions.
 
-A bare filename resolves from `img/`; a relative path containing folders
-resolves from the project root. Absolute paths are also supported.
-`height` is a fraction of figure height; figures place logos from right to
-left at the bottom. Missing images are skipped. Editing a selected image
-regenerates figure assets on incremental runs without recomputing scientific
-NetCDF products.
+## Scientific quality and interpretation
 
-The exact ownership boundary and hash/provenance policy are documented in [`docs/configuration_ownership.md`](docs/configuration_ownership.md). The canonical code-owner inventory is in [`docs/code_inventory.md`](docs/code_inventory.md).
+MILGRAU records diagnostic information to examine:
 
-Published NetCDF provenance embeds the exact processing/station YAML snapshots. Level 2 also identifies exact upstream Level 1 bytes and the installed MILGRAU Python source content, so scientific input/code states can be distinguished without relying on machine-local paths.
+- Instrumental and background corrections.
+- Availability and provenance of atmospheric data.
+- Molecular-reference suitability.
+- Valid altitude ranges.
+- Data gaps and unsupported retrieval regions.
+- Retrieval uncertainties and scientific assumptions.
 
-## Documentation map
+Elastic extinction depends on the assumed aerosol lidar ratio. Retrieved optical quantities and their uncertainties must be interpreted in light of the documented inversion assumptions. Successfully running a command alone does not establish the scientific validity of every altitude or observation.
 
-- [`docs/processing_levels.md`](docs/processing_levels.md) — stable Level 0/1/2 responsibilities and boundaries.
-- [`docs/configuration_ownership.md`](docs/configuration_ownership.md) — `config.yaml` vs `station.yaml` vs Python ownership.
-- [`docs/code_inventory.md`](docs/code_inventory.md) — canonical module/API ownership.
-- [`docs/atmospheric_profiles.md`](docs/atmospheric_profiles.md) — ERA5 queue-aware selection, Wyoming/IGRA2 and USSA76 fallback.
-- [`docs/scc_batch_operator_guide.md`](docs/scc_batch_operator_guide.md) — explicit, non-destructive SCC operations.
-- [`docs/scc_integration_merge_plan.md`](docs/scc_integration_merge_plan.md) — temporary merge plan, regression and scientific acceptance gates.
-- [`docs/explorer.md`](docs/explorer.md) — local, read-only Web Explorer architecture and usage.
-- [`docs/level2_schema.md`](docs/level2_schema.md) — current Level 2 NetCDF schema, support, uncertainty and provenance semantics.
-- [`docs/scientific_traceability.md`](docs/scientific_traceability.md) — scientific traceability matrix and verified bibliography.
-- [`.github/tracker.md`](.github/tracker.md) — scientific engineering roadmap and acceptance gates.
+## SCC interoperability
 
+MILGRAU supports optional interoperability with the **Single Calculus Chain (SCC)**.
+
+Scientific Level 0, Level 1 and Level 2 products remain independent of SCC processing. When explicitly enabled, MILGRAU can prepare SCC-compatible inputs, attach validated observational radiosonde profiles, inspect remote status and retrieve available results.
+
+Remote uploads require an explicit operator command; scientific processing never uploads automatically. See the [SCC operator guide](docs/scc_batch_operator_guide.md).
+
+## Documentation
+
+Start with the [Documentation guide](docs/README.md). Dedicated user and scientific guides cover:
+
+- [Installation and first processing run](docs/getting_started.md).
+- [Level 0 — LIBIDS](docs/libids.md).
+- [Level 1 — LIPANCORA](docs/lipancora.md).
+- [Level 2 — LEBEAR](docs/lebear.md).
+- [Atmospheric sources and provenance](docs/atmospheric_profiles.md).
+- [Scientific quality, uncertainties and interpretation](docs/scientific_quality.md).
+- [SCC interoperability](docs/scc_batch_operator_guide.md).
+- [Explorer and visualization](docs/explorer.md).
+
+Detailed [Level 2 variable definitions](docs/level2_schema.md) and [scientific references](docs/scientific_traceability.md) remain available for deeper study.
 
 ## Citation
 
-If you use MILGRAU, cite the software using [`CITATION.cff`](CITATION.cff). The current source version is recorded in `CITATION.cff` and `milgrau/version.py`. The historical Zenodo DOI `10.5281/zenodo.20330638` refers to an earlier deposit and is not claimed as the archival DOI for the present source.
-
+If you use MILGRAU for scientific work, consult [CITATION.cff](CITATION.cff) for the appropriate software citation and version information.
 
 ## License
 
-MILGRAU is distributed under the MIT License; see [`LICENSE`](LICENSE).
+See [LICENSE](LICENSE).
