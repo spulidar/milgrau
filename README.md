@@ -20,6 +20,23 @@ MILGRAU has three main processing levels:
 
 Each processing level produces a NetCDF dataset containing scientific results, relevant quality diagnostics and provenance information.
 
+### Processing pathway at a glance
+
+The same continuous observation session passes through the three scientific levels. Molecular atmospheric information is incorporated at Level 1 and carried into the Level 2 retrieval.
+
+```mermaid
+flowchart LR
+    RAW["Original Licel acquisitions"] --> L0["LIBIDS · Level 0"]
+    L0 --> NC0["Standardized L0 NetCDF"]
+    NC0 --> L1["LIPANCORA · Level 1"]
+    ATM["ERA5 / Wyoming / IGRA2 / USSA76"] --> L1
+    L1 --> NC1["Corrected signals + molecular atmosphere · L1 NetCDF"]
+    NC1 --> L2["LEBEAR · Level 2"]
+    L2 --> NC2["Aerosol optical properties + uncertainty · L2 NetCDF"]
+```
+
+The scientific session identity persists through these stages. Retrievals depend on the quality of their inputs, atmospheric source and inversion assumptions. The presence of an output NetCDF alone does not establish a valid aerosol retrieval.
+
 ### Level 0 — LIBIDS
 
 LIBIDS reads raw Licel measurements and organizes them into continuous observation sessions.

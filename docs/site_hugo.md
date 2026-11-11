@@ -59,3 +59,9 @@ The GitHub Actions build checks representative pages and produces a downloadable
 Write equations in the original Markdown under `docs/` using `\\( ... \\)` for inline mathematics or `$$ ... $$` on separate lines for display mathematics. Use **one** backslash for LaTeX commands such as `\\frac`, `\\sigma` and `\\Delta`; doubled command backslashes will not represent the intended formula.
 
 The Hugo Goldmark math passthrough hook in `docs/_site/layouts/docs/_markup/render-passthrough.html` restores math delimiters before Lotus Docs' KaTeX auto-rendering. The site CI invokes `docs/_site/check_rendered_site.py` after Hugo to check the homepage, inclusion of KaTeX assets and preservation of mathematical delimiters. A successful static build is not a substitute for an in-browser accessibility review.
+
+## Home page from the GitHub README
+
+The homepage displays a brief, generated selection of the root `README.md`: project overview, three-level scientific workflow, installation and scientific-quality caveats. The README remains the source for that introductory text, while the authoritative detailed science stays in `docs/*.md`. The source README also carries a Mermaid flowchart for GitHub; the site draws an accessible responsive HTML counterpart instead of exposing Mermaid source code.
+
+Home layout and visuals live in `docs/_site/layouts/index.html`, while `docs/_site/data/landing.yaml` configures the short hero. Edit the README to change project explanations, and edit the Hugo layout only for presentation. The former repeating feature-grid and science-values cards have been retired.

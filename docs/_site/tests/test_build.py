@@ -64,8 +64,8 @@ class SiteDocumentationTests(unittest.TestCase):
             root = Path(temp)
             site = root / "docs/_site"
             site.mkdir(parents=True)
-            (root / "docs/README.md").write_text("# Scientific documentation\\n", encoding="utf-8")
-            (site / "README.md").write_text("# Site configuration, not a scientific page\\n", encoding="utf-8")
+            (root / "docs/README.md").write_text("# Scientific documentation\n", encoding="utf-8")
+            (site / "README.md").write_text("# Site configuration, not a scientific page\n", encoding="utf-8")
             self.assertEqual(MODULE.build(root), 1)
             self.assertEqual(MODULE.build(root), 1)
             self.assertFalse((site / ".hugo-content/docs/reference/README.md").exists())
@@ -75,7 +75,7 @@ class SiteDocumentationTests(unittest.TestCase):
             root = Path(temp)
             site = root / "docs/_site"
             site.mkdir(parents=True)
-            (root / "docs/README.md").write_text("# Original\\n", encoding="utf-8")
+            (root / "docs/README.md").write_text("# Original\n", encoding="utf-8")
             (site / "hugo.toml").write_text("Original config", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "Refusing to overwrite source"):
                 MODULE.build(root, site)
@@ -111,6 +111,39 @@ class SiteDocumentationTests(unittest.TestCase):
                 )
                 weights.append(weight)
             self.assertEqual(weights, sorted(set(weights)))
+
+
+    def test_homepage_is_derived_from_readme_without_copying_mermaid(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            docs = root / "docs"
+            docs.mkdir()
+            (docs / "README.md").write_text("# Documentation\n", encoding="utf-8")
+            (docs / "getting_started.md").write_text("# Installation\n", encoding="utf-8")
+            readme = (
+                "# MILGRAU\n\n"
+                "A science pipeline for lidar.\n\n"
+                "## Scientific processing workflow\n\n"
+                "LIBIDS, LIPANCORA and LEBEAR.\n\n"
+                "### Processing pathway at a glance\n\n"
+                "```mermaid\nflowchart LR\nA --> B\n```\n\n"
+                "### Level 0 — LIBIDS\n\nDetailed method.\n\n"
+                "## Installation\n\n"
+                "See [Getting started](docs/getting_started.md).\n\n"
+                "## Scientific quality and interpretation\n\n"
+                "Quality diagnostics are necessary.\n\n"
+                "## License\n\nMIT.\n"
+            )
+            (root / "README.md").write_text(readme, encoding="utf-8")
+            MODULE.build(root)
+            page = (root / "docs/_site/.hugo-content/_index.md").read_text(encoding="utf-8")
+            self.assertIn("A science pipeline for lidar", page)
+            self.assertIn("LIBIDS, LIPANCORA and LEBEAR", page)
+            self.assertIn("Quality diagnostics are necessary", page)
+            self.assertIn('relref "docs/getting-started/getting_started.md"', page)
+            self.assertNotIn("```mermaid", page)
+            self.assertEqual((root / "README.md").read_text(encoding="utf-8"), readme)
+
 
 
 if __name__ == "__main__":

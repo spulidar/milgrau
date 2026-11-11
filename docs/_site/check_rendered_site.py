@@ -21,8 +21,12 @@ def check() -> None:
     )
     for text in (
         "MILGRAU",
-        "One observation, three scientific levels",
-        "Built for scientific scrutiny",
+        "From raw observation to scientific products",
+        "About MILGRAU",
+        "Scientific processing workflow",
+        "Install MILGRAU",
+        "Raw Licel",
+        "Quality diagnostics",
         "LIBIDS",
         "LIPANCORA",
         "LEBEAR",
@@ -32,6 +36,9 @@ def check() -> None:
     assert "docs/processing/level-0/libids/" in home
     assert "docs/processing/level-1/lipancora/" in home
     assert "docs/processing/level-2/lebear/" in home
+    assert "One observation, three scientific levels" not in home
+    assert "Built for scientific scrutiny" not in home
+    assert "git clone" in home, "The homepage is not presenting README installation content"
 
     assert "katex" in l1.lower(), "No KaTeX assets in the Level 1 page"
     assert re.search(r'class=["\']?math-display', l1), (

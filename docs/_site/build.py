@@ -143,6 +143,52 @@ def build(root: Path = ROOT, output: Path | None = None) -> int:
         where = dest / routes[rel]
         where.parent.mkdir(parents=True, exist_ok=True)
         where.write_text(meta(title, description, icon, weight) + links(raw.lstrip("\n"), rel, routes, root), encoding="utf-8")
+    # The project's GitHub README is also the editorial source for the
+    # homepage overview. Site navigation/visuals live only in docs/_site/.
+    # We intentionally omit README's Mermaid code fence here: the website
+    # already draws the same scientific flow as accessible HTML.
+    root_readme = root / "README.md"
+    if root_readme.is_file():
+        readme = root_readme.read_text(encoding="utf-8")
+        def extract_section(heading: str) -> str:
+            tag = "## " + heading + "\n"
+            if readme.count(tag) != 1:
+                raise ValueError(f"README lacks exactly one section: {heading}")
+            block = readme.split(tag, 1)[1]
+            return re.split(r"(?m)^## ", block, maxsplit=1)[0].strip()
+
+        introduction = readme.split("## Scientific processing workflow", 1)[0]
+        introduction = re.sub(r"(?m)^# MILGRAU\\s*\n", "", introduction).strip()
+        workflow = extract_section("Scientific processing workflow")
+        workflow = workflow.split("### Processing pathway at a glance", 1)[0]
+        # Preserve only the README's explanatory lead and level overview
+        # table; the detailed L0/L1/L2 methods belong in docs/.
+        workflow = re.split(r"(?m)^### Level 0", workflow, maxsplit=1)[0].strip()
+        installation = extract_section("Installation")
+        scientific_quality = extract_section("Scientific quality and interpretation")
+        homepage = (
+            meta("MILGRAU", "Open scientific processing for atmospheric lidar", "science", 0)
+            + "## About MILGRAU\n\n" + introduction
+            + "\n\n## Scientific processing workflow\n\n" + workflow
+            + "\n\n## Install MILGRAU\n\n" + installation
+            + "\n\n## Scientific quality and interpretation\n\n" + scientific_quality
+            + "\n"
+        )
+        # Links in the repo-root README point to docs/*.md; convert them
+        # only in the temporary homepage copy, preserving GitHub Markdown.
+        def home_link(match: re.Match[str]) -> str:
+            label, href = match.groups()
+            if not href.startswith("docs/"):
+                return match.group(0)
+            path, separator, fragment = href.partition("#")
+            route = routes.get(Path(path).relative_to("docs"))
+            if route is None:
+                raise ValueError(f"Missing homepage documentation target: {href}")
+            ref = '{{< relref "' + route.as_posix() + '" >}}'
+            return '<a href="' + ref + (separator + fragment if separator else "") + '">' + html.escape(label) + '</a>'
+        homepage = LINK_RE.sub(home_link, homepage)
+        (dest / "_index.md").write_text(homepage, encoding="utf-8")
+
     for source in docs.rglob("*"):
         if (source.is_file() and source.suffix.lower() != ".md"
                 and source.relative_to(docs).parts[0] != "_site"):
