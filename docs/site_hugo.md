@@ -53,3 +53,9 @@ The original Licel observations and NetCDF products do **not** belong in this pu
 ## Current status
 
 The GitHub Actions build checks representative pages and produces a downloadable HTML artifact. Publication depends on GitHub Pages account/repository settings and successful deployment. Continue scientific validation and documentation on the current tracker; site publication does not validate the underlying lidar physics.
+
+## Mathematical notation and build checks
+
+Write equations in the original Markdown under `docs/` using `\\( ... \\)` for inline mathematics or `$$ ... $$` on separate lines for display mathematics. Use **one** backslash for LaTeX commands such as `\\frac`, `\\sigma` and `\\Delta`; doubled command backslashes will not represent the intended formula.
+
+The Hugo Goldmark math passthrough hook in `docs/_site/layouts/docs/_markup/render-passthrough.html` restores math delimiters before Lotus Docs' KaTeX auto-rendering. The site CI invokes `docs/_site/check_rendered_site.py` after Hugo to check the homepage, inclusion of KaTeX assets and preservation of mathematical delimiters. A successful static build is not a substitute for an in-browser accessibility review.

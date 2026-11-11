@@ -60,6 +60,8 @@ jobs:
           test -s docs/_site/public/docs/processing/level-1/lipancora/index.html
           test -s docs/_site/public/docs/processing/level-1/atmospheric_profiles/index.html
           test -s docs/_site/public/docs/processing/level-2/lebear/index.html
+      - name: Verify homepage and mathematical rendering contract
+        run: python docs/_site/check_rendered_site.py
       - name: Upload preview HTML artifact
         uses: actions/upload-artifact@v4
         with:
