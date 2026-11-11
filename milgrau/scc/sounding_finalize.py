@@ -170,7 +170,7 @@ def _finalize_one(
                 }
                 revised["sounding_stage"] = "ready"
                 with nc.Dataset(sounding, "r") as sounding_ds:
-                    recorded_origin = str(sounding_ds.getncattr("Source_Observation"))
+                    recorded_origin = str(sounding_ds.getncattr("Source_Observation_Provider"))
                 revised["sounding_source"] = recorded_origin
             else:
                 revised["sounding_stage"] = "skipped_missing"
