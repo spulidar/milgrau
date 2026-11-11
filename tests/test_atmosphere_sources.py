@@ -474,3 +474,81 @@ def test_level1_contract_accepts_explicit_radiosonde_only_atmosphere_but_not_unm
     }
     with pytest.raises(ValueError, match="source priority"):
         _validate_level1_atmosphere(with_wrong_priority)
+
+
+def test_queue_high_reads_cached_era5_without_cds_then_igra2_then_ussa76(
+    monkeypatch,
+) -> None:
+    def no_cds(*_args, **_kwargs):
+        pytest.fail("Congested mode must not submit ERA5/CDS requests.")
+
+    observed_network_permissions = []
+
+    def cached_era5(timestamp, *_args, **kwargs):
+        observed_network_permissions.append(kwargs["allow_network"])
+        return _profile("era5", hour=12) if pd.Timestamp(timestamp).hour == 12 else None
+
+    def observed_radiosonde(timestamp, _station_id, _logger, **_kwargs):
+        if pd.Timestamp(timestamp).hour != 13:
+            return None
+        frame = _profile("radiosonde", hour=13)
+        frame.attrs["source"] = "NOAA NCEI IGRA2 historical sounding archive"
+        frame.attrs["historical_archive"] = "BRM00083779-data.txt"
+        return frame
+
+    monkeypatch.setattr(
+        "milgrau.level1.thermodynamics.prefetch_era5_pressure_level_profiles",
+        no_cds,
+    )
+    monkeypatch.setattr(
+        "milgrau.level1.thermodynamics.fetch_era5_pressure_level_profile",
+        cached_era5,
+    )
+    monkeypatch.setattr(
+        "milgrau.level1.thermodynamics.fetch_wyoming_radiosonde",
+        observed_radiosonde,
+    )
+    config = _config_with_priority("era5", "radiosonde", "ussa76")
+    config["_era5_network_allowed"] = False
+    config["_cds_queue_state"] = "high"
+    config["_atmosphere_selection_reason"] = "cds_queue_high"
+    result = integrate_thermodynamics(
+        _level1_shell(), config, logging.getLogger("test.era5.cache-only")
+    )
+    assert observed_network_permissions == [False, False, False]
+    assert result["Atmospheric_Source_Type"].values.tolist() == [
+        "era5", "radiosonde", "ussa76"
+    ]
+    assert result["Atmospheric_Observation_Source"].values.tolist() == [
+        "none", "igra2", "none"
+    ]
+    assert result.attrs["thermodynamic_radiosonde_observation_sources"] == "igra2"
+    assert result.attrs["cds_queue_state"] == "high"
+    assert result.attrs["atmosphere_selection_reason"] == "cds_queue_high"
+
+
+def test_explicit_radio_mode_has_declared_full_ussa76_fallback(monkeypatch) -> None:
+    def no_era5(*_args, **_kwargs):
+        pytest.fail("Explicit radio-only policy must not access CDS.")
+
+    monkeypatch.setattr(
+        "milgrau.level1.thermodynamics.prefetch_era5_pressure_level_profiles",
+        no_era5,
+    )
+    monkeypatch.setattr(
+        "milgrau.level1.thermodynamics.fetch_era5_pressure_level_profile",
+        no_era5,
+    )
+    monkeypatch.setattr(
+        "milgrau.level1.thermodynamics.fetch_wyoming_radiosonde",
+        lambda *_args, **_kwargs: None,
+    )
+    product = integrate_thermodynamics(
+        _level1_shell(),
+        _config_with_priority("radiosonde", "ussa76"),
+        logging.getLogger("test.full-ussa-fallback"),
+    )
+    assert set(product["Atmospheric_Source_Type"].values.tolist()) == {"ussa76"}
+    assert set(product["Atmospheric_Observation_Source"].values.tolist()) == {"none"}
+    assert product.attrs["thermodynamic_sources_present"] == "ussa76"
+    assert product.attrs["thermodynamic_profile_doi"] == ""
