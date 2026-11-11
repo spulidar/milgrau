@@ -77,12 +77,12 @@ No row should be marked complete solely because all synthetic CI checks passed.
 For a photon-counting native range bin of width \(\Delta r\), the bin-time is
 
 $$
-\\Delta t_{\\mu s}=\\frac{2\\Delta r}{c}\\times10^6.
+\Delta t_{\mu s}=\frac{2\Delta r}{c}\times10^6.
 $$
 
-The observed rate is \(N/(N_{\\rm shots}\\Delta t_{\\mu s})\); this rate **precedes dark-current subtraction**. For a channel with calibrated nonparalyzable dead time \(\tau\), the implemented correction is the dark-subtracted rate divided by \(1-\\tau q\), subject to its numerical denominator floor.
+The observed rate is \(N/(N_{\rm shots}\Delta t_{\mu s})\); this rate **precedes dark-current subtraction**. For a channel with calibrated nonparalyzable dead time \(\tau\), the implemented correction is the dark-subtracted rate divided by \(1-\tau q\), subject to its numerical denominator floor.
 
-The robust far-range background uses a per-profile median and Gaussian-consistent \(1.4826\\,\\mathrm{MAD}\). The 1σ location uncertainty uses the Gaussian median approximation and is **correlated across altitude within one channel/profile**. Examine whether the chosen far-range window is physically free of relevant atmospheric returns for the particular observation.
+The robust far-range background uses a per-profile median and Gaussian-consistent \(1.4826\,\mathrm{MAD}\). The 1σ location uncertainty uses the Gaussian median approximation and is **correlated across altitude within one channel/profile**. Examine whether the chosen far-range window is physically free of relevant atmospheric returns for the particular observation.
 
 The output RCS is the corrected signal times \(r^2\); it is not a direct aerosol backscatter coefficient. A finite RCS at a given altitude does not establish that a two-sided KFS retrieval can be performed there.
 

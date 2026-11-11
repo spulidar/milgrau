@@ -58,7 +58,7 @@ These signals are *not* calibrated aerosol optical backscatter/extinction. The a
 | --- | --- | --- |
 | `background_estimate` | `time,channel` | Median-based location minus configured offset |
 | `background_standard_error` | `time,channel` | Gaussian-equivalent uncertainty of median location |
-| `background_robust_scale` | `time,channel` | \(1.4826\\times\\mathrm{MAD}\), channel-corrected units |
+| `background_robust_scale` | `time,channel` | \(1.4826\times\mathrm{MAD}\), channel-corrected units |
 | `background_valid_bins` | `time,channel` | Number of finite far-range bins |
 | `background_outlier_fraction` | `time,channel` | Fraction outside the configured robust-scale threshold |
 

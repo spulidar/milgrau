@@ -44,7 +44,7 @@ Level 0 channels can have different native range-bin widths. LIPANCORA performs 
 For a native bin spacing \(\Delta r\), its range-bin centers are
 
 $$
-r_i=(i+\\tfrac{1}{2})\\Delta r.
+r_i=(i+\tfrac{1}{2})\Delta r.
 $$
 
 The common Level 1 grid uses the **finest** native channel resolution in the input. Numerical signals are interpolated in altitude; diagnostic boolean masks use nearest-neighbor interpretation. This produces a common coordinate for visualization and L2, but interpolation does **not** create independently resolved physical information.
@@ -56,7 +56,7 @@ The current Level 1 coordinate `altitude` is labeled as range-bin centers above 
 When Level 0 provides an accepted dark-current profile for a channel, LIPANCORA computes the mean over the available dark acquisitions, \(D(r)\), and an estimated standard error from their spread:
 
 $$
-\\sigma_D(r)=\\frac{\\operatorname{std}_t D_t(r)}{\\sqrt{n_D}}.
+\sigma_D(r)=\frac{\operatorname{std}_t D_t(r)}{\sqrt{n_D}}.
 $$
 
 The software subtracts the dark-current mean **before** subsequent detector corrections. A dark-current association based on time tolerance is documented in [LIBIDS](libids.md); it is not proof that the detector conditions were identical to the main measurement.
@@ -68,9 +68,9 @@ If no usable dark acquisition exists, processing may continue without subtractio
 The raw photon-counting signal contains accumulated counts \(N(r,t)\). The observed photon-counting rate in MHz is computed using the **per-profile channel shot count** \(N_{\rm shots}\) and the native round-trip bin time
 
 $$
-\\Delta t_{\\rm bin,\\mu s}=\\frac{2\\Delta r}{c}\\times10^6,
-\\qquad
-q_{\\rm obs}=\\frac{N}{N_{\\rm shots}\\,\\Delta t_{\\rm bin,\\mu s}}.
+\Delta t_{\rm bin,\mu s}=\frac{2\Delta r}{c}\times10^6,
+\qquad
+q_{\rm obs}=\frac{N}{N_{\rm shots}\,\Delta t_{\rm bin,\mu s}}.
 $$
 
 The rate diagnostic `pc_observed_rate_mhz_max(time,channel)` uses the **directly observed counts before dark-current subtraction**, shift, dead-time correction or background subtraction.
@@ -80,7 +80,7 @@ The rate diagnostic `pc_observed_rate_mhz_max(time,channel)` uses the **directly
 The current code subtracts the native dark-current counts first, converts to a rate and applies the calibrated nonparalyzable dead-time model:
 
 $$
-q_{\\rm corr}=\\frac{q_{\\rm dark\\,sub}}{1-\\tau q_{\\rm dark\\,sub}},
+q_{\rm corr}=\frac{q_{\rm dark\,sub}}{1-\tau q_{\rm dark\,sub}},
 $$
 
 where \(\tau\) is the channel dead-time constant expressed in microseconds. The numerical implementation uses a configured positive denominator floor (`deadtime_min_denominator`, distributed value 0.05). **This numerical clip is not proof of physical detector saturation or correction accuracy.**
@@ -100,15 +100,15 @@ The `deadtime_clipping_fraction` and `deadtime_raw_clipping_fraction` fields des
 For photon counting, the raw-count Poisson contribution uses the **observed raw nonnegative counts**, not the potentially negative dark-subtracted counts:
 
 $$
-\\sigma_{q,\\rm count}=\\frac{\\sqrt{\\max(N,0)}}{N_{\\rm shots}\\Delta t_{\\rm bin,\\mu s}}.
+\sigma_{q,\rm count}=\frac{\sqrt{\max(N,0)}}{N_{\rm shots}\Delta t_{\rm bin,\mu s}}.
 $$
 
 When a dark-current uncertainty is available, its rate-scaled variance is added in quadrature:
 
 $$
-\\sigma_{q}^2=
-\\sigma_{q,\\rm count}^2+
-\\left(\\frac{\\sigma_D}{N_{\\rm shots}\\Delta t_{\\rm bin,\\mu s}}\\right)^2.
+\sigma_{q}^2=
+\sigma_{q,\rm count}^2+
+\left(\frac{\sigma_D}{N_{\rm shots}\Delta t_{\rm bin,\mu s}}\right)^2.
 $$
 
 The nonparalyzable dead-time calculation propagates the uncertainty through the same denominator using the implemented derivative, with the numerical floor if triggered.
@@ -126,14 +126,14 @@ After alignment, the atmospheric background is estimated for each time/channel u
 The robust estimator uses the median \(m\) and median absolute deviation (MAD):
 
 $$
-m=\\operatorname{median}(x_i),\\qquad
-\\sigma_{\\rm robust}=1.4826\\operatorname{median}(|x_i-m|).
+m=\operatorname{median}(x_i),\qquad
+\sigma_{\rm robust}=1.4826\operatorname{median}(|x_i-m|).
 $$
 
 The reported standard error of the median, under its Gaussian approximation, is
 
 $$
-\\sigma_m\\approx\\frac{1.2533\\,\\sigma_{\\rm robust}}{\\sqrt{n}}.
+\sigma_m\approx\frac{1.2533\,\sigma_{\rm robust}}{\sqrt{n}}.
 $$
 
 The current implementation requires at least eight valid bins in the configured window. Samples beyond 4.5 robust standard deviations are **counted as outliers for diagnostics**; the recorded background location is the median of the supported window, not a new trimmed mean.
@@ -144,14 +144,14 @@ The configured channel background offset is applied to the location estimate bef
 
 ## 8. Corrected signal and range correction
 
-After detector/shift correction, let \(S_{\\rm preBG}\) denote the pre-background signal and \(B(t)\) the estimated far-range background. LIPANCORA produces
+After detector/shift correction, let \(S_{\rm preBG}\) denote the pre-background signal and \(B(t)\) the estimated far-range background. LIPANCORA produces
 
 $$
-S_{\\rm corrected}(r,t)=S_{\\rm preBG}(r,t)-B(t),
+S_{\rm corrected}(r,t)=S_{\rm preBG}(r,t)-B(t),
 $$
 
 $$
-\\mathrm{RCS}(r,t)=r^2S_{\\rm corrected}(r,t).
+\mathrm{RCS}(r,t)=r^2S_{\rm corrected}(r,t).
 $$
 
 The saved 1σ error for the corrected signal combines the preceding signal error and the uncertainty in the estimated background location in quadrature. The RCS error is multiplied by \(r^2\) in the same numerical path.

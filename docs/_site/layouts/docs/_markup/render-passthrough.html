@@ -1,6 +1,8 @@
-{{- /* Preserve Goldmark mathematical passthrough for Lotus Docs KaTeX. */ -}}
+{{- /* Goldmark strips math markers; preserve them for Lotus Docs KaTeX auto-render. */ -}}
 {{- if eq .Type "block" -}}
-<div class="math-display">{{ .Inner | safeHTML }}</div>
+<div class="math-display">$$
+{{ .Inner }}
+$$</div>
 {{- else -}}
-<span class="math-inline">{{ .Inner | safeHTML }}</span>
+<span class="math-inline">${{ .Inner }}$</span>
 {{- end -}}
