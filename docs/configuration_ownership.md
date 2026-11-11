@@ -1,130 +1,107 @@
-# Configuration and scientific ownership
+# Configuring MILGRAU for a scientific observation
 
-MILGRAU separates the run recipe, station/instrument reality and implemented
-physics. A value has one authoritative owner so the provenance of a result is
-unambiguous.
+This guide explains the three principal YAML files from the **user's perspective**: what information belongs in each file, which settings affect processing, and how to preserve reproducibility.
 
-| Owner | Responsibility |
-| --- | --- |
-| `config.yaml` | processing choices for one run |
-| `station.yaml` | dated station, instrument and calibration facts |
-| `scc.yaml` | SCC database mapping and interoperability policy (optional) |
-| Python | equations, constants, validation and implementation mechanics |
-| external source | radiosonde/ERA5 content |
-| NetCDF provenance | resolved record of the run, inputs and source code |
+For an initial run, see [Getting started](getting_started.md). This document is not an exhaustive list of every allowed parameter; use the distributed YAML files and the per-level scientific guides when changing a numerical setting.
 
-## `config.yaml`
+## What to configure
 
-The processing recipe owns:
+| File | User-facing role | When to change |
+| --- | --- | --- |
+| `config.yaml` | Data directories, processing choices, QA criteria, atmosphere preference and inversion/figure settings | When conducting a new processing run or sensitivity experiment |
+| `station.yaml` | Station coordinates, historical instrument configurations, channel identity/calibration and station climatology | When verified instrument/observational evidence changes |
+| `scc.yaml` | Optional external SCC configuration/channel/product identifiers and ancillary policies | When preparing SCC-compatible input for an authorized SCC account |
 
-- incremental/overwrite policy and directory roles;
-- Level 0 acquisition QA;
-- Level 1 correction and atmosphere-source priority;
-- Level 2 wavelengths and temporal block duration;
-- gluing search and QA settings;
-- molecular-reference QA window and thresholds;
-- ordered molecular-reference search ranges;
-- progressive vertical-grid schedule;
-- two-sided KFS and Monte Carlo settings;
-- residual-aerosol boundary scenarios;
-- cloud-screening enablement;
-- visualization and QA settings;
-- `scc.enabled`, optional SCC config path and staging/upload/cleanup policy.
+The standard installation keeps SCC **disabled** unless `scc.enabled: true` is deliberately set in `config.yaml`.
 
-Scientific readers are strict: a missing required setting fails rather than
-creating a silent default.
+## 1. Data locations and processing control
 
-## `station.yaml`
+Under `directories`, identify the original raw Licel tree and the location where products will be written. Output is organized by station, UTC year/month of the session start and canonical continuous session ID.
 
-The station catalogue owns:
+`processing.incremental: true` allows reuse of a current validated product. If an experimental run changes atmosphere source, instrument treatment or inversion assumptions, preserve prior results and use explicit reprocessing as appropriate.
 
-- station identity, coordinates, altitude and timezone;
-- dated hardware/acquisition profiles;
-- laser and channel definitions;
-- dead time, bin shift and characterized saturation properties;
-- station profile and calibration identity (not SCC database identifiers);
-- station lidar-ratio climatology and its declared uncertainty;
-- overlap geometry and the status of provisional estimates.
+An operational success status does not replace scientific QA. Warnings and stage diagnostics should be examined before considering results suitable for research.
 
-The dated station profile is resolved before processing. Downstream code uses
-that resolved state and does not independently rediscover instrument history.
+## 2. Level 0 settings
 
-## `scc.yaml` — optional external integration
+Under `level0`, relevant controls include:
 
-SCC database identity and configuration live outside the scientific station catalog:
-- station identity cross-check (`station_id`);
-- `scc_policy.lr_input` (fixed SCC database LR or optional external climatology);
-- per-instrument-profile day/night configuration IDs, numeric SCC channel IDs and optical product memberships;
-- a shared 30-product SCC optical catalogue (real product IDs, type, wavelength,
-  SCC usecase, channel count and parent associations), allowing reuse across systems;
-- SCC-only Raman mapping references. Elastic LR targets are derived from this
-  catalogue and are never manually duplicated as a second ID list.
+- `session.max_gap_seconds`: how long an acquisition interruption may be before a new continuous session begins;
+- `acquisition_qa`: tolerances for shot-count and header-time consistency;
+- `dark_current.max_association_hours`: allowable time separation when associating dark-current records;
+- `solar_regime.day_night_threshold_deg`: geometric solar-elevation classification boundary;
+- `surface_weather.missing_policy`: treatment of absent surface-weather data.
 
-The existing dated `station.yaml` profiles still own historical validity and
-instrument calibrations. `scc.yaml` selects the matching profile **by ID**, and
-validation rejects unknown profile IDs or mismatched stations. Scientific Raman
-channel characterization, overlap geometry and observational station climatology
-remain in `station.yaml`.
+These are **processing policies**, not measurements of the real instrument. Distinguish them from dated calibration and channel facts supplied in `station.yaml`.
 
-`config.yaml` has `scc.enabled: false` by default. In this mode MILGRAU does
-not read, validate, or require `scc.yaml`; the L0/L1/L2 scientific pipeline
-does not require SCC extras. Enabling requires a valid `scc.config_file`
-relative to the config file and loads a separate `_scc_catalog` runtime view.
-Do not copy database IDs back into the station catalog. Configurations from the
-six known historical SCC systems are migrated without changing their IDs.
+## 3. Level 1 settings and atmosphere
 
-Phase 12.3 stages all new SCC-only upload packages in the **disposable**
-`.cache/scc/pending/<Measurement_ID>/` directory, not the scientific output
-tree. Raw NetCDF, optional monthly lidar-ratio ancillary and a checksum
-manifest are committed together atomically per SCC measurement. Scientific
-L0 incrementality is independent of SCC cache existence, regardless of
-whether the integration is enabled. Existing old `*_L0_scc.nc` files
-remain untouched in scientific folders. `milgrau-libids --scc-reexport`
-explicitly restages historical packets without rewriting scientific L0.
-Remote client/upload and durable submission tracking are later phases.
+`level1` controls background estimation, photon-counting correction guards, PBL diagnostics, handling of missing historical channel calibration and atmospheric materialization.
 
-## Python
+The current normal atmospheric preference in the recipe is:
 
-Code owns:
+~~~yaml
+level1:
+  atmosphere:
+    time_resolution_minutes: 60
+    source_priority: ["era5", "radiosonde", "ussa76"]
+    external_profile_outside_coverage: "ussa76"
+~~~
 
-- Rayleigh/molecular atmosphere equations;
-- signal and uncertainty propagation;
-- robust background and molecular-scaling estimators;
-- progressive aggregation and missing-data semantics;
-- reference admissibility and deterministic selection mechanics;
-- Klett–Fernald–Sasano integration;
-- selection-aware Monte Carlo;
-- schemas, flags, validation and provenance algorithms.
+For radiosondes, the normal configured selection window is six hours; the explicit `--radiosonde-only` and high-CDS-queue fallback paths use a 12-hour observed selection window. Wyoming is sought before the locally supplied NOAA IGRA2 archive.
 
-Mutable station facts do not become Python constants. Equations and universal
-physical constants do not become editable station configuration.
+ERA5 uses a local cache and optionally CDS network retrieval. Its credentials must be provided through the supported `cdsapi` configuration **outside** the repository. The public CDS queue threshold is a command-line operational option, not a permanent statement of data quality.
 
-## Current Level 2 decision locations
+The actual source by atmosphere hour must be read from the generated Level 1 NetCDF. For detailed rules and comparisons, consult [Atmospheric profiles](atmospheric_profiles.md).
 
-| Decision | Owner |
-| --- | --- |
-| 20-minute blocks | `config.yaml: inversion.block_average_minutes` |
-| two-sided integration | `config.yaml: inversion.kfs_mode` |
-| 10–15 km then 5–20 km reference ranges | `config.yaml: inversion.retrieval.reference_search_ranges_m` |
-| 1 km Rayleigh window | `config.yaml: inversion.molecular_fit.ref_window_m` |
-| progressive-grid schedule | `config.yaml: inversion.retrieval.progressive_grid_schedule` |
-| 150 Monte Carlo realizations | `config.yaml: inversion.monte_carlo_iterations` |
-| nominal `f=0` | `config.yaml: inversion.retrieval.residual_aerosol_fractions` |
-| lidar-ratio monthly values/dispersion | resolved station catalogue |
-| reference-selection equations and tie break | Python |
-| background fit and Monte Carlo refit | Python |
+## 4. Level 2 settings
 
-## Secrets and paths
+LEBEAR's scientific recipe is under `inversion` in `config.yaml`. Particularly relevant choices are:
 
-Credentials never belong in YAML committed to the repository or in scientific
-NetCDF provenance. Provider-supported credential mechanisms are used instead.
+- `wavelengths_to_process`: elastic wavelengths requested;
+- `block_average_minutes`: temporal averaging;
+- `molecular_fit`: Rayleigh reference QA and fitted interval settings;
+- `retrieval.reference_search_ranges_m`: ordered molecular-reference search ranges;
+- `retrieval.progressive_grid_schedule`: altitude-dependent vertical resolution;
+- `gluing`: conditions for joining analog and photon-counting channels;
+- `monte_carlo_iterations` and related settings: stochastic propagation and reproducibility;
+- `aerosol_ref_fraction`, `retrieval.residual_aerosol_fractions` and related quantities: explicit inversion boundary assumptions.
 
-Published provenance stores portable configuration snapshots, source hashes
-and software/source-code identity. Host-specific absolute paths are operational
-details, not scientific identity.
+Changing reference ranges, lidar ratio, input selection, grid or uncertainty settings may change the derived aerosol optical products and therefore requires a documented scientific reason and baseline comparison.
 
-## Visualization boundary
+The SPU monthly **aerosol lidar-ratio** table resides in `station.yaml`. Its original empirical derivation remains unresolved; do not describe these values as a fully characterized observed climatology. See [Lidar-ratio provenance](lidar_ratio_climatology_provenance.md).
 
-QA modules may smooth or rescale data only for display. They cannot change the
-saved retrieval, invent support, select a different reference or silently apply
-scientific thresholds.
+## 5. Instrument and station history
+
+`station.yaml` describes the station and dated configurations used to interpret measured channels. It includes applicable calibration identities and parameters such as detector dead time and bin shifts where known.
+
+Historical records may have missing or provisional values. A configured neutral fallback with a warning enables processing, but must not be represented as an experimentally determined calibration.
+
+The configured launch station for radiosonde observations may be **different from the lidar station**. A sounding's station identity and height reference must be understood when interpreting molecular profiles.
+
+## 6. SCC is optional
+
+Only when `scc.enabled: true` does MILGRAU use the separate `scc.yaml` catalog to prepare SCC-specific inputs. This catalog identifies SCC configurations, product/channel mappings and observed-sounding ancillary requirements. It does **not** replace the station instrument record or the scientific Level 0/1/2 results.
+
+Remote upload requires an explicit SCC operator command; changing the YAML to enabled does not authorize remote submission. See the [SCC operator guide](scc_batch_operator_guide.md).
+
+## 7. Scientific figures
+
+`visualization` controls which plots are produced and their display choices, including limits, channels, logo images and figure formats. Visualization downsampling is for display and does not alter scientific NetCDF resolution.
+
+A changed color scale or plotted altitude span is not a change in the physics or retrieval.
+
+## Reproducible processing record
+
+For every analyzed session, retain:
+
+1. Source Licel observations and canonical session ID.
+2. Relevant `station.yaml` profile/calibration identity.
+3. The `config.yaml` values used for Level 0/1/2.
+4. ERA5/radiosonde/USSA76 source and observed launch context.
+5. Generated NetCDF and its upstream provenance.
+6. Scientific QA decisions and the reason for any changed processing settings.
+
+MILGRAU embeds important recipe and source metadata in scientific NetCDF products; this should be inspected, not reconstructed from memory after a run.
+
+See [Scientific quality](scientific_quality.md), [LIBIDS](libids.md), [LIPANCORA](lipancora.md) and [LEBEAR](lebear.md).

@@ -1,9 +1,15 @@
-# SCC native client — Phases 12.4–12.6
+# Advanced SCC protocol and exceptional operations (maintainer reference)
 
-MILGRAU uses its own minimal HTTPS transport, **not** the historical
-`scc_access` package. The native client uses the publicly documented SCC
-Django Quick upload form and read-only measurement API. Remote protocol
-acceptance with the SPU account has **not yet been demonstrated**.
+**This is not the normal user guide.** For routine scientific preparation,
+dry-run validation, explicit uploads and result downloads, read
+[the SCC operator guide](scc_batch_operator_guide.md) first. This document
+retains protocol/recovery details for exceptional authorized operations.
+
+MILGRAU uses a native HTTPS client, not the historical `scc_access`
+package. A historical remote upload has been observed, but a complete
+scientific validation with successfully finished ELPP/ELDA and retrieved
+results is still pending. Do not mistake transport success or a local
+automated mock test for complete remote processing evidence.
 
 Official SCC user documentation:
 https://docs.scc.imaa.cnr.it/en/latest/data_processing/uploading_ancillary.html

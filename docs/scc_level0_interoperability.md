@@ -1,4 +1,10 @@
-# SCC raw Level 0 interoperability
+# SCC Level 0 interoperability — specialist scientific reference
+
+**Specialist note.** For a normal MILGRAU user, begin with the
+[SCC operator guide](scc_batch_operator_guide.md) and
+[LIBIDS](libids.md). This document retains historical import/export
+research and technical details; descriptions of older branch defaults do
+not override the current `config.yaml`, which keeps `scc.enabled: false`.
 
 MILGRAU treats SCC raw NetCDF as an interoperability input format, not as a substitute for instrument calibration metadata.
 
@@ -16,7 +22,7 @@ The intended separation is:
 
 ## Phase 12.1 — SCC is opt-in and separately configured
 
-`scc-integration-refactor` currently sets `scc.enabled: true` for testing. When set to false,
+The current integration branch sets `scc.enabled: false` by default. When it remains false,
 MILGRAU does not load or validate `scc.yaml` and LIBIDS writes only
 the canonical scientific Level 0. SCC derivatives are not part of
 scientific incremental-current decisions.

@@ -1,8 +1,17 @@
-# Scientific traceability
+# Scientific foundations, traceability and references
 
-This document maps the current scientific behavior to code ownership,
-executable evidence and product diagnostics. MILGRAU exposes one current
-Level 2 method; superseded experiments are not selectable alternatives.
+This reference describes the **physical claims and limitations** supported by
+MILGRAU products, the relevant scientific literature and the validation
+evidence still needed. For user-oriented explanations and examples, first
+read [LIBIDS](libids.md), [LIPANCORA](lipancora.md),
+[Atmospheric profiles](atmospheric_profiles.md), [LEBEAR](lebear.md)
+and [Scientific quality](scientific_quality.md).
+
+The traceability matrix further below retains specialist implementation/test
+references for readers auditing a scientific claim. Those references are
+supporting evidence, not instructions a routine operator must follow.
+MILGRAU exposes one current Level 2 method; superseded experiments are not
+user-selectable alternatives.
 
 ## Scientific statement of the product
 

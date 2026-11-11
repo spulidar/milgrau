@@ -1,4 +1,11 @@
-# Current Level 2 product
+# Level 2 scientific variables and diagnostics
+
+This is the **reference dictionary for reading a saved LEBEAR NetCDF**, not a
+step-by-step processing tutorial. Begin with the [LEBEAR scientific guide](lebear.md)
+and [Scientific quality](scientific_quality.md) if you are new to the
+retrieval. Inspect the file's actual units and metadata when reporting numerical
+values. Missing support remains missing; not all variables necessarily appear
+in every partial product.
 
 LEBEAR produces one canonical block-resolved elastic Level 2 dataset. It uses
 two-sided Klett–Fernald–Sasano integration, a progressive vertical grid,
