@@ -116,3 +116,47 @@ SCC reexport can be checked separately with `milgrau-libids -i SESSION_ID --scc-
 Until these rows are filled from actual observations, **do not mark the real-data scientific-equivalence check complete** in the tracker.
 
 See [LIBIDS](libids.md), [Solar regime verification](solar_regimes.md), [Level 0 variables](level0_schema.md), [Scientific quality](scientific_quality.md).
+
+
+## D. Read-only check for historical solar labels
+
+Because pandas may store datetime values in microseconds or nanoseconds, older Level 0 products can carry different solar elevations even when their session timestamps are identical. A November 2026 correction normalized the astronomical Julian-day input to nanoseconds.
+
+Use the following **read-only** script to compare the saved solar attributes with the current `main` calculation. Replace the path with an actual preserved NetCDF file. It does not change the original file:
+
+~~~python
+from pathlib import Path
+import numpy as np
+import pandas as pd
+import xarray as xr
+
+from milgrau.physics.solar import solar_elevation_deg
+
+path = Path("02-processed_data/spu/YYYY/MM/SESSION_ID/SESSION_ID_L0.nc")
+with xr.open_dataset(path) as ds:
+    reference = pd.Timestamp(ds.attrs["measurement_start_time"])
+    start_seconds = np.asarray(ds["Raw_Data_Start_Time"].values[:, 0], dtype=float)
+    stop_seconds = np.asarray(ds["Raw_Data_Stop_Time"].values[:, 0], dtype=float)
+    middle = reference + pd.to_timedelta((start_seconds + stop_seconds) / 2, unit="s")
+    expected = solar_elevation_deg(
+        middle,
+        float(ds.attrs["Latitude_degrees_north"]),
+        float(ds.attrs["Longitude_degrees_east"]),
+    )
+    stored = np.asarray(ds["solar_elevation_deg"].values, dtype=float)
+    threshold = float(ds.attrs["Solar_Day_Night_Threshold_deg"])
+    predicted_regime = np.where(expected >= threshold, "day", "night")
+    saved_regime = np.asarray(ds["solar_regime"].values).astype(str)
+
+    print("Session:", ds.attrs["Session_ID"])
+    print("Maximum solar-elevation difference [degree]:", np.nanmax(abs(expected - stored)))
+    print("Changed day/night classifications:", int(np.sum(predicted_regime != saved_regime)))
+~~~
+
+A nonzero difference may reflect a prior software version or a real provenance/input discrepancy. **Do not automatically reprocess or delete previous L0/L1/L2 results** based on the printout. First retain hashes, date-resolved station coordinates, installed software identity and original source files, then perform the documented scientific comparison.
+
+If segment classifications change, Level 2 regime/segment selections and SCC day/night partitions may also change. Such changes should be analyzed before interpreting formerly published optical products.
+
+## E. Next step once historical data are available
+
+Select the priority cases from section B, complete the evidence table, and sign off on the scientific differences independently. The exact result of this workbook must never be replaced by an assertion that CI or an independent mathematical approximation proved historical instrument accuracy.
