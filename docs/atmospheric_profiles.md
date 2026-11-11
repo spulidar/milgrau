@@ -62,8 +62,10 @@ Outside external-profile coverage, USSA76 is used when
 `external_profile_outside_coverage: "ussa76"`. The fraction of each hourly
 profile supplied by USSA76 is stored explicitly.
 
-If ERA5 is unavailable for a required hour and `ussa76` is present in
-`source_priority`, the complete hourly profile is materialized from USSA76.
+If ERA5 is unavailable for a required hour, an observed Wyoming sounding is
+preferred, followed by a local NOAA IGRA2 observation when available. When
+neither is available and `ussa76` is configured, the complete hourly profile
+is materialized from USSA76.
 No synthetic surface temperature/pressure constants are invented.
 
 ## ERA5 IO and cache
@@ -81,92 +83,81 @@ network requests.
 time-resolved atmosphere backbone. CDS credentials remain outside the repository
 and are read by `cdsapi`.
 
-## Optional productive radiosonde-only processing (main branch)
+## Operational source preference, CDS queue and radiosonde-only mode
 
-Run `milgrau-lipancora --radiosonde-only -i SESSION_ID` to process
-a selected L0 from radiosonde observations without requesting ERA5 or
-waiting for CDS. Without `-i`, the same switch applies to every eligible L0
-in the Level 1 queue. This CLI override is ephemeral: `config.yaml` and the
-normal ERA5/USSA76 source priority remain unchanged.
+The normal productive Level 1 preference is **ERA5 → Wyoming → NOAA IGRA2
+archive → USSA76**. This order is per hourly atmospheric profile. A missing
+external source is never represented as an actual observation. ERA5 cached hours
+are preferred even if the CDS global queue is congested.
 
-**Offline archive before Siphon:** place the unmodified NOAA/NCEI IGRA2
-historical data file for SPU/WMO station 83779 at:
+### Public CDS queue: best-effort signal
+
+Before normal CLI processing, MILGRAU tries one short read of the public CDS
+dashboard at https://cds.climate.copernicus.eu/live. It extracts the global
+"Queued requests" metric, which is **not** an official machine-readable queue
+API and does **not** indicate an individual job's wait time.
+
+The heuristic threshold defaults to **8,000 queued requests** and can be
+adjusted with `--cds-queue-threshold N`; this is an operational starting value,
+not a scientifically validated queue-performance cutoff. Above that count,
+MILGRAU skips **new** CDS requests while retaining access to validated cached
+ERA5 hours. Missing hours then use Wyoming, IGRA2 or USSA76. The high-queue
+path permits observed soundings up to 12 hours from their nominal UTC launch.
+The original six-hour window remains in the ordinary low-queue setting.
+
+The public dashboard may change or become unavailable. If its metric cannot be
+read, the log records **unknown queue**, and the normal ERA5 path is retained;
+unknown is never reported as a low queue. Disable this experimental observation
+with `--no-cds-queue-check`. Existing submitted/uncertain CDS requests are not
+cancelled, retried or silently resubmitted because of this check. The queue
+decision is captured in L1 provenance.
+
+### Explicit no-CDS mode
+
+`milgrau-lipancora --radiosonde-only -i SESSION_ID` always disables ERA5/CDS
+and uses **Wyoming → IGRA2 → USSA76** for the hourly atmosphere. The 12-hour
+observational selection tolerance is explicit. If neither observational source
+is usable, USSA76 is a declared model fallback, not an observed sounding.
+This flag does not change the persisted configuration. LEBEAR accepts the
+resulting L1 and propagates atmospheric source provenance to L2.
+
+Historical SPU IGRA2 source data may be installed at:
 
 ```text
 .cache/radiosonde/BRM00083779-data.txt
 ```
 
-MILGRAU first checks the preexisting per-hour
-`.cache/radiosonde/YYYY/MM/radiosonde_83779_YYYYMMDD_HHZ.csv`.
-Otherwise, it locates the **exact station and nominal UTC sounding time** in
-the IGRA2 archive. The historical file is indexed once **per process**, in
-memory, using byte offsets, so repeated L1 hours do not reread the full
-multi-year text file. The IGRA2 PRESS (Pa), GPH (m ASL) and TEMP (0.1 °C)
-fields are converted to `pressure` (hPa), `height` (m) and
-`temperature` (°C). Missing `-9999` and quality-removed `-8888`
-measurements are excluded. Only a usable vertical profile is accepted.
-If no match or valid profile exists, MILGRAU **falls back to
-University of Wyoming via Siphon** using the unchanged selection policy.
-Valid IGRA2 observations are cached as hourly CSV plus JSON metadata for
-faster subsequent runs. The local archive itself is not rewritten or
-committed to Git (the repository excludes `.cache/`).
+This operator-supplied archive is never downloaded automatically or rewritten.
+The NOAA fixed-width profiles are quality filtered and may be cached as hourly
+CSV and JSON sidecars with their genuine observation source. A successful
+Wyoming retrieval never overwrites a previous IGRA2 cache: when both exist
+for the same nominal launch, a separate `*_wyoming.csv` is retained.
 
-A native IGRA2 archive is **not a Siphon/Wyoming download**. Scientific
-provenance records whether the radiosonde hours came from NOAA/NCEI IGRA2,
-Wyoming/Siphon, or both, and retains the archive basename when applicable.
-The nominal UTC hour is used to match the configured synoptic hour; the
-actual release time in IGRA2 may differ from that nominal hour.
+The observations are searched within the explicit time tolerance; absent
+00Z profiles are not fabricated. A valid 12Z observation can be used for a
+19Z profile under the 12-hour high-queue or no-CDS policy, with its seven-hour
+offset recorded.
 
-A sounding is selected **independently for each hourly L1 atmosphere time**.
-This explicit provisional `--radiosonde-only` mode expands the temporal
-window to **12 hours** (whereas the ordinary ERA5/QA processing retains its
-configured **six-hour** selection). Cached observations at nominal UTC 00Z
-and 12Z are searched in order of their **actual age**, not just by closest
-nominal synoptic time. This matters for historical station 83779: dates with
-only a **12Z** archived sounding can use that same real profile at **19Z**
-(age **7 hours**) instead of repeatedly requesting a nonexistent **00Z**
-launch. The actual selected timestamp and age are recorded **per hourly
-profile**. The program does **not** synthesize a missing 00Z sounding,
-pretend that 12Z is equally representative of the evening, or silently
-extend the window beyond 12 hours. If no valid local observation exists
-within the window, Wyoming/Siphon is tried; if that also fails, the session
-**fails** instead of generating a full-USSA76 substitute.
-Outside the observed vertical range of a valid sounding, the established
-`external_profile_outside_coverage: ussa76` setting extends the profile
-vertically, with the fallback fraction recorded.
+### Source identity and incremental processing
 
-**Output naming:** the radiosonde-only run deliberately writes the **normal**
-`SESSION_ID_L1.nc` and may **replace an existing ERA5 L1**. The NetCDF
-records `level1_atmosphere_mode=radiosonde_only`,
-`thermodynamic_source_priority=radiosonde`, and
-`Atmospheric_Source_Type=radiosonde`.
+The Level 1 NetCDF stores `Atmospheric_Source_Type(atmosphere_time)` as
+`era5`, `radiosonde` or `ussa76`. For radiosonde hours it additionally
+stores `Atmospheric_Observation_Source(atmosphere_time)` as
+`wyoming_siphon` or `igra2`, and stores the exact observational archive in
+provenance where applicable. Queue status, selection reason and whether ERA5
+network IO was permitted are retained as metadata. USSA76 vertical extension
+fractions remain explicit and must not be confused with fully observed profiles.
 
-**Level 2 support:** LEBEAR now accepts this Level 1 for its regular
-molecular-atmosphere interpolation and optical inversion, without any special
-LEBEAR flag. The Level 2 NetCDF retains the source identity explicitly:
-`source_level1_atmosphere_mode=radiosonde_only`,
-`level2_atmospheric_profile_source=radiosonde`,
-`source_thermodynamic_sources_present=radiosonde`, and
-`source_thermodynamic_source_priority=radiosonde`, alongside the provider
-provenance inherited from Level 1. The normal L2 filename is used; a new
-product replaces an older L2 when the source Level 1 bytes change.
+A previous high-queue L1 may be upgraded on a later ordinary run when new ERA5
+downloads are permitted. Explicit radio-only and normal processing keep the
+canonical filename `SESSION_ID_L1.nc`, so preserve baseline files in separate
+folders when conducting scientific comparisons. L2 products identify their
+source L1 by exact file hash and carry the selected observation-origin metadata.
 
-**Scientific caveat:** these are radiosonde-derived Level 2 products, **not**
-ERA5-derived products. Observations selected within the 12-hour allowed
-window may not represent short-timescale atmospheric changes. Always inspect
-the L1 sounding age and profile vertical coverage/USSA76 fallback fractions
-when interpreting L2 aerosol retrievals.
-
-Incremental L1 selection recognizes mode changes, so changing between
-radiosonde-only and standard runs regenerates the appropriate Level 1 rather
-than silently reusing another atmosphere mode. The L2 exact Level 1 SHA-256
-identity also invalidates old results when source data changes.
-
-A normal LIPANCORA run **without** `--radiosonde-only` still uses the
-unchanged production priority `era5, ussa76`; this LEBEAR change does not
-change the atmospheric source policy or `config.yaml`. The normal branch can
-also explicitly fall back to USSA76 during CDS outages, and source provenance
-must be inspected rather than assuming ERA5 was always available.
+This operational fallback is not evidence that ERA5, radiosonde and USSA76
+are scientifically interchangeable. Always inspect observation age, station,
+vertical coverage and the adopted atmosphere before interpreting aerosol
+retrievals.
 
 ## Radiosonde comparison reference
 
