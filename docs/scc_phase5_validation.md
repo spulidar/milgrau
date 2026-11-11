@@ -98,7 +98,16 @@ follow-up commits may create separate Actions runs; the evidence applies
 to the code SHA tested by that run.
 
 
-## 6. Phase 5 extension — raw header cache and ERA5 batch preparation
+## 6. Historical Phase 5 extension — raw header cache and ERA5 batch preparation
+
+**Integration update (11 November 2026):** the header cache and SCC-only
+reexport remain part of the integration. The monthly GRIB/CDS planner,
+its job-ledger experiments, `cfgrib` dependency and
+`missing_policy: require_era5` are **not** part of the current merge scope.
+The operational LIPANCORA now prefers ERA5, then Wyoming, archived NOAA IGRA2,
+and explicitly identified USSA76. See
+[merge plan](scc_integration_merge_plan.md). The description below is retained
+only as historical evidence and should not be used as the current runbook.
 
 The experimental branch now includes a rebuildable SQLite cache of Licel
 header facts at `.cache/libids/inventory.sqlite`. It is **not** a journal of

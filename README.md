@@ -200,6 +200,7 @@ MILGRAU keeps responsibilities separate:
 
 - **`config.yaml`** — processing/scientific recipe: how the run should be processed;
 - **`station.yaml`** — observational reality: station/instrument history, calibration identity and station-derived information;
+- **`scc.yaml`** — separate SCC product/channel catalog, loaded only after explicitly setting `scc.enabled: true` in `config.yaml` (disabled by default in this integration).
 
 Institutional logos for **all Matplotlib Level 1 and Level 2 figures** are
 controlled by `visualization.logos` in `config.yaml`. The default selects
@@ -230,7 +231,9 @@ Published NetCDF provenance embeds the exact processing/station YAML snapshots. 
 - [`docs/processing_levels.md`](docs/processing_levels.md) — stable Level 0/1/2 responsibilities and boundaries.
 - [`docs/configuration_ownership.md`](docs/configuration_ownership.md) — `config.yaml` vs `station.yaml` vs Python ownership.
 - [`docs/code_inventory.md`](docs/code_inventory.md) — canonical module/API ownership.
-- [`docs/atmospheric_profiles.md`](docs/atmospheric_profiles.md) — radiosonde/ERA5/USSA76 atmosphere handling.
+- [`docs/atmospheric_profiles.md`](docs/atmospheric_profiles.md) — ERA5 queue-aware selection, Wyoming/IGRA2 and USSA76 fallback.
+- [`docs/scc_batch_operator_guide.md`](docs/scc_batch_operator_guide.md) — explicit, non-destructive SCC operations.
+- [`docs/scc_integration_merge_plan.md`](docs/scc_integration_merge_plan.md) — temporary merge plan, regression and scientific acceptance gates.
 - [`docs/explorer.md`](docs/explorer.md) — local, read-only Web Explorer architecture and usage.
 - [`docs/level2_schema.md`](docs/level2_schema.md) — current Level 2 NetCDF schema, support, uncertainty and provenance semantics.
 - [`docs/scientific_traceability.md`](docs/scientific_traceability.md) — scientific traceability matrix and verified bibliography.

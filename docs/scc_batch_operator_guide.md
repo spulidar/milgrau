@@ -1,7 +1,8 @@
 # SCC operator guide — session-local inputs and explicit uploads
 
-The SCC is an **optional external service**, enabled for testing in the
-`scc-integration-refactor` branch. No LIBIDS/LIPANCORA call uploads to SCC.
+The SCC is an **optional external service**, disabled by default on the
+integration branch. Explicitly set `scc.enabled: true` in `config.yaml` to
+stage SCC packets. No LIBIDS/LIPANCORA call uploads to SCC.
 
 ## Filesystem layout
 
@@ -133,7 +134,8 @@ each staged package before making remote requests.
 New packets are finalized automatically after LIPANCORA when observed
 radiosondes are enabled in `scc.yaml`. Filenames must match SCC's
 `lr_YYYYMMDDcccNN.nc` and `rs_YYYYMMDDcccNN.nc` formats.
-Only independently verified observations may be included; neither ERA5
+Only independently verified observations from Wyoming or NOAA IGRA2 may be
+included, preserving the true provider and observed launch. Neither ERA5
 nor USSA76 may be fabricated as a measured sounding.
 
 There are three main commands: `upload`, `status`, and `download`.

@@ -1,5 +1,27 @@
 # MILGRAU — SCC Refactor & Main Integration Tracker
 
+> **Integration status — 11/11/2026.** This tracker preserves the historical
+> SCC development phases. The active integration candidate is
+> `integration/scc-atmosphere-20261111`, combining the SCC staging/journal
+> and LIBIDS header cache with the current main/PR #6 Level 1 and Level 2
+> atmosphere policy. **No new PR is planned; main is unchanged.** The final
+> automated gate is the branch CI; real-data equivalence and any authorized
+> remote SCC test remain separate acceptance requirements.
+>
+> **Updated atmospheric policy:** validated ERA5 cache / CDS if permissible
+> → Wyoming observation → local NOAA IGRA2 → explicit USSA76. The public CDS
+> queue is best-effort; on a high queue no new CDS job is created, and the
+> existing `--radiosonde-only` bypasses ERA5/CDS. Each actual L1 source,
+> radiosonde provider and reason for fallback must be traceable to L2.
+> `scc.enabled: false` by default; no automatic remote SCC action.
+>
+> **Superseded scope:** the Phase 5 monthly GRIB/CDS prefetch planner and
+> `require_era5` policy below are historical, not merge requirements.
+> The separate `scc.yaml` catalog remains authoritative for SCC mappings;
+> station.yaml continues to own the scientific instrument/station metadata.
+> Current checklist: [SCC integration merge gates](../docs/scc_integration_merge_plan.md).
+
+
 **Branch de trabalho:** `scc-integration-refactor`  
 **Branch de destino:** `main`  
 **Status:** Implementação SCC funcional; simplificação arquitetural e integração com `main` pendentes.  
