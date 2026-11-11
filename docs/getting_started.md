@@ -9,7 +9,7 @@ Use Python 3.12 or newer. In a working folder:
 ~~~bash
 git clone https://github.com/spulidar/milgrau.git
 cd milgrau
-git checkout integration/scc-atmosphere-20261111
+git switch main
 python -m pip install -e .
 ~~~
 

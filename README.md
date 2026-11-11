@@ -81,12 +81,12 @@ The scientific products record the actual atmospheric source, radiosonde provide
 
 MILGRAU requires **Python 3.12 or newer**.
 
-Clone the repository and select the desired version. For the current integration branch:
+Clone the repository and use the current **`main`** branch:
 
 ~~~bash
 git clone https://github.com/spulidar/milgrau.git
 cd milgrau
-git checkout integration/scc-atmosphere-20261111
+git switch main
 python -m pip install -e .
 ~~~
 

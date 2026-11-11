@@ -2,7 +2,7 @@
 
 This tracker prioritizes **scientific validity, user operation and complete documentation** of MILGRAU. Items are checked when the stated task has actually been reviewed and completed; a passing automated test or a finished prose page is not proof of independent scientific validation.
 
-**Current work branch:** `integration/scc-atmosphere-20261111`. The production `main` remains separate until final acceptance.
+**Current branch:** `main`. The SCC/atmosphere integration was fast-forward merged on 11 November 2026 at commit `1bfec134e8a0246d733dbe0ec31bd120383f2559`. Future documentation improvements and real-data scientific validation continue on `main`.
 
 ## Current processing state
 
@@ -17,18 +17,19 @@ This tracker prioritizes **scientific validity, user operation and complete docu
 
 For the current processing behavior, read [MILGRAU documentation](../docs/README.md). For the original SCC development log and the superseded experimental GRIB/CDS planning, see the [archived development tracker](../docs/history/scc_integration_development_tracker.md).
 
-## Acceptance gates before production merge
+## Integration completed; outstanding scientific validation gates
 
 - [x] Create temporary integration branch and preserve the production `main`.
 - [x] Integrate current atmosphere selection and the SCC/LIBIDS work without the superseded experimental monthly GRIB planner.
 - [x] Verify automated CI on the integration candidate after scientific integration changes (Linux/Windows, Python 3.12/3.14, Ruff, Explorer).
-- [ ] Review the final complete diff and verify all CI checks again on the **exact final merge candidate**.
+- [x] Validate the exact integrated commit in cross-platform CI (6/6 checks, 780 Linux tests).
 - [ ] Run representative **real-data** Level 0/1/2 scientific comparisons under identical source settings.
 - [ ] Validate the source-specific atmosphere and timestamp/vertical-coverage provenance in real observations.
 - [ ] Verify SCC packages, local checksums and non-destructive scientific source retention.
 - [ ] Obtain separately authorized remote SCC validation on a suitable ID with completed ELPP/ELDA and downloaded outputs.
 - [ ] Confirm no credentials, private datasets, generated NetCDF files, caches, logs or operational journals were committed.
-- [ ] Decide on final production merge explicitly; retain scientific/operational evidence.
+- [x] Merge integrated code and documentation by fast-forward into `main`, preserving commit history.
+- [ ] Perform final real-data scientific and remote SCC acceptance before claiming validated production use.
 
 No remotely destructive SCC action or new CDS download is implied by any unchecked gate. An SCC upload acknowledgement alone does not complete the ELPP/ELDA validation.
 
@@ -159,4 +160,4 @@ A section should be marked complete only after it provides, where appropriate:
 
 The October SCC refactor chronology and superseded GRIB/CDS experiments have been retained **unchanged** in the [archived tracker](../docs/history/scc_integration_development_tracker.md). They are historical records, not the current user runbook or active atmospheric policy.
 
-The [integration merge plan](../docs/scc_integration_merge_plan.md) records the production gates for the current branch. Any GitHub PR or source branch from earlier isolated development is not a substitute for the final integrated scientific validation.
+The [historical integration merge plan](../docs/scc_integration_merge_plan.md) records the former merge gates. Remaining **real-data scientific and SCC validation** gates stay active here even though the code is now on `main`.
