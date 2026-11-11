@@ -54,11 +54,11 @@ The current processing path includes, where applicable:
 
 The range-corrected signal is conceptually
 
-\[
+$
 \mathrm{RCS}(r,t)=\bigl[P(r,t)-B(t)\bigr]r^2,
-\]
+$
 
-where \(\,P(r,t)\,\) is the measured signal and \(B(t)\) is the background estimate, with instrument-specific corrections and channel calibration applied as configured.
+where $\,P(r,t)\,$ is the measured signal and $B(t)$ is the background estimate, with instrument-specific corrections and channel calibration applied as configured.
 
 The reported RCS is not automatically an absolute aerosol backscatter coefficient. It is a corrected lidar signal used in later retrieval, and its uncertainty and valid support must be considered.
 

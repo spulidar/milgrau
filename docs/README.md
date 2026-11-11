@@ -30,6 +30,6 @@ MILGRAU turns atmospheric lidar observations into progressively more interpreted
 
 ## Supporting development, operations and historical records
 
-The following are useful to maintainers or for rare troubleshooting, but are **not required to follow the normal scientific workflow**: [configuration ownership](configuration_ownership.md), [code inventory](code_inventory.md), [SCC protocol details](scc_native_client.md), [SCC Level 0 interoperability](scc_level0_interoperability.md), [SCC validation evidence](scc_phase5_validation.md), [integration gates](scc_integration_merge_plan.md), [archived SCC development history](history/scc_integration_development_tracker.md) and [publication integration](publication_integration.md).
+The following are useful to maintainers or for rare troubleshooting, but are **not required to follow the normal scientific workflow**: [scientific configuration guide](configuration_ownership.md), [code inventory](code_inventory.md), [SCC protocol details](scc_native_client.md), [SCC Level 0 interoperability](scc_level0_interoperability.md), [SCC validation evidence](scc_phase5_validation.md), [integration gates](scc_integration_merge_plan.md), [archived SCC development history](history/scc_integration_development_tracker.md) and [publication integration](publication_integration.md).
 
 The [project tracker](../.github/tracker.md) records open scientific validation tasks and future documentation work. A checked item indicates a documented/reviewed task, not proof that a physical or scientific uncertainty is resolved.

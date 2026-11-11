@@ -6,21 +6,21 @@ LEBEAR derives elastic-lidar aerosol optical properties from validated Level 1 s
 
 The elastic lidar equation may be expressed schematically as
 
-\[
+$
 P(r)=\frac{C\,O(r)}{r^2}\,\beta(r)\,
 \exp\left[-2\int_0^r\alpha(s)\,\mathrm{d}s\right].
-\]
+$
 
-Here \(P(r)\) is received signal, \(C\) an instrument constant, \(O(r)\) the overlap function, \(\beta(r)\) total backscatter, and \(\alpha(r)\) total extinction. Range \(r\) denotes distance along the optical path; the processed altitude coordinate is reported relative to the lidar.
+Here $P(r)$ is received signal, $C$ an instrument constant, $O(r)$ the overlap function, $\beta(r)$ total backscatter, and $\alpha(r)$ total extinction. Range $r$ denotes distance along the optical path; the processed altitude coordinate is reported relative to the lidar.
 
 The total contributions contain molecular and aerosol terms:
 
-\[
+$
 \beta=\beta_{\mathrm{mol}}+\beta_{\mathrm{aer}},\qquad
 \alpha=\alpha_{\mathrm{mol}}+\alpha_{\mathrm{aer}}.
-\]
+$
 
-For an elastic retrieval, the aerosol lidar ratio \(S_{\mathrm{aer}}=\alpha_{\mathrm{aer}}/\beta_{\mathrm{aer}}\) and the reference boundary are **assumptions/conditions of the inversion**, not independent measurements of aerosol extinction. The resulting extinction cannot be described as Raman-measured extinction.
+For an elastic retrieval, the aerosol lidar ratio $S_{\mathrm{aer}}=\alpha_{\mathrm{aer}}/\beta_{\mathrm{aer}}$ and the reference boundary are **assumptions/conditions of the inversion**, not independent measurements of aerosol extinction. The resulting extinction cannot be described as Raman-measured extinction.
 
 ## Inputs and run commands
 

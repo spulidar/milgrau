@@ -84,7 +84,7 @@ The Level 1 atmospheric time axis covers the entire lidar session at the configu
 
 External-profile geometric altitude above sea level must be reconciled with the lidar station altitude and its above-ground-level coordinate. Within profile coverage, temperature is interpolated linearly in height and pressure in logarithmic space. Where source coverage ends and policy permits, USSA76 provides an **explicit vertical extension** rather than an unreported assumption.
 
-For a Level 2 time block between Level 1 atmosphere hours, LEBEAR interpolates temperature linearly in time and pressure in \(\log(P)\) before calculating molecular scattering. It does not make a separate source choice.
+For a Level 2 time block between Level 1 atmosphere hours, LEBEAR interpolates temperature linearly in time and pressure in $\log(P)$ before calculating molecular scattering. It does not make a separate source choice.
 
 ## How the source appears in Level 1
 
