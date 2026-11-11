@@ -10,8 +10,8 @@ and [Scientific quality](scientific_quality.md).
 The traceability matrix further below retains specialist implementation/test
 references for readers auditing a scientific claim. Those references are
 supporting evidence, not instructions a routine operator must follow.
-MILGRAU exposes one current Level 2 method; superseded experiments are not
-user-selectable alternatives.
+MILGRAU exposes one current
+Level 2 method; superseded experiments are not user-selectable alternatives.
 
 ## Scientific statement of the product
 
