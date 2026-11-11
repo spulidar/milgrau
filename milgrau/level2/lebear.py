@@ -70,6 +70,22 @@ def _level2_atmosphere_provenance(ds: xr.Dataset) -> dict[str, str]:
             str(ds.attrs.get("thermodynamic_source_priority", "")).strip()
             or "unspecified"
         ),
+        "source_radiosonde_observation_origins": (
+            str(ds.attrs.get("thermodynamic_radiosonde_observation_sources", "")).strip()
+            or "none"
+        ),
+        "source_radiosonde_archives": (
+            str(ds.attrs.get("thermodynamic_radiosonde_archives", "")).strip()
+            or "none"
+        ),
+        "source_atmosphere_selection_reason": (
+            str(ds.attrs.get("atmosphere_selection_reason", "")).strip()
+            or "unspecified"
+        ),
+        "source_cds_queue_state": (
+            str(ds.attrs.get("cds_queue_state", "")).strip()
+            or "not_checked"
+        ),
     }
 
 
