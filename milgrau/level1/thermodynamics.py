@@ -319,6 +319,7 @@ def _attach_radiosonde_qa(
             station_id,
             logger,
             **policy.radiosonde.as_io_mapping(),
+            prefer_wyoming=True,
         )
     except Exception as exc:
         logger.warning("radiosonde QA unavailable | %s", _compact_error(exc))
@@ -380,6 +381,7 @@ def integrate_thermodynamics(
     temperature_rows: list[np.ndarray] = []
     pressure_rows: list[np.ndarray] = []
     source_types: list[str] = []
+    hourly_observation_sources: list[str] = []
     radio_observation_sources: set[str] = set()
     radio_archives: set[str] = set()
     source_time_delta_hours: list[float] = []
@@ -393,13 +395,21 @@ def integrate_thermodynamics(
     if "era5" in policy.source_priority:
         if policy.era5 is None:
             raise RuntimeError("Resolved atmosphere policy lacks ERA5 settings.")
-        prefetch_era5_pressure_level_profiles(
-            [pd.Timestamp(value).to_pydatetime() for value in atmosphere_times],
-            float(station_site["latitude"]),
-            float(station_site["longitude"]),
-            bind_log_context(logger, stage="era5"),
-            settings=policy.era5.as_io_mapping(),
-        )
+        if config.get("_era5_network_allowed", True):
+            try:
+                prefetch_era5_pressure_level_profiles(
+                    [pd.Timestamp(value).to_pydatetime() for value in atmosphere_times],
+                    float(station_site["latitude"]),
+                    float(station_site["longitude"]),
+                    bind_log_context(logger, stage="era5"),
+                    settings=policy.era5.as_io_mapping(),
+                )
+            except Exception as exc:
+                logger.warning("ERA5 prefetch unavailable; using available cache/observations | %s",
+                               _compact_error(exc))
+        else:
+            logger.info("CDS queue high: no new ERA5 request; retain validated hourly cache")
+        # Never re-submit a blocked/uncertain download for each missing hour.
         era5_prefetched = True
 
     for timestamp in atmosphere_times:
@@ -440,6 +450,7 @@ def integrate_thermodynamics(
                 temperature_rows.append(temperature_k)
                 pressure_rows.append(pressure_hpa)
                 source_types.append("era5")
+                hourly_observation_sources.append("none")
                 source_time_delta_hours.append(float(metadata.get("time_delta_hours", 0.0)))
                 fallback_fractions.append(float(fallback_fraction))
                 source_min_altitude.append(float(metadata.get("source_profile_min_altitude_asl_m", np.nan)))
@@ -459,6 +470,7 @@ def integrate_thermodynamics(
                         station_id,
                         bind_log_context(logger, stage="radiosonde"),
                         **policy.radiosonde.as_io_mapping(),
+                        prefer_wyoming=True,
                     )
                 except Exception as exc:
                     logger.warning("radiosonde unavailable at %s | %s", timestamp, _compact_error(exc))
@@ -478,7 +490,7 @@ def integrate_thermodynamics(
                             profile,
                             station_altitude_m=station_altitude_m,
                             source_type="radiosonde",
-                            source_name="University of Wyoming Upper Air via Siphon",
+                            source_name=str(profile.attrs.get("source", "observed radiosonde")),
                             outside_coverage_policy=policy.external_profile_outside_coverage,
                         )
                     )
@@ -501,11 +513,11 @@ def integrate_thermodynamics(
                 temperature_rows.append(temperature_k)
                 pressure_rows.append(pressure_hpa)
                 source_types.append("radiosonde")
+                observation_origin = "igra2" if metadata.get("historical_archive") else "wyoming_siphon"
+                hourly_observation_sources.append(observation_origin)
+                radio_observation_sources.add(observation_origin)
                 if metadata.get("historical_archive"):
-                    radio_observation_sources.add("igra2")
                     radio_archives.add(str(metadata["historical_archive"]))
-                else:
-                    radio_observation_sources.add("wyoming_siphon")
                 source_time_delta_hours.append(float(delta_hours))
                 fallback_fractions.append(float(fallback_fraction))
                 source_min_altitude.append(float(metadata.get("source_profile_min_altitude_asl_m", np.nan)))
@@ -525,6 +537,7 @@ def integrate_thermodynamics(
                 temperature_rows.append(temperature_k)
                 pressure_rows.append(pressure_hpa)
                 source_types.append("ussa76")
+                hourly_observation_sources.append("none")
                 source_time_delta_hours.append(np.nan)
                 fallback_fractions.append(1.0)
                 source_min_altitude.append(np.nan)
@@ -558,6 +571,24 @@ def integrate_thermodynamics(
         station_site=station_site,
     )
 
+    # Source label is per hour: an individual L1 can mix ERA5, observations
+    # and the US Standard Atmosphere. L2 also receives session provenance.
+    result["Atmospheric_Observation_Source"] = (
+        ("atmosphere_time",), np.asarray(hourly_observation_sources, dtype=str),
+    )
+    result["Atmospheric_Observation_Source"].attrs["description"] = (
+        "none, wyoming_siphon or igra2; applies only to observed radiosonde hours"
+    )
+    result.attrs["atmosphere_selection_reason"] = str(
+        config.get("_atmosphere_selection_reason", "configured_priority")
+    )
+    result.attrs["cds_queue_state"] = str(config.get("_cds_queue_state", "not_checked"))
+    if "_cds_queue_requests" in config:
+        result.attrs["cds_global_queued_requests_at_selection"] = int(config["_cds_queue_requests"])
+        result.attrs["cds_queue_threshold_at_selection"] = int(config["_cds_queue_threshold"])
+    result.attrs["era5_network_allowed_at_selection"] = str(
+        config.get("_era5_network_allowed", True)
+    ).lower()
     if radio_observation_sources:
         result.attrs["thermodynamic_radiosonde_observation_sources"] = (
             ",".join(sorted(radio_observation_sources))
