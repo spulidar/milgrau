@@ -96,3 +96,24 @@ def test_internal_level0_preserves_original_header_durations() -> None:
     np.testing.assert_array_equal(start, np.array([0, 60], dtype=np.int32))
     np.testing.assert_array_equal(stop, np.array([60, 121], dtype=np.int32))
     assert attrs == {}
+
+
+def test_scc_time_axis_preserves_header_times_for_subsecond_acquisition() -> None:
+    reference = pd.Timestamp("2025-09-14T12:00:00Z")
+    rows = pd.DataFrame({
+        "start_time_utc": [reference, reference + pd.Timedelta(seconds=1)],
+        "stop_time": [
+            reference + pd.Timedelta(seconds=1),
+            reference + pd.Timedelta(seconds=2),
+        ],
+        "qa_nominal_duration_s": [0.5, 0.5],
+    })
+
+    start, stop, attrs = _scc_time_axis(
+        rows, reference, _scc_config(), logging.getLogger("test"),
+        label="Measurement",
+    )
+
+    np.testing.assert_array_equal(start, np.array([0, 1], dtype=np.int32))
+    np.testing.assert_array_equal(stop, np.array([1, 2], dtype=np.int32))
+    assert attrs == {}
