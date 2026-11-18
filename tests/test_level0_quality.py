@@ -145,3 +145,47 @@ def test_qa_debug_log_identifies_rejected_file_and_reason(caplog) -> None:
         and "header_duration_s=91" in record.message
         for record in caplog.records
     )
+
+
+@pytest.mark.parametrize(
+    ("nshots", "laser_freq", "header_duration_s", "expected_physical_duration_s"),
+    [
+        (10, 20, 1, 0.5),       # turbulence: Licel header timestamps are whole seconds
+        (21, 10, 2, 2.1),       # short measurement, no integer-rounding prerequisite
+        (605, 20, 30, 30.25),  # longer fractional acquisition
+        (2001, 10, 200, 200.1),
+    ],
+)
+def test_fractional_acquisitions_are_validated_without_rounding(
+    nshots: int,
+    laser_freq: int,
+    header_duration_s: float,
+    expected_physical_duration_s: float,
+) -> None:
+    rows = pd.DataFrame([
+        _row(
+            filepath="/raw/fractional.licel",
+            meas_type="measurements",
+            nshots=nshots,
+            laser_freq=laser_freq,
+            duration=header_duration_s,
+        ),
+    ])
+
+    good = filter_laser_shots(rows, logging.getLogger("test"), **QA)
+
+    assert good["filepath"].tolist() == ["/raw/fractional.licel"]
+    assert good["qa_nominal_duration_s"].iloc[0] == pytest.approx(expected_physical_duration_s)
+
+
+def test_large_physical_vs_header_duration_discrepancy_stays_rejected() -> None:
+    rows = pd.DataFrame([
+        _row(filepath="/raw/valid.licel", meas_type="measurements",
+             nshots=601, laser_freq=20, duration=30),
+        _row(filepath="/raw/invalid-factor-two.licel", meas_type="measurements",
+             nshots=601, laser_freq=20, duration=60),
+    ])
+
+    good = filter_laser_shots(rows, logging.getLogger("test"), **QA)
+
+    assert good["filepath"].tolist() == ["/raw/valid.licel"]
