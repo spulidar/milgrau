@@ -45,19 +45,18 @@ def _screen_acquisition_rows(
     bad_shots = shot_deviation >= shot_limit if shot_limit > 0.0 else shot_deviation > 0.0
     bad_rates = rates.isna() | (rates <= 0) | (abs(rates - expected_rate) > 1e-9)
 
-    physical_duration_s = expected_shots / expected_rate
-    nominal_duration_s = float(round(physical_duration_s))
-    physical_tolerance_s = max(abs(physical_duration_s) * tolerance_fraction, 1e-9)
-    nominal_duration_supported = (
-        nominal_duration_s > 0.0
-        and abs(physical_duration_s - nominal_duration_s) <= physical_tolerance_s
+    # Licel header timestamps have whole-second precision, whereas physical
+    # acquisition durations can be fractional (e.g. 10 shots at 20 Hz = 0.5 s).
+    # Validate each file against its own unrounded physical duration.  Do not
+    # reject an entire session because its modal duration is not near an integer.
+    physical_duration_s = shots / rates.where(rates > 0)
+    nominal_duration_s = expected_shots / expected_rate
+    bad_duration = (
+        durations.isna()
+        | (durations <= 0)
+        | physical_duration_s.isna()
+        | ((durations - physical_duration_s).abs() > header_time_jitter_s)
     )
-
-    bad_duration = durations.isna() | (durations <= 0)
-    if nominal_duration_supported:
-        bad_duration = bad_duration | (abs(durations - nominal_duration_s) > header_time_jitter_s)
-    else:
-        bad_duration = pd.Series(True, index=rows.index)
 
     bad_condition = shots.isna() | (shots <= 0) | bad_shots | bad_rates | bad_duration
     good = rows.loc[~bad_condition].copy()
@@ -86,7 +85,7 @@ def _screen_acquisition_rows(
             good["duration"], errors="coerce"
         )
 
-    return good, bad, expected_shots, nominal_duration_s if nominal_duration_supported else None
+    return good, bad, expected_shots, nominal_duration_s
 
 
 def filter_laser_shots(
