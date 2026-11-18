@@ -304,7 +304,24 @@ def _scc_time_axis(
     if not _scc_ready(config) or len(rows) <= 1 or "qa_nominal_duration_s" not in rows:
         return start_offsets, stop_offsets, {}
 
-    nominal_duration_s = int(round(float(pd.to_numeric(rows["qa_nominal_duration_s"], errors="coerce").iloc[0])))
+    physical_nominal_duration_s = float(
+        pd.to_numeric(rows["qa_nominal_duration_s"], errors="coerce").iloc[0]
+    )
+    if not np.isfinite(physical_nominal_duration_s) or physical_nominal_duration_s <= 0:
+        raise ValueError("Invalid QA nominal acquisition duration for SCC time axis")
+    if physical_nominal_duration_s < 1.0:
+        # The SCC time representation uses integer seconds. Rounding a genuine
+        # subsecond acquisition would produce zero-length profiles. Preserve
+        # the original (whole-second precision) Licel timestamps instead.
+        logger.debug(
+            "  -> %s SCC time axis keeps original Licel timestamps for %.3f s acquisition; "
+            "integer-second normalization would lose subsecond duration.",
+            label,
+            physical_nominal_duration_s,
+        )
+        return start_offsets, stop_offsets, {}
+
+    nominal_duration_s = int(round(physical_nominal_duration_s))
     corrected_stop_offsets = (start_offsets.astype(np.int64) + nominal_duration_s).astype(np.int32)
     adjusted_count = int(np.count_nonzero(corrected_stop_offsets != stop_offsets))
     max_adjustment_s = int(
